@@ -7,12 +7,14 @@ function coerceNumber(value: string, fallback: number) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function coerceOutlineWidth(value: string, fallback: number) {
+  return Math.max(1, Math.min(14, Math.round(coerceNumber(value, fallback))));
+}
+
 export function StickerInspector() {
-  const { nodes, selectedNodeIds, updateNodeData } = useGraphStore((state) => ({
-    nodes: state.nodes,
-    selectedNodeIds: state.selectedNodeIds,
-    updateNodeData: state.updateNodeData,
-  }));
+  const nodes = useGraphStore((state) => state.nodes);
+  const selectedNodeIds = useGraphStore((state) => state.selectedNodeIds);
+  const updateNodeData = useGraphStore((state) => state.updateNodeData);
 
   const selectedSticker = useMemo(() => {
     const selectedSet = new Set(selectedNodeIds);
@@ -24,103 +26,101 @@ export function StickerInspector() {
   }
 
   const data = (selectedSticker.data || {}) as Record<string, any>;
-  const kind = (data.kind || 'text') as 'text' | 'emoji' | 'image';
+
+  const applyRealStickerPreset = () => {
+    updateNodeData(selectedSticker.id, {
+      outlineColor: '#ffffff',
+      outlineWidth: 10,
+      shadow: 'lg',
+      padding: 10,
+      rotation: data.rotation ?? 0,
+    });
+  };
 
   return (
     <aside className="absolute right-3 top-3 z-40 w-80 max-h-[calc(100%-1.5rem)] overflow-auto rounded-xl border border-slate-200 bg-white/95 backdrop-blur p-3 shadow-xl">
       <h3 className="text-sm font-semibold text-slate-800 mb-2">Sticker Inspector</h3>
 
       <div className="space-y-2 text-xs">
+        <button
+          type="button"
+          className="w-full rounded border border-slate-300 bg-slate-50 px-2 py-1 text-left text-slate-700 hover:bg-slate-100"
+          onClick={applyRealStickerPreset}
+        >
+          Apply real sticker preset
+        </button>
+
         <label className="block">
-          <span className="text-slate-500">kind</span>
-          <select
+          <span className="text-slate-500">outlineColor</span>
+          <input
             className="mt-1 w-full rounded border px-2 py-1"
-            value={kind}
-            onChange={(e) => updateNodeData(selectedSticker.id, { kind: e.target.value })}
-          >
-            <option value="text">text</option>
-            <option value="emoji">emoji</option>
-            <option value="image">image</option>
-          </select>
+            value={data.outlineColor || '#ffffff'}
+            onChange={(e) => updateNodeData(selectedSticker.id, { outlineColor: e.target.value })}
+          />
         </label>
-
-        {kind === 'text' && (
-          <label className="block">
-            <span className="text-slate-500">text</span>
-            <textarea
-              className="mt-1 w-full rounded border px-2 py-1"
-              rows={2}
-              value={data.text || ''}
-              onChange={(e) => updateNodeData(selectedSticker.id, { text: e.target.value })}
-            />
-          </label>
-        )}
-
-        {kind === 'emoji' && (
-          <label className="block">
-            <span className="text-slate-500">emoji</span>
-            <input
-              className="mt-1 w-full rounded border px-2 py-1"
-              value={data.emoji || ''}
-              onChange={(e) => updateNodeData(selectedSticker.id, { emoji: e.target.value })}
-            />
-          </label>
-        )}
-
-        {kind === 'image' && (
-          <label className="block">
-            <span className="text-slate-500">src</span>
-            <input
-              className="mt-1 w-full rounded border px-2 py-1"
-              value={data.src || ''}
-              onChange={(e) => updateNodeData(selectedSticker.id, { src: e.target.value })}
-            />
-          </label>
-        )}
 
         <div className="grid grid-cols-2 gap-2">
-          {[
-            ['outlineWidth', data.outlineWidth ?? 4],
-            ['fontSize', data.fontSize ?? 20],
-            ['padding', data.padding ?? 8],
-            ['rotation', data.rotation ?? 0],
-          ].map(([key, value]) => (
-            <label className="block" key={key}>
-              <span className="text-slate-500">{key}</span>
-              <input
-                type="number"
-                className="mt-1 w-full rounded border px-2 py-1"
-                value={value as number}
-                onChange={(e) => updateNodeData(selectedSticker.id, { [key]: coerceNumber(e.target.value, value as number) })}
-              />
-            </label>
-          ))}
-        </div>
-
-        <label className="block">
-          <span className="text-slate-500">shadow</span>
-          <select
-            className="mt-1 w-full rounded border px-2 py-1"
-            value={data.shadow || 'md'}
-            onChange={(e) => updateNodeData(selectedSticker.id, { shadow: e.target.value })}
-          >
-            <option value="none">none</option>
-            <option value="sm">sm</option>
-            <option value="md">md</option>
-            <option value="lg">lg</option>
-          </select>
-        </label>
-
-        {['outlineColor', 'bgColor', 'textColor'].map((key) => (
-          <label className="block" key={key}>
-            <span className="text-slate-500">{key}</span>
+          <label className="block">
+            <span className="text-slate-500">outlineWidth</span>
             <input
+              type="number"
               className="mt-1 w-full rounded border px-2 py-1"
-              value={data[key] || ''}
-              onChange={(e) => updateNodeData(selectedSticker.id, { [key]: e.target.value })}
+              value={data.outlineWidth ?? 4}
+              min={1}
+              max={14}
+              onChange={(e) =>
+                updateNodeData(selectedSticker.id, {
+                  outlineWidth: coerceOutlineWidth(e.target.value, data.outlineWidth ?? 4),
+                })
+              }
             />
           </label>
-        ))}
+
+          <label className="block">
+            <span className="text-slate-500">padding</span>
+            <input
+              type="number"
+              className="mt-1 w-full rounded border px-2 py-1"
+              value={data.padding ?? 8}
+              min={0}
+              onChange={(e) =>
+                updateNodeData(selectedSticker.id, {
+                  padding: Math.max(0, coerceNumber(e.target.value, data.padding ?? 8)),
+                })
+              }
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-slate-500">rotation</span>
+            <input
+              type="number"
+              className="mt-1 w-full rounded border px-2 py-1"
+              value={data.rotation ?? 0}
+              onChange={(e) =>
+                updateNodeData(selectedSticker.id, {
+                  rotation: coerceNumber(e.target.value, data.rotation ?? 0),
+                })
+              }
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-slate-500">shadow</span>
+            <select
+              className="mt-1 w-full rounded border px-2 py-1"
+              value={data.shadow || 'md'}
+              onChange={(e) =>
+                updateNodeData(selectedSticker.id, { shadow: e.target.value })
+              }
+            >
+              <option value="none">none</option>
+              <option value="sm">sm</option>
+              <option value="md">md</option>
+              <option value="lg">lg</option>
+            </select>
+          </label>
+        </div>
       </div>
     </aside>
   );

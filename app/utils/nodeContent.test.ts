@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { extractNodeContent } from './nodeContent';
+import { extractNodeContent, extractStickerContent } from './nodeContent';
 import type { RenderChildNode } from './childComposition';
 
 describe('extractNodeContent', () => {
@@ -52,6 +52,30 @@ describe('extractNodeContent', () => {
       label: '',
       icon: undefined,
       parsedChildren: [],
+    });
+  });
+
+  it('extracts sticker children with graph-image and graph-markdown', () => {
+    expect(
+      extractStickerContent(
+        [
+          { type: 'text', props: { text: 'Hello' }, children: [] },
+          { type: 'svg', props: { className: 'lucide lucide-rocket' }, children: [] },
+          { type: 'graph-image', props: { src: 'sticker.png', alt: 'Sticker', width: 120, height: 80 } },
+          { type: 'graph-markdown', props: { content: '**done**' } },
+        ],
+        undefined,
+        { textJoiner: ' ' },
+      ),
+    ).toEqual({
+      label: 'Hello **done**',
+      icon: 'rocket',
+      parsedChildren: [
+        { type: 'text', text: 'Hello' },
+        { type: 'lucide-icon', name: 'rocket' },
+        { type: 'graph-image', src: 'sticker.png', alt: 'Sticker', width: 120, height: 80 },
+        { type: 'graph-markdown', content: '**done**' },
+      ],
     });
   });
 });

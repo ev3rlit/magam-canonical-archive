@@ -65,21 +65,19 @@ export function createPastedGraphState(
     } satisfies Node;
   });
 
-  const pastedEdges = payload.edges
-    .map((edge) => {
-      const source = nodeIdMap.get(edge.source);
-      const target = nodeIdMap.get(edge.target);
-      if (!source || !target) return null;
+  const pastedEdges: Edge[] = payload.edges.flatMap((edge) => {
+    const source = nodeIdMap.get(edge.source);
+    const target = nodeIdMap.get(edge.target);
+    if (!source || !target) return [];
 
-      return {
-        ...deepClone(edge),
-        id: uuidv4(),
-        source,
-        target,
-        selected: false,
-      } satisfies Edge;
-    })
-    .filter((edge): edge is Edge => Boolean(edge));
+    return [{
+      ...deepClone(edge),
+      id: uuidv4(),
+      source,
+      target,
+      selected: false,
+    }];
+  });
 
   const deSelectedBaseNodes = baseNodes.map((node) => ({ ...node, selected: false }));
 

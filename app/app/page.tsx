@@ -21,7 +21,8 @@ import { ChatPanel } from '@/components/chat/ChatPanel';
 import { useChatStore } from '@/store/chat';
 import { TabState, useGraphStore } from '@/store/graph';
 import { normalizeStickerData } from '@/utils/stickerDefaults';
-import { extractNodeContent } from '@/utils/nodeContent';
+import { extractNodeContent, extractStickerContent } from '@/utils/nodeContent';
+import { stickerDebugLog } from '@/utils/stickerDebug';
 
 interface RenderNode {
   type: string;
@@ -70,16 +71,10 @@ interface RenderNode {
     // MindMap container specific
     layout?: 'tree' | 'bidirectional' | 'radial';
     spacing?: number;
-    // Sticker specific
-    kind?: 'image' | 'text' | 'emoji';
     outlineWidth?: number;
     outlineColor?: string;
     shadow?: 'none' | 'sm' | 'md' | 'lg';
-    bgColor?: string;
-    textColor?: string;
-    fontWeight?: number;
     padding?: number;
-    emoji?: string;
     rotation?: number;
     // Semantic zoom
     bubble?: boolean;
@@ -829,27 +824,40 @@ export default function Home() {
               } else if (child.type === 'graph-sticker') {
                 const rawStickerId = child.props.id || `sticker-${nodeIdCounter++}`;
                 const stickerId = resolveNodeId(rawStickerId, mindmapId);
+                const stickerRendererChildren = child.children || [];
+                const { label: stickerLabel, parsedChildren: stickerChildren } = extractStickerContent(
+                  stickerRendererChildren,
+                  child.props.children,
+                  { textJoiner: ' ' },
+                );
                 const normalized = normalizeStickerData(child.props);
+
+                stickerDebugLog('parser', {
+                  stickerId,
+                  label: stickerLabel || child.props.label || '',
+                  rawTypes: stickerRendererChildren.map((item) => item.type),
+                  parsedTypes: stickerChildren.map((item) => item.type),
+                  outlineWidth: normalized.outlineWidth,
+                  outlineColor: normalized.outlineColor,
+                  shadow: normalized.shadow,
+                  padding: normalized.padding,
+                  anchor: child.props.anchor,
+                  position: child.props.position,
+                });
+
                 nodes.push({
                   id: stickerId,
                   type: 'sticker',
                   position: { x: child.props.x || 0, y: child.props.y || 0 },
                   data: {
-                    kind: normalized.kind,
-                    src: child.props.src,
-                    alt: child.props.alt,
-                    text: child.props.text,
-                    emoji: child.props.emoji,
+                    label: stickerLabel || child.props.label || '',
                     width: child.props.width,
                     height: child.props.height,
                     rotation: child.props.rotation,
+                    children: stickerChildren,
                     outlineWidth: normalized.outlineWidth,
                     outlineColor: normalized.outlineColor,
                     shadow: normalized.shadow,
-                    bgColor: normalized.bgColor,
-                    textColor: normalized.textColor,
-                    fontSize: normalized.fontSize,
-                    fontWeight: normalized.fontWeight,
                     padding: normalized.padding,
 
                     // Anchor positioning props

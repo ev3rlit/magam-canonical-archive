@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   getLucideNameFromChild,
   isLucideChild,
+  parseStickerChildren,
   parseRenderableChildren,
   type RenderChildNode,
 } from './childComposition';
@@ -43,5 +44,48 @@ describe('childComposition', () => {
       { type: 'text', text: 'A' },
       { type: 'text', text: '1' },
     ]);
+  });
+
+  it('parses sticker children including image and markdown', () => {
+    expect(
+      parseStickerChildren(
+        [
+          {
+            type: 'graph-image',
+            props: { src: '/assets/sticker.png', alt: 'Sticker', width: 120, height: 80 },
+            children: [],
+          },
+          {
+            type: 'graph-markdown',
+            props: { content: 'Hello **world**' },
+            children: [],
+          },
+          {
+            type: 'svg',
+            props: { className: 'lucide lucide-camera' },
+            children: [],
+          },
+        ],
+        undefined,
+      ),
+    ).toEqual([
+      { type: 'graph-image', src: '/assets/sticker.png', alt: 'Sticker', width: 120, height: 80 },
+      { type: 'graph-markdown', content: 'Hello **world**' },
+      { type: 'lucide-icon', name: 'camera' },
+    ]);
+  });
+
+  it('warns and ignores unsupported sticker child types', () => {
+    const originalWarn = console.warn;
+    let called = 0;
+
+    console.warn = (() => {
+      called += 1;
+    }) as typeof console.warn;
+
+    parseStickerChildren([{ type: 'unsupported', props: {}, children: [] }], undefined);
+
+    expect(called).toBe(1);
+    console.warn = originalWarn;
   });
 });

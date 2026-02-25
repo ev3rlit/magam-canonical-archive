@@ -28,17 +28,23 @@ export function renderNodeContent({
   }
 
   return children.map((child, index) => {
-    if (child.type === 'lucide-icon') {
-      const Icon = getLucideIconByName(child.name);
-      if (!Icon) return null;
+    switch (child.type) {
+      case 'lucide-icon': {
+        const Icon = getLucideIconByName(child.name);
+        if (!Icon) return null;
 
-      return <Icon key={`icon-${child.name}-${index}`} className={iconClassName} />;
+        return <Icon key={`icon-${child.name}-${index}`} className={iconClassName} />;
+      }
+      case 'graph-image':
+      case 'graph-markdown': {
+        return null;
+      }
+      default:
+        return (
+          <span key={`text-${index}`} className={textClassName} style={textStyle}>
+            {child.text}
+          </span>
+        );
     }
-
-    return (
-      <span key={`text-${index}`} className={textClassName} style={textStyle}>
-        {child.text}
-      </span>
-    );
   });
 }

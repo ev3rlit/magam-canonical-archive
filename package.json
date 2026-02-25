@@ -8,9 +8,10 @@
   ],
   "scripts": {
     "build:core": "cd libs/core && bun run build",
+    "build:app": "cd app && bun run build",
     "dev": "bun run build:core && bun --watch run cli.ts dev ./examples",
     "ws:dev": "bun run app/ws/server.ts",
-    "build": "bun run --filter '*' build",
+    "build": "bun run --filter '@magam/shared' build && bun run --filter '@magam/core' build && bun run --filter '@magam/runtime' build && bun run --filter '@magam/cli' build && bun run build:app",
     "test": "bun test",
     "test:pdf-golden": "bun test app/utils/pdfGolden.test.ts",
     "test:e2e": "playwright test",

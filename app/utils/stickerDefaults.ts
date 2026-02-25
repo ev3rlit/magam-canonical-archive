@@ -1,35 +1,30 @@
-export type StickerKind = 'image' | 'text' | 'emoji';
-
 export interface StickerNormalized {
-  kind: StickerKind;
   outlineWidth: number;
   outlineColor: string;
   shadow: 'none' | 'sm' | 'md' | 'lg';
-  bgColor: string;
-  textColor: string;
-  fontSize: number;
-  fontWeight: number;
   padding: number;
 }
 
-export function normalizeStickerData(input: Record<string, any>): StickerNormalized {
-  const rawKind = input?.kind;
-  const kind: StickerKind =
-    rawKind === 'image' || rawKind === 'text' || rawKind === 'emoji'
-      ? rawKind
-      : 'text';
+const OUTLINE_WIDTH_MIN = 8;
+const OUTLINE_WIDTH_MAX = 14;
 
+function clampOutlineWidth(value: unknown): number {
+  const base = typeof value === 'number' && Number.isFinite(value) ? value : OUTLINE_WIDTH_MIN;
+  return Math.max(OUTLINE_WIDTH_MIN, Math.min(OUTLINE_WIDTH_MAX, Math.round(base)));
+}
+
+function clampPadding(value: unknown): number {
+  const base = typeof value === 'number' && Number.isFinite(value) ? value : 12;
+  return Math.max(0, Math.round(base));
+}
+
+export function normalizeStickerData(input: Record<string, any>): StickerNormalized {
   return {
-    kind,
-    outlineWidth: typeof input?.outlineWidth === 'number' ? input.outlineWidth : 4,
+    outlineWidth: clampOutlineWidth(input?.outlineWidth),
     outlineColor: input?.outlineColor || '#ffffff',
     shadow: input?.shadow === 'none' || input?.shadow === 'sm' || input?.shadow === 'md' || input?.shadow === 'lg'
       ? input.shadow
       : 'md',
-    bgColor: input?.bgColor || '#fffef7',
-    textColor: input?.textColor || '#111827',
-    fontSize: typeof input?.fontSize === 'number' ? input.fontSize : kind === 'emoji' ? 40 : 20,
-    fontWeight: typeof input?.fontWeight === 'number' ? input.fontWeight : 700,
-    padding: typeof input?.padding === 'number' ? input.padding : 8,
+    padding: clampPadding(input?.padding),
   };
 }

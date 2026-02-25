@@ -45,6 +45,15 @@
     display: none !important;
 }
 
+/* Sticker nodes are fully custom-rendered (die-cut/text contour).
+   Disable React Flow default card styling only for sticker wrappers. */
+.react-flow__node-sticker {
+    background: transparent !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+}
+
 .search-result-highlight {
     outline: 3px solid #d97706;
     outline-offset: -2px;

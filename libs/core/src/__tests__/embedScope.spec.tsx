@@ -261,10 +261,12 @@ describe('EmbedScope', () => {
 
   it('should scope Sticker ID and resolve Sticker anchor in scope', async () => {
     const element = (
-      <canvas>
-        <EmbedScope id="auth">
-          <Shape id="target" x={0} y={0} width={100} height={50} />
-          <Sticker id="badge" kind="emoji" emoji="✅" anchor="target" position="right" gap={16} />
+        <canvas>
+          <EmbedScope id="auth">
+            <Shape id="target" x={0} y={0} width={100} height={50} />
+          <Sticker id="badge" anchor="target" position="right" gap={16}>
+            ✅
+          </Sticker>
         </EmbedScope>
       </canvas>
     );
