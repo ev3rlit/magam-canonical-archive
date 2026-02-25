@@ -7,8 +7,9 @@ import { getLucideIconByName } from '@/utils/lucideRegistry';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { RenderableChild } from '@/utils/childComposition';
+import type { RenderableChild, RenderChildNode } from '@/utils/childComposition';
 import { stickerDebugLog } from '@/utils/stickerDebug';
+import { getStickerJitterAngle, resolveStickerRotation } from '@/utils/stickerJitter';
 
 interface StickerNodeData {
   label?: string;
@@ -84,6 +85,41 @@ const DEPTH_SHADOW_MAP: Record<NonNullable<StickerNodeData['shadow']>, string> =
 };
 
 const STICKER_CUTLINE = 'polygon(3% 11%, 10% 3%, 90% 2%, 97% 10%, 99% 30%, 98% 88%, 93% 99%, 7% 98%, 2% 86%, 1% 30%)';
+const INLINE_SVG_ALLOWED_TAGS = new Set([
+  'svg',
+  'g',
+  'defs',
+  'lineargradient',
+  'radialgradient',
+  'stop',
+  'pattern',
+  'clippath',
+  'mask',
+  'symbol',
+  'use',
+  'path',
+  'rect',
+  'circle',
+  'ellipse',
+  'line',
+  'polyline',
+  'polygon',
+  'text',
+  'tspan',
+  'title',
+  'desc',
+  'image',
+  'filter',
+  'fegaussianblur',
+  'feoffset',
+  'fecolormatrix',
+  'feblend',
+  'femorphology',
+  'fedropshadow',
+  'fecomposite',
+  'femerge',
+  'femergenode',
+]);
 
 function buildDiecutTextShadow(outlineColor: string, radius: number, depthShadow: string): string {
   const r = Math.max(1, Math.min(8, Math.round(radius)));
@@ -117,6 +153,217 @@ function composeDualShadow(edgeShadow: string, depthShadow: string): string {
   return `${edgeShadow}, ${depthShadow}`;
 }
 
+function toReactPropName(propName: string): string {
+  const lowered = propName.toLowerCase();
+  if (lowered === 'class') return 'className';
+  if (lowered === 'for') return 'htmlFor';
+  if (lowered === 'viewbox') return 'viewBox';
+  if (lowered === 'preserveaspectratio') return 'preserveAspectRatio';
+  if (lowered === 'xlink:href') return 'xlinkHref';
+  if (lowered === 'xml:space') return 'xmlSpace';
+  if (propName.startsWith('data-') || propName.startsWith('aria-')) return propName;
+  if (!propName.includes('-') && !propName.includes(':')) return propName;
+  return propName.replace(/[:-]+([a-zA-Z])/g, (_, char: string) => char.toUpperCase());
+}
+
+function normalizeInlineNodeProps(
+  props: RenderChildNode['props'] | undefined,
+): Record<string, unknown> {
+  const normalized: Record<string, unknown> = {};
+  if (!props) return normalized;
+
+  Object.entries(props).forEach(([propName, value]) => {
+    if (value === undefined || value === null) return;
+    if (propName === 'text' || propName === 'content') return;
+    if (propName.startsWith('on')) return;
+    normalized[toReactPropName(propName)] = value;
+  });
+
+  return normalized;
+}
+
+function isPrimitiveRenderableValue(value: unknown): value is string | number {
+  return typeof value === 'string' || typeof value === 'number';
+}
+
+function coerceNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function getInlineTextNodeValue(node: RenderChildNode): string | number | null {
+  if (!(node.type === 'text' || node.type === '#text')) {
+    return null;
+  }
+
+  const props = node.props ?? {};
+  const meaningfulKeys = Object.keys(props).filter((key) => props[key] !== undefined && props[key] !== null);
+  const isPureTextNode = meaningfulKeys.every(
+    (key) => key === 'text' || key === 'content' || key === 'children',
+  );
+
+  if (!isPureTextNode || (Array.isArray(node.children) && node.children.length > 0)) {
+    return null;
+  }
+
+  const value = props.text ?? props.content ?? props.children;
+  if (!isPrimitiveRenderableValue(value)) {
+    return null;
+  }
+
+  return value;
+}
+
+interface InlineSvgRenderOptions {
+  isRoot?: boolean;
+  rootStyle?: React.CSSProperties;
+}
+
+function renderInlineSvgNode(
+  node: RenderChildNode,
+  key: string,
+  options: InlineSvgRenderOptions = {},
+): React.ReactNode {
+  const textValue = getInlineTextNodeValue(node);
+  if (textValue !== null) {
+    return textValue;
+  }
+
+  if (typeof node.type !== 'string' || node.type.trim() === '') {
+    return null;
+  }
+
+  const tagName = node.type;
+  if (!INLINE_SVG_ALLOWED_TAGS.has(tagName.toLowerCase())) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[StickerNode] Unsupported inline SVG tag '${tagName}' ignored.`);
+    }
+    return null;
+  }
+
+  const normalizedProps = normalizeInlineNodeProps(node.props);
+
+  if (tagName.toLowerCase() === 'svg' && options.isRoot) {
+    const rawStyle = normalizedProps.style;
+    const normalizedStyle =
+      rawStyle && typeof rawStyle === 'object' && !Array.isArray(rawStyle)
+        ? rawStyle as React.CSSProperties
+        : {};
+    if (normalizedProps.preserveAspectRatio === undefined) {
+      normalizedProps.preserveAspectRatio = 'xMidYMid meet';
+    }
+    normalizedProps.style = {
+      ...normalizedStyle,
+      display: 'block',
+      width: '100%',
+      height: '100%',
+      maxWidth: '100%',
+      maxHeight: '100%',
+      ...options.rootStyle,
+    };
+  }
+
+  const propChildren = normalizedProps.children;
+  delete normalizedProps.children;
+
+  const renderedChildren: React.ReactNode[] = [];
+
+  if (Array.isArray(node.children) && node.children.length > 0) {
+    node.children.forEach((child, index) => {
+      renderedChildren.push(renderInlineSvgNode(child, `${key}-${index}`));
+    });
+  } else if (Array.isArray(propChildren)) {
+    propChildren.forEach((child, index) => {
+      if (isPrimitiveRenderableValue(child)) {
+        renderedChildren.push(child);
+        return;
+      }
+      if (child && typeof child === 'object' && 'type' in (child as Record<string, unknown>)) {
+        renderedChildren.push(renderInlineSvgNode(child as RenderChildNode, `${key}-${index}`));
+      }
+    });
+  } else if (isPrimitiveRenderableValue(propChildren)) {
+    renderedChildren.push(propChildren);
+  } else {
+    const fallbackText = node.props?.text ?? node.props?.content;
+    if (isPrimitiveRenderableValue(fallbackText)) {
+      renderedChildren.push(fallbackText);
+    }
+  }
+
+  if (renderedChildren.length > 0) {
+    return React.createElement(tagName, { ...normalizedProps, key }, ...renderedChildren);
+  }
+
+  return React.createElement(tagName, { ...normalizedProps, key });
+}
+
+interface AlphaOutlineFilterSpec {
+  dilateRadius: number;
+  hasDepth: boolean;
+  depthDy: number;
+  depthStdDeviation: number;
+  depthOpacity: number;
+}
+
+function resolveAlphaOutlineFilterSpec(
+  outlineWidth: number,
+  shadow: NonNullable<StickerNodeData['shadow']>,
+): AlphaOutlineFilterSpec {
+  const dilateRadius = Math.max(1, Math.min(7, outlineWidth * 0.45));
+
+  if (shadow === 'none') {
+    return {
+      dilateRadius,
+      hasDepth: false,
+      depthDy: 0,
+      depthStdDeviation: 0,
+      depthOpacity: 0,
+    };
+  }
+
+  if (shadow === 'sm') {
+    return {
+      dilateRadius,
+      hasDepth: true,
+      depthDy: 1.6,
+      depthStdDeviation: 1.8,
+      depthOpacity: 0.2,
+    };
+  }
+
+  if (shadow === 'md') {
+    return {
+      dilateRadius,
+      hasDepth: true,
+      depthDy: 2.4,
+      depthStdDeviation: 2.6,
+      depthOpacity: 0.3,
+    };
+  }
+
+  return {
+    dilateRadius,
+    hasDepth: true,
+    depthDy: 3.2,
+    depthStdDeviation: 3.2,
+    depthOpacity: 0.38,
+  };
+}
+
+function sanitizeFilterIdPart(value: string): string {
+  const safe = value.replace(/[^a-zA-Z0-9_-]/g, '-');
+  return safe.length > 0 ? safe : 'node';
+}
+
 const resolveRenderableChildren = (children: unknown): RenderableChild[] => {
   if (!Array.isArray(children)) {
     return [];
@@ -134,7 +381,8 @@ const resolveRenderableChildren = (children: unknown): RenderableChild[] => {
       candidate.type === 'text' ||
       candidate.type === 'lucide-icon' ||
       candidate.type === 'graph-image' ||
-      candidate.type === 'graph-markdown'
+      candidate.type === 'graph-markdown' ||
+      candidate.type === 'svg-inline'
     ) {
       filtered.push(candidate);
       return;
@@ -164,10 +412,21 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
         : true,
     [children, hasChildren],
   );
+  const isAlphaVisualMode = useMemo(
+    () => hasChildren && children.every((child) => child.type === 'svg-inline' || child.type === 'graph-image'),
+    [children],
+  );
 
   const fallbackLabel = data.label || 'Sticker';
   const outlineWidth = normalized.outlineWidth;
   const outlineColor = normalized.outlineColor;
+  const hasExplicitRotation = typeof data.rotation === 'number' && Number.isFinite(data.rotation);
+  const jitterSeed = nodeId || fallbackLabel;
+  const jitterRotation = useMemo(() => getStickerJitterAngle(jitterSeed), [jitterSeed]);
+  const effectiveRotation = useMemo(
+    () => resolveStickerRotation(data.rotation, jitterSeed),
+    [data.rotation, jitterSeed],
+  );
   const textStroke = Math.max(1, Math.min(14, Math.round(outlineWidth / 2)));
   const edgeShadow = EDGE_STROKE_SHADOW_MAP[normalized.shadow];
   const depthShadow = DEPTH_SHADOW_MAP[normalized.shadow];
@@ -179,6 +438,18 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
     () => buildDiecutTextShadow(outlineColor, textStroke, dualShadow),
     [dualShadow, outlineColor, textStroke],
   );
+  const alphaOutlineFilterSpec = useMemo(
+    () => resolveAlphaOutlineFilterSpec(outlineWidth, normalized.shadow),
+    [normalized.shadow, outlineWidth],
+  );
+  const alphaOutlineFilterId = useMemo(
+    () => `sticker-alpha-outline-${sanitizeFilterIdPart(nodeId || fallbackLabel)}`,
+    [fallbackLabel, nodeId],
+  );
+  const alphaOutlineFilterUrl = useMemo(
+    () => `url(#${alphaOutlineFilterId})`,
+    [alphaOutlineFilterId],
+  );
 
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
   const hasImageChild = useMemo(
@@ -187,6 +458,10 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
   );
   const hasMarkdownChild = useMemo(
     () => children.some((child) => child.type === 'graph-markdown'),
+    [children],
+  );
+  const hasInlineSvgChild = useMemo(
+    () => children.some((child) => child.type === 'svg-inline'),
     [children],
   );
 
@@ -206,16 +481,24 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
       childTypes: children.map((child) => child.type),
       hasChildren,
       isTextMode,
-      modeReason: isTextMode ? 'text-or-icon-only' : 'contains-markdown-or-image',
+      modeReason: isTextMode ? 'text-or-icon-only' : isAlphaVisualMode ? 'alpha-visual' : 'contains-markdown-or-image',
       hasImageChild,
       hasMarkdownChild,
+      hasInlineSvgChild,
+      isAlphaVisualMode,
       outlineWidth,
       outlineColor,
+      hasExplicitRotation,
+      jitterSeed,
+      jitterRotation,
+      effectiveRotation,
       textStroke,
       diecutTextShadow,
       edgeShadow,
       depthShadow,
       dualShadow,
+      alphaOutlineFilterId,
+      alphaOutlineFilterSpec,
       shadow: normalized.shadow,
       padding: normalized.padding,
       rotation: data.rotation ?? 0,
@@ -230,10 +513,15 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
     data.rotation,
     data.width,
     fallbackLabel,
+    hasExplicitRotation,
     hasImageChild,
     hasChildren,
     hasMarkdownChild,
+    hasInlineSvgChild,
+    isAlphaVisualMode,
     isTextMode,
+    jitterRotation,
+    jitterSeed,
     nodeId,
     dualShadow,
     edgeShadow,
@@ -243,6 +531,9 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
     normalized.shadow,
     outlineColor,
     outlineWidth,
+    alphaOutlineFilterId,
+    alphaOutlineFilterSpec,
+    effectiveRotation,
     textStroke,
   ]);
 
@@ -397,13 +688,61 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
                   style={{
                     width: data.width || child.width || 'auto',
                     height: data.height || child.height || 'auto',
-                    borderRadius: isJpgLike ? 0 : 12,
-                    filter: isJpgLike
-                      ? 'drop-shadow(0 4px 10px rgba(0,0,0,0.2))'
-                      : 'drop-shadow(0 2px 8px rgba(0,0,0,0.18))',
+                    borderRadius: isAlphaVisualMode
+                      ? 0
+                      : isJpgLike
+                        ? 0
+                        : 12,
+                    filter: isAlphaVisualMode
+                      ? alphaOutlineFilterUrl
+                      : isJpgLike
+                        ? 'drop-shadow(0 4px 10px rgba(0,0,0,0.2))'
+                        : 'drop-shadow(0 2px 8px rgba(0,0,0,0.18))',
                   }}
                   onError={() => markImageError(imageErrorKey)}
                 />
+              );
+            }
+
+            if (child.type === 'svg-inline') {
+              const svgWidth = Math.max(
+                72,
+                Math.min(
+                  240,
+                  Math.round(coerceNumber(data.width) ?? coerceNumber(child.node.props?.width) ?? 140),
+                ),
+              );
+              const svgHeight = Math.max(
+                72,
+                Math.min(
+                  200,
+                  Math.round(coerceNumber(data.height) ?? coerceNumber(child.node.props?.height) ?? 110),
+                ),
+              );
+
+              return (
+                <div
+                  key={`svg-inline-${index}`}
+                  className="inline-flex items-center justify-center"
+                  style={{
+                    width: svgWidth,
+                    height: svgHeight,
+                  }}
+                >
+                  {renderInlineSvgNode(
+                    child.node,
+                    `svg-inline-${index}-root`,
+                    {
+                      isRoot: true,
+                      rootStyle: isAlphaVisualMode
+                        ? {
+                            overflow: 'visible',
+                            filter: alphaOutlineFilterUrl,
+                          }
+                        : undefined,
+                    },
+                  )}
+                </div>
               );
             }
 
@@ -431,15 +770,15 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: isTextMode ? 'transparent' : '#fff',
-    padding: isTextMode ? 0 : Math.max(2, Math.round(outlineWidth)),
-    borderRadius: isTextMode ? undefined : 24,
-    clipPath: isTextMode ? undefined : STICKER_CUTLINE,
-    WebkitClipPath: isTextMode ? undefined : STICKER_CUTLINE,
-    border: isTextMode
+    background: (isTextMode || isAlphaVisualMode) ? 'transparent' : '#fff',
+    padding: (isTextMode || isAlphaVisualMode) ? 0 : Math.max(2, Math.round(outlineWidth)),
+    borderRadius: (isTextMode || isAlphaVisualMode) ? undefined : 24,
+    clipPath: (isTextMode || isAlphaVisualMode) ? undefined : STICKER_CUTLINE,
+    WebkitClipPath: (isTextMode || isAlphaVisualMode) ? undefined : STICKER_CUTLINE,
+    border: (isTextMode || isAlphaVisualMode)
       ? 'none'
       : `${Math.max(2, Math.round(outlineWidth / 1.5))}px solid ${outlineColor}`,
-    boxShadow: dualShadow,
+    boxShadow: isAlphaVisualMode ? 'none' : dualShadow,
     minWidth: data.width ? `${data.width}px` : undefined,
     minHeight: data.height ? `${data.height}px` : undefined,
     borderColor: outlineColor,
@@ -453,8 +792,8 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
     padding: isTextMode
       ? `${Math.max(2, Math.round((normalized.padding || 0) / 2))}px ${Math.max(4, normalized.padding || 0)}px`
       : `${Math.max(2, normalized.padding || 0)}px ${Math.max(4, normalized.padding || 0)}px`,
-    background: isTextMode ? 'transparent' : 'linear-gradient(180deg, rgba(255,255,255,0.95) 0%, #fefefe 100%)',
-    borderRadius: isTextMode ? undefined : 18,
+    background: (isTextMode || isAlphaVisualMode) ? 'transparent' : 'linear-gradient(180deg, rgba(255,255,255,0.95) 0%, #fefefe 100%)',
+    borderRadius: (isTextMode || isAlphaVisualMode) ? undefined : 18,
     minWidth: 24,
     minHeight: 24,
   };
@@ -468,15 +807,81 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
     minHeight: 24,
   };
 
-  if (isTextMode) {
+  const alphaOutlineFilterDefs = isAlphaVisualMode
+    ? (
+      <svg
+        width="0"
+        height="0"
+        aria-hidden
+        focusable="false"
+        style={{ position: 'absolute', pointerEvents: 'none', overflow: 'hidden' }}
+      >
+        <defs>
+          <filter
+            id={alphaOutlineFilterId}
+            x="-40%"
+            y="-40%"
+            width="180%"
+            height="180%"
+            colorInterpolationFilters="sRGB"
+          >
+            <feMorphology
+              in="SourceAlpha"
+              operator="dilate"
+              radius={alphaOutlineFilterSpec.dilateRadius}
+              result="outlineDilated"
+            />
+            <feComposite
+              in="outlineDilated"
+              in2="SourceAlpha"
+              operator="out"
+              result="outlineRing"
+            />
+            <feFlood floodColor={outlineColor} result="outlineColorLayer" />
+            <feComposite in="outlineColorLayer" in2="outlineRing" operator="in" result="outlineLayer" />
+            <feMerge result="baseComposite">
+              <feMergeNode in="outlineLayer" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+            {alphaOutlineFilterSpec.hasDepth ? (
+              <feDropShadow
+                in="baseComposite"
+                dx="0"
+                dy={alphaOutlineFilterSpec.depthDy}
+                stdDeviation={alphaOutlineFilterSpec.depthStdDeviation}
+                floodColor="#0f172a"
+                floodOpacity={alphaOutlineFilterSpec.depthOpacity}
+              />
+            ) : null}
+          </filter>
+        </defs>
+      </svg>
+    )
+    : null;
+
+  if (isTextMode || isAlphaVisualMode) {
     return (
       <BaseNode
         selected={selected}
-        style={{ transform: data.rotation ? `rotate(${data.rotation}deg)` : undefined }}
+        style={{ transform: effectiveRotation !== 0 ? `rotate(${effectiveRotation}deg)` : undefined }}
         startHandle
         endHandle
       >
-        <div style={textModeStyle}>{renderContent()}</div>
+        {alphaOutlineFilterDefs}
+        <div
+          style={isAlphaVisualMode
+            ? {
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: `${Math.max(0, Math.round((normalized.padding || 0) / 3))}px`,
+                minWidth: 24,
+                minHeight: 24,
+              }
+            : textModeStyle}
+        >
+          {renderContent()}
+        </div>
       </BaseNode>
     );
   }
@@ -484,7 +889,7 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
   return (
     <BaseNode
       selected={selected}
-      style={{ transform: data.rotation ? `rotate(${data.rotation}deg)` : undefined }}
+      style={{ transform: effectiveRotation !== 0 ? `rotate(${effectiveRotation}deg)` : undefined }}
       startHandle
       endHandle
     >

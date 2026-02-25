@@ -18,7 +18,8 @@ export type RenderableChild =
   | { type: 'text'; text: string }
   | { type: 'lucide-icon'; name: string }
   | { type: 'graph-image'; src: string; alt?: string; width?: number; height?: number }
-  | { type: 'graph-markdown'; content: string };
+  | { type: 'graph-markdown'; content: string }
+  | { type: 'svg-inline'; node: RenderChildNode };
 
 const LUCIDE_BASE_CLASS = 'lucide';
 
@@ -164,6 +165,11 @@ export function parseStickerChildren(
       if (typeof child.props?.content === 'string') {
         parsed.push({ type: 'graph-markdown', content: child.props.content });
       }
+      return;
+    }
+
+    if (child.type === 'svg') {
+      parsed.push({ type: 'svg-inline', node: child });
       return;
     }
 

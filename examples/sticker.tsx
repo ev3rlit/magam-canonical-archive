@@ -3,7 +3,7 @@ import { Canvas, Edge, Image, Markdown, Sticker } from '@magam/core';
 /**
  * Sticker Example
  *
- * Demonstrates text, emoji, image, and markdown sticker children.
+ * Demonstrates text, emoji, image, markdown, and inline SVG sticker children.
  */
 export default function StickerExample() {
   const inlineStickerImage =
@@ -37,11 +37,6 @@ export default function StickerExample() {
         id="sticker-emoji"
         x={270}
         y={84}
-        outlineColor="#ffffff"
-        outlineWidth={10}
-        shadow="lg"
-        padding={8}
-        rotation={12}
       >
         🔥
       </Sticker>
@@ -50,11 +45,6 @@ export default function StickerExample() {
         id="sticker-image"
         x={480}
         y={76}
-        outlineColor="#ffffff"
-        outlineWidth={12}
-        shadow="md"
-        padding={8}
-        rotation={-6}
       >
         <Image src={inlineStickerImage} alt="Inline sample image" width={180} height={110} />
       </Sticker>
@@ -63,19 +53,49 @@ export default function StickerExample() {
         id="sticker-markdown"
         x={700}
         y={84}
-        outlineColor="#ffffff"
-        outlineWidth={9}
-        shadow="md"
-        padding={8}
-        rotation={-2}
       >
         Quick
-        <Markdown>**Ready**</Markdown>
+        <Markdown>{`**Ready**`}</Markdown>
+      </Sticker>
+
+      <Sticker
+        id="sticker-svg"
+        x={920}
+        y={82}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="128"
+          height="98"
+          viewBox="-66 -66 132 132"
+          role="img"
+          aria-label="Inline SVG badge"
+        >
+          <path
+            d="M0 -60 L14 -18 L58 -18 L22 8 L36 50 L0 24 L-36 50 L-22 8 L-58 -18 L-14 -18 Z"
+            fill="#facc15"
+            stroke="#0f172a"
+            strokeWidth="8"
+            strokeLinejoin="round"
+          />
+          <text
+            x="0"
+            y="8"
+            textAnchor="middle"
+            fontSize="18"
+            fontFamily="Arial, sans-serif"
+            fontWeight="700"
+            fill="#0f172a"
+          >
+            SVG
+          </text>
+        </svg>
       </Sticker>
 
       <Edge from="sticker-text" to="sticker-emoji" />
       <Edge from="sticker-emoji" to="sticker-image" />
       <Edge from="sticker-image" to="sticker-markdown" />
+      <Edge from="sticker-markdown" to="sticker-svg" />
     </Canvas>
   );
 }

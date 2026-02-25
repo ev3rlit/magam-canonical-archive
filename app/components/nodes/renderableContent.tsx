@@ -39,6 +39,9 @@ export function renderNodeContent({
       case 'graph-markdown': {
         return null;
       }
+      case 'svg-inline': {
+        return null;
+      }
       default:
         return (
           <span key={`text-${index}`} className={textClassName} style={textStyle}>

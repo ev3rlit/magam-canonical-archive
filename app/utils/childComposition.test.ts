@@ -88,4 +88,22 @@ describe('childComposition', () => {
     expect(called).toBe(1);
     console.warn = originalWarn;
   });
+
+  it('parses non-lucide svg as inline svg sticker child', () => {
+    const svgNode: RenderChildNode = {
+      type: 'svg',
+      props: { viewBox: '0 0 24 24', width: 24, height: 24 },
+      children: [
+        {
+          type: 'path',
+          props: { d: 'M4 12h16', stroke: '#111827', strokeWidth: 2 },
+          children: [],
+        },
+      ],
+    };
+
+    expect(parseStickerChildren([svgNode], undefined)).toEqual([
+      { type: 'svg-inline', node: svgNode },
+    ]);
+  });
 });

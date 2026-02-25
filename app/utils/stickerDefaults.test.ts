@@ -5,10 +5,10 @@ describe('normalizeStickerData', () => {
   it('applies sticker defaults', () => {
     const result = normalizeStickerData({});
 
-    expect(result.outlineWidth).toBe(6);
+    expect(result.outlineWidth).toBe(8);
     expect(result.outlineColor).toBe('#ffffff');
-    expect(result.shadow).toBe('lg');
-    expect(result.padding).toBe(8);
+    expect(result.shadow).toBe('md');
+    expect(result.padding).toBe(12);
   });
 
   it('keeps explicit style overrides', () => {
@@ -32,13 +32,13 @@ describe('normalizeStickerData', () => {
     const tooSmall = normalizeStickerData({ outlineWidth: -3 });
 
     expect(tooLarge.outlineWidth).toBe(14);
-    expect(tooSmall.outlineWidth).toBe(1);
+    expect(tooSmall.outlineWidth).toBe(8);
   });
 
   it('normalizes missing style values with sane fallbacks', () => {
     const result = normalizeStickerData({ outlineWidth: 'bad' as any, padding: 'bad' as any });
 
-    expect(result.outlineWidth).toBe(6);
-    expect(result.padding).toBe(8);
+    expect(result.outlineWidth).toBe(8);
+    expect(result.padding).toBe(12);
   });
 });
