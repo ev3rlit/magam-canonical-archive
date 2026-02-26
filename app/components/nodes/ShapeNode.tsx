@@ -7,6 +7,11 @@ import { useGraphStore } from '@/store/graph';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import type { RenderableChild } from '@/utils/childComposition';
 import { renderNodeContent } from './renderableContent';
+import type { FontFamilyPreset } from '@magam/core';
+import {
+  hasExplicitFontFamilyClass,
+  resolveFontFamilyCssValue,
+} from '@/utils/fontHierarchy';
 
 interface PortData {
   id: string;
@@ -26,6 +31,7 @@ interface ShapeNodeData {
   labelColor?: string;
   labelFontSize?: number;
   labelBold?: boolean;
+  fontFamily?: FontFamilyPreset;
   className?: string;
   ports?: PortData[];
   imageSrc?: string;
@@ -83,6 +89,16 @@ const getHandleConfig = (pos: string = 'top') => {
 
 const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
   const currentFile = useGraphStore((state) => state.currentFile);
+  const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
+  const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
+  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
+  const resolvedFontFamily = shouldApplyHierarchy
+    ? resolveFontFamilyCssValue({
+      nodeFontFamily: data.fontFamily,
+      canvasFontFamily,
+      globalFontFamily,
+    })
+    : undefined;
   const shapeClasses = clsx(
     'flex items-center justify-center transition-all duration-200',
     {
@@ -112,6 +128,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     color: data.labelColor,
     fontSize: data.labelFontSize,
     fontWeight: data.labelBold ? 'bold' : 'normal',
+    fontFamily: resolvedFontFamily,
   };
 
   // Render ports

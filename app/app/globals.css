@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+    --font-preset-hand-gaegu: var(--font-gaegu), "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Segoe UI", system-ui, sans-serif;
+    --font-preset-hand-caveat: var(--font-caveat), "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Segoe UI", system-ui, sans-serif;
+    --font-preset-sans-inter: var(--font-inter), "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Segoe UI", system-ui, sans-serif;
+}
+
 /* ========================================
    Semantic Zoom: Bubble Label (Opt-in)
    Shown as floating overlay when:

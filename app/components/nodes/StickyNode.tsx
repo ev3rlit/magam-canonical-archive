@@ -5,15 +5,33 @@ import { twMerge } from 'tailwind-merge';
 import { BaseNode } from './BaseNode';
 import type { RenderableChild } from '@/utils/childComposition';
 import { renderNodeContent } from './renderableContent';
+import { useGraphStore } from '@/store/graph';
+import type { FontFamilyPreset } from '@magam/core';
+import {
+  hasExplicitFontFamilyClass,
+  resolveFontFamilyCssValue,
+} from '@/utils/fontHierarchy';
 
 interface StickyNodeData {
   label: string;
   color?: string;
+  fontFamily?: FontFamilyPreset;
   className?: string; // Support custom Tailwind classes
   children?: RenderableChild[];
 }
 
 const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
+  const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
+  const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
+  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
+  const resolvedFontFamily = shouldApplyHierarchy
+    ? resolveFontFamilyCssValue({
+      nodeFontFamily: data.fontFamily,
+      canvasFontFamily,
+      globalFontFamily,
+    })
+    : undefined;
+
   return (
     <BaseNode
       className={twMerge(
@@ -38,6 +56,7 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
             fallbackLabel: data.label,
             iconClassName: 'w-4 h-4 text-slate-600 shrink-0',
             textClassName: 'text-base leading-relaxed font-medium text-slate-800',
+            textStyle: { fontFamily: resolvedFontFamily },
           })}
         </div>
       </div>

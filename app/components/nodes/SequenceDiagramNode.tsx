@@ -1,5 +1,11 @@
 import React, { memo } from 'react';
 import { NodeProps } from 'reactflow';
+import { useGraphStore } from '@/store/graph';
+import type { FontFamilyPreset } from '@magam/core';
+import {
+  hasExplicitFontFamilyClass,
+  resolveFontFamilyCssValue,
+} from '@/utils/fontHierarchy';
 
 interface ParticipantData {
   id: string;
@@ -20,6 +26,7 @@ interface SequenceDiagramData {
   participantSpacing: number;
   messageSpacing: number;
   className?: string;
+  fontFamily?: FontFamilyPreset;
 }
 
 const PARTICIPANT_WIDTH = 150;
@@ -30,6 +37,16 @@ const SELF_LOOP_HEIGHT = 30;
 
 const SequenceDiagramNode = ({ data }: NodeProps<SequenceDiagramData>) => {
   const { participants, messages, participantSpacing, messageSpacing } = data;
+  const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
+  const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
+  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
+  const resolvedFontFamily = shouldApplyHierarchy
+    ? resolveFontFamilyCssValue({
+      nodeFontFamily: data.fontFamily,
+      canvasFontFamily,
+      globalFontFamily,
+    })
+    : undefined;
 
   if (participants.length === 0) return null;
 
@@ -67,7 +84,10 @@ const SequenceDiagramNode = ({ data }: NodeProps<SequenceDiagramData>) => {
                 height: PARTICIPANT_HEIGHT,
               }}
             >
-              <span className="text-sm font-semibold text-slate-700 select-none">
+              <span
+                className="text-sm font-semibold text-slate-700 select-none"
+                style={{ fontFamily: resolvedFontFamily }}
+              >
                 {p.label}
               </span>
             </div>
@@ -95,7 +115,10 @@ const SequenceDiagramNode = ({ data }: NodeProps<SequenceDiagramData>) => {
                 height: PARTICIPANT_HEIGHT,
               }}
             >
-              <span className="text-sm font-semibold text-slate-700 select-none">
+              <span
+                className="text-sm font-semibold text-slate-700 select-none"
+                style={{ fontFamily: resolvedFontFamily }}
+              >
                 {p.label}
               </span>
             </div>
@@ -117,6 +140,7 @@ const SequenceDiagramNode = ({ data }: NodeProps<SequenceDiagramData>) => {
               y={msgY}
               label={msg.label}
               messageType={msg.type}
+              fontFamily={resolvedFontFamily}
             />
           );
         }
@@ -132,6 +156,7 @@ const SequenceDiagramNode = ({ data }: NodeProps<SequenceDiagramData>) => {
             y={msgY}
             label={msg.label}
             messageType={msg.type}
+            fontFamily={resolvedFontFamily}
           />
         );
       })}
@@ -146,12 +171,14 @@ function MessageArrow({
   y,
   label,
   messageType,
+  fontFamily,
 }: {
   fromX: number;
   toX: number;
   y: number;
   label?: string;
   messageType: string;
+  fontFamily?: string;
 }) {
   const leftX = Math.min(fromX, toX);
   const width = Math.abs(toX - fromX);
@@ -212,7 +239,7 @@ function MessageArrow({
             textAnchor="middle"
             fill="#334155"
             fontSize={12}
-            fontFamily="Inter, system-ui, sans-serif"
+            fontFamily={fontFamily}
           >
             {label}
           </text>
@@ -228,11 +255,13 @@ function SelfMessageArrow({
   y,
   label,
   messageType,
+  fontFamily,
 }: {
   x: number;
   y: number;
   label?: string;
   messageType: string;
+  fontFamily?: string;
 }) {
   const width = SELF_LOOP_WIDTH * 2 + 20;
   const height = SELF_LOOP_HEIGHT + 30;
@@ -269,7 +298,7 @@ function SelfMessageArrow({
             textAnchor="middle"
             fill="#334155"
             fontSize={12}
-            fontFamily="Inter, system-ui, sans-serif"
+            fontFamily={fontFamily}
           >
             {label}
           </text>

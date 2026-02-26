@@ -9,11 +9,17 @@ import { useNodeNavigation } from '@/contexts/NavigationContext';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import { useGraphStore } from '@/store/graph';
 import type { RenderableChild } from '@/utils/childComposition';
+import type { FontFamilyPreset } from '@magam/core';
+import {
+    hasExplicitFontFamilyClass,
+    resolveFontFamilyCssValue,
+} from '@/utils/fontHierarchy';
 
 interface MarkdownNodeData {
     label: string;
     /** Enable bubble overlay when zoomed out. Text auto-extracted from label. */
     bubble?: boolean;
+    fontFamily?: FontFamilyPreset;
     className?: string;
     variant?: 'default' | 'minimal';
     children?: RenderableChild[];
@@ -21,6 +27,17 @@ interface MarkdownNodeData {
 
 const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
     const { navigateToNode } = useNodeNavigation();
+    const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
+    const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
+    const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
+    const resolvedFontFamily = shouldApplyHierarchy
+        ? resolveFontFamilyCssValue({
+            nodeFontFamily: data.fontFamily,
+            canvasFontFamily,
+            globalFontFamily,
+        })
+        : undefined;
+
     const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
         e.preventDefault();
         e.stopPropagation();
@@ -88,7 +105,10 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
     }), [handleLinkClick]);
 
     const markdownContent = useMemo(() => (
-        <div className="prose prose-sm prose-slate max-w-none pointer-events-none select-none">
+        <div
+            className="prose prose-sm prose-slate max-w-none pointer-events-none select-none"
+            style={{ fontFamily: resolvedFontFamily }}
+        >
             <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 urlTransform={(url) => url}
@@ -97,7 +117,7 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
                 {data.label}
             </ReactMarkdown>
         </div>
-    ), [data.label, components]);
+    ), [data.label, components, resolvedFontFamily]);
 
     return (
         <BaseNode

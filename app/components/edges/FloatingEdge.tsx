@@ -1,6 +1,9 @@
 import React, { useMemo } from 'react';
-import { EdgeProps, useNodes, getBezierPath, EdgeLabelRenderer } from 'reactflow';
+import { EdgeProps, useNodes, EdgeLabelRenderer } from 'reactflow';
 import { getNodeCenter, getNodeIntersection, getFloatingEdgePath } from './utils';
+import type { FontFamilyPreset } from '@magam/core';
+import { useGraphStore } from '@/store/graph';
+import { resolveFontFamilyCssValue } from '@/utils/fontHierarchy';
 
 interface FloatingEdgeData {
     sourceType?: string;
@@ -19,6 +22,14 @@ export default function FloatingEdge({
     data,
 }: EdgeProps<FloatingEdgeData>) {
     const nodes = useNodes();
+    const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
+    const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
+    const edgeFontFamily = labelStyle?.fontFamily as FontFamilyPreset | undefined;
+    const resolvedLabelFontFamily = resolveFontFamilyCssValue({
+        nodeFontFamily: edgeFontFamily,
+        canvasFontFamily,
+        globalFontFamily,
+    });
 
     const { edgePath, labelX, labelY } = useMemo(() => {
         const sourceNode = nodes.find((n) => n.id === source);
@@ -88,7 +99,7 @@ export default function FloatingEdge({
                         }}
                         className="nodrag nopan px-2 py-1 rounded text-xs font-medium bg-white/90 backdrop-blur-sm shadow-sm"
                     >
-                        <span style={labelStyle}>{label}</span>
+                        <span style={{ ...labelStyle, fontFamily: resolvedLabelFontFamily }}>{label}</span>
                     </div>
                 </EdgeLabelRenderer>
             )}

@@ -1,8 +1,18 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Caveat, Gaegu, Inter } from 'next/font/google';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'] });
+const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
+const gaegu = Gaegu({
+  subsets: ['latin'],
+  variable: '--font-gaegu',
+  weight: ['400', '700'],
+});
+const caveat = Caveat({
+  subsets: ['latin'],
+  variable: '--font-caveat',
+  weight: ['400', '700'],
+});
 
 export const metadata: Metadata = {
   title: '최범휘',
@@ -16,7 +26,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>{children}</body>
+      <body className={`${inter.className} ${inter.variable} ${gaegu.variable} ${caveat.variable}`}>{children}</body>
     </html>
   );
 }

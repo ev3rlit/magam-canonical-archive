@@ -3,6 +3,7 @@
 import React from 'react';
 import { MousePointer2, Hand, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { cn } from '@/utils/cn';
+import { FontSelector } from './FontSelector';
 
 
 export type InteractionMode = 'pointer' | 'hand';
@@ -57,6 +58,12 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                 title="Fit View (Space)"
                 icon={<Maximize className="w-4 h-4" />}
             />
+
+            {/* Divider */}
+            <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+
+            {/* Global Font Selector */}
+            <FontSelector />
 
         </div>
     );

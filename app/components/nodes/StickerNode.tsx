@@ -10,6 +10,11 @@ import remarkGfm from 'remark-gfm';
 import type { RenderableChild, RenderChildNode } from '@/utils/childComposition';
 import { stickerDebugLog } from '@/utils/stickerDebug';
 import { getStickerJitterAngle, resolveStickerRotation } from '@/utils/stickerJitter';
+import type { FontFamilyPreset } from '@magam/core';
+import {
+  hasExplicitFontFamilyClass,
+  resolveFontFamilyCssValue,
+} from '@/utils/fontHierarchy';
 
 interface StickerNodeData {
   label?: string;
@@ -20,6 +25,7 @@ interface StickerNodeData {
   outlineColor?: string;
   shadow?: 'none' | 'sm' | 'md' | 'lg';
   padding?: number;
+  fontFamily?: FontFamilyPreset;
   children?: RenderableChild[];
   className?: string;
 }
@@ -401,8 +407,18 @@ const resolveImageErrorStateKey = (src: string, index: number) => `${src}:${inde
 const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
   const nodeId = useNodeId();
   const currentFile = useGraphStore((state) => state.currentFile);
+  const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
+  const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
   const normalized = useMemo(() => normalizeStickerData(data as Record<string, any>), [data]);
   const children = useMemo(() => resolveRenderableChildren(data.children), [data.children]);
+  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
+  const resolvedFontFamily = shouldApplyHierarchy
+    ? resolveFontFamilyCssValue({
+      nodeFontFamily: data.fontFamily,
+      canvasFontFamily,
+      globalFontFamily,
+    })
+    : undefined;
 
   const hasChildren = children.length > 0;
   const isTextMode = useMemo(
@@ -582,6 +598,7 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
           color: '#111827',
           fontSize: hasChildren ? 22 : 20,
           fontWeight: 700,
+          fontFamily: resolvedFontFamily,
           letterSpacing: '0.02em',
           whiteSpace: 'pre-wrap',
           textAlign: 'center',
@@ -613,13 +630,14 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
       ? (
         <span
           key="text-fallback"
-          style={{
-            color: '#111827',
-            fontSize: 20,
-            fontWeight: 700,
-            whiteSpace: 'pre-wrap',
-            lineHeight: 1.2,
-            textAlign: 'center',
+        style={{
+          color: '#111827',
+          fontSize: 20,
+          fontWeight: 700,
+          fontFamily: resolvedFontFamily,
+          whiteSpace: 'pre-wrap',
+          lineHeight: 1.2,
+          textAlign: 'center',
             textShadow: dualShadow,
           }}
         >
@@ -635,6 +653,7 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
                   key={`text-${index}`}
                   style={{
                     fontSize: 18,
+                    fontFamily: resolvedFontFamily,
                     lineHeight: 1.2,
                     color: '#111827',
                     whiteSpace: 'pre-wrap',
@@ -751,7 +770,7 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
                 <div
                   key={`markdown-${index}`}
                   className="prose prose-slate prose-sm max-w-none"
-                  style={{ lineHeight: 1.2 }}
+                  style={{ lineHeight: 1.2, fontFamily: resolvedFontFamily }}
                 >
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {child.content}
@@ -779,6 +798,7 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
       ? 'none'
       : `${Math.max(2, Math.round(outlineWidth / 1.5))}px solid ${outlineColor}`,
     boxShadow: isAlphaVisualMode ? 'none' : dualShadow,
+    fontFamily: resolvedFontFamily,
     minWidth: data.width ? `${data.width}px` : undefined,
     minHeight: data.height ? `${data.height}px` : undefined,
     borderColor: outlineColor,

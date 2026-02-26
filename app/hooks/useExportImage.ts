@@ -174,6 +174,23 @@ function isClipboardApiAvailable(): boolean {
   );
 }
 
+async function waitForFontsReady(): Promise<void> {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const fontsApi = document.fonts;
+  if (!fontsApi || typeof fontsApi.ready === 'undefined') {
+    return;
+  }
+
+  try {
+    await fontsApi.ready;
+  } catch {
+    // Ignore font readiness failures; export should still proceed.
+  }
+}
+
 function mergeBounds(bounds: NodeBoundsLike[]): NodeBoundsLike | null {
   if (bounds.length === 0) {
     return null;
@@ -446,6 +463,8 @@ export function useExportImage(): ExportReturn {
     const restoreSelectionStyles = stripSelectionStylesForCapture(captureRoot, selectedNodeIds);
 
     try {
+      await waitForFontsReady();
+
       if (options.format === 'png') {
         return await toPng(captureTarget, captureOptions);
       }
