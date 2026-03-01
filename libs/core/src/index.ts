@@ -5,6 +5,26 @@ export * from './components/Text';
 export * from './components/Image';
 export * from './components/Sticker';
 export * from './components/WashiTape';
+export {
+  segment,
+  polar,
+  attach,
+  anchor,
+  smooth,
+  torn,
+  texture,
+} from './components/WashiTape.helpers';
+export type {
+  Point,
+  SegmentAt,
+  PolarAt,
+  AttachAt,
+  AnchorAt,
+  AtDef,
+  EdgeDef,
+  TextureDef,
+  AnchorPosition as WashiAnchorPosition,
+} from './components/WashiTape.helpers';
 export * from './material/types';
 export * from './material/presets';
 export * from './material/helpers';
