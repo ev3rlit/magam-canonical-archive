@@ -144,6 +144,19 @@ function resolveNodeMeasurement(
     return measuredValue;
   }
 
+  if (node.type === 'washi-tape') {
+    const geometry = (node.data as {
+      resolvedGeometry?: { length?: unknown; thickness?: unknown };
+    } | undefined)?.resolvedGeometry;
+    const geometryValue = dimension === 'width'
+      ? geometry?.length
+      : geometry?.thickness;
+
+    if (typeof geometryValue === 'number' && Number.isFinite(geometryValue) && geometryValue > 0) {
+      return geometryValue;
+    }
+  }
+
   return DEFAULT_MEASURED_DIMENSION;
 }
 

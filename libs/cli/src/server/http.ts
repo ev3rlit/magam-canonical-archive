@@ -186,7 +186,8 @@ function injectSourceMeta(node: RenderLikeNode, mindmapScopeId?: string): void {
     node.type === 'graph-shape' ||
     node.type === 'graph-text' ||
     node.type === 'graph-image' ||
-    node.type === 'graph-sequence';
+    node.type === 'graph-sequence' ||
+    node.type === 'graph-washi-tape';
 
   if (isRenderableNode) {
     const sourceId = (node.props.id as string | undefined) ?? '';

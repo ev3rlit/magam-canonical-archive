@@ -7,9 +7,11 @@ export default tseslint.config(
     {
         ignores: [
             "**/dist",
+            "**/build",
             "**/out-tsc",
             "**/.next",
-            "**/node_modules"
+            "**/node_modules",
+            "**/coverage"
         ]
     },
     {

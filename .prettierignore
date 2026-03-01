@@ -1,5 +1,9 @@
 # Add files here to ignore them from prettier formatting
 /dist
+/build
 /coverage
+/.next
+/node_modules
 /.nx/cache
 /.nx/workspace-data
+bun.lock

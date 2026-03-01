@@ -1,5 +1,7 @@
 import { Node } from 'reactflow';
 import { MindMapGroup } from '@/store/graph';
+import type { AtDef } from '@/types/washiTape';
+import { getWashiNodePosition, resolveWashiGeometry } from './washiTapeGeometry';
 
 export type AnchorPosition =
     | 'top' | 'bottom' | 'left' | 'right'
@@ -19,6 +21,43 @@ interface NodeRect {
     height: number;
 }
 
+interface MeasuredNode {
+    measured?: {
+        width?: number;
+        height?: number;
+    };
+}
+
+function getNodeDataSize(node: Node): { width?: number; height?: number } {
+    const data = node.data;
+    if (!data || typeof data !== 'object') {
+        return {};
+    }
+    const width = (data as { width?: unknown }).width;
+    const height = (data as { height?: unknown }).height;
+    return {
+        width: typeof width === 'number' ? width : undefined,
+        height: typeof height === 'number' ? height : undefined,
+    };
+}
+
+function getNodeSize(node: Node, fallback = { width: 150, height: 50 }): { width: number; height: number } {
+    const measured = (node as Node & MeasuredNode).measured;
+    const dataSize = getNodeDataSize(node);
+    return {
+        width: measured?.width ?? node.width ?? dataSize.width ?? fallback.width,
+        height: measured?.height ?? node.height ?? dataSize.height ?? fallback.height,
+    };
+}
+
+function isAttachAt(value: unknown): value is Extract<AtDef, { type: 'attach' }> {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+    const candidate = value as { type?: unknown; target?: unknown };
+    return candidate.type === 'attach' && typeof candidate.target === 'string';
+}
+
 /**
  * Calculate the bounding box for a group of nodes
  */
@@ -31,10 +70,7 @@ export function calculateGroupBoundingBox(nodes: Node[]): NodeRect {
     let maxX = -Infinity, maxY = -Infinity;
 
     nodes.forEach(node => {
-        // @ts-ignore - measured is added by React Flow after rendering
-        const w = node.measured?.width ?? node.width ?? node.data?.width ?? 150;
-        // @ts-ignore
-        const h = node.measured?.height ?? node.height ?? node.data?.height ?? 50;
+        const { width: w, height: h } = getNodeSize(node);
 
         minX = Math.min(minX, node.position.x);
         minY = Math.min(minY, node.position.y);
@@ -391,12 +427,51 @@ export function resolveAnchors(nodes: Node[]): Node[] {
     return sortedNodes.map((node) => {
         const anchor = node.data?.anchor as string | undefined;
         const position = node.data?.position as AnchorPosition | undefined;
+        const at = (node.data as { at?: unknown } | undefined)?.at;
+        const { width, height } = getNodeSize(node);
 
-        // Get node dimensions (use measured if available, otherwise fallback)
-        // @ts-ignore - measured is added by React Flow after rendering
-        const width = node.measured?.width ?? node.width ?? node.data?.width ?? 150;
-        // @ts-ignore
-        const height = node.measured?.height ?? node.height ?? node.data?.height ?? 50;
+        if (
+            node.type === 'washi-tape'
+            && isAttachAt(at)
+        ) {
+            const runtimeNodes = sortedNodes.map((candidate) => {
+                const resolved = resolvedPositions.get(candidate.id);
+                if (!resolved) {
+                    return candidate;
+                }
+                return {
+                    ...candidate,
+                    position: { x: resolved.x, y: resolved.y },
+                    width: resolved.width,
+                    height: resolved.height,
+                };
+            });
+            const geometry = resolveWashiGeometry({
+                at,
+                nodes: runtimeNodes,
+                seed: (node.data as { seed?: string | number } | undefined)?.seed,
+                fallbackPosition: node.position,
+            });
+            const attachedPosition = getWashiNodePosition(geometry);
+            const resolvedWidth = Math.max(width, geometry.length);
+            const resolvedHeight = Math.max(height, geometry.thickness);
+
+            resolvedPositions.set(node.id, {
+                x: attachedPosition.x,
+                y: attachedPosition.y,
+                width: resolvedWidth,
+                height: resolvedHeight,
+            });
+
+            return {
+                ...node,
+                position: attachedPosition,
+                data: {
+                    ...(node.data || {}),
+                    resolvedGeometry: geometry,
+                },
+            };
+        }
 
         // Case 1: No anchor - store position as-is (even if 0,0)
         if (!anchor) {

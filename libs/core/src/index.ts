@@ -4,6 +4,7 @@ export * from './components/Shape';
 export * from './components/Text';
 export * from './components/Image';
 export * from './components/Sticker';
+export * from './components/WashiTape';
 export * from './components/Group';
 export * from './components/MindMap';
 export * from './components/Node';

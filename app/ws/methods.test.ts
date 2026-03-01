@@ -99,6 +99,34 @@ describe('RPC editing methods', () => {
     expect(patched.includes('position={"right"}')).toBe(true);
   });
 
+  it('node.create: washi-tape 타입을 허용하고 WashiTape로 생성한다', async () => {
+    const filePath = await makeTempTsx(`export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }`);
+    const original = await readFile(filePath, 'utf-8');
+
+    const result = await methods['node.create']({
+      filePath,
+      node: {
+        id: 'w-1',
+        type: 'washi-tape',
+        props: {
+          preset: 'pastel-dots',
+          at: { type: 'polar', x: 10, y: 20, length: 180, thickness: 36 },
+          opacity: 0.9,
+        },
+      },
+      baseVersion: sha(original),
+      originId: 'client-1',
+      commandId: 'cmd-2c',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('<WashiTape')).toBe(true);
+    expect(patched.includes('id={"w-1"}')).toBe(true);
+    expect(patched.includes('preset={"pastel-dots"}')).toBe(true);
+    expect(patched.includes('length: 180')).toBe(true);
+  });
+
   it('node.reparent: cycle이면 40902(MINDMAP_CYCLE)', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample(){

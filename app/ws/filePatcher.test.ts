@@ -121,6 +121,51 @@ describe('filePatcher', () => {
     expect(patched.includes('gap={16}')).toBe(true);
   });
 
+  it('create: washi-tape 타입은 WashiTape JSX로 생성된다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Node id="root" /></Canvas>;
+      }
+    `);
+
+    await patchNodeCreate(filePath, {
+      id: 'w-new',
+      type: 'washi-tape',
+      props: {
+        preset: 'pastel-dots',
+        at: { type: 'polar', x: 30, y: 40, length: 200, thickness: 32 },
+        opacity: 0.85,
+      },
+    });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('<WashiTape')).toBe(true);
+    expect(patched.includes('id={"w-new"}')).toBe(true);
+    expect(patched.includes('preset={"pastel-dots"}')).toBe(true);
+    expect(patched.includes('length: 200')).toBe(true);
+  });
+
+  it('update: object props를 JSX object expression으로 반영한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><WashiTape id="w1" preset="pastel-dots" /></Canvas>;
+      }
+    `);
+
+    await patchFile(filePath, 'w1', {
+      preset: 'kraft-grid',
+      at: { type: 'segment', from: { x: 0, y: 0 }, to: { x: 120, y: 40 }, thickness: 28 },
+      pattern: { type: 'preset', id: 'kraft-grid' },
+      opacity: 0.92,
+    });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('preset={"kraft-grid"}')).toBe(true);
+    expect(patched.includes('type: "segment"')).toBe(true);
+    expect(patched.includes('id: "kraft-grid"')).toBe(true);
+    expect(patched.includes('opacity={0.92}')).toBe(true);
+  });
+
   it('reparent: 부모 변경 성공', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {

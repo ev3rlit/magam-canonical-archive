@@ -15,6 +15,7 @@ import ShapeNode from './nodes/ShapeNode';
 import TextNode from './nodes/TextNode';
 import ImageNode from './nodes/ImageNode';
 import StickerNode from './nodes/StickerNode';
+import WashiTapeNode from './nodes/WashiTapeNode';
 import MarkdownNode from './nodes/MarkdownNode';
 import SequenceDiagramNode from './nodes/SequenceDiagramNode';
 import FloatingEdge from './edges/FloatingEdge';
@@ -39,12 +40,15 @@ import {
   snapshotGraphState,
   type GraphSnapshot,
 } from '@/utils/clipboardGraph';
+import { getPresetPatternCatalog, resolvePresetPatternId } from '@/utils/washiTapeDefaults';
+import type { PresetPatternId } from '@/types/washiTape';
 
 type GraphCanvasProps = {
   onNodeDragStop?: (nodeId: string, x: number, y: number) => Promise<void> | void;
+  onWashiPresetChange?: (nodeIds: string[], presetId: PresetPatternId) => Promise<void> | void;
 };
 
-function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
+function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvasProps) {
   const nodeTypes = useMemo(
     () => ({
       sticky: StickyNode,
@@ -52,6 +56,7 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
       text: TextNode,
       image: ImageNode,
       sticker: StickerNode,
+      'washi-tape': WashiTapeNode,
       markdown: MarkdownNode,
       'sequence-diagram': SequenceDiagramNode,
     }),
@@ -69,9 +74,12 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
   const {
     nodes,
     edges,
+    selectedNodeIds,
     onNodesChange,
     onEdgesChange,
     setSelectedNodes,
+    selectNodesByType,
+    focusNextNodeByType,
     graphId,
     needsAutoLayout,
     layoutType,
@@ -88,7 +96,7 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
 
   const { calculateLayout, isLayouting } = useElkLayout();
   const nodesInitialized = useNodesInitialized();
-  const { zoomIn, zoomOut, fitView, getZoom, setNodes } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, getZoom, setNodes, getNodes } = useReactFlow();
   const { isOpen: isContextMenuOpen, context: contextMenuContext, items: contextMenuItems, openMenu, closeMenu } = useContextMenu();
   const { copyImageToClipboard } = useExportImage();
   const [exportDialog, setExportDialog] = useState<{
@@ -109,6 +117,29 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
     future: [],
   });
   const dragOriginPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const washiPresets = useMemo(() => getPresetPatternCatalog(), []);
+  const selectedWashiNodeIds = useMemo(
+    () => nodes
+      .filter((node) => selectedNodeIds.includes(node.id) && node.type === 'washi-tape')
+      .map((node) => node.id),
+    [nodes, selectedNodeIds],
+  );
+
+  const activeWashiPresetId = useMemo<PresetPatternId | null>(() => {
+    if (selectedWashiNodeIds.length === 0) return null;
+
+    const selectedNodes = nodes.filter((node) => selectedWashiNodeIds.includes(node.id));
+    const presetIds = selectedNodes
+      .map((node) => resolvePresetPatternId((node.data as Record<string, unknown>)?.preset
+        ?? (node.data as Record<string, unknown>)?.presetId
+        ?? (node.data as Record<string, unknown>)?.pattern))
+      .filter(Boolean);
+
+    if (presetIds.length === 0) return null;
+    const first = presetIds[0];
+    const allSame = presetIds.every((presetId) => presetId === first);
+    return allSame ? first : null;
+  }, [nodes, selectedWashiNodeIds]);
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -253,7 +284,11 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
           });
         } else {
           // Canvas mode: check if any nodes use anchor-based positioning
-          const hasAnchors = currentNodes.some(n => n.data?.anchor);
+          const hasAnchors = currentNodes.some((n) =>
+            n.data?.anchor
+            || (n.type === 'washi-tape'
+              && (n.data as { at?: { type?: unknown } } | undefined)?.at?.type === 'attach'),
+          );
           if (hasAnchors) {
             console.log('[Layout] Canvas mode with anchors, resolving anchor positions...');
             const resolved = resolveAnchors(currentNodes);
@@ -294,6 +329,18 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
 
       try {
         await onNodeDragStop(node.id, node.position.x, node.position.y);
+
+        const currentNodes = getNodes();
+        const hasAnchors = currentNodes.some((n) =>
+          n.data?.anchor
+          || (n.type === 'washi-tape'
+            && (n.data as { at?: { type?: unknown } } | undefined)?.at?.type === 'attach'),
+        );
+
+        if (hasAnchors) {
+          const resolved = resolveAnchors(currentNodes);
+          setNodes(resolved);
+        }
       } catch (error) {
         const original = dragOriginPositions.current.get(node.id);
         if (original) {
@@ -310,7 +357,60 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
         dragOriginPositions.current.delete(node.id);
       }
     },
-    [onNodeDragStop, setNodes],
+    [getNodes, onNodeDragStop, setNodes],
+  );
+
+  const handleWashiPresetSelect = useCallback(
+    async (presetIdInput: string) => {
+      if (selectedWashiNodeIds.length === 0) return;
+      const presetId = resolvePresetPatternId(presetIdInput);
+
+      const selectedIdSet = new Set(selectedWashiNodeIds);
+      const previousData = new Map(
+        nodes
+          .filter((node) => selectedIdSet.has(node.id))
+          .map((node) => [node.id, node.data]),
+      );
+
+      useGraphStore.setState((state) => ({
+        nodes: state.nodes.map((node) => {
+          if (!selectedIdSet.has(node.id)) {
+            return node;
+          }
+          return {
+            ...node,
+            data: {
+              ...(node.data || {}),
+              preset: presetId,
+              presetId,
+              pattern: { type: 'preset', id: presetId },
+            },
+          };
+        }),
+      }));
+
+      try {
+        await onWashiPresetChange?.(selectedWashiNodeIds, presetId);
+      } catch (error) {
+        useGraphStore.setState((state) => ({
+          nodes: state.nodes.map((node) => {
+            const previous = previousData.get(node.id);
+            if (!previous) {
+              return node;
+            }
+            return { ...node, data: previous };
+          }),
+        }));
+
+        const code = (error as { code?: number })?.code;
+        if (code === 40901) {
+          showToast('외부 수정 감지: 최신 상태로 다시 동기화합니다.');
+        } else {
+          showToast('와시 프리셋 변경 실패: 이전 상태로 롤백되었습니다.');
+        }
+      }
+    },
+    [nodes, onWashiPresetChange, selectedWashiNodeIds, showToast],
   );
 
   useEffect(() => {
@@ -337,6 +437,22 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
       const isUndo = (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z';
       const isRedo = (e.metaKey || e.ctrlKey)
         && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'));
+      const isFocusNextWashi = (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f';
+      const isSelectAllWashi = (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'g';
+
+      if (isFocusNextWashi) {
+        e.preventDefault();
+        const nextId = focusNextNodeByType('washi-tape');
+        showToast(nextId ? 'Washi 포커스를 이동했습니다.' : 'Washi 노드가 없습니다.');
+        return;
+      }
+
+      if (isSelectAllWashi) {
+        e.preventDefault();
+        const ids = selectNodesByType('washi-tape');
+        showToast(ids.length > 0 ? `Washi ${ids.length}개 선택됨` : 'Washi 노드가 없습니다.');
+        return;
+      }
 
       if (isCopy) {
         e.preventDefault();
@@ -423,7 +539,7 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [focusNextNodeByType, selectNodesByType]);
 
   return (
     <>
@@ -494,6 +610,10 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
             onZoomIn={handleZoomIn}
             onZoomOut={handleZoomOut}
             onFitView={handleFitView}
+            washiPresets={washiPresets}
+            washiPresetEnabled={selectedWashiNodeIds.length > 0}
+            activeWashiPresetId={activeWashiPresetId}
+            onSelectWashiPreset={handleWashiPresetSelect}
           />
         </ReactFlow>
 
@@ -531,14 +651,17 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
   );
 }
 
-export function GraphCanvas({ onNodeDragStop }: GraphCanvasProps) {
+export function GraphCanvas({ onNodeDragStop, onWashiPresetChange }: GraphCanvasProps) {
   return (
     <div className="w-full h-full min-h-[500px] flex-1 relative">
       <ReactFlowProvider>
         <NavigationProvider>
           <ZoomProvider>
             <BubbleProvider>
-              <GraphCanvasContent onNodeDragStop={onNodeDragStop} />
+              <GraphCanvasContent
+                onNodeDragStop={onNodeDragStop}
+                onWashiPresetChange={onWashiPresetChange}
+              />
             </BubbleProvider>
           </ZoomProvider>
         </NavigationProvider>

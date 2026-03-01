@@ -1,6 +1,6 @@
 ---
 name: magam
-description: This skill should be used when creating visual diagrams, mind maps, flowcharts, architecture diagrams, or any code-based visual representation using the Magam library. Triggers on tasks involving diagram creation, mind map generation, visual documentation, system architecture visualization, or when users mention "magam", "mindmap", "diagram", "flowchart", or "canvas".
+description: This skill should be used when creating visual diagrams, mind maps, flowcharts, architecture diagrams, washi tape overlays, or any code-based visual representation using the Magam library. Triggers on tasks involving diagram creation, mind map generation, visual documentation, system architecture visualization, or when users mention "magam", "mindmap", "diagram", "flowchart", "washi tape", or "canvas".
 ---
 
 # Magam
@@ -15,8 +15,13 @@ Magam is a React-based library for creating visual diagrams through code. It ena
 - Building system architecture diagrams
 - Visualizing flowcharts and processes
 - Creating overview/brainstorming diagrams with sticky notes
+- Adding washi tape style overlays for labels and emphasis
 - Generating visual documentation from text descriptions
 - Any task requiring code-based diagram generation
+
+## References
+
+- `reference/washi_tape.md`: WashiTape patterns, placement modes, and sticker-mix layout examples.
 
 ## Editing Nodes with Copy Node ID
 
@@ -64,7 +69,7 @@ Multiple nodes can be selected and copied at once. Each ID is separated by a new
 All components are imported from `@magam/core`:
 
 ```tsx
-import { Canvas, Shape, Sticky, Sticker, Image, MindMap, Node, Edge, Text, Markdown, EmbedScope } from '@magam/core';
+import { Canvas, Shape, Sticky, Sticker, Image, WashiTape, MindMap, Node, Edge, Text, Markdown, EmbedScope } from '@magam/core';
 ```
 
 ### Canvas (Required Root)
@@ -186,6 +191,38 @@ Sticker content should prioritize practical decoration content types:
 **Discouraged patterns for Sticker:**
 - Markdown inside Sticker (it usually looks like a card block, not a die-cut sticker)
 - Overusing explicit rotation on many stickers (causes visual noise)
+
+### WashiTape
+
+WashiTape is a single object for tape-like labels and emphasis strips.  
+Use it when the user asks for FigJam-like tape effects, highlight bands, or object-bound label strips.
+
+**Props (common):**
+- `id` (required)
+- Placement: either `x` + `y`, or `at` (`polar` / `segment` / `attach`)
+- Style: `preset` or `pattern` (`preset` / `solid` / `svg` / `image`)
+- Fine-tuning: `edge`, `texture`, `text`, `opacity`
+
+```tsx
+<WashiTape id="w1" x={120} y={80} width={220} height={34} preset="pastel-dots">
+  Top Priority
+</WashiTape>
+
+<WashiTape
+  id="w2"
+  at={{ type: 'segment', from: { x: 380, y: 280 }, to: { x: 650, y: 320 }, thickness: 34 }}
+  pattern={{ type: 'solid', color: '#fed7aa' }}
+  edge={{ torn: true, roughness: 1.3 }}
+>
+  Review Window
+</WashiTape>
+```
+
+**WashiTape + Sticker layout policy:**
+- Keep WashiTape in the main content lane.
+- Keep Sticker in side/top decoration lanes.
+- Avoid placing decorative stickers over functional tape labels.
+- For full examples and API details, see `reference/washi_tape.md`.
 
 ### MindMap
 

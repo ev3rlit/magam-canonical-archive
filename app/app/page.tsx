@@ -13,7 +13,10 @@ import { Sidebar } from '@/components/ui/Sidebar';
 import { Header } from '@/components/ui/Header';
 import { Footer } from '@/components/ui/Footer';
 import { TabBar } from '@/components/ui/TabBar';
-import { QuickOpenDialog } from '@/components/ui/QuickOpenDialog';
+import {
+  QuickOpenDialog,
+  type QuickOpenCommand,
+} from '@/components/ui/QuickOpenDialog';
 import { ErrorOverlay } from '@/components/ui/ErrorOverlay';
 import { SearchOverlay } from '@/components/ui/SearchOverlay';
 import { StickerInspector } from '@/components/ui/StickerInspector';
@@ -21,6 +24,14 @@ import { ChatPanel } from '@/components/chat/ChatPanel';
 import { useChatStore } from '@/store/chat';
 import { TabState, useGraphStore } from '@/store/graph';
 import { normalizeStickerData } from '@/utils/stickerDefaults';
+import {
+  getPresetPatternCatalog,
+  normalizeWashiDefaults,
+} from '@/utils/washiTapeDefaults';
+import {
+  getWashiNodePosition,
+  resolveWashiGeometry,
+} from '@/utils/washiTapeGeometry';
 import { extractNodeContent, extractStickerContent } from '@/utils/nodeContent';
 import { stickerDebugLog } from '@/utils/stickerDebug';
 import type { FontFamilyPreset } from '@magam/core';
@@ -62,6 +73,15 @@ interface RenderNode {
     alt?: string;
     fit?: string;
     imageFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
+    // Washi tape specific
+    preset?: string;
+    presetId?: string;
+    pattern?: Record<string, unknown>;
+    edge?: Record<string, unknown>;
+    texture?: Record<string, unknown>;
+    at?: Record<string, unknown>;
+    seed?: string | number;
+    opacity?: number;
     // Anchor positioning
     anchor?: string;
     position?: string;
@@ -128,6 +148,8 @@ export default function Home() {
     files,
     nodes,
     selectedNodeIds,
+    selectNodesByType,
+    focusNextNodeByType,
     openTabs,
     activeTabId,
     openTab,
@@ -264,6 +286,103 @@ export default function Home() {
     },
     [openTab],
   );
+
+  const handleWashiPresetChange = useCallback(
+    async (nodeIds: string[], presetId: string) => {
+      await Promise.all(
+        nodeIds.map((nodeId) => updateNode(nodeId, { preset: presetId })),
+      );
+    },
+    [updateNode],
+  );
+
+  const washiPresetCatalog = useMemo(() => getPresetPatternCatalog(), []);
+  const allWashiNodeIds = useMemo(
+    () => nodes.filter((node) => node.type === 'washi-tape').map((node) => node.id),
+    [nodes],
+  );
+  const selectedWashiNodeIds = useMemo(
+    () => selectedNodeIds.filter((nodeId) => {
+      const node = nodes.find((item) => item.id === nodeId);
+      return node?.type === 'washi-tape';
+    }),
+    [nodes, selectedNodeIds],
+  );
+
+  const runQuickOpenCommand = useCallback(
+    async (commandId: string) => {
+      if (commandId === 'washi:select-all') {
+        return selectNodesByType('washi-tape').length > 0;
+      }
+
+      if (commandId === 'washi:focus-next') {
+        return focusNextNodeByType('washi-tape') !== null;
+      }
+
+      if (commandId.startsWith('washi:preset:')) {
+        const presetId = commandId.replace('washi:preset:', '');
+        if (selectedWashiNodeIds.length === 0) {
+          return false;
+        }
+
+        selectedWashiNodeIds.forEach((nodeId) => {
+          useGraphStore.getState().updateNodeData(nodeId, {
+            preset: presetId,
+            presetId,
+            pattern: { type: 'preset', id: presetId },
+          });
+        });
+
+        try {
+          await handleWashiPresetChange(selectedWashiNodeIds, presetId);
+          return true;
+        } catch (error) {
+          console.error('Failed to apply washi preset from quick command:', error);
+          return false;
+        }
+      }
+
+      return false;
+    },
+    [
+      focusNextNodeByType,
+      handleWashiPresetChange,
+      selectNodesByType,
+      selectedWashiNodeIds,
+    ],
+  );
+
+  const quickOpenCommands = useMemo<QuickOpenCommand[]>(() => {
+    const hasWashiNode = allWashiNodeIds.length > 0;
+    const hasWashiSelection = selectedWashiNodeIds.length > 0;
+
+    const baseCommands: QuickOpenCommand[] = [
+      {
+        id: 'washi:select-all',
+        label: 'Washi: 전체 선택',
+        hint: hasWashiNode ? `${allWashiNodeIds.length}개` : '없음',
+        keywords: ['washi', 'select', 'all', '전체', '선택'],
+        disabled: !hasWashiNode,
+      },
+      {
+        id: 'washi:focus-next',
+        label: 'Washi: 다음 노드 포커스',
+        hint: hasWashiNode ? '순환' : '없음',
+        keywords: ['washi', 'focus', 'next', '포커스'],
+        disabled: !hasWashiNode,
+      },
+    ];
+
+    const presetCommands = washiPresetCatalog.map((preset) => ({
+      id: `washi:preset:${preset.id}`,
+      label: `Washi preset: ${preset.label}`,
+      hint: hasWashiSelection ? `${selectedWashiNodeIds.length}개 선택됨` : '와시 선택 필요',
+      keywords: ['washi', 'preset', preset.id, preset.label.toLowerCase()],
+      disabled: !hasWashiSelection,
+    }));
+
+    return [...baseCommands, ...presetCommands];
+  }, [allWashiNodeIds.length, selectedWashiNodeIds.length, washiPresetCatalog]);
 
   const confirmLimitReplace = useCallback(() => {
     if (!pendingReplaceRequest) return;
@@ -882,6 +1001,63 @@ export default function Home() {
                     align: child.props.align,
                   },
                 });
+              } else if (child.type === 'graph-washi-tape') {
+                const rawWashiId = child.props.id || `washi-${nodeIdCounter++}`;
+                const washiId = resolveNodeId(rawWashiId, mindmapId);
+                const washiRendererChildren = child.children || [];
+                const { label: washiLabel, parsedChildren: washiChildren } = extractStickerContent(
+                  washiRendererChildren,
+                  child.props.children,
+                  { textJoiner: ' ' },
+                );
+                const normalizedWashi = normalizeWashiDefaults({
+                  ...child.props,
+                  id: washiId,
+                });
+                const resolvedGeometry = resolveWashiGeometry({
+                  at: normalizedWashi.at,
+                  nodes,
+                  seed: normalizedWashi.seed,
+                  fallbackPosition: {
+                    x: child.props.x || 0,
+                    y: child.props.y || 0,
+                  },
+                });
+                const defaultPosition = getWashiNodePosition(resolvedGeometry);
+
+                nodes.push({
+                  id: washiId,
+                  type: 'washi-tape',
+                  position: {
+                    x:
+                      typeof child.props.x === 'number'
+                        ? child.props.x
+                        : defaultPosition.x,
+                    y:
+                      typeof child.props.y === 'number'
+                        ? child.props.y
+                        : defaultPosition.y,
+                  },
+                  data: {
+                    label: washiLabel || child.props.label || '',
+                    preset: normalizedWashi.presetId,
+                    presetId: normalizedWashi.presetId,
+                    pattern: child.props.pattern ?? normalizedWashi.pattern,
+                    edge: child.props.edge,
+                    texture: child.props.texture,
+                    text: child.props.text,
+                    at: normalizedWashi.at,
+                    resolvedGeometry,
+                    seed: normalizedWashi.seed,
+                    opacity: normalizedWashi.opacity,
+                    children: washiChildren,
+                    sourceMeta: child.props.sourceMeta || {
+                      sourceId: washiId,
+                      kind: mindmapId ? 'mindmap' : 'canvas',
+                      scopeId: mindmapId,
+                    },
+                  },
+                });
               } else {
                 // It's a Node (Sticky, Shape, Text)
                 const nodeId = child.props.id || `node-${nodeIdCounter++}`;
@@ -1024,6 +1200,39 @@ export default function Home() {
           // Process all children (populates mindMapGroups)
           processChildren(children);
 
+          const finalizedNodes = nodes.map((node) => {
+            if (node.type !== 'washi-tape') {
+              return node;
+            }
+
+            const data = (node.data || {}) as Record<string, unknown>;
+            const normalizedWashi = normalizeWashiDefaults({
+              ...data,
+              id: node.id,
+              x: node.position.x,
+              y: node.position.y,
+            });
+            const atInput = (data.at as Record<string, unknown> | undefined) ?? normalizedWashi.at;
+            const resolvedGeometry = resolveWashiGeometry({
+              at: atInput as any,
+              nodes,
+              seed: (data.seed as string | number | undefined) ?? normalizedWashi.seed,
+              fallbackPosition: node.position,
+            });
+            const isAttach = (atInput as { type?: unknown }).type === 'attach';
+            const attachedPosition = getWashiNodePosition(resolvedGeometry);
+
+            return {
+              ...node,
+              position: isAttach ? attachedPosition : node.position,
+              data: {
+                ...(node.data || {}),
+                at: atInput,
+                resolvedGeometry,
+              },
+            };
+          });
+
           // Detect if any mindmap nodes exist (they need auto layout)
           const hasMindMap = mindMapGroups.length > 0;
           // For backward compatibility, use first MindMap's layoutType as default
@@ -1034,7 +1243,7 @@ export default function Home() {
           const canvasFontFamily = normalizeFontFamily(data.graph.meta?.fontFamily);
 
           setGraph({
-            nodes,
+            nodes: finalizedNodes,
             edges,
             needsAutoLayout: hasMindMap,
             layoutType,
@@ -1070,7 +1279,10 @@ export default function Home() {
         <main className="flex-1 relative w-full h-full overflow-hidden">
           <ErrorOverlay />
           <SearchOverlay />
-          <GraphCanvas onNodeDragStop={moveNode} />
+          <GraphCanvas
+            onNodeDragStop={moveNode}
+            onWashiPresetChange={handleWashiPresetChange}
+          />
           <StickerInspector />
         </main>
 
@@ -1079,7 +1291,9 @@ export default function Home() {
         <QuickOpenDialog
           isOpen={isQuickOpenOpen}
           files={files}
+          commands={quickOpenCommands}
           onOpenFile={openTabByPath}
+          onRunCommand={runQuickOpenCommand}
           onClose={() => setIsQuickOpenOpen(false)}
         />
 

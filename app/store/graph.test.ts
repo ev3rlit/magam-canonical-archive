@@ -164,3 +164,77 @@ describe('sticker node updates', () => {
     });
   });
 });
+
+describe('washi node updates', () => {
+  it('updateNodeData는 선택된 washi data를 현재 state 모델에 반영한다', () => {
+    useGraphStore.setState((state) => ({
+      ...state,
+      nodes: [
+        {
+          id: 'washi-1',
+          type: 'washi-tape',
+          position: { x: 0, y: 0 },
+          data: {
+            preset: 'pastel-dots',
+            at: { type: 'polar', x: 0, y: 0, length: 180, thickness: 36 },
+          },
+        } as any,
+      ],
+    }));
+
+    useGraphStore.getState().updateNodeData('washi-1', {
+      preset: 'kraft-grid',
+      opacity: 0.9,
+    });
+
+    const nextNode = useGraphStore
+      .getState()
+      .nodes.find((node) => node.id === 'washi-1');
+
+    expect(nextNode?.data).toMatchObject({
+      preset: 'kraft-grid',
+      opacity: 0.9,
+      at: { type: 'polar', x: 0, y: 0, length: 180, thickness: 36 },
+    });
+  });
+});
+
+describe('washi selection helpers', () => {
+  it('selectNodesByType는 지정 타입 노드만 선택한다', () => {
+    useGraphStore.setState((state) => ({
+      ...state,
+      nodes: [
+        { id: 'w1', type: 'washi-tape', position: { x: 0, y: 0 }, data: {} } as any,
+        { id: 'w2', type: 'washi-tape', position: { x: 0, y: 0 }, data: {} } as any,
+        { id: 's1', type: 'sticker', position: { x: 0, y: 0 }, data: {} } as any,
+      ],
+      selectedNodeIds: [],
+    }));
+
+    const ids = useGraphStore.getState().selectNodesByType('washi-tape');
+
+    expect(ids).toEqual(['w1', 'w2']);
+    expect(useGraphStore.getState().selectedNodeIds).toEqual(['w1', 'w2']);
+  });
+
+  it('focusNextNodeByType는 같은 타입 내에서 선택 포커스를 순환한다', () => {
+    useGraphStore.setState((state) => ({
+      ...state,
+      nodes: [
+        { id: 'w1', type: 'washi-tape', position: { x: 0, y: 0 }, data: {} } as any,
+        { id: 'w2', type: 'washi-tape', position: { x: 0, y: 0 }, data: {} } as any,
+        { id: 'w3', type: 'washi-tape', position: { x: 0, y: 0 }, data: {} } as any,
+      ],
+      selectedNodeIds: ['w1'],
+    }));
+
+    const first = useGraphStore.getState().focusNextNodeByType('washi-tape');
+    const second = useGraphStore.getState().focusNextNodeByType('washi-tape');
+    const third = useGraphStore.getState().focusNextNodeByType('washi-tape');
+
+    expect(first).toBe('w2');
+    expect(second).toBe('w3');
+    expect(third).toBe('w1');
+    expect(useGraphStore.getState().selectedNodeIds).toEqual(['w1']);
+  });
+});

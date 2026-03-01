@@ -128,6 +128,8 @@ export interface GraphState {
   setStatus: (status: GraphState['status']) => void;
   setError: (error: AppError | null) => void;
   setSelectedNodes: (selectedNodeIds: string[]) => void;
+  selectNodesByType: (nodeType: string) => string[];
+  focusNextNodeByType: (nodeType: string) => string | null;
   updateNodeData: (nodeId: string, partialData: Record<string, unknown>) => void;
   canvasBackground: CanvasBackgroundStyle;
   setCanvasBackground: (style: CanvasBackgroundStyle) => void;
@@ -236,6 +238,29 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     canvasFontFamily: isFontFamilyPreset(canvasFontFamily) ? canvasFontFamily : undefined,
   }),
   setSelectedNodes: (selectedNodeIds) => set({ selectedNodeIds }),
+  selectNodesByType: (nodeType) => {
+    const ids = get().nodes
+      .filter((node) => node.type === nodeType)
+      .map((node) => node.id);
+    set({ selectedNodeIds: ids });
+    return ids;
+  },
+  focusNextNodeByType: (nodeType) => {
+    const { nodes, selectedNodeIds } = get();
+    const ids = nodes
+      .filter((node) => node.type === nodeType)
+      .map((node) => node.id);
+
+    if (ids.length === 0) {
+      return null;
+    }
+
+    const currentSelectedId = selectedNodeIds.find((id) => ids.includes(id));
+    const currentIndex = currentSelectedId ? ids.indexOf(currentSelectedId) : -1;
+    const nextId = ids[(currentIndex + 1) % ids.length];
+    set({ selectedNodeIds: [nextId] });
+    return nextId;
+  },
   updateNodeData: (nodeId, partialData) => set((state) => ({
     nodes: state.nodes.map((node) => {
       if (node.id !== nodeId) {

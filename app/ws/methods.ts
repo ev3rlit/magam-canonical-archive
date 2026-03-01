@@ -157,7 +157,7 @@ async function handleNodeCreate(
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.id is required' };
     }
 
-    if (!node.type || !['shape', 'text', 'markdown', 'mindmap', 'sticker'].includes(node.type)) {
+    if (!node.type || !['shape', 'text', 'markdown', 'mindmap', 'sticker', 'washi-tape'].includes(node.type)) {
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.type is invalid' };
     }
 

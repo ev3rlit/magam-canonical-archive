@@ -60,4 +60,33 @@ describe('clipboardGraph', () => {
     expect(restored.edges).toEqual(edges);
     expect(restored.selectedNodeIds).toEqual(['n1']);
   });
+
+  it('creates pasted nodes while keeping washi pattern/placement fields', () => {
+    const payload = {
+      nodes: [
+        {
+          id: 'w1',
+          type: 'washi-tape',
+          position: { x: 20, y: 40 },
+          data: {
+            preset: 'pastel-dots',
+            pattern: { type: 'preset', id: 'pastel-dots' },
+            at: { type: 'polar', x: 20, y: 40, length: 180, thickness: 36 },
+            opacity: 0.9,
+          },
+        } as unknown as Node,
+      ],
+      edges: [] as Edge[],
+    };
+
+    const next = createPastedGraphState(payload, [], [], 10);
+    expect(next.nodes).toHaveLength(1);
+    expect(next.nodes[0].id).not.toBe('w1');
+    expect(next.nodes[0].data).toMatchObject({
+      preset: 'pastel-dots',
+      pattern: { type: 'preset', id: 'pastel-dots' },
+      at: { type: 'polar', x: 20, y: 40, length: 180, thickness: 36 },
+      opacity: 0.9,
+    });
+  });
 });

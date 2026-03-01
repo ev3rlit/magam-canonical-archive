@@ -1,6 +1,16 @@
-const JITTER_ANGLES = [
+const STICKER_JITTER_ANGLES = [
   -5, -4, -3, -2, -1,
   1, 2, 3, 4, 5,
+] as const;
+
+const WASHI_ROTATION_JITTER_ANGLES = [
+  -5, -4, -3, -2, -1,
+  1, 2, 3, 4, 5,
+] as const;
+
+const WASHI_SHAPE_SKEW_ANGLES = [
+  -2.4, -2.2, -2.0,
+  2.0, 2.2, 2.4,
 ] as const;
 
 function hashFNV1a(input: string): number {
@@ -15,7 +25,7 @@ function hashFNV1a(input: string): number {
 export function getStickerJitterAngle(seed: string): number {
   const safeSeed = seed && seed.trim().length > 0 ? seed : 'sticker-default';
   const hash = hashFNV1a(`sticker:${safeSeed}`);
-  return JITTER_ANGLES[hash % JITTER_ANGLES.length];
+  return STICKER_JITTER_ANGLES[hash % STICKER_JITTER_ANGLES.length];
 }
 
 export function resolveStickerRotation(
@@ -26,4 +36,26 @@ export function resolveStickerRotation(
     return explicitRotation;
   }
   return getStickerJitterAngle(seed);
+}
+
+export function getWashiJitterAngle(seed: string): number {
+  const safeSeed = seed && seed.trim().length > 0 ? seed : 'washi-default';
+  const hash = hashFNV1a(`washi:${safeSeed}`);
+  return WASHI_ROTATION_JITTER_ANGLES[hash % WASHI_ROTATION_JITTER_ANGLES.length];
+}
+
+export function getWashiShapeSkewAngle(seed: string): number {
+  const safeSeed = seed && seed.trim().length > 0 ? seed : 'washi-default';
+  const hash = hashFNV1a(`washi-shape:${safeSeed}`);
+  return WASHI_SHAPE_SKEW_ANGLES[hash % WASHI_SHAPE_SKEW_ANGLES.length];
+}
+
+export function resolveWashiAngle(
+  explicitAngle: unknown,
+  seed: string,
+): number {
+  if (typeof explicitAngle === 'number' && Number.isFinite(explicitAngle)) {
+    return explicitAngle;
+  }
+  return getWashiJitterAngle(seed);
 }

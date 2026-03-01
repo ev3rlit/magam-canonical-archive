@@ -25,7 +25,7 @@ export interface NodeProps {
 
 export interface CreateNodeInput {
     id: string;
-    type: 'shape' | 'text' | 'markdown' | 'mindmap' | 'sticker';
+    type: 'shape' | 'text' | 'markdown' | 'mindmap' | 'sticker' | 'washi-tape';
     props?: Record<string, unknown>;
 }
 
@@ -67,6 +67,40 @@ function getNodeByIdOpeningElement(ast: t.File, nodeId: string): NodePath<t.JSXO
     return target;
 }
 
+function toJsxAttributeExpression(value: unknown): t.Expression {
+    if (value === null) {
+        return t.nullLiteral();
+    }
+    if (value === undefined) {
+        return t.identifier('undefined');
+    }
+    if (typeof value === 'number') {
+        return t.numericLiteral(value);
+    }
+    if (typeof value === 'boolean') {
+        return t.booleanLiteral(value);
+    }
+    if (typeof value === 'string') {
+        return t.stringLiteral(value);
+    }
+    if (Array.isArray(value)) {
+        return t.arrayExpression(value.map((item) => toJsxAttributeExpression(item)));
+    }
+    if (value && typeof value === 'object') {
+        return t.objectExpression(
+            Object.entries(value as Record<string, unknown>)
+                .filter(([, nestedValue]) => nestedValue !== undefined)
+                .map(([key, nestedValue]) => {
+                    const objectKey = t.isValidIdentifier(key)
+                        ? t.identifier(key)
+                        : t.stringLiteral(key);
+                    return t.objectProperty(objectKey, toJsxAttributeExpression(nestedValue));
+                }),
+        );
+    }
+    return t.stringLiteral(String(value));
+}
+
 function upsertJsxAttribute(path: NodePath<t.JSXOpeningElement>, propName: string, propValue: unknown) {
     const existingAttrIndex = path.node.attributes.findIndex(
         (attr: t.JSXAttribute | t.JSXSpreadAttribute): attr is t.JSXAttribute =>
@@ -80,14 +114,7 @@ function upsertJsxAttribute(path: NodePath<t.JSXOpeningElement>, propName: strin
         return;
     }
 
-    const expression =
-        typeof propValue === 'number'
-            ? t.numericLiteral(propValue)
-            : typeof propValue === 'boolean'
-                ? t.booleanLiteral(propValue)
-                : t.stringLiteral(String(propValue));
-
-    const newValue = t.jsxExpressionContainer(expression);
+    const newValue = t.jsxExpressionContainer(toJsxAttributeExpression(propValue));
 
     if (existingAttrIndex >= 0) {
         const existingAttr = path.node.attributes[existingAttrIndex] as t.JSXAttribute;
@@ -125,18 +152,15 @@ function buildNodeElement(input: CreateNodeInput): t.JSXElement {
         ? 'MindMap'
         : input.type === 'sticker'
             ? 'Sticky'
+            : input.type === 'washi-tape'
+                ? 'WashiTape'
             : 'Node';
     const props = { ...(input.props || {}), id: input.id };
     const attrs = Object.entries(props)
         .filter(([key, value]) => key !== 'content' && value !== undefined && value !== null)
-        .map(([key, value]) => {
-            const expr = typeof value === 'number'
-                ? t.numericLiteral(value)
-                : typeof value === 'boolean'
-                    ? t.booleanLiteral(value)
-                    : t.stringLiteral(String(value));
-            return t.jsxAttribute(t.jsxIdentifier(key), t.jsxExpressionContainer(expr));
-        });
+        .map(([key, value]) =>
+            t.jsxAttribute(t.jsxIdentifier(key), t.jsxExpressionContainer(toJsxAttributeExpression(value))),
+        );
 
     return t.jsxElement(
         t.jsxOpeningElement(t.jsxIdentifier(tag), attrs, false),
