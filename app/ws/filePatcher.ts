@@ -20,6 +20,9 @@ export interface NodeProps {
     y?: number;
     width?: number;
     height?: number;
+    pattern?: Record<string, unknown>;
+    at?: Record<string, unknown>;
+    shape?: 'rectangle' | 'heart' | 'cloud' | 'speech';
     [key: string]: unknown;
 }
 

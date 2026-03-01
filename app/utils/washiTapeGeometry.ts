@@ -182,9 +182,26 @@ export function resolveWashiGeometry({
     };
   }
 
+  if (at.type === 'attach') {
+    return {
+      ...resolveAttachGeometry(at, nodes, fallback),
+      mode: 'attach',
+    };
+  }
+
+  const fallbackAngle = resolveWashiAngle(undefined, seedKey);
+  const fallbackLine = normalizeLine(
+    fallback,
+    {
+      x: fallback.x + (Math.cos((fallbackAngle * Math.PI) / 180) * DEFAULT_LENGTH),
+      y: fallback.y + (Math.sin((fallbackAngle * Math.PI) / 180) * DEFAULT_LENGTH),
+    },
+  );
   return {
-    ...resolveAttachGeometry(at, nodes, fallback),
-    mode: 'attach',
+    ...fallbackLine,
+    thickness: DEFAULT_THICKNESS,
+    mode: 'polar',
+    angle: fallbackAngle,
   };
 }
 

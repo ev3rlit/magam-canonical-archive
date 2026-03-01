@@ -85,7 +85,18 @@ describe('RPC editing methods', () => {
 
     const result = await methods['node.create']({
       filePath,
-      node: { id: 'st-1', type: 'sticker', props: { x: 12, y: 34, text: 'S', anchor: 'root', position: 'right' } },
+      node: {
+        id: 'st-1',
+        type: 'sticker',
+        props: {
+          x: 12,
+          y: 34,
+          text: 'S',
+          anchor: 'root',
+          position: 'right',
+          pattern: { type: 'preset', id: 'lined-warm' },
+        },
+      },
       baseVersion: sha(original),
       originId: 'client-1',
       commandId: 'cmd-2b',
@@ -97,6 +108,8 @@ describe('RPC editing methods', () => {
     expect(patched.includes('id={"st-1"}')).toBe(true);
     expect(patched.includes('anchor={"root"}')).toBe(true);
     expect(patched.includes('position={"right"}')).toBe(true);
+    expect(patched.includes('type: "preset"')).toBe(true);
+    expect(patched.includes('id: "lined-warm"')).toBe(true);
   });
 
   it('node.create: washi-tape 타입을 허용하고 WashiTape로 생성한다', async () => {

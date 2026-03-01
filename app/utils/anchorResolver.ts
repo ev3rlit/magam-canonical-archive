@@ -58,6 +58,14 @@ function isAttachAt(value: unknown): value is Extract<AtDef, { type: 'attach' }>
     return candidate.type === 'attach' && typeof candidate.target === 'string';
 }
 
+function isAnchorAt(value: unknown): value is Extract<AtDef, { type: 'anchor' }> {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+    const candidate = value as { type?: unknown; target?: unknown };
+    return candidate.type === 'anchor' && typeof candidate.target === 'string';
+}
+
 /**
  * Calculate the bounding box for a group of nodes
  */
@@ -358,8 +366,14 @@ export function topologicalSort(nodes: Node[]): Node[] {
 
         // Check if this node has an anchor dependency
         const anchor = node.data?.anchor;
-        if (anchor) {
+        if (anchor && typeof anchor === 'string') {
             dependsOn.set(node.id, anchor);
+            return;
+        }
+
+        const at = (node.data as { at?: unknown } | undefined)?.at;
+        if (isAttachAt(at) || isAnchorAt(at)) {
+            dependsOn.set(node.id, at.target);
         }
     });
 
@@ -430,10 +444,7 @@ export function resolveAnchors(nodes: Node[]): Node[] {
         const at = (node.data as { at?: unknown } | undefined)?.at;
         const { width, height } = getNodeSize(node);
 
-        if (
-            node.type === 'washi-tape'
-            && isAttachAt(at)
-        ) {
+        if (isAttachAt(at) && (node.type === 'washi-tape' || node.type === 'sticky')) {
             const runtimeNodes = sortedNodes.map((candidate) => {
                 const resolved = resolvedPositions.get(candidate.id);
                 if (!resolved) {
@@ -463,14 +474,47 @@ export function resolveAnchors(nodes: Node[]): Node[] {
                 height: resolvedHeight,
             });
 
-            return {
+            const nextNode = {
                 ...node,
                 position: attachedPosition,
-                data: {
-                    ...(node.data || {}),
-                    resolvedGeometry: geometry,
-                },
             };
+
+            if (node.type === 'washi-tape') {
+                return {
+                    ...nextNode,
+                    data: {
+                        ...(node.data || {}),
+                        resolvedGeometry: geometry,
+                    },
+                };
+            }
+
+            return nextNode;
+        }
+
+        if (node.type === 'sticky' && isAnchorAt(at)) {
+            const targetRect = resolvedPositions.get(at.target);
+            if (targetRect) {
+                const config: AnchorConfig = {
+                    anchor: at.target,
+                    position: at.position ?? 'bottom',
+                    gap: at.gap,
+                    align: at.align ?? 'center',
+                };
+                const newPos = calculateAnchoredPosition(config, targetRect, { width, height });
+                resolvedPositions.set(node.id, {
+                    x: newPos.x,
+                    y: newPos.y,
+                    width,
+                    height,
+                });
+                return {
+                    ...node,
+                    position: newPos,
+                };
+            }
+
+            console.warn(`[AnchorResolver] at.target "${at.target}" not found for sticky "${node.id}"`);
         }
 
         // Case 1: No anchor - store position as-is (even if 0,0)

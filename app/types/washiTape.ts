@@ -1,5 +1,6 @@
 import type { RenderableChild } from '@/utils/childComposition';
 import type {
+  MaterialPresetMeta as CoreMaterialPresetMeta,
   MaterialPresetId as CoreMaterialPresetId,
   PaperMaterial as CorePaperMaterial,
 } from '@magam/core';
@@ -7,6 +8,7 @@ import type {
 export { MATERIAL_PRESET_IDS } from '@magam/core';
 export type MaterialPresetId = CoreMaterialPresetId;
 export type PaperMaterial = CorePaperMaterial;
+export type MaterialPresetMeta = CoreMaterialPresetMeta;
 
 export interface SegmentAt {
   type: 'segment';
@@ -38,7 +40,25 @@ export interface AttachAt {
   thickness?: number;
 }
 
-export type AtDef = SegmentAt | PolarAt | AttachAt;
+export type AnchorPosition =
+  | 'top'
+  | 'bottom'
+  | 'left'
+  | 'right'
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right';
+
+export interface AnchorAt {
+  type: 'anchor';
+  target: string;
+  position?: AnchorPosition;
+  gap?: number;
+  align?: 'start' | 'center' | 'end';
+}
+
+export type AtDef = SegmentAt | PolarAt | AttachAt | AnchorAt;
 
 export interface ResolvedGeometry {
   from: { x: number; y: number };
@@ -97,5 +117,6 @@ export interface WashiPresetCatalogItem {
   label: string;
   backgroundColor: string;
   backgroundImage?: string;
+  backgroundSize?: string;
   textColor: string;
 }

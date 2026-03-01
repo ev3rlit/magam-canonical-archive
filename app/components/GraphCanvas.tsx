@@ -40,7 +40,7 @@ import {
   snapshotGraphState,
   type GraphSnapshot,
 } from '@/utils/clipboardGraph';
-import { getPresetPatternCatalog, resolvePresetPatternId } from '@/utils/washiTapeDefaults';
+import { getWashiPresetPatternCatalog, resolvePresetPatternId } from '@/utils/washiTapeDefaults';
 import type { MaterialPresetId } from '@/types/washiTape';
 
 type GraphCanvasProps = {
@@ -117,7 +117,7 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
     future: [],
   });
   const dragOriginPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
-  const washiPresets = useMemo(() => getPresetPatternCatalog(), []);
+  const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
   const selectedWashiNodeIds = useMemo(
     () => nodes
       .filter((node) => selectedNodeIds.includes(node.id) && node.type === 'washi-tape')
@@ -287,11 +287,14 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
           });
         } else {
           // Canvas mode: check if any nodes use anchor-based positioning
-          const hasAnchors = currentNodes.some((n) =>
-            n.data?.anchor
-            || (n.type === 'washi-tape'
-              && (n.data as { at?: { type?: unknown } } | undefined)?.at?.type === 'attach'),
-          );
+          const hasAnchors = currentNodes.some((n) => {
+            const atType = (n.data as { at?: { type?: unknown } } | undefined)?.at?.type;
+            return Boolean(
+              n.data?.anchor
+              || atType === 'attach'
+              || (n.type === 'sticky' && atType === 'anchor'),
+            );
+          });
           if (hasAnchors) {
             console.log('[Layout] Canvas mode with anchors, resolving anchor positions...');
             const resolved = resolveAnchors(currentNodes);
@@ -334,11 +337,14 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
         await onNodeDragStop(node.id, node.position.x, node.position.y);
 
         const currentNodes = getNodes();
-        const hasAnchors = currentNodes.some((n) =>
-          n.data?.anchor
-          || (n.type === 'washi-tape'
-            && (n.data as { at?: { type?: unknown } } | undefined)?.at?.type === 'attach'),
-        );
+        const hasAnchors = currentNodes.some((n) => {
+          const atType = (n.data as { at?: { type?: unknown } } | undefined)?.at?.type;
+          return Boolean(
+            n.data?.anchor
+            || atType === 'attach'
+            || (n.type === 'sticky' && atType === 'anchor'),
+          );
+        });
 
         if (hasAnchors) {
           const resolved = resolveAnchors(currentNodes);

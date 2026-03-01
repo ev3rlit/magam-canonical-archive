@@ -1,5 +1,11 @@
 import type { MaterialPresetId, PaperMaterial } from '@/types/washiTape';
-import { getPresetPatternCatalog, resolvePresetPatternId } from './washiTapeDefaults';
+import {
+  DEFAULT_STICKY_PRESET_ID,
+  DEFAULT_WASHI_PRESET_ID,
+  getPresetPatternCatalog,
+  isPresetPatternId,
+  resolvePresetPatternId,
+} from './washiTapeDefaults';
 
 export interface ResolvedWashiPattern {
   kind: 'preset' | 'solid' | 'svg' | 'image';
@@ -8,6 +14,7 @@ export interface ResolvedWashiPattern {
   backgroundImage?: string;
   backgroundRepeat?: string;
   backgroundSize?: string;
+  textColor?: string;
   fallbackApplied: boolean;
   debugReason?: string;
 }
@@ -16,6 +23,16 @@ const MAX_INLINE_MARKUP_LENGTH = 16_384;
 
 function encodeSvgDataUri(svg: string): string {
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
+function isCssColorLike(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('#')) return true;
+  if (trimmed.startsWith('rgb(') || trimmed.startsWith('rgba(')) return true;
+  if (trimmed.startsWith('hsl(') || trimmed.startsWith('hsla(')) return true;
+  if (trimmed.startsWith('var(')) return true;
+  return /^[a-zA-Z]+$/.test(trimmed);
 }
 
 export function sanitizeInlineSvgMarkup(markup: string): string | null {
@@ -32,43 +49,74 @@ export function sanitizeInlineSvgMarkup(markup: string): string | null {
   return strippedHandlers;
 }
 
-function resolvePresetStyle(presetId: MaterialPresetId): ResolvedWashiPattern {
-  const preset = getPresetPatternCatalog().find((item) => item.id === presetId);
+function resolvePresetStyle(
+  presetId: MaterialPresetId,
+  options?: { fallbackPresetId?: MaterialPresetId },
+): ResolvedWashiPattern {
+  const fallbackPresetId = options?.fallbackPresetId ?? DEFAULT_WASHI_PRESET_ID;
+  const resolvedPresetId = resolvePresetPatternId(presetId, fallbackPresetId);
+  const preset = getPresetPatternCatalog().find((item) => item.id === resolvedPresetId);
   return {
     kind: 'preset',
-    presetId,
+    presetId: resolvedPresetId,
     backgroundColor: preset?.backgroundColor,
     backgroundImage: preset?.backgroundImage,
     backgroundRepeat: preset?.backgroundImage ? 'repeat' : undefined,
-    backgroundSize: preset?.backgroundImage ? '20px 20px' : undefined,
+    backgroundSize: preset?.backgroundSize,
+    textColor: preset?.textColor,
     fallbackApplied: false,
   };
 }
 
-export function resolveWashiPattern(
+export function resolvePaperPattern(
   pattern: PaperMaterial | undefined,
+  options?: {
+    fallbackPresetId?: MaterialPresetId;
+  },
 ): ResolvedWashiPattern {
-  const fallbackPresetId = resolvePresetPatternId(undefined);
+  const fallbackPresetId = options?.fallbackPresetId ?? DEFAULT_WASHI_PRESET_ID;
 
   if (!pattern) {
-    return resolvePresetStyle(fallbackPresetId);
+    return resolvePresetStyle(fallbackPresetId, { fallbackPresetId });
   }
 
   if (pattern.type === 'preset') {
-    return resolvePresetStyle(resolvePresetPatternId(pattern));
+    const requestedPresetId = (pattern as { id?: unknown; name?: unknown }).id
+      ?? (pattern as { id?: unknown; name?: unknown }).name;
+    const resolved = resolvePresetStyle(resolvePresetPatternId(pattern, fallbackPresetId), { fallbackPresetId });
+    if (
+      typeof pattern.color === 'string'
+      && pattern.color.trim() !== ''
+      && isCssColorLike(pattern.color)
+    ) {
+      return {
+        ...resolved,
+        backgroundColor: pattern.color.trim(),
+      };
+    }
+
+    if (!isPresetPatternId(requestedPresetId)) {
+      return {
+        ...resolved,
+        fallbackApplied: true,
+        debugReason: 'unknown-preset-id',
+      };
+    }
+
+    return resolved;
   }
 
   if (pattern.type === 'solid') {
-    if (typeof pattern.color === 'string' && pattern.color.trim() !== '') {
+    if (typeof pattern.color === 'string' && isCssColorLike(pattern.color)) {
       return {
         kind: 'solid',
         presetId: fallbackPresetId,
-        backgroundColor: pattern.color,
+        backgroundColor: pattern.color.trim(),
         fallbackApplied: false,
       };
     }
     return {
-      ...resolvePresetStyle(fallbackPresetId),
+      ...resolvePresetStyle(fallbackPresetId, { fallbackPresetId }),
       fallbackApplied: true,
       debugReason: 'invalid-solid-color',
     };
@@ -88,7 +136,7 @@ export function resolveWashiPattern(
         };
       }
       return {
-        ...resolvePresetStyle(fallbackPresetId),
+        ...resolvePresetStyle(fallbackPresetId, { fallbackPresetId }),
         fallbackApplied: true,
         debugReason: 'invalid-inline-svg-markup',
       };
@@ -106,7 +154,7 @@ export function resolveWashiPattern(
     }
 
     return {
-      ...resolvePresetStyle(fallbackPresetId),
+      ...resolvePresetStyle(fallbackPresetId, { fallbackPresetId }),
       fallbackApplied: true,
       debugReason: 'missing-svg-source',
     };
@@ -133,15 +181,27 @@ export function resolveWashiPattern(
     }
 
     return {
-      ...resolvePresetStyle(fallbackPresetId),
+      ...resolvePresetStyle(fallbackPresetId, { fallbackPresetId }),
       fallbackApplied: true,
       debugReason: 'missing-image-source',
     };
   }
 
   return {
-    ...resolvePresetStyle(fallbackPresetId),
+    ...resolvePresetStyle(fallbackPresetId, { fallbackPresetId }),
     fallbackApplied: true,
     debugReason: 'unsupported-pattern-type',
   };
+}
+
+export function resolveWashiPattern(
+  pattern: PaperMaterial | undefined,
+): ResolvedWashiPattern {
+  return resolvePaperPattern(pattern, { fallbackPresetId: DEFAULT_WASHI_PRESET_ID });
+}
+
+export function resolveStickyPattern(
+  pattern: PaperMaterial | undefined,
+): ResolvedWashiPattern {
+  return resolvePaperPattern(pattern, { fallbackPresetId: DEFAULT_STICKY_PRESET_ID });
 }

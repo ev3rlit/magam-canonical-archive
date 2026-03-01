@@ -111,10 +111,10 @@ const WashiTapeNode = ({
   const textColor = (() => {
     const value = (raw.text as { color?: unknown } | undefined)?.color;
     if (typeof value === 'string' && value.trim() !== '') return value;
-    const presetTextColor = pattern.kind === 'preset'
-      ? '#1f2937'
-      : '#111827';
-    return presetTextColor;
+    if (typeof pattern.textColor === 'string' && pattern.textColor.trim() !== '') {
+      return pattern.textColor;
+    }
+    return pattern.kind === 'preset' ? '#1f2937' : '#111827';
   })();
 
   const textAlign = (() => {

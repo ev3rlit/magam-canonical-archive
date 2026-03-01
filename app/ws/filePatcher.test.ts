@@ -109,7 +109,15 @@ describe('filePatcher', () => {
     await patchNodeCreate(filePath, {
       id: 's-new',
       type: 'sticker',
-      props: { x: 10, y: 20, text: 'note', anchor: 'root', position: 'right', gap: 16 },
+      props: {
+        x: 10,
+        y: 20,
+        text: 'note',
+        anchor: 'root',
+        position: 'right',
+        gap: 16,
+        pattern: { type: 'preset', id: 'lined-warm' },
+      },
     });
 
     const patched = await readFile(filePath, 'utf-8');
@@ -119,6 +127,25 @@ describe('filePatcher', () => {
     expect(patched.includes('anchor={"root"}')).toBe(true);
     expect(patched.includes('position={"right"}')).toBe(true);
     expect(patched.includes('gap={16}')).toBe(true);
+    expect(patched.includes('id: "lined-warm"')).toBe(true);
+  });
+
+  it('update: sticker pattern object를 유지한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Sticky id="s1" pattern={{ type: "preset", id: "postit" }} /></Canvas>;
+      }
+    `);
+
+    await patchFile(filePath, 's1', {
+      pattern: { type: 'preset', id: 'grid-standard' },
+      at: { type: 'anchor', target: 'root', position: 'bottom', gap: 24 },
+    });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id: "grid-standard"')).toBe(true);
+    expect(patched.includes('type: "anchor"')).toBe(true);
+    expect(patched.includes('target: "root"')).toBe(true);
   });
 
   it('create: washi-tape 타입은 WashiTape JSX로 생성된다', async () => {

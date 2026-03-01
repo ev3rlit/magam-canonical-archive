@@ -25,7 +25,8 @@ import { useChatStore } from '@/store/chat';
 import { TabState, useGraphStore } from '@/store/graph';
 import { normalizeStickerData } from '@/utils/stickerDefaults';
 import {
-  getPresetPatternCatalog,
+  getWashiPresetPatternCatalog,
+  normalizeStickyDefaults,
   normalizeWashiDefaults,
 } from '@/utils/washiTapeDefaults';
 import {
@@ -78,6 +79,7 @@ interface RenderNode {
     edge?: Record<string, unknown>;
     texture?: Record<string, unknown>;
     at?: Record<string, unknown>;
+    shape?: 'rectangle' | 'heart' | 'cloud' | 'speech';
     seed?: string | number;
     opacity?: number;
     // Anchor positioning
@@ -294,7 +296,7 @@ export default function Home() {
     [updateNode],
   );
 
-  const washiPresetCatalog = useMemo(() => getPresetPatternCatalog(), []);
+  const washiPresetCatalog = useMemo(() => getWashiPresetPatternCatalog(), []);
   const allWashiNodeIds = useMemo(
     () => nodes.filter((node) => node.type === 'washi-tape').map((node) => node.id),
     [nodes],
@@ -1128,31 +1130,35 @@ export default function Home() {
                       ? 'text'
                       : 'shape';
 
-                // If it contains markdown content, force markdown type unless sticky/text explicitly overridden
-                // Actually if user uses <Sticky> <Markdown>...</Markdown> </Sticky>, we probably still want Sticky style but with Markdown content...
-                // But StickyNode doesn't render markdown.
-                // For now, let's treat explicit `Node` in root level (which maps to graph-node? No, Node.tsx uses graph-node)
-                // Wait, logic above was for `child.type === 'graph-node'`.
-                // This else block handles `graph-sticky`, `graph-shape` etc.
-                // If the user uses `<Node>` (graph-node), it falls into the IF block above.
-                // The `else` block is for `Sticky` component usage.
-
-                // Let's also check markdown here just in case Sticky contains markdown
-                // Although currently we only have MarkdownNode for generic nodes.
-                // If graph-node is used (as in the example), it goes to the IF block.
-
-                // So my Previous change was in IF block for graph-node.
-                // Let's make sure I'm modifying the whole file correctly.
+                const normalizedSticky = nodeType === 'sticky'
+                  ? normalizeStickyDefaults({
+                    ...child.props,
+                    id: nodeId,
+                  })
+                  : null;
+                const stickyAtInput = normalizedSticky?.at;
 
                 nodes.push({
                   id: nodeId,
                   type: nodeType,
-                  position: { x: child.props.x || 0, y: child.props.y || 0 },
+                  position: {
+                    x: typeof child.props.x === 'number' ? child.props.x : 0,
+                    y: typeof child.props.y === 'number' ? child.props.y : 0,
+                  },
                   data: {
                     label: safeLabel,
                     type: child.props.type || 'rectangle', // for shapes
+                    shape: nodeType === 'sticky' ? normalizedSticky?.shape : undefined,
                     color: child.props.color || child.props.bg,
                     className: child.props.className, // Tailwind support
+                    pattern:
+                      nodeType === 'sticky'
+                        ? child.props.pattern ?? normalizedSticky?.pattern
+                        : child.props.pattern,
+                    at:
+                      nodeType === 'sticky'
+                        ? child.props.at ?? stickyAtInput
+                        : child.props.at,
 
                     // Rich text props
                     fontSize: child.props.fontSize,
@@ -1176,8 +1182,8 @@ export default function Home() {
                     align: child.props.align,
 
                     // Size hints for anchor calculations
-                    width: child.props.width,
-                    height: child.props.height,
+                    width: nodeType === 'sticky' ? (normalizedSticky?.width ?? child.props.width) : child.props.width,
+                    height: nodeType === 'sticky' ? (normalizedSticky?.height ?? child.props.height) : child.props.height,
                     // Semantic zoom bubble
                     bubble: child.props.bubble,
                     sourceMeta: child.props.sourceMeta || {
