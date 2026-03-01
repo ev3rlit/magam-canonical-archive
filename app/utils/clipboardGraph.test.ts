@@ -69,7 +69,6 @@ describe('clipboardGraph', () => {
           type: 'washi-tape',
           position: { x: 20, y: 40 },
           data: {
-            preset: 'pastel-dots',
             pattern: { type: 'preset', id: 'pastel-dots' },
             at: { type: 'polar', x: 20, y: 40, length: 180, thickness: 36 },
             opacity: 0.9,
@@ -83,7 +82,6 @@ describe('clipboardGraph', () => {
     expect(next.nodes).toHaveLength(1);
     expect(next.nodes[0].id).not.toBe('w1');
     expect(next.nodes[0].data).toMatchObject({
-      preset: 'pastel-dots',
       pattern: { type: 'preset', id: 'pastel-dots' },
       at: { type: 'polar', x: 20, y: 40, length: 180, thickness: 36 },
       opacity: 0.9,

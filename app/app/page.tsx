@@ -74,8 +74,6 @@ interface RenderNode {
     fit?: string;
     imageFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
     // Washi tape specific
-    preset?: string;
-    presetId?: string;
     pattern?: Record<string, unknown>;
     edge?: Record<string, unknown>;
     texture?: Record<string, unknown>;
@@ -290,7 +288,7 @@ export default function Home() {
   const handleWashiPresetChange = useCallback(
     async (nodeIds: string[], presetId: string) => {
       await Promise.all(
-        nodeIds.map((nodeId) => updateNode(nodeId, { preset: presetId })),
+        nodeIds.map((nodeId) => updateNode(nodeId, { pattern: { type: 'preset', id: presetId } })),
       );
     },
     [updateNode],
@@ -327,8 +325,6 @@ export default function Home() {
 
         selectedWashiNodeIds.forEach((nodeId) => {
           useGraphStore.getState().updateNodeData(nodeId, {
-            preset: presetId,
-            presetId,
             pattern: { type: 'preset', id: presetId },
           });
         });
@@ -1040,8 +1036,6 @@ export default function Home() {
                   },
                   data: {
                     label: washiLabel || child.props.label || '',
-                    preset: normalizedWashi.presetId,
-                    presetId: normalizedWashi.presetId,
                     pattern: child.props.pattern ?? normalizedWashi.pattern,
                     edge: child.props.edge,
                     texture: child.props.texture,

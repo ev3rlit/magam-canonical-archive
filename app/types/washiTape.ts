@@ -113,7 +113,6 @@ export interface WashiSourceMeta {
 export interface WashiTapeNodeData {
   label?: string;
   pattern?: PatternDef;
-  preset?: PresetPatternId;
   edge?: WashiEdgeDef;
   texture?: WashiTextureDef;
   text?: WashiTextDef;

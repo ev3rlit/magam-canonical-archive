@@ -47,8 +47,9 @@ function resolvePresetStyle(presetId: PresetPatternId): ResolvedWashiPattern {
 
 export function resolveWashiPattern(
   pattern: PatternDef | undefined,
-  fallbackPresetId: PresetPatternId,
 ): ResolvedWashiPattern {
+  const fallbackPresetId = resolvePresetPatternId(undefined);
+
   if (!pattern) {
     return resolvePresetStyle(fallbackPresetId);
   }

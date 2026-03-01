@@ -1,4 +1,21 @@
-import { Canvas, Image, Markdown, Shape, Sticker, Text, WashiTape } from '@magam/core';
+import {
+  attach,
+  Canvas,
+  Image,
+  image,
+  Markdown,
+  polar,
+  preset,
+  segment,
+  Shape,
+  solid,
+  Sticker,
+  svg,
+  Text,
+  texture,
+  torn,
+  WashiTape,
+} from '@magam/core';
 
 /**
  * Washi Tape Example
@@ -69,16 +86,15 @@ export default function WashiTapeExample() {
 
       <WashiTape
         id="washi-markdown-top-left"
-        at={{
-          type: 'attach',
+        at={attach({
           target: 'washi-markdown-card',
           placement: 'top',
           span: 0.5,
           align: 0,
           offset: -4,
           thickness: 24,
-        }}
-        preset="kraft-grid"
+        })}
+        pattern={preset('kraft-grid')}
         text={{ align: 'center', color: '#78350f', size: 12 }}
         opacity={0.62}
       >
@@ -91,7 +107,7 @@ export default function WashiTapeExample() {
         y={92}
         width={224}
         height={34}
-        preset="pastel-dots"
+        pattern={preset('pastel-dots')}
         text={{ align: 'center', size: 14 }}
       >
         Don't Forget!
@@ -99,14 +115,9 @@ export default function WashiTapeExample() {
 
       <WashiTape
         id="washi-solid-segment"
-        at={{
-          type: 'segment',
-          from: { x: 382, y: 288 },
-          to: { x: 650, y: 320 },
-          thickness: 34,
-        }}
-        pattern={{ type: 'solid', color: '#fed7aa' }}
-        edge={{ torn: true, roughness: 1.3 }}
+        at={segment({ x: 382, y: 288 }, { x: 650, y: 320 }, { thickness: 34 })}
+        pattern={solid('#fed7aa')}
+        edge={torn(1.3)}
         text={{ align: 'center', color: '#7c2d12', size: 13 }}
       >
         Movie Night
@@ -114,17 +125,16 @@ export default function WashiTapeExample() {
 
       <WashiTape
         id="washi-svg-attach"
-        at={{
-          type: 'attach',
+        at={attach({
           target: 'washi-card-3',
           placement: 'top',
           span: 0.72,
           align: 0.5,
           offset: 10,
           thickness: 28,
-        }}
-        pattern={{ type: 'svg', markup: dotMarkup }}
-        texture={{ opacity: 0.18, blendMode: 'multiply' }}
+        })}
+        pattern={svg({ markup: dotMarkup })}
+        texture={texture({ opacity: 0.18, blendMode: 'multiply' })}
         text={{ align: 'center', color: '#831843', size: 12 }}
       >
         Yum Yum
@@ -132,20 +142,8 @@ export default function WashiTapeExample() {
 
       <WashiTape
         id="washi-image-polar"
-        at={{
-          type: 'polar',
-          x: 728,
-          y: 370,
-          length: 250,
-          angle: -8,
-          thickness: 36,
-        }}
-        pattern={{
-          type: 'image',
-          src: stripeTexture,
-          scale: 1,
-          repeat: 'repeat-x',
-        }}
+        at={polar(728, 370, 250, -8, { thickness: 36 })}
+        pattern={image(stripeTexture, { scale: 1, repeat: 'repeat-x' })}
         text={{ align: 'center', color: '#78350f', size: 14 }}
         opacity={0.84}
       >

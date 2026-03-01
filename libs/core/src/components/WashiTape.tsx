@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { MagamError } from '../errors';
 import { useNodeId } from '../hooks/useNodeId';
+import type { AtDef, EdgeDef, PatternDef, TextureDef } from './WashiTape.helpers';
 
 export interface WashiTapeProps {
   id?: string;
@@ -8,11 +9,10 @@ export interface WashiTapeProps {
   y?: number;
   width?: number;
   height?: number;
-  at?: Record<string, unknown>;
-  preset?: string;
-  pattern?: Record<string, unknown>;
-  edge?: Record<string, unknown>;
-  texture?: Record<string, unknown>;
+  at?: AtDef | Record<string, unknown>;
+  pattern?: PatternDef | Record<string, unknown>;
+  edge?: EdgeDef | Record<string, unknown>;
+  texture?: TextureDef | Record<string, unknown>;
   text?: Record<string, unknown>;
   seed?: string | number;
   opacity?: number;

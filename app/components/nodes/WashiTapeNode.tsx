@@ -68,8 +68,8 @@ const WashiTapeNode = ({
   );
 
   const pattern = useMemo(
-    () => resolveWashiPattern(normalized.pattern, normalized.presetId),
-    [normalized.pattern, normalized.presetId],
+    () => resolveWashiPattern(normalized.pattern),
+    [normalized.pattern],
   );
   const desiredPosition = useMemo(
     () => getWashiNodePosition(geometry),
@@ -166,7 +166,7 @@ const WashiTapeNode = ({
           (geometry.angle !== 0 ? ` rotate(${geometry.angle}deg)` : ''),
       }}
     >
-      <div style={tapeStyle} data-washi-preset={normalized.presetId}>
+      <div style={tapeStyle} data-washi-preset={pattern.presetId}>
         <div
           className="pointer-events-none absolute inset-0"
           style={{

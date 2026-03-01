@@ -109,7 +109,7 @@ describe('RPC editing methods', () => {
         id: 'w-1',
         type: 'washi-tape',
         props: {
-          preset: 'pastel-dots',
+          pattern: { type: 'preset', id: 'pastel-dots' },
           at: { type: 'polar', x: 10, y: 20, length: 180, thickness: 36 },
           opacity: 0.9,
         },
@@ -123,7 +123,8 @@ describe('RPC editing methods', () => {
     const patched = await readFile(filePath, 'utf-8');
     expect(patched.includes('<WashiTape')).toBe(true);
     expect(patched.includes('id={"w-1"}')).toBe(true);
-    expect(patched.includes('preset={"pastel-dots"}')).toBe(true);
+    expect(patched.includes('type: "preset"')).toBe(true);
+    expect(patched.includes('id: "pastel-dots"')).toBe(true);
     expect(patched.includes('length: 180')).toBe(true);
   });
 

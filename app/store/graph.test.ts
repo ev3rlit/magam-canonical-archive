@@ -175,7 +175,7 @@ describe('washi node updates', () => {
           type: 'washi-tape',
           position: { x: 0, y: 0 },
           data: {
-            preset: 'pastel-dots',
+            pattern: { type: 'preset', id: 'pastel-dots' },
             at: { type: 'polar', x: 0, y: 0, length: 180, thickness: 36 },
           },
         } as any,
@@ -183,7 +183,7 @@ describe('washi node updates', () => {
     }));
 
     useGraphStore.getState().updateNodeData('washi-1', {
-      preset: 'kraft-grid',
+      pattern: { type: 'preset', id: 'kraft-grid' },
       opacity: 0.9,
     });
 
@@ -192,7 +192,7 @@ describe('washi node updates', () => {
       .nodes.find((node) => node.id === 'washi-1');
 
     expect(nextNode?.data).toMatchObject({
-      preset: 'kraft-grid',
+      pattern: { type: 'preset', id: 'kraft-grid' },
       opacity: 0.9,
       at: { type: 'polar', x: 0, y: 0, length: 180, thickness: 36 },
     });

@@ -54,7 +54,6 @@ const PRESET_CATALOG: WashiPresetCatalogItem[] = [
 
 export interface NormalizedWashiDefaults {
   pattern: PatternDef;
-  presetId: PresetPatternId;
   at: AtDef;
   opacity: number;
   seed: string;
@@ -98,10 +97,10 @@ export function resolvePresetPatternId(value: unknown): PresetPatternId {
   return DEFAULT_PRESET_ID;
 }
 
-function resolvePattern(input: Record<string, unknown>, presetId: PresetPatternId): PatternDef {
+function resolvePattern(input: Record<string, unknown>): PatternDef {
   const pattern = input?.pattern;
   if (!pattern || typeof pattern !== 'object') {
-    return { type: 'preset', id: presetId };
+    return { type: 'preset', id: DEFAULT_PRESET_ID };
   }
 
   const type = (pattern as { type?: unknown }).type;
@@ -144,7 +143,7 @@ function resolvePattern(input: Record<string, unknown>, presetId: PresetPatternI
     };
   }
 
-  return { type: 'preset', id: presetId };
+  return { type: 'preset', id: DEFAULT_PRESET_ID };
 }
 
 function resolveFallbackAt(input: Record<string, unknown>): AtDef {
@@ -233,9 +232,6 @@ function sanitizeAt(at: unknown, fallback: AtDef): AtDef {
 }
 
 export function normalizeWashiDefaults(input: Record<string, unknown>): NormalizedWashiDefaults {
-  const presetId = resolvePresetPatternId(
-    input?.presetId ?? input?.preset ?? input?.pattern,
-  );
   const fallbackAt = resolveFallbackAt(input);
   const at = sanitizeAt(input?.at, fallbackAt);
   const opacity = clamp(toNumber(input?.opacity) ?? DEFAULT_OPACITY, 0, 1);
@@ -243,8 +239,7 @@ export function normalizeWashiDefaults(input: Record<string, unknown>): Normaliz
   const seed = String(seedValue);
 
   return {
-    pattern: resolvePattern(input, presetId),
-    presetId,
+    pattern: resolvePattern(input),
     at,
     opacity,
     seed,

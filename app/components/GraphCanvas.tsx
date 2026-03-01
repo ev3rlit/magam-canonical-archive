@@ -130,10 +130,13 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
 
     const selectedNodes = nodes.filter((node) => selectedWashiNodeIds.includes(node.id));
     const presetIds = selectedNodes
-      .map((node) => resolvePresetPatternId((node.data as Record<string, unknown>)?.preset
-        ?? (node.data as Record<string, unknown>)?.presetId
-        ?? (node.data as Record<string, unknown>)?.pattern))
-      .filter(Boolean);
+      .map((node) => {
+        const pattern = (node.data as Record<string, unknown>)?.pattern;
+        if (!pattern || typeof pattern !== 'object') return null;
+        if ((pattern as { type?: unknown }).type !== 'preset') return null;
+        return resolvePresetPatternId(pattern);
+      })
+      .filter((presetId): presetId is PresetPatternId => Boolean(presetId));
 
     if (presetIds.length === 0) return null;
     const first = presetIds[0];
@@ -381,8 +384,6 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
             ...node,
             data: {
               ...(node.data || {}),
-              preset: presetId,
-              presetId,
               pattern: { type: 'preset', id: presetId },
             },
           };
