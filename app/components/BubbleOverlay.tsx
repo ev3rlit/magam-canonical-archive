@@ -3,7 +3,9 @@
 import React from 'react';
 import { useViewport } from 'reactflow';
 import { useBubbleState } from '@/contexts/BubbleContext';
-import { useZoom, BUBBLE_THRESHOLD } from '@/contexts/ZoomContext';
+import { useZoom } from '@/contexts/ZoomContext';
+import { useGraphStore } from '@/store/graph';
+import { resolveFontFamilyCssValue } from '@/utils/fontHierarchy';
 
 /**
  * Renders all bubbles in a single overlay layer above all nodes.
@@ -13,6 +15,12 @@ export function BubbleOverlay() {
     const bubbles = useBubbleState();
     const { zoom, isBubbleMode } = useZoom();
     const viewport = useViewport();
+    const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
+    const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
+    const resolvedFontFamily = resolveFontFamilyCssValue({
+        canvasFontFamily,
+        globalFontFamily,
+    });
 
     // Only show when in bubble mode
     if (!isBubbleMode) return null;
@@ -31,6 +39,7 @@ export function BubbleOverlay() {
                 pointerEvents: 'none',
                 zIndex: 1000, // Above all nodes
                 overflow: 'visible',
+                fontFamily: resolvedFontFamily,
             }}
         >
             {bubblesArray.map((bubble) => {

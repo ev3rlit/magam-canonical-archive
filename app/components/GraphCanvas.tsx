@@ -31,6 +31,7 @@ import { ContextMenu } from './ContextMenu';
 import { useContextMenu } from '@/hooks/useContextMenu';
 import { ExportDialog } from './ExportDialog';
 import { CustomBackground } from './CustomBackground';
+import { resolveFontFamilyCssValue } from '@/utils/fontHierarchy';
 import {
   applyGraphSnapshot,
   createPastedGraphState,
@@ -76,7 +77,14 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
     layoutType,
     mindMapGroups,
     canvasBackground,
+    globalFontFamily,
+    canvasFontFamily,
   } = useGraphStore();
+
+  const canvasResolvedFontFamily = useMemo(
+    () => resolveFontFamilyCssValue({ canvasFontFamily, globalFontFamily }),
+    [canvasFontFamily, globalFontFamily],
+  );
 
   const { calculateLayout, isLayouting } = useElkLayout();
   const nodesInitialized = useNodesInitialized();
@@ -434,7 +442,10 @@ function GraphCanvasContent({ onNodeDragStop }: GraphCanvasProps) {
       */}
       <div
         className="w-full h-full min-h-[500px] flex-1 bg-white transition-opacity duration-300"
-        style={{ opacity: isGraphVisible ? 1 : 0 }}
+        style={{
+          opacity: isGraphVisible ? 1 : 0,
+          fontFamily: canvasResolvedFontFamily,
+        }}
       >
         <ReactFlow
           nodes={nodes}
