@@ -43,3 +43,6 @@ Thumbs.db
 app/.next
 
 notes
+# Local agent/runtime artifacts
+.claude/worktrees/
+examples/.magam/
