@@ -3,7 +3,9 @@ import {
   Canvas,
   Image,
   image,
+  kraftgrid,
   Markdown,
+  pasteldots,
   polar,
   preset,
   segment,
@@ -94,7 +96,7 @@ export default function WashiTapeExample() {
           offset: -4,
           thickness: 24,
         })}
-        pattern={preset('kraft-grid')}
+        pattern={preset(kraftgrid)}
         text={{ align: 'center', color: '#78350f', size: 12 }}
         opacity={0.62}
       >
@@ -107,7 +109,7 @@ export default function WashiTapeExample() {
         y={92}
         width={224}
         height={34}
-        pattern={preset('pastel-dots')}
+        pattern={preset(pasteldots)}
         text={{ align: 'center', size: 14 }}
       >
         Don't Forget!

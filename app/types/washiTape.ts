@@ -1,14 +1,8 @@
 import type { RenderableChild } from '@/utils/childComposition';
+import type { PresetPatternId as CorePresetPatternId } from '@magam/core';
 
-export const WASHI_PRESET_IDS = [
-  'pastel-dots',
-  'kraft-grid',
-  'masking-solid',
-  'neon-stripe',
-  'vintage-paper',
-] as const;
-
-export type PresetPatternId = (typeof WASHI_PRESET_IDS)[number];
+export { WASHI_PRESET_IDS } from '@magam/core';
+export type PresetPatternId = CorePresetPatternId;
 
 export interface PresetPatternDef {
   type: 'preset';

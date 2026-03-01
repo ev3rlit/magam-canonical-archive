@@ -1,19 +1,26 @@
 import type {
   AtDef,
   PatternDef,
-  PresetPatternId,
   WashiPresetCatalogItem,
 } from '@/types/washiTape';
-import { WASHI_PRESET_IDS } from '@/types/washiTape';
+import {
+  kraftgrid,
+  maskingsolid,
+  neonstripe,
+  pasteldots,
+  type PresetPatternId,
+  vintagepaper,
+  WASHI_PRESET_IDS,
+} from '@magam/core';
 
-const DEFAULT_PRESET_ID: PresetPatternId = 'pastel-dots';
+const DEFAULT_PRESET_ID: PresetPatternId = pasteldots;
 const DEFAULT_LENGTH = 180;
 const DEFAULT_THICKNESS = 36;
 const DEFAULT_OPACITY = 0.84;
 
 const PRESET_CATALOG: WashiPresetCatalogItem[] = [
   {
-    id: 'pastel-dots',
+    id: pasteldots,
     label: 'Pastel Dots',
     backgroundColor: '#fdf2f8',
     backgroundImage:
@@ -21,7 +28,7 @@ const PRESET_CATALOG: WashiPresetCatalogItem[] = [
     textColor: '#7f1d1d',
   },
   {
-    id: 'kraft-grid',
+    id: kraftgrid,
     label: 'Kraft Grid',
     backgroundColor: '#f5deb3',
     backgroundImage:
@@ -29,13 +36,13 @@ const PRESET_CATALOG: WashiPresetCatalogItem[] = [
     textColor: '#78350f',
   },
   {
-    id: 'masking-solid',
+    id: maskingsolid,
     label: 'Masking Solid',
     backgroundColor: '#fde68a',
     textColor: '#713f12',
   },
   {
-    id: 'neon-stripe',
+    id: neonstripe,
     label: 'Neon Stripe',
     backgroundColor: '#d9f99d',
     backgroundImage:
@@ -43,7 +50,7 @@ const PRESET_CATALOG: WashiPresetCatalogItem[] = [
     textColor: '#14532d',
   },
   {
-    id: 'vintage-paper',
+    id: vintagepaper,
     label: 'Vintage Paper',
     backgroundColor: '#f8fafc',
     backgroundImage:

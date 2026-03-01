@@ -12,12 +12,13 @@ import {
   texture,
   torn,
 } from '../components/WashiTape.helpers';
+import { kraftgrid, pasteldots } from '../components/WashiTape.presets';
 
 describe('WashiTape component', () => {
   it('renders graph-washi-tape host node', async () => {
     const element = (
       <canvas>
-        <WashiTape id="w1" x={12} y={20} pattern={preset('pastel-dots')}>
+        <WashiTape id="w1" x={12} y={20} pattern={preset(pasteldots)}>
           TODO
         </WashiTape>
       </canvas>
@@ -63,7 +64,7 @@ describe('WashiTape component', () => {
             id={`w-export-${exportTarget}`}
             dataExportTarget={exportTarget}
             at={polar(0, 0, 180, undefined, { thickness: 36 })}
-            pattern={preset('kraft-grid')}
+            pattern={preset(kraftgrid)}
             edge={torn(1.5)}
             texture={texture({ opacity: 0.18, blendMode: 'multiply' })}
             text={{ align: 'center', color: '#0f172a', size: 14 }}

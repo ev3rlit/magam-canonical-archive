@@ -12,6 +12,7 @@ import {
   texture,
   torn,
 } from '../components/WashiTape.helpers';
+import { kraftgrid, pasteldots } from '../components/WashiTape.presets';
 
 describe('WashiTape helpers', () => {
   it('creates AtDef objects', () => {
@@ -41,7 +42,7 @@ describe('WashiTape helpers', () => {
   });
 
   it('creates PatternDef objects', () => {
-    expect(preset('pastel-dots')).toEqual({ type: 'preset', id: 'pastel-dots' });
+    expect(preset(pasteldots)).toEqual({ type: 'preset', id: 'pastel-dots' });
     expect(solid('#fed7aa')).toEqual({ type: 'solid', color: '#fed7aa' });
     expect(svg({ markup: '<svg></svg>' })).toEqual({ type: 'svg', src: undefined, markup: '<svg></svg>' });
     expect(image('/pattern.png', { repeat: 'repeat-x', scale: 1.2 })).toEqual({
@@ -62,5 +63,11 @@ describe('WashiTape helpers', () => {
   it('keeps definePattern identity', () => {
     const pattern = definePattern({ type: 'solid', color: '#111111' });
     expect(pattern).toEqual({ type: 'solid', color: '#111111' });
+  });
+
+  it('enforces preset id type at compile time', () => {
+    // @ts-expect-error invalid preset id should fail compile-time
+    preset('kraft-grid-typo');
+    expect(preset(kraftgrid).id).toBe('kraft-grid');
   });
 });

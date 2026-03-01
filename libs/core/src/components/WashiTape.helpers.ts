@@ -1,3 +1,5 @@
+import type { PresetPatternId } from './WashiTape.presets';
+
 export interface Point {
   x: number;
   y: number;
@@ -37,7 +39,7 @@ export type AtDef = SegmentAt | PolarAt | AttachAt;
 
 export interface PresetPatternDef {
   type: 'preset';
-  id: string;
+  id: PresetPatternId;
 }
 
 export interface SolidPatternDef {
@@ -118,7 +120,7 @@ export function attach(opts: Omit<AttachAt, 'type'>): AttachAt {
   };
 }
 
-export function preset(id: string): PresetPatternDef {
+export function preset(id: PresetPatternId): PresetPatternDef {
   return {
     type: 'preset',
     id,
