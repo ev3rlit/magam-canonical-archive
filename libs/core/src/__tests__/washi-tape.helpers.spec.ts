@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'bun:test';
 import { definePattern, image, preset, solid, svg } from '../material/helpers';
-import { kraftgrid, pasteldots } from '../material/presets';
+import {
+  kraftgrid,
+  linedwarm,
+  pasteldots,
+  postit,
+} from '../material/presets';
 import {
   attach,
+  anchor,
   polar,
   segment,
   smooth,
@@ -35,10 +41,18 @@ describe('WashiTape helpers', () => {
       span: 0.5,
       align: 0,
     });
+
+    expect(anchor('card-1', { position: 'bottom', gap: 20 })).toEqual({
+      type: 'anchor',
+      target: 'card-1',
+      position: 'bottom',
+      gap: 20,
+    });
   });
 
   it('creates PatternDef objects', () => {
     expect(preset(pasteldots)).toEqual({ type: 'preset', id: 'pastel-dots' });
+    expect(preset(postit, { color: '#ff6b6b' })).toEqual({ type: 'preset', id: 'postit', color: '#ff6b6b' });
     expect(solid('#fed7aa')).toEqual({ type: 'solid', color: '#fed7aa' });
     expect(svg({ markup: '<svg></svg>' })).toEqual({ type: 'svg', src: undefined, markup: '<svg></svg>' });
     expect(image('/pattern.png', { repeat: 'repeat-x', scale: 1.2 })).toEqual({
@@ -65,5 +79,6 @@ describe('WashiTape helpers', () => {
     // @ts-expect-error invalid preset id should fail compile-time
     preset('kraft-grid-typo');
     expect(preset(kraftgrid).id).toBe('kraft-grid');
+    expect(preset(linedwarm).id).toBe('lined-warm');
   });
 });

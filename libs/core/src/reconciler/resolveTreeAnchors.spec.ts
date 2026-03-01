@@ -48,4 +48,60 @@ describe('resolveTreeAnchors', () => {
 
     expect(lb.props.anchor).toBe('gateway');
   });
+
+  it('resolves at.target ids inside the same scope', () => {
+    const input: Container = {
+      type: 'root',
+      children: [
+        {
+          type: 'graph-shape',
+          props: { id: 'auth.card' },
+          children: [],
+        },
+        {
+          type: 'graph-sticky',
+          props: {
+            id: 'auth.memo',
+            at: {
+              type: 'attach',
+              target: 'card',
+            },
+          },
+          children: [],
+        },
+      ],
+    };
+
+    const output = resolveTreeAnchors(input);
+    const sticky = output.children[1];
+    expect(sticky.props.at.target).toBe('auth.card');
+  });
+
+  it('keeps cross-scope at.target unchanged when scoped candidate does not exist', () => {
+    const input: Container = {
+      type: 'root',
+      children: [
+        {
+          type: 'graph-shape',
+          props: { id: 'gateway' },
+          children: [],
+        },
+        {
+          type: 'graph-sticky',
+          props: {
+            id: 'auth.memo',
+            at: {
+              type: 'attach',
+              target: 'gateway',
+            },
+          },
+          children: [],
+        },
+      ],
+    };
+
+    const output = resolveTreeAnchors(input);
+    const sticky = output.children[1];
+    expect(sticky.props.at.target).toBe('gateway');
+  });
 });

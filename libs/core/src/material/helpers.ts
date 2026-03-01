@@ -8,11 +8,20 @@ import type {
   SvgMaterialDef,
 } from './types';
 
-export function preset(id: MaterialPresetId): PresetMaterialDef {
-  return {
+export function preset(
+  id: MaterialPresetId,
+  opts?: {
+    color?: string;
+  },
+): PresetMaterialDef {
+  const result: PresetMaterialDef = {
     type: 'preset',
     id,
   };
+  if (typeof opts?.color === 'string' && opts.color.trim() !== '') {
+    result.color = opts.color;
+  }
+  return result;
 }
 
 export function solid(color: string): SolidMaterialDef {

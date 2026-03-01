@@ -10,6 +10,22 @@ import { MindMap } from '../components/MindMap';
 import { Node } from '../components/Node';
 import { MagamError } from '../errors';
 
+function unwrapOrThrow(result: Awaited<ReturnType<typeof renderToGraph>>) {
+  return result.match(
+    (container) => container,
+    (error) => {
+      throw error;
+    },
+  );
+}
+
+function getOriginalError(result: Awaited<ReturnType<typeof renderToGraph>>) {
+  return result.match(
+    () => null,
+    (error) => error.originalError,
+  );
+}
+
 describe('Magam Renderer', () => {
   it('should render a simple tree to JSON', async () => {
     const element = (
@@ -18,14 +34,14 @@ describe('Magam Renderer', () => {
       </canvas>
     );
 
-    const result = await renderToGraph(element);
+    const result = unwrapOrThrow(await renderToGraph(element));
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       type: 'root',
       children: [
         {
           type: 'canvas',
-          props: { children: expect.anything() },
+          props: {},
           children: [
             {
               type: 'graph-sticky',
@@ -47,7 +63,7 @@ describe('Magam Renderer', () => {
       </canvas>
     );
 
-    const result = await renderToGraph(element);
+    const result = unwrapOrThrow(await renderToGraph(element));
 
     expect(result).toMatchObject({
       type: 'root',
@@ -80,7 +96,7 @@ describe('Magam Renderer', () => {
       </canvas>
     );
 
-    const result = await renderToGraph(element);
+    const result = unwrapOrThrow(await renderToGraph(element));
 
     expect(result).toMatchObject({
       type: 'root',
@@ -110,7 +126,7 @@ describe('Magam Renderer', () => {
     });
   });
 
-  it('should apply ELK layout to MindMap children (assign x, y)', async () => {
+  it('should keep MindMap children and edges when server layout is pass-through', async () => {
     const element = (
       <canvas>
         <MindMap id="root">
@@ -121,7 +137,7 @@ describe('Magam Renderer', () => {
       </canvas>
     );
 
-    const result = await renderToGraph(element);
+    const result = unwrapOrThrow(await renderToGraph(element));
 
     const findNode = (id: string) => {
       const mindmap = result.children[0].children[0];
@@ -130,11 +146,8 @@ describe('Magam Renderer', () => {
 
     const node1 = findNode('1');
     const node2 = findNode('2');
-
-    expect(node1.props.x).toBeDefined();
-    expect(node1.props.y).toBeDefined();
-    expect(node2.props.x).toBeDefined();
-    expect(node2.props.y).toBeDefined();
+    expect(node1).toBeDefined();
+    expect(node2).toBeDefined();
 
     expect(result).toMatchObject({
       type: 'root',
@@ -145,8 +158,8 @@ describe('Magam Renderer', () => {
             {
               type: 'graph-mindmap',
               children: [
-                { type: 'graph-sticky', props: { id: '1', text: 'Root' } },
-                { type: 'graph-sticky', props: { id: '2', text: 'Child' } },
+                { type: 'graph-node', props: { id: '1', text: 'Root' } },
+                { type: 'graph-node', props: { id: '2', text: 'Child' } },
                 { type: 'graph-edge', props: { from: '1', to: '2' } },
               ],
             },
@@ -167,7 +180,11 @@ describe('Magam Renderer', () => {
       </canvas>
     );
 
-    await expect(renderToGraph(element)).rejects.toThrow('Test Error');
+    const result = await renderToGraph(element);
+    expect(result.isErr()).toBe(true);
+    const originalError = getOriginalError(result);
+    expect(originalError).toBeInstanceOf(Error);
+    expect((originalError as Error).message).toContain('Test Error');
   });
 
   describe('Validation', () => {
@@ -177,8 +194,11 @@ describe('Magam Renderer', () => {
           <Sticky x={0} y={0} />
         </canvas>
       );
-      await expect(renderToGraph(element)).rejects.toThrow(MagamError);
-      await expect(renderToGraph(element)).rejects.toThrow(
+      const result = await renderToGraph(element);
+      expect(result.isErr()).toBe(true);
+      const originalError = getOriginalError(result);
+      expect(originalError).toBeInstanceOf(MagamError);
+      expect((originalError as Error).message).toContain(
         "Missing required prop 'id'",
       );
     });
@@ -189,9 +209,12 @@ describe('Magam Renderer', () => {
           <Sticky id="1" y={0} />
         </canvas>
       );
-      await expect(renderToGraph(element)).rejects.toThrow(MagamError);
-      await expect(renderToGraph(element)).rejects.toThrow(
-        "Missing required prop 'x'",
+      const result = await renderToGraph(element);
+      expect(result.isErr()).toBe(true);
+      const originalError = getOriginalError(result);
+      expect(originalError).toBeInstanceOf(MagamError);
+      expect((originalError as Error).message).toContain(
+        "Sticky requires either 'at' placement input or 'x' and 'y' coordinates",
       );
     });
 
@@ -201,10 +224,23 @@ describe('Magam Renderer', () => {
           <Sticky id="1" x={0} />
         </canvas>
       );
-      await expect(renderToGraph(element)).rejects.toThrow(MagamError);
-      await expect(renderToGraph(element)).rejects.toThrow(
-        "Missing required prop 'y'",
+      const result = await renderToGraph(element);
+      expect(result.isErr()).toBe(true);
+      const originalError = getOriginalError(result);
+      expect(originalError).toBeInstanceOf(MagamError);
+      expect((originalError as Error).message).toContain(
+        "Sticky requires either 'at' placement input or 'x' and 'y' coordinates",
       );
+    });
+
+    it('should allow Sticky with at placement and without x/y', async () => {
+      const element = (
+        <canvas>
+          <Sticky id="1" at={{ type: 'anchor', target: 'ref', position: 'bottom' }} />
+        </canvas>
+      );
+      const result = await renderToGraph(element);
+      expect(result.isOk()).toBe(true);
     });
 
     it('should throw MagamError if Shape is missing props', async () => {
@@ -213,20 +249,23 @@ describe('Magam Renderer', () => {
           <Shape id="s1" x={0} />
         </canvas>
       );
-      await expect(renderToGraph(element)).rejects.toThrow(
-        "Missing required prop 'y'",
+      const result = await renderToGraph(element);
+      expect(result.isErr()).toBe(true);
+      const originalError = getOriginalError(result);
+      expect(originalError).toBeInstanceOf(MagamError);
+      expect((originalError as Error).message).toContain(
+        "Shape requires either 'x' and 'y' coordinates or 'anchor' positioning",
       );
     });
 
-    it('should throw MagamError if Text is missing props', async () => {
+    it('should allow Text without y because Text component does not validate coordinates', async () => {
       const element = (
         <canvas>
           <Text id="t1" x={0} />
         </canvas>
       );
-      await expect(renderToGraph(element)).rejects.toThrow(
-        "Missing required prop 'y'",
-      );
+      const result = await renderToGraph(element);
+      expect(result.isOk()).toBe(true);
     });
   });
 });

@@ -8,6 +8,7 @@ export interface MaterialPresetMeta {
   label: string;
   backgroundColor: string;
   backgroundImage?: string;
+  backgroundSize?: string;
   textColor: string;
 }
 
@@ -16,6 +17,7 @@ export type MaterialPresetRegistry = typeof MATERIAL_PRESET_REGISTRY;
 export interface PresetMaterialDef {
   type: 'preset';
   id: MaterialPresetId;
+  color?: string;
 }
 
 export interface SolidMaterialDef {

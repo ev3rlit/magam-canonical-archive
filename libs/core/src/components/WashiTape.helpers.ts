@@ -33,7 +33,25 @@ export interface AttachAt {
   thickness?: number;
 }
 
-export type AtDef = SegmentAt | PolarAt | AttachAt;
+export type AnchorPosition =
+  | 'top'
+  | 'bottom'
+  | 'left'
+  | 'right'
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right';
+
+export interface AnchorAt {
+  type: 'anchor';
+  target: string;
+  position?: AnchorPosition;
+  gap?: number;
+  align?: 'start' | 'center' | 'end';
+}
+
+export type AtDef = SegmentAt | PolarAt | AttachAt | AnchorAt;
 
 export type EdgeDef =
   | { variant: 'smooth' }
@@ -86,6 +104,23 @@ export function attach(opts: Omit<AttachAt, 'type'>): AttachAt {
   return {
     type: 'attach',
     ...opts,
+  };
+}
+
+export function anchor(
+  target: string,
+  opts?: {
+    position?: AnchorPosition;
+    gap?: number;
+    align?: 'start' | 'center' | 'end';
+  },
+): AnchorAt {
+  return {
+    type: 'anchor',
+    target,
+    ...(opts?.position ? { position: opts.position } : {}),
+    ...(opts?.gap !== undefined ? { gap: opts.gap } : {}),
+    ...(opts?.align ? { align: opts.align } : {}),
   };
 }
 
