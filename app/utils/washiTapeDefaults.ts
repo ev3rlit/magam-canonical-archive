@@ -1,66 +1,30 @@
 import type {
   AtDef,
-  PatternDef,
+  MaterialPresetId,
+  PaperMaterial,
   WashiPresetCatalogItem,
 } from '@/types/washiTape';
 import {
-  kraftgrid,
-  maskingsolid,
-  neonstripe,
+  MATERIAL_PRESET_IDS,
+  MATERIAL_PRESET_REGISTRY,
   pasteldots,
-  type PresetPatternId,
-  vintagepaper,
-  WASHI_PRESET_IDS,
 } from '@magam/core';
 
-const DEFAULT_PRESET_ID: PresetPatternId = pasteldots;
+const DEFAULT_PRESET_ID: MaterialPresetId = pasteldots;
 const DEFAULT_LENGTH = 180;
 const DEFAULT_THICKNESS = 36;
 const DEFAULT_OPACITY = 0.84;
 
-const PRESET_CATALOG: WashiPresetCatalogItem[] = [
-  {
-    id: pasteldots,
-    label: 'Pastel Dots',
-    backgroundColor: '#fdf2f8',
-    backgroundImage:
-      'radial-gradient(circle at 10px 10px, rgba(244,114,182,0.35) 0 2px, transparent 2px)',
-    textColor: '#7f1d1d',
-  },
-  {
-    id: kraftgrid,
-    label: 'Kraft Grid',
-    backgroundColor: '#f5deb3',
-    backgroundImage:
-      'linear-gradient(0deg, rgba(120,53,15,0.13) 1px, transparent 1px), linear-gradient(90deg, rgba(120,53,15,0.13) 1px, transparent 1px)',
-    textColor: '#78350f',
-  },
-  {
-    id: maskingsolid,
-    label: 'Masking Solid',
-    backgroundColor: '#fde68a',
-    textColor: '#713f12',
-  },
-  {
-    id: neonstripe,
-    label: 'Neon Stripe',
-    backgroundColor: '#d9f99d',
-    backgroundImage:
-      'repeating-linear-gradient(-45deg, rgba(34,197,94,0.22) 0 8px, rgba(34,197,94,0.08) 8px 16px)',
-    textColor: '#14532d',
-  },
-  {
-    id: vintagepaper,
-    label: 'Vintage Paper',
-    backgroundColor: '#f8fafc',
-    backgroundImage:
-      'linear-gradient(135deg, rgba(100,116,139,0.08) 0%, rgba(100,116,139,0) 70%)',
-    textColor: '#1e293b',
-  },
-];
+const PRESET_CATALOG: WashiPresetCatalogItem[] = MATERIAL_PRESET_IDS.map((id) => ({
+  id,
+  label: MATERIAL_PRESET_REGISTRY[id].label,
+  backgroundColor: MATERIAL_PRESET_REGISTRY[id].backgroundColor,
+  backgroundImage: MATERIAL_PRESET_REGISTRY[id].backgroundImage,
+  textColor: MATERIAL_PRESET_REGISTRY[id].textColor,
+}));
 
 export interface NormalizedWashiDefaults {
-  pattern: PatternDef;
+  pattern: PaperMaterial;
   at: AtDef;
   opacity: number;
   seed: string;
@@ -83,11 +47,12 @@ export function getPresetPatternCatalog(): WashiPresetCatalogItem[] {
   return PRESET_CATALOG;
 }
 
-export function isPresetPatternId(value: unknown): value is PresetPatternId {
-  return typeof value === 'string' && (WASHI_PRESET_IDS as readonly string[]).includes(value);
+export function isPresetPatternId(value: unknown): value is MaterialPresetId {
+  return typeof value === 'string'
+    && (MATERIAL_PRESET_IDS as readonly string[]).includes(value);
 }
 
-export function resolvePresetPatternId(value: unknown): PresetPatternId {
+export function resolvePresetPatternId(value: unknown): MaterialPresetId {
   if (isPresetPatternId(value)) return value;
 
   if (
@@ -104,7 +69,7 @@ export function resolvePresetPatternId(value: unknown): PresetPatternId {
   return DEFAULT_PRESET_ID;
 }
 
-function resolvePattern(input: Record<string, unknown>): PatternDef {
+function resolvePattern(input: Record<string, unknown>): PaperMaterial {
   const pattern = input?.pattern;
   if (!pattern || typeof pattern !== 'object') {
     return { type: 'preset', id: DEFAULT_PRESET_ID };

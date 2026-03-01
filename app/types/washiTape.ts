@@ -1,38 +1,12 @@
 import type { RenderableChild } from '@/utils/childComposition';
-import type { PresetPatternId as CorePresetPatternId } from '@magam/core';
+import type {
+  MaterialPresetId as CoreMaterialPresetId,
+  PaperMaterial as CorePaperMaterial,
+} from '@magam/core';
 
-export { WASHI_PRESET_IDS } from '@magam/core';
-export type PresetPatternId = CorePresetPatternId;
-
-export interface PresetPatternDef {
-  type: 'preset';
-  id?: PresetPatternId;
-  name?: PresetPatternId;
-}
-
-export interface SolidPatternDef {
-  type: 'solid';
-  color: string;
-}
-
-export interface SvgPatternDef {
-  type: 'svg';
-  src?: string;
-  markup?: string;
-}
-
-export interface ImagePatternDef {
-  type: 'image';
-  src: string;
-  scale?: number;
-  repeat?: 'repeat-x' | 'repeat' | 'stretch';
-}
-
-export type PatternDef =
-  | PresetPatternDef
-  | SolidPatternDef
-  | SvgPatternDef
-  | ImagePatternDef;
+export { MATERIAL_PRESET_IDS } from '@magam/core';
+export type MaterialPresetId = CoreMaterialPresetId;
+export type PaperMaterial = CorePaperMaterial;
 
 export interface SegmentAt {
   type: 'segment';
@@ -106,7 +80,7 @@ export interface WashiSourceMeta {
 
 export interface WashiTapeNodeData {
   label?: string;
-  pattern?: PatternDef;
+  pattern?: PaperMaterial;
   edge?: WashiEdgeDef;
   texture?: WashiTextureDef;
   text?: WashiTextDef;
@@ -119,7 +93,7 @@ export interface WashiTapeNodeData {
 }
 
 export interface WashiPresetCatalogItem {
-  id: PresetPatternId;
+  id: MaterialPresetId;
   label: string;
   backgroundColor: string;
   backgroundImage?: string;

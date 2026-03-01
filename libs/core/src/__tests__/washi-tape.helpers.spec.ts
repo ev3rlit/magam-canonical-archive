@@ -1,18 +1,14 @@
 import { describe, expect, it } from 'bun:test';
+import { definePattern, image, preset, solid, svg } from '../material/helpers';
+import { kraftgrid, pasteldots } from '../material/presets';
 import {
   attach,
-  definePattern,
-  image,
   polar,
-  preset,
   segment,
   smooth,
-  solid,
-  svg,
   texture,
   torn,
 } from '../components/WashiTape.helpers';
-import { kraftgrid, pasteldots } from '../components/WashiTape.presets';
 
 describe('WashiTape helpers', () => {
   it('creates AtDef objects', () => {

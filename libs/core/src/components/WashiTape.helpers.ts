@@ -1,5 +1,3 @@
-import type { PresetPatternId } from './WashiTape.presets';
-
 export interface Point {
   x: number;
   y: number;
@@ -36,35 +34,6 @@ export interface AttachAt {
 }
 
 export type AtDef = SegmentAt | PolarAt | AttachAt;
-
-export interface PresetPatternDef {
-  type: 'preset';
-  id: PresetPatternId;
-}
-
-export interface SolidPatternDef {
-  type: 'solid';
-  color: string;
-}
-
-export interface SvgPatternDef {
-  type: 'svg';
-  src?: string;
-  markup?: string;
-}
-
-export interface ImagePatternDef {
-  type: 'image';
-  src: string;
-  scale?: number;
-  repeat?: 'repeat-x' | 'repeat' | 'stretch';
-}
-
-export type PatternDef =
-  | PresetPatternDef
-  | SolidPatternDef
-  | SvgPatternDef
-  | ImagePatternDef;
 
 export type EdgeDef =
   | { variant: 'smooth' }
@@ -118,47 +87,6 @@ export function attach(opts: Omit<AttachAt, 'type'>): AttachAt {
     type: 'attach',
     ...opts,
   };
-}
-
-export function preset(id: PresetPatternId): PresetPatternDef {
-  return {
-    type: 'preset',
-    id,
-  };
-}
-
-export function solid(color: string): SolidPatternDef {
-  return {
-    type: 'solid',
-    color,
-  };
-}
-
-export function svg(opts: { src?: string; markup?: string }): SvgPatternDef {
-  return {
-    type: 'svg',
-    src: opts.src,
-    markup: opts.markup,
-  };
-}
-
-export function image(
-  src: string,
-  opts?: {
-    scale?: number;
-    repeat?: 'repeat-x' | 'repeat' | 'stretch';
-  },
-): ImagePatternDef {
-  return {
-    type: 'image',
-    src,
-    scale: opts?.scale,
-    repeat: opts?.repeat,
-  };
-}
-
-export function definePattern<T extends PatternDef>(def: T): T {
-  return def;
 }
 
 export function smooth(): EdgeDef {

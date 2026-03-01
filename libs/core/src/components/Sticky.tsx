@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { MagamError } from '../errors';
 import { useNodeId } from '../hooks/useNodeId';
+import type { PaperMaterial } from '../material/types';
 import type { FontFamilyPreset } from '../types/font';
 
 export interface StickyProps {
@@ -12,6 +13,7 @@ export interface StickyProps {
   height?: number;
   color?: string;
   fontFamily?: FontFamilyPreset;
+  pattern?: PaperMaterial;
   className?: string; // Tailwind support
   children?: React.ReactNode; // Content and Nested Edges support
   [key: string]: any;

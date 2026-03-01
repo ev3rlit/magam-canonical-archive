@@ -41,11 +41,11 @@ import {
   type GraphSnapshot,
 } from '@/utils/clipboardGraph';
 import { getPresetPatternCatalog, resolvePresetPatternId } from '@/utils/washiTapeDefaults';
-import type { PresetPatternId } from '@/types/washiTape';
+import type { MaterialPresetId } from '@/types/washiTape';
 
 type GraphCanvasProps = {
   onNodeDragStop?: (nodeId: string, x: number, y: number) => Promise<void> | void;
-  onWashiPresetChange?: (nodeIds: string[], presetId: PresetPatternId) => Promise<void> | void;
+  onWashiPresetChange?: (nodeIds: string[], presetId: MaterialPresetId) => Promise<void> | void;
 };
 
 function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvasProps) {
@@ -125,7 +125,7 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
     [nodes, selectedNodeIds],
   );
 
-  const activeWashiPresetId = useMemo<PresetPatternId | null>(() => {
+  const activeWashiPresetId = useMemo<MaterialPresetId | null>(() => {
     if (selectedWashiNodeIds.length === 0) return null;
 
     const selectedNodes = nodes.filter((node) => selectedWashiNodeIds.includes(node.id));
@@ -136,7 +136,7 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
         if ((pattern as { type?: unknown }).type !== 'preset') return null;
         return resolvePresetPatternId(pattern);
       })
-      .filter((presetId): presetId is PresetPatternId => Boolean(presetId));
+      .filter((presetId): presetId is MaterialPresetId => Boolean(presetId));
 
     if (presetIds.length === 0) return null;
     const first = presetIds[0];

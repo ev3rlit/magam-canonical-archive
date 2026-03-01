@@ -1,18 +1,15 @@
 import * as React from 'react';
 import { renderToGraph } from '../renderer';
+import { image, preset, solid, svg } from '../material/helpers';
+import { kraftgrid, pasteldots } from '../material/presets';
 import { WashiTape } from '../components/WashiTape';
 import {
   attach,
-  image,
   polar,
-  preset,
   segment,
-  solid,
-  svg,
   texture,
   torn,
 } from '../components/WashiTape.helpers';
-import { kraftgrid, pasteldots } from '../components/WashiTape.presets';
 
 describe('WashiTape component', () => {
   it('renders graph-washi-tape host node', async () => {

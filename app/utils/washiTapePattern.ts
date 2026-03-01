@@ -1,9 +1,9 @@
-import type { PatternDef, PresetPatternId } from '@/types/washiTape';
+import type { MaterialPresetId, PaperMaterial } from '@/types/washiTape';
 import { getPresetPatternCatalog, resolvePresetPatternId } from './washiTapeDefaults';
 
 export interface ResolvedWashiPattern {
   kind: 'preset' | 'solid' | 'svg' | 'image';
-  presetId: PresetPatternId;
+  presetId: MaterialPresetId;
   backgroundColor?: string;
   backgroundImage?: string;
   backgroundRepeat?: string;
@@ -32,7 +32,7 @@ export function sanitizeInlineSvgMarkup(markup: string): string | null {
   return strippedHandlers;
 }
 
-function resolvePresetStyle(presetId: PresetPatternId): ResolvedWashiPattern {
+function resolvePresetStyle(presetId: MaterialPresetId): ResolvedWashiPattern {
   const preset = getPresetPatternCatalog().find((item) => item.id === presetId);
   return {
     kind: 'preset',
@@ -46,7 +46,7 @@ function resolvePresetStyle(presetId: PresetPatternId): ResolvedWashiPattern {
 }
 
 export function resolveWashiPattern(
-  pattern: PatternDef | undefined,
+  pattern: PaperMaterial | undefined,
 ): ResolvedWashiPattern {
   const fallbackPresetId = resolvePresetPatternId(undefined);
 
