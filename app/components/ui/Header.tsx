@@ -1,6 +1,6 @@
 import React from 'react';
 import { useGraphStore } from '@/store/graph';
-import { useChatStore } from '@/store/chat';
+import { useChatUiStore } from '@/store/chatUi';
 import {
   Bot,
   Command,
@@ -12,7 +12,7 @@ import { clsx } from 'clsx';
 
 export const Header: React.FC = () => {
   const { status, currentFile, isSearchOpen, openSearch, closeSearch } = useGraphStore();
-  const { isOpen: isChatOpen, toggleOpen: toggleChatOpen } = useChatStore();
+  const { isOpen: isChatOpen, toggleOpen: toggleChatOpen } = useChatUiStore();
 
   const isConnected = status === 'connected';
 

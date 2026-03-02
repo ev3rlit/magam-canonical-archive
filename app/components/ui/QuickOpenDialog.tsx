@@ -9,7 +9,7 @@ export interface QuickOpenCommand {
   disabled?: boolean;
 }
 
-interface QuickOpenDialogProps {
+export interface QuickOpenDialogProps {
   isOpen: boolean;
   files: string[];
   onClose: () => void;

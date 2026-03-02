@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo } from 'react';
 import { X } from 'lucide-react';
 import { useChatStore, type ChatProgressStage } from '@/store/chat';
+import { useChatUiStore } from '@/store/chatUi';
 import { MessageList } from './MessageList';
 import { ChatInput } from './ChatInput';
 import { SetupGuide } from './SetupGuide';
@@ -18,8 +19,8 @@ const STAGE_LABELS: Record<ChatProgressStage, string> = {
 };
 
 export const ChatPanel: React.FC = () => {
+  const { isOpen, setOpen } = useChatUiStore();
   const {
-    isOpen,
     status,
     providers,
     selectedProviderId,
@@ -31,7 +32,6 @@ export const ChatPanel: React.FC = () => {
     sessionId,
     currentSessionTitle,
     error,
-    setOpen,
     loadProviders,
     loadSessions,
     createSession,

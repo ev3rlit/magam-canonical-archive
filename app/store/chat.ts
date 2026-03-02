@@ -98,7 +98,6 @@ export interface ChatSendRequest {
 }
 
 export interface ChatState {
-  isOpen: boolean;
   status: ChatStoreStatus;
   providers: ChatProvider[];
   selectedProviderId: string | null;
@@ -114,8 +113,6 @@ export interface ChatState {
   activeRequestId: string | null;
   permissionMode: ChatPermissionMode;
   error: string | null;
-  toggleOpen: () => void;
-  setOpen: (open: boolean) => void;
   loadProviders: () => Promise<void>;
   selectProvider: (providerId: string) => void;
   setSelectedModel: (model: string) => void;
@@ -239,7 +236,6 @@ export const __chatTestUtils = {
 };
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  isOpen: false,
   status: 'idle',
   providers: [],
   selectedProviderId: null,
@@ -255,9 +251,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeRequestId: null,
   permissionMode: 'auto',
   error: null,
-
-  toggleOpen: () => set((state) => ({ isOpen: !state.isOpen })),
-  setOpen: (open) => set({ isOpen: open }),
 
   loadProviders: async () => {
     set({ status: 'loadingProviders', error: null });
