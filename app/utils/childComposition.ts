@@ -96,7 +96,10 @@ export function parseRenderableChildren(
     }
 
     if (child.type === 'graph-markdown') {
-      pushText(parsed, child.props?.content);
+      if (typeof child.props?.content === 'string') {
+        parsed.push({ type: 'graph-markdown', content: child.props.content });
+      }
+      return;
     }
   });
 

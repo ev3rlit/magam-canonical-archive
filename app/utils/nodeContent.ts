@@ -17,10 +17,13 @@ export function extractNodeContent(
   const textJoiner = options?.textJoiner ?? '';
 
   const label = parsedChildren
-    .filter((content): content is { type: 'text'; text: string } =>
-      content.type === 'text',
+    .filter(
+      (
+        content,
+      ): content is { type: 'text'; text: string } | { type: 'graph-markdown'; content: string } =>
+        content.type === 'text' || content.type === 'graph-markdown',
     )
-    .map((content) => content.text)
+    .map((content) => ('content' in content ? content.content : content.text))
     .join(textJoiner);
 
   const icon = parsedChildren.find(

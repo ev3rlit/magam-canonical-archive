@@ -1,4 +1,6 @@
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getLucideIconByName } from '@/utils/lucideRegistry';
 import type { RenderableChild } from '@/utils/childComposition';
 
@@ -35,9 +37,21 @@ export function renderNodeContent({
 
         return <Icon key={`icon-${child.name}-${index}`} className={iconClassName} />;
       }
-      case 'graph-image':
-      case 'graph-markdown': {
+      case 'graph-image': {
         return null;
+      }
+      case 'graph-markdown': {
+        return (
+          <div
+            key={`markdown-${index}`}
+            className="prose prose-slate prose-sm max-w-none"
+            style={{ lineHeight: 1.2, ...textStyle }}
+          >
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {child.content}
+            </ReactMarkdown>
+          </div>
+        );
       }
       case 'svg-inline': {
         return null;

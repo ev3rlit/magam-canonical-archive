@@ -172,26 +172,41 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
       )}
       style={stickyStyle}
     >
-      <div
-        className="w-full h-full flex items-center justify-center text-center break-words pointer-events-none select-none"
-        style={{
-          overflow: sizing.hasFixedFrame ? 'hidden' : 'visible',
-          lineClamp: sizing.hasFixedFrame ? 5 : undefined,
-        } as React.CSSProperties}
-      >
-        <div className="flex items-center gap-2 max-w-full">
-          {renderNodeContent({
-            children: raw.children,
-            fallbackLabel: raw.label,
-            iconClassName: 'w-4 h-4 shrink-0',
-            textClassName: 'text-base leading-relaxed font-medium',
-            textStyle: {
-              fontFamily: resolvedFontFamily,
-              color: textColor,
-            },
-          })}
-        </div>
-      </div>
+      {(() => {
+        const hasMarkdownChildren = Array.isArray(raw.children) &&
+          raw.children.some((c) => c.type === 'graph-markdown');
+
+        return (
+          <div
+            className={twMerge(
+              'w-full h-full flex break-words pointer-events-none select-none',
+              hasMarkdownChildren
+                ? 'items-start justify-start text-left'
+                : 'items-center justify-center text-center',
+            )}
+            style={{
+              overflow: sizing.hasFixedFrame ? 'hidden' : 'visible',
+              lineClamp: sizing.hasFixedFrame ? 5 : undefined,
+            } as React.CSSProperties}
+          >
+            <div className={twMerge(
+              'max-w-full',
+              hasMarkdownChildren ? 'w-full' : 'flex items-center gap-2',
+            )}>
+              {renderNodeContent({
+                children: raw.children,
+                fallbackLabel: raw.label,
+                iconClassName: 'w-4 h-4 shrink-0',
+                textClassName: 'text-base leading-relaxed font-medium',
+                textStyle: {
+                  fontFamily: resolvedFontFamily,
+                  color: textColor,
+                },
+              })}
+            </div>
+          </div>
+        );
+      })()}
     </BaseNode>
   );
 };
