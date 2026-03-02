@@ -2,6 +2,7 @@ import * as React from 'react';
 import { MagamError } from '../errors';
 import { useNodeId } from '../hooks/useNodeId';
 import type { FontFamilyPreset } from '../types/font';
+import type { FromProp } from './Node';
 
 export interface StickerProps {
   id?: string;
@@ -33,6 +34,7 @@ export interface StickerProps {
   shadow?: 'none' | 'sm' | 'md' | 'lg';
   padding?: number;
   fontFamily?: FontFamilyPreset;
+  from?: FromProp;
 
   className?: string;
   children?: React.ReactNode;
@@ -48,8 +50,9 @@ export const Sticker: React.FC<StickerProps> = (props) => {
 
   const hasCoordinates = props.x !== undefined && props.y !== undefined;
   const hasAnchor = props.anchor !== undefined;
+  const hasFrom = props.from !== undefined;
 
-  if (!hasCoordinates && !hasAnchor) {
+  if (!hasFrom && !hasCoordinates && !hasAnchor) {
     throw new MagamError("Sticker requires either 'x' and 'y' coordinates or 'anchor' positioning", 'props');
   }
 

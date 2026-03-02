@@ -3,6 +3,7 @@ import { MagamError } from '../errors';
 import { useNodeId } from '../hooks/useNodeId';
 import type { PaperMaterial } from '../material/types';
 import type { AtDef, EdgeDef, TextureDef } from './WashiTape.helpers';
+import type { FromProp } from './Node';
 
 export interface WashiTapeProps {
   id?: string;
@@ -17,6 +18,7 @@ export interface WashiTapeProps {
   text?: Record<string, unknown>;
   seed?: string | number;
   opacity?: number;
+  from?: FromProp;
   className?: string;
   children?: React.ReactNode;
   [key: string]: unknown;
@@ -45,7 +47,8 @@ export const WashiTape: React.FC<WashiTapeProps> = (props) => {
 
   const hasAt = props.at && typeof props.at === 'object';
   const hasCoordinates = props.x !== undefined && props.y !== undefined;
-  if (!hasAt && !hasCoordinates) {
+  const hasFrom = props.from !== undefined;
+  if (!hasFrom && !hasAt && !hasCoordinates) {
     throw new MagamError(
       "WashiTape requires either 'at' placement input or 'x' and 'y' coordinates",
       'props',

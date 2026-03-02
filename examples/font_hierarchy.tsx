@@ -75,8 +75,11 @@ export default function FontHierarchyExample() {
       />
 
       {/* MindMap node-level override */}
+      <Text id="font-map.seed" x={60} y={432} className="text-[1px] text-transparent select-none">.</Text>
       <MindMap id="font-map" x={60} y={432} layout="tree" spacing={90}>
-        <Node id="root">MindMap inherit</Node>
+        <Node id="root" from={{ node: 'font-map.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
+          MindMap inherit
+        </Node>
         <Node id="child-a" from="root">Inherit global/canvas</Node>
         <Node id="child-b" from="root" fontFamily="sans-inter">
           Node override sans-inter

@@ -44,8 +44,11 @@ export default function TextUsageExample() {
             </Shape>
 
             {/* ===== 5. MindMap Node text ===== */}
-            <MindMap x={50} y={680} layout="tree">
-                <Node id="mm-title">5. MindMap Node text</Node>
+            <Text id="text-map.seed" x={50} y={680} className="text-[1px] text-transparent select-none">.</Text>
+            <MindMap id="text-map" x={50} y={680} layout="tree">
+                <Node id="mm-title" from={{ node: 'text-map.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
+                    5. MindMap Node text
+                </Node>
 
                 <Node id="mm-plain" from="mm-title">Plain text</Node>
                 <Node id="mm-emoji" from="mm-title">🎯 With emoji</Node>
@@ -59,8 +62,11 @@ export default function TextUsageExample() {
             </MindMap>
 
             {/* ===== 6. Markdown in Node ===== */}
-            <MindMap x={500} y={680} layout="tree">
-                <Node id="md-title">6. Markdown</Node>
+            <Text id="markdown-map.seed" x={500} y={680} className="text-[1px] text-transparent select-none">.</Text>
+            <MindMap id="markdown-map" x={500} y={680} layout="tree">
+                <Node id="md-title" from={{ node: 'markdown-map.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
+                    6. Markdown
+                </Node>
 
                 <Node id="md-basic" from="md-title">
                     <Markdown>{`**Bold** and *italic*`}</Markdown>

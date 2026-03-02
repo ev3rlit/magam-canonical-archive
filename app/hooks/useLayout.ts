@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useReactFlow } from 'reactflow';
 import type { MindMapGroup } from '@/store/graph';
 import { getLayoutStrategy } from '@/utils/strategies';
@@ -20,19 +20,30 @@ interface UseLayoutOptions {
     direction?: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
     spacing?: number;
     mindMapGroups?: MindMapGroup[];
+    fitViewOnComplete?: boolean;
+}
+
+export function canStartLayout(inFlight: boolean): boolean {
+    return !inFlight;
 }
 
 export function useLayout() {
     const { getNodes, getEdges, setNodes, fitView } = useReactFlow();
     const [isLayouting, setIsLayouting] = useState(false);
+    const inFlightRef = useRef(false);
 
     const calculateLayout = useCallback(
         async (options: UseLayoutOptions = {}) => {
+            if (!canStartLayout(inFlightRef.current)) {
+                return false;
+            }
             const nodes = getNodes();
             const edges = getEdges();
+            const shouldFitView = options.fitViewOnComplete !== false;
 
-            if (nodes.length === 0) return;
+            if (nodes.length === 0) return false;
 
+            inFlightRef.current = true;
             setIsLayouting(true);
 
             try {
@@ -172,9 +183,11 @@ export function useLayout() {
                     }));
 
                     setNodes(finalNodes);
-                    window.requestAnimationFrame(() => fitView({ padding: 0.1, duration: 200 }));
+                    if (shouldFitView) {
+                        window.requestAnimationFrame(() => fitView({ padding: 0.1, duration: 200 }));
+                    }
                     console.log('[ELK Layout] Complete.');
-                    return;
+                    return true;
                 }
 
                 // ========================================
@@ -202,13 +215,18 @@ export function useLayout() {
                 });
 
                 setNodes(newNodes);
-                window.requestAnimationFrame(() => fitView({ padding: 0.1, duration: 200 }));
+                if (shouldFitView) {
+                    window.requestAnimationFrame(() => fitView({ padding: 0.1, duration: 200 }));
+                }
+                return true;
 
             } catch (error) {
                 console.error('ELK Layout failed:', error);
                 const visibleNodes = nodes.map(n => ({ ...n, style: { ...n.style, opacity: 1 } }));
                 setNodes(visibleNodes);
+                return false;
             } finally {
+                inFlightRef.current = false;
                 setIsLayouting(false);
             }
         },

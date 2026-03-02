@@ -1,4 +1,4 @@
-import { Canvas, MindMap, Node, Markdown } from '@magam/core';
+import { Canvas, MindMap, Node, Markdown, Text } from '@magam/core';
 
 // Multiple MindMaps Feature Showcase
 // Demonstrates placing multiple independent MindMaps on a single Canvas
@@ -6,9 +6,13 @@ import { Canvas, MindMap, Node, Markdown } from '@magam/core';
 export default function MultipleMindMapsShowcase() {
     return (
         <Canvas>
+            <Text id="features.seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
+            <Text id="usecases.seed" x={700} y={-50} className="text-[1px] text-transparent select-none">.</Text>
+            <Text id="start.seed" x={0} y={350} className="text-[1px] text-transparent select-none">.</Text>
+
             {/* First MindMap: Feature Overview - Using bidirectional layout */}
             <MindMap id="features" layout="bidirectional">
-                <Node id="root">
+                <Node id="root" from={{ node: 'features.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown>{`# 🚀 Multiple MindMaps
 **New Feature**`}</Markdown>
                 </Node>
@@ -42,7 +46,7 @@ Cross-map references:
 
             {/* Second MindMap: Use Cases - Positioned to the right */}
             <MindMap id="usecases" layout="tree" x={700} y={-50}>
-                <Node id="root">
+                <Node id="root" from={{ node: 'usecases.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown>{`## 💡 Use Cases`}</Markdown>
                 </Node>
 
@@ -67,7 +71,7 @@ independent structures`}</Markdown>
 
             {/* Third MindMap: Getting Started - Positioned below */}
             <MindMap id="start" layout="tree" x={0} y={350}>
-                <Node id="root">
+                <Node id="root" from={{ node: 'start.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown>{`## 📖 Getting Started`}</Markdown>
                 </Node>
 

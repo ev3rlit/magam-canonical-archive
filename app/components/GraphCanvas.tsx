@@ -33,6 +33,14 @@ import { useContextMenu } from '@/hooks/useContextMenu';
 import { ExportDialog } from './ExportDialog';
 import { CustomBackground } from './CustomBackground';
 import { resolveFontFamilyCssValue } from '@/utils/fontHierarchy';
+import { areNodesMeasured, getMindMapSizeSignature } from '@/utils/layoutUtils';
+import {
+  AUTO_RELAYOUT_COOLDOWN_MS,
+  AUTO_RELAYOUT_DEBOUNCE_MS,
+  AUTO_RELAYOUT_MAX_ATTEMPTS,
+  AUTO_RELAYOUT_QUANTIZATION_PX,
+  shouldScheduleAutoRelayout,
+} from './GraphCanvas.relayout';
 import {
   applyGraphSnapshot,
   createPastedGraphState,
@@ -114,6 +122,11 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('pointer');
   const hasLayouted = useRef(false);
   const lastLayoutedGraphId = useRef<string | null>(null);
+  const lastSizeSignatureRef = useRef<string | null>(null);
+  const relayoutCountRef = useRef<Map<string, number>>(new Map());
+  const relayoutTimerRef = useRef<number | null>(null);
+  const relayoutInFlightRef = useRef(false);
+  const lastRelayoutAtRef = useRef(0);
   const clipboardHistory = useRef<{ past: GraphSnapshot[]; future: GraphSnapshot[] }>({
     past: [],
     future: [],
@@ -150,6 +163,17 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 2000);
   };
+
+  const clearPendingRelayout = useCallback(() => {
+    if (relayoutTimerRef.current !== null) {
+      window.clearTimeout(relayoutTimerRef.current);
+      relayoutTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => {
+    clearPendingRelayout();
+  }, [clearPendingRelayout]);
 
   const handleZoomIn = () => {
     zoomIn({ duration: 300 });
@@ -248,29 +272,26 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
       hasLayouted.current = false;
       setIsGraphVisible(false); // Hide graph=
       lastLayoutedGraphId.current = graphId;
+      lastSizeSignatureRef.current = null;
+      relayoutInFlightRef.current = false;
+      lastRelayoutAtRef.current = 0;
+      clearPendingRelayout();
+      relayoutCountRef.current.set(graphId, 0);
     }
-  }, [graphId]);
+  }, [clearPendingRelayout, graphId]);
 
   // Trigger Layout when all nodes are initialized (measured)
   useEffect(() => {
-    // Additional check: verify ALL nodes have actual measured dimensions
-    // This prevents race condition where nodesInitialized is briefly true
-    // before new nodes are fully rendered after file watch updates
-    const areAllNodesMeasured = nodes.length > 0 && nodes.every(
-      (node) => typeof node.width === 'number' && typeof node.height === 'number' && node.width > 0 && node.height > 0
-    );
+    const measured = areNodesMeasured(nodes);
 
-    // Check if we have nodes, they are fully initialized (width/height measured), and we haven't run layout yet.
-    if (nodes.length > 0 && nodesInitialized && areAllNodesMeasured && !hasLayouted.current) {
+    if (nodes.length > 0 && nodesInitialized && measured && !hasLayouted.current) {
       const runLayout = async () => {
         // Double-check: wait one more frame to ensure DOM is fully settled
         await new Promise(resolve => requestAnimationFrame(resolve));
 
         // Re-verify measurements after the frame (in case of rapid updates)
         const currentNodes = useGraphStore.getState().nodes;
-        const stillMeasured = currentNodes.every(
-          (node) => typeof node.width === 'number' && typeof node.height === 'number' && node.width > 0 && node.height > 0
-        );
+        const stillMeasured = areNodesMeasured(currentNodes);
 
         if (!stillMeasured || hasLayouted.current) {
           console.log('[Layout] Aborted: nodes changed or already layouted.');
@@ -282,10 +303,15 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
           // - Internal group layouts
           // - Global group positioning (with anchor resolution)
           console.log(`[Layout] Triggering ELK layout (${layoutType} mode, ${mindMapGroups.length} group(s))...`);
-          await calculateLayout({
+          const layoutSucceeded = await calculateLayout({
             direction: 'RIGHT',
             mindMapGroups,
           });
+          if (layoutSucceeded) {
+            lastSizeSignatureRef.current = getMindMapSizeSignature(currentNodes, {
+              quantizationPx: AUTO_RELAYOUT_QUANTIZATION_PX,
+            });
+          }
         } else {
           // Canvas mode: check if any nodes use anchor-based positioning
           const hasAnchors = currentNodes.some((n) => {
@@ -313,7 +339,86 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
 
       runLayout();
     }
-  }, [nodes.length, nodesInitialized, calculateLayout, graphId, needsAutoLayout, layoutType, mindMapGroups, nodes]);
+  }, [nodes, nodesInitialized, calculateLayout, graphId, needsAutoLayout, layoutType, mindMapGroups, setNodes, fitView]);
+
+  useEffect(() => {
+    const signature = getMindMapSizeSignature(nodes, {
+      quantizationPx: AUTO_RELAYOUT_QUANTIZATION_PX,
+    });
+    const attemptCount = relayoutCountRef.current.get(graphId) ?? 0;
+    const shouldSchedule = shouldScheduleAutoRelayout({
+      needsAutoLayout,
+      hasLayouted: hasLayouted.current,
+      nodesInitialized,
+      nodesMeasured: areNodesMeasured(nodes),
+      signature,
+      lastSignature: lastSizeSignatureRef.current,
+      inFlight: relayoutInFlightRef.current,
+      attemptCount,
+      maxAttempts: AUTO_RELAYOUT_MAX_ATTEMPTS,
+      now: Date.now(),
+      lastRelayoutAt: lastRelayoutAtRef.current,
+      cooldownMs: AUTO_RELAYOUT_COOLDOWN_MS,
+    });
+
+    if (!shouldSchedule) {
+      return;
+    }
+
+    const scheduledGraphId = graphId;
+    clearPendingRelayout();
+    relayoutTimerRef.current = window.setTimeout(async () => {
+      relayoutTimerRef.current = null;
+      if (useGraphStore.getState().graphId !== scheduledGraphId) {
+        return;
+      }
+      if (relayoutInFlightRef.current) {
+        return;
+      }
+
+      const currentAttempt = relayoutCountRef.current.get(scheduledGraphId) ?? 0;
+      if (currentAttempt >= AUTO_RELAYOUT_MAX_ATTEMPTS) {
+        return;
+      }
+
+      const latestNodes = useGraphStore.getState().nodes;
+      if (!areNodesMeasured(latestNodes)) {
+        return;
+      }
+
+      const latestSignature = getMindMapSizeSignature(latestNodes, {
+        quantizationPx: AUTO_RELAYOUT_QUANTIZATION_PX,
+      });
+      if (!latestSignature || latestSignature === lastSizeSignatureRef.current) {
+        return;
+      }
+
+      relayoutInFlightRef.current = true;
+      try {
+        const success = await calculateLayout({
+          direction: 'RIGHT',
+          mindMapGroups,
+          fitViewOnComplete: false,
+        });
+        if (!success) {
+          return;
+        }
+        lastSizeSignatureRef.current = latestSignature;
+        relayoutCountRef.current.set(scheduledGraphId, currentAttempt + 1);
+        lastRelayoutAtRef.current = Date.now();
+      } finally {
+        relayoutInFlightRef.current = false;
+      }
+    }, AUTO_RELAYOUT_DEBOUNCE_MS);
+  }, [
+    nodes,
+    nodesInitialized,
+    graphId,
+    needsAutoLayout,
+    mindMapGroups,
+    calculateLayout,
+    clearPendingRelayout,
+  ]);
 
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {

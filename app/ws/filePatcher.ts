@@ -10,7 +10,7 @@ import * as t from '@babel/types';
 
 export interface NodeProps {
     id?: string;
-    from?: string;
+    from?: string | { node: string; edge?: Record<string, unknown> };
     to?: string;
     anchor?: string;
     position?: string;
@@ -40,12 +40,63 @@ function getAttrByName(node: t.JSXOpeningElement, name: string): t.JSXAttribute 
 }
 
 function getStringLikeAttributeValue(attr: t.JSXAttribute | undefined): string | null {
-    if (!attr) return null;
+    const value = getAttributeValue(attr);
+    return typeof value === 'string' ? value : null;
+}
+
+function expressionToValue(expression: t.Expression): unknown {
+    if (t.isStringLiteral(expression)) return expression.value;
+    if (t.isNumericLiteral(expression)) return expression.value;
+    if (t.isBooleanLiteral(expression)) return expression.value;
+    if (t.isNullLiteral(expression)) return null;
+    if (t.isIdentifier(expression) && expression.name === 'undefined') return undefined;
+    if (t.isArrayExpression(expression)) {
+        const values: unknown[] = [];
+        for (const item of expression.elements) {
+            if (!item) {
+                values.push(undefined);
+                continue;
+            }
+            if (t.isSpreadElement(item)) return undefined;
+            values.push(expressionToValue(item));
+        }
+        return values;
+    }
+    if (t.isObjectExpression(expression)) {
+        const obj: Record<string, unknown> = {};
+        for (const prop of expression.properties) {
+            if (!t.isObjectProperty(prop) || prop.computed || t.isSpreadElement(prop)) return undefined;
+            const key = t.isIdentifier(prop.key)
+                ? prop.key.name
+                : t.isStringLiteral(prop.key)
+                    ? prop.key.value
+                    : null;
+            if (!key || !t.isExpression(prop.value)) return undefined;
+            obj[key] = expressionToValue(prop.value);
+        }
+        return obj;
+    }
+    return undefined;
+}
+
+function getAttributeValue(attr: t.JSXAttribute | undefined): unknown {
+    if (!attr) return undefined;
     const value = attr.value;
-    if (!value) return null;
+    if (!value) return true;
     if (t.isStringLiteral(value)) return value.value;
-    if (t.isJSXExpressionContainer(value) && t.isStringLiteral(value.expression)) {
-        return value.expression.value;
+    if (t.isJSXExpressionContainer(value)) {
+        if (t.isJSXEmptyExpression(value.expression)) return undefined;
+        return expressionToValue(value.expression);
+    }
+    return undefined;
+}
+
+function getFromNodeReference(attr: t.JSXAttribute | undefined): string | null {
+    const value = getAttributeValue(attr);
+    if (typeof value === 'string') return value;
+    if (value && typeof value === 'object') {
+        const maybeNode = (value as Record<string, unknown>).node;
+        return typeof maybeNode === 'string' ? maybeNode : null;
     }
     return null;
 }
@@ -179,9 +230,9 @@ function buildMindMapAdjacency(ast: t.File): Map<string, string[]> {
     traverse(ast, {
         JSXOpeningElement(path: NodePath<t.JSXOpeningElement>) {
             const node = path.node;
-            if (!t.isJSXIdentifier(node.name) || node.name.name !== 'Node') return;
+            if (!t.isJSXIdentifier(node.name)) return;
             const id = getStringLikeAttributeValue(getAttrByName(node, 'id'));
-            const from = getStringLikeAttributeValue(getAttrByName(node, 'from'));
+            const from = getFromNodeReference(getAttrByName(node, 'from'));
             if (!id || !from) return;
             const list = childrenByParent.get(from) || [];
             list.push(id);
@@ -278,9 +329,32 @@ export async function patchFile(filePath: string, nodeId: string, props: NodePro
                     const opening = path.node;
                     ['from', 'to', 'anchor'].forEach((key) => {
                         const attr = getAttrByName(opening, key);
+                        if (!attr) return;
+
+                        if (key === 'from') {
+                            const value = getAttributeValue(attr);
+                            if (typeof value === 'string') {
+                                if (value === nodeId) {
+                                    upsertJsxAttribute(path as NodePath<t.JSXOpeningElement>, key, nextId);
+                                }
+                                return;
+                            }
+                            if (value && typeof value === 'object') {
+                                const fromObject = value as Record<string, unknown>;
+                                if (fromObject.node === nodeId) {
+                                    upsertJsxAttribute(path as NodePath<t.JSXOpeningElement>, key, {
+                                        ...fromObject,
+                                        node: nextId,
+                                    });
+                                }
+                            }
+                            return;
+                        }
+
                         const value = getStringLikeAttributeValue(attr);
-                        if (!attr || value !== nodeId) return;
-                        upsertJsxAttribute(path as NodePath<t.JSXOpeningElement>, key, nextId);
+                        if (value === nodeId) {
+                            upsertJsxAttribute(path as NodePath<t.JSXOpeningElement>, key, nextId);
+                        }
                     });
                 },
             });
@@ -340,7 +414,20 @@ export async function patchNodeReparent(filePath: string, nodeId: string, newPar
         throw new Error('MINDMAP_CYCLE');
     }
 
-    upsertJsxAttribute(node, 'from', newParentId);
+    if (newParentId === null) {
+        upsertJsxAttribute(node, 'from', null);
+    } else {
+        const currentFromValue = getAttributeValue(getAttrByName(node.node, 'from'));
+        if (currentFromValue && typeof currentFromValue === 'object') {
+            const currentFromObject = currentFromValue as Record<string, unknown>;
+            upsertJsxAttribute(node, 'from', {
+                ...currentFromObject,
+                node: newParentId,
+            });
+        } else {
+            upsertJsxAttribute(node, 'from', newParentId);
+        }
+    }
 
     const output = generate(ast, { retainLines: true, retainFunctionParens: true });
     await writeFile(filePath, output.code, 'utf-8');

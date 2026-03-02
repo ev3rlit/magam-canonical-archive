@@ -36,8 +36,11 @@ export default function IconsExample() {
             </Shape>
 
             {/* Right side: Tech Stack MindMap */}
-            <MindMap x={600} y={50} layout="tree">
-                <Node id="stack">⚡ Tech Stack</Node>
+            <Text id="stack-map.seed" x={600} y={50} className="text-[1px] text-transparent select-none">.</Text>
+            <MindMap id="stack-map" x={600} y={50} layout="tree">
+                <Node id="stack" from={{ node: 'stack-map.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
+                    ⚡ Tech Stack
+                </Node>
 
                 <Node id="cloud" from="stack">
                     <Cloud size={14} />

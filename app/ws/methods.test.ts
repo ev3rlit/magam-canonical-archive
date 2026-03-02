@@ -79,6 +79,33 @@ describe('RPC editing methods', () => {
     expect(patched.includes('id={"child"}')).toBe(true);
   });
 
+  it('node.update: from object payload를 그대로 저장한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample(){ return <Canvas><Shape id="n1" /></Canvas>; }
+    `);
+    const original = await readFile(filePath, 'utf-8');
+
+    const result = await methods['node.update']({
+      filePath,
+      nodeId: 'n1',
+      props: {
+        from: {
+          node: 'root',
+          edge: { pattern: 'dashed', label: { text: 'L1' } },
+        },
+      },
+      baseVersion: sha(original),
+      originId: 'client-1',
+      commandId: 'cmd-update-object-from',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('node: "root"')).toBe(true);
+    expect(patched.includes('pattern: "dashed"')).toBe(true);
+    expect(patched.includes('text: "L1"')).toBe(true);
+  });
+
   it('node.create: sticker 타입을 허용하고 Sticky로 생성한다', async () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }`);
     const original = await readFile(filePath, 'utf-8');
@@ -161,5 +188,32 @@ describe('RPC editing methods', () => {
       originId: 'client-1',
       commandId: 'cmd-3',
     }, { ws: {}, subscriptions: new Set() })).rejects.toMatchObject({ code: 40902, message: 'MINDMAP_CYCLE' });
+  });
+
+  it('node.reparent: from object 사용 시 edge payload를 보존한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample(){
+        return <Canvas>
+          <Node id="a" />
+          <Shape id="b" from={{ node: "a", edge: { label: { text: "r" }, stroke: "#ef4444" } }} />
+        </Canvas>;
+      }
+    `);
+    const original = await readFile(filePath, 'utf-8');
+
+    const result = await methods['node.reparent']({
+      filePath,
+      nodeId: 'b',
+      newParentId: 'c',
+      baseVersion: sha(original),
+      originId: 'client-1',
+      commandId: 'cmd-reparent-object-from',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('node: "c"')).toBe(true);
+    expect(patched.includes('stroke: "#ef4444"')).toBe(true);
+    expect(patched.includes('text: "r"')).toBe(true);
   });
 });

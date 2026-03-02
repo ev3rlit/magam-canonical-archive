@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { normalizeStickyDefaults } from '@/utils/washiTapeDefaults';
+import {
+  assertMindMapTopology,
+  buildMindMapEdge,
+  parseFromProp,
+  resolveNodeId,
+} from './mindmapParser';
 
 describe('page sticky parsing contracts', () => {
   it('preserves explicit preset pattern and shape inputs', () => {
@@ -39,5 +45,90 @@ describe('page sticky parsing contracts', () => {
       gap: 24,
       align: 'center',
     });
+  });
+});
+
+describe('mindmap parser topology contracts', () => {
+  it('parses string from values', () => {
+    const parsed = parseFromProp('root', { mindmapId: 'map', nodeId: 'map.child' });
+    expect(parsed).toEqual({ node: 'root', edge: {} });
+  });
+
+  it('parses object from values', () => {
+    const parsed = parseFromProp(
+      {
+        node: 'root:bottom',
+        edge: { pattern: 'dashed', label: { text: 'branch' } },
+      },
+      { mindmapId: 'map', nodeId: 'map.child' },
+    );
+    expect(parsed.node).toBe('root:bottom');
+    expect(parsed.edge.pattern).toBe('dashed');
+    expect((parsed.edge.label as { text?: string }).text).toBe('branch');
+  });
+
+  it('throws deterministic error when from is missing in mindmap context', () => {
+    expect(() => assertMindMapTopology({
+      mindmapId: 'map',
+      childType: 'graph-shape',
+      childId: 'shape-1',
+      from: undefined,
+    })).toThrow('[MindMap:map] node "shape-1" is missing required from prop.');
+  });
+
+  it('throws deterministic error for nested mindmap', () => {
+    expect(() => assertMindMapTopology({
+      mindmapId: 'parent',
+      childType: 'graph-mindmap',
+      childId: 'child-map',
+      from: 'root',
+    })).toThrow('[MindMap:parent] nested MindMap is not supported.');
+  });
+
+  it('does not throw for sibling mindmaps at canvas level', () => {
+    expect(() => assertMindMapTopology({
+      mindmapId: undefined,
+      childType: 'graph-mindmap',
+      childId: 'map-a',
+    })).not.toThrow();
+  });
+
+  it('builds edge from from={{ node, edge }} with port + styles', () => {
+    const edge = buildMindMapEdge({
+      nodeId: 'map.child',
+      mindmapId: 'map',
+      edgeId: 'edge-1',
+      from: {
+        node: 'root:bottom',
+        edge: {
+          type: 'step',
+          stroke: '#ef4444',
+          strokeWidth: 3,
+          pattern: 'dashed',
+          label: { text: '판단', color: '#fff', bg: '#ef4444', fontSize: 14 },
+        },
+      },
+      getEdgeType: (type) => (type === 'step' ? 'step' : 'floating'),
+      getStrokeStyle: () => ({}),
+    });
+
+    expect(edge.source).toBe('map.root');
+    expect(edge.sourceHandle).toBe('bottom');
+    expect(edge.target).toBe('map.child');
+    expect(edge.type).toBe('step');
+    expect(edge.style).toMatchObject({
+      stroke: '#ef4444',
+      strokeWidth: 3,
+      strokeDasharray: '5 5',
+    });
+    expect(edge.label).toBe('판단');
+    expect(edge.labelStyle).toMatchObject({ fill: '#fff', fontSize: 14 });
+    expect(edge.labelBgStyle).toMatchObject({ fill: '#ef4444' });
+  });
+
+  it('resolves node ids per sibling mindmap scope', () => {
+    expect(resolveNodeId('child', 'mapA')).toBe('mapA.child');
+    expect(resolveNodeId('child', 'mapB')).toBe('mapB.child');
+    expect(resolveNodeId('mapA.child', 'mapB')).toBe('mapA.child');
   });
 });

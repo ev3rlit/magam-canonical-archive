@@ -4,6 +4,7 @@ import { useNodeId } from '../hooks/useNodeId';
 import type { PaperMaterial } from '../material/types';
 import type { FontFamilyPreset } from '../types/font';
 import type { AtDef } from './WashiTape.helpers';
+import type { FromProp } from './Node';
 
 export interface StickyProps {
   id?: string;
@@ -14,6 +15,7 @@ export interface StickyProps {
   height?: number;
   color?: string;
   fontFamily?: FontFamilyPreset;
+  from?: FromProp;
   pattern?: PaperMaterial;
   at?: AtDef | Record<string, unknown>;
   className?: string; // Tailwind support
@@ -29,7 +31,8 @@ export const Sticky: React.FC<StickyProps> = (props) => {
   }
   const hasAt = props.at && typeof props.at === 'object';
   const hasCoordinates = props.x !== undefined && props.y !== undefined;
-  if (!hasAt && !hasCoordinates) {
+  const hasFrom = props.from !== undefined;
+  if (!hasFrom && !hasAt && !hasCoordinates) {
     throw new MagamError(
       "Sticky requires either 'at' placement input or 'x' and 'y' coordinates",
       'props',

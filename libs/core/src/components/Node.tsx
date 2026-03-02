@@ -1,11 +1,34 @@
 import * as React from 'react';
 import type { FontFamilyPreset } from '../types/font';
 
+export type EdgeLabelStyle = {
+  text?: string;
+  color?: string;
+  bg?: string;
+  fontSize?: number;
+};
+
+export type EdgeStyle = {
+  label?: string | EdgeLabelStyle;
+  stroke?: string;
+  strokeWidth?: number;
+  pattern?: 'dashed' | 'dotted' | string;
+  className?: string;
+  type?: 'default' | 'straight' | 'curved' | 'step' | string;
+};
+
+export type FromProp =
+  | string
+  | {
+      node: string;
+      edge?: EdgeStyle;
+    };
+
 export interface NodeProps {
   /** 필수: 노드의 고유 식별자 */
   id: string;
-  /** 부모(또는 연결 대상) 노드의 id. 없으면 루트 노드로 간주됩니다. */
-  from?: string;
+  /** 부모(또는 연결 대상) 노드 선언. string 또는 { node, edge } */
+  from?: FromProp;
   /** from 연결선에 표시할 라벨 텍스트 */
   edgeLabel?: string;
   /** 연결선 스타일 (dashed, dotted 등) */

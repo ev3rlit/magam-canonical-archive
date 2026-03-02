@@ -1,9 +1,12 @@
 import * as React from 'react';
 import { useNodeId } from '../hooks/useNodeId';
+import type { FromProp } from './Node';
 
 export interface SequenceProps {
   /** Sequence 식별자 */
   id?: string;
+  /** MindMap 계층 연결 (string 또는 { node, edge }) */
+  from?: FromProp;
   /** X 좌표 (px) - anchor 사용 시 선택적 */
   x?: number;
   /** Y 좌표 (px) - anchor 사용 시 선택적 */

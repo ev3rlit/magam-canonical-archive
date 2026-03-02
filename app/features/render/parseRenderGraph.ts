@@ -12,12 +12,20 @@ import { stickerDebugLog } from '@/utils/stickerDebug';
 import type { CanvasBackgroundStyle, MindMapGroup } from '@/store/graph';
 import type { FontFamilyPreset } from '@magam/core';
 import { isFontFamilyPreset } from '@/utils/fontHierarchy';
+import {
+  assertMindMapTopology,
+  buildMindMapEdge,
+  fromToEndpointValue,
+  parseEdgeEndpoint,
+  resolveNodeId,
+  type FromProp,
+} from '@/app/mindmapParser';
 
 export interface RenderNode {
   type: string;
   props: {
     id?: string;
-    from?: string;
+    from?: FromProp;
     to?: string;
     label?: string;
     text?: string;
@@ -162,14 +170,20 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
 
   const mindMapGroups: MindMapGroup[] = [];
 
-  const resolveNodeId = (
-    id: string,
-    currentMindmapId?: string,
-  ): string => {
-    if (!id) return id;
-    if (id.includes('.')) return id;
-    if (currentMindmapId) return `${currentMindmapId}.${id}`;
-    return id;
+  const createMindMapEdge = (
+    child: RenderNode,
+    params: { nodeId: string; mindmapId: string },
+  ) => {
+    edges.push(buildMindMapEdge({
+      nodeId: params.nodeId,
+      mindmapId: params.mindmapId,
+      edgeId: `edge-${params.mindmapId}-${params.nodeId}-${edgeIdCounter++}`,
+      from: child.props.from,
+      edgeLabel: child.props.edgeLabel,
+      edgeClassName: child.props.edgeClassName,
+      getEdgeType,
+      getStrokeStyle,
+    }));
   };
 
   const processChildren = (
@@ -177,23 +191,19 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
     mindmapId?: string,
   ) => {
     childElements.forEach((child: RenderNode) => {
-      if (child.type === 'graph-edge') {
-        const parseEdgeEndpoint = (val?: string) => {
-          if (!val) return { id: undefined, handle: undefined };
-          const colonIndex = val.lastIndexOf(':');
-          if (colonIndex > 0) {
-            const id = val.substring(0, colonIndex);
-            const handle = val.substring(colonIndex + 1);
-            return { id: resolveNodeId(id, mindmapId), handle };
-          }
-          return {
-            id: resolveNodeId(val, mindmapId),
-            handle: undefined,
-          };
-        };
+      assertMindMapTopology({
+        mindmapId,
+        childType: child.type,
+        childId: child.props.id,
+        from: child.props.from,
+      });
 
-        const sourceMeta = parseEdgeEndpoint(child.props.from);
-        const targetMeta = parseEdgeEndpoint(child.props.to);
+      if (child.type === 'graph-edge') {
+        const sourceMeta = parseEdgeEndpoint(
+          fromToEndpointValue(child.props.from),
+          mindmapId,
+        );
+        const targetMeta = parseEdgeEndpoint(child.props.to, mindmapId);
         const edgeFontFamily = normalizeFontFamily(child.props.fontFamily);
 
         const hasHandles = sourceMeta.handle || targetMeta.handle;
@@ -255,8 +265,9 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           processChildren(child.children, mmId);
         }
       } else if (child.type === 'graph-sequence') {
-        const seqId =
+        const rawSequenceId =
           child.props.id || `sequence-${sequenceIdCounter++}`;
+        const seqId = resolveNodeId(rawSequenceId, mindmapId);
         const sequenceFontFamily = normalizeFontFamily(child.props.fontFamily);
         const participants: {
           id: string;
@@ -278,7 +289,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
               className: seqChild.props.className,
             });
           } else if (seqChild.type === 'graph-message') {
-            const msgFrom = seqChild.props.from || '';
+            const msgFrom = fromToEndpointValue(seqChild.props.from) || '';
             const msgTo = seqChild.props.to || '';
             messages.push({
               from: msgFrom,
@@ -303,35 +314,24 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             messageSpacing: child.props.messageSpacing ?? 60,
             className: child.props.className,
             fontFamily: sequenceFontFamily,
+            groupId: mindmapId,
             anchor: child.props.anchor,
             position: child.props.position,
             gap: child.props.gap,
             sourceMeta: child.props.sourceMeta || {
               sourceId: seqId,
-              kind: 'canvas',
+              kind: mindmapId ? 'mindmap' : 'canvas',
+              scopeId: mindmapId,
             },
           },
         });
+
+        if (mindmapId) {
+          createMindMapEdge(child, { nodeId: seqId, mindmapId });
+        }
       } else if (child.type === 'graph-node') {
         const rawNodeId = child.props.id || `node-${nodeIdCounter++}`;
         const nodeId = resolveNodeId(rawNodeId, mindmapId);
-
-        if (child.props.from) {
-          const sourceId = resolveNodeId(child.props.from, mindmapId);
-          edges.push({
-            id: `edge-${sourceId}-${nodeId}`,
-            source: sourceId,
-            target: nodeId,
-            label: child.props.edgeLabel,
-            style: {
-              stroke: '#94a3b8',
-              strokeWidth: 2,
-              ...getStrokeStyle(child.props.edgeClassName),
-            },
-            animated: false,
-            type: 'floating',
-          });
-        }
 
         const rendererChildren = child.children || [];
         const { label: baseLabel, parsedChildren } = extractNodeContent(
@@ -401,8 +401,13 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             bubble: nodeBubble,
           },
         });
+
+        if (mindmapId) {
+          createMindMapEdge(child, { nodeId, mindmapId });
+        }
       } else if (child.type === 'graph-image') {
-        const imageId = child.props.id || `image-${imageIdCounter++}`;
+        const rawImageId = child.props.id || `image-${imageIdCounter++}`;
+        const imageId = resolveNodeId(rawImageId, mindmapId);
         nodes.push({
           id: imageId,
           type: 'image',
@@ -413,12 +418,18 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             width: child.props.width,
             height: child.props.height,
             fit: child.props.fit,
+            groupId: mindmapId,
             sourceMeta: child.props.sourceMeta || {
               sourceId: imageId,
-              kind: 'canvas',
+              kind: mindmapId ? 'mindmap' : 'canvas',
+              scopeId: mindmapId,
             },
           },
         });
+
+        if (mindmapId) {
+          createMindMapEdge(child, { nodeId: imageId, mindmapId });
+        }
       } else if (child.type === 'graph-sticker') {
         const rawStickerId = child.props.id || `sticker-${nodeIdCounter++}`;
         const stickerId = resolveNodeId(rawStickerId, mindmapId);
@@ -454,6 +465,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             height: child.props.height,
             rotation: child.props.rotation,
             fontFamily: stickerFontFamily,
+            groupId: mindmapId,
             children: stickerChildren,
             outlineWidth: normalized.outlineWidth,
             outlineColor: normalized.outlineColor,
@@ -463,8 +475,17 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             position: child.props.position,
             gap: child.props.gap,
             align: child.props.align,
+            sourceMeta: child.props.sourceMeta || {
+              sourceId: stickerId,
+              kind: mindmapId ? 'mindmap' : 'canvas',
+              scopeId: mindmapId,
+            },
           },
         });
+
+        if (mindmapId) {
+          createMindMapEdge(child, { nodeId: stickerId, mindmapId });
+        }
       } else if (child.type === 'graph-washi-tape') {
         const rawWashiId = child.props.id || `washi-${nodeIdCounter++}`;
         const washiId = resolveNodeId(rawWashiId, mindmapId);
@@ -512,6 +533,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             resolvedGeometry,
             seed: normalizedWashi.seed,
             opacity: normalizedWashi.opacity,
+            groupId: mindmapId,
             children: washiChildren,
             sourceMeta: child.props.sourceMeta || {
               sourceId: washiId,
@@ -520,8 +542,13 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             },
           },
         });
+
+        if (mindmapId) {
+          createMindMapEdge(child, { nodeId: washiId, mindmapId });
+        }
       } else {
-        const nodeId = child.props.id || `node-${nodeIdCounter++}`;
+        const rawNodeId = child.props.id || `node-${nodeIdCounter++}`;
+        const nodeId = resolveNodeId(rawNodeId, mindmapId);
         const nodeFontFamily = normalizeFontFamily(child.props.fontFamily);
 
         const nestedEdges: RenderNode[] = [];
@@ -543,7 +570,10 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
 
         nestedEdges.forEach(
           (edgeChild: RenderNode, edgeIndex: number) => {
-            const sourceId = edgeChild.props.from || nodeId;
+            const sourceId = resolveNodeId(
+              fromToEndpointValue(edgeChild.props.from) || nodeId,
+              mindmapId,
+            );
             const edgeFontFamily = normalizeFontFamily(edgeChild.props.fontFamily);
 
             edges.push({
@@ -610,6 +640,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             shape: nodeType === 'sticky' ? normalizedSticky?.shape : undefined,
             color: child.props.color || child.props.bg,
             className: child.props.className,
+            groupId: mindmapId,
             pattern:
               nodeType === 'sticky'
                 ? child.props.pattern ?? normalizedSticky?.pattern
@@ -644,6 +675,10 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             },
           },
         });
+
+        if (mindmapId) {
+          createMindMapEdge(child, { nodeId, mindmapId });
+        }
       }
     });
   };

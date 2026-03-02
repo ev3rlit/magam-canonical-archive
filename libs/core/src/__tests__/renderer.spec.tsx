@@ -8,6 +8,8 @@ import { Edge } from '../components/Edge';
 import { Group } from '../components/Group';
 import { MindMap } from '../components/MindMap';
 import { Node } from '../components/Node';
+import { Sticker } from '../components/Sticker';
+import { WashiTape } from '../components/WashiTape';
 import { MagamError } from '../errors';
 
 function unwrapOrThrow(result: Awaited<ReturnType<typeof renderToGraph>>) {
@@ -233,6 +235,16 @@ describe('Magam Renderer', () => {
       );
     });
 
+    it('should allow Sticky with from and without x/y', async () => {
+      const element = (
+        <canvas>
+          <Sticky id="s1" from="root" />
+        </canvas>
+      );
+      const result = await renderToGraph(element);
+      expect(result.isOk()).toBe(true);
+    });
+
     it('should allow Sticky with at placement and without x/y', async () => {
       const element = (
         <canvas>
@@ -256,6 +268,36 @@ describe('Magam Renderer', () => {
       expect((originalError as Error).message).toContain(
         "Shape requires either 'x' and 'y' coordinates or 'anchor' positioning",
       );
+    });
+
+    it('should allow Shape with from and without x/y or anchor', async () => {
+      const element = (
+        <canvas>
+          <Shape id="shape-1" from={{ node: 'root', edge: { pattern: 'dashed' } }} />
+        </canvas>
+      );
+      const result = await renderToGraph(element);
+      expect(result.isOk()).toBe(true);
+    });
+
+    it('should allow Sticker with from and without x/y or anchor', async () => {
+      const element = (
+        <canvas>
+          <Sticker id="st-1" from="root">✅</Sticker>
+        </canvas>
+      );
+      const result = await renderToGraph(element);
+      expect(result.isOk()).toBe(true);
+    });
+
+    it('should allow WashiTape with from and without x/y or at', async () => {
+      const element = (
+        <canvas>
+          <WashiTape id="w-1" from={{ node: 'root', edge: { pattern: 'dotted' } }} />
+        </canvas>
+      );
+      const result = await renderToGraph(element);
+      expect(result.isOk()).toBe(true);
     });
 
     it('should allow Text without y because Text component does not validate coordinates', async () => {

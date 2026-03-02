@@ -11,7 +11,8 @@ export default tseslint.config(
             "**/out-tsc",
             "**/.next",
             "**/node_modules",
-            "**/coverage"
+            "**/coverage",
+            "**/*.min.js"
         ]
     },
     {

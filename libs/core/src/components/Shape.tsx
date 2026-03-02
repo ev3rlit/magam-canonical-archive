@@ -2,6 +2,7 @@ import * as React from 'react';
 import { MagamError } from '../errors';
 import { useNodeId } from '../hooks/useNodeId';
 import type { FontFamilyPreset } from '../types/font';
+import type { FromProp } from './Node';
 
 export type AnchorPosition =
   | 'top' | 'bottom' | 'left' | 'right'
@@ -31,6 +32,7 @@ export interface ShapeProps {
   labelFontSize?: number;
   labelBold?: boolean;
   fontFamily?: FontFamilyPreset;
+  from?: FromProp;
   className?: string;
   children?: React.ReactNode;
   [key: string]: any;
@@ -46,8 +48,9 @@ export const Shape: React.FC<ShapeProps> = (props) => {
   // Allow either x/y or anchor/position
   const hasCoordinates = props.x !== undefined && props.y !== undefined;
   const hasAnchor = props.anchor !== undefined;
+  const hasFrom = props.from !== undefined;
 
-  if (!hasCoordinates && !hasAnchor) {
+  if (!hasFrom && !hasCoordinates && !hasAnchor) {
     throw new MagamError("Shape requires either 'x' and 'y' coordinates or 'anchor' positioning", 'props');
   }
 

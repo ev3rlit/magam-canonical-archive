@@ -1,4 +1,4 @@
-import { Canvas, MindMap, Node, Markdown } from '@magam/core';
+import { Canvas, MindMap, Node, Markdown, Text } from '@magam/core';
 
 /**
  * 마크다운 & 코드 블럭 쇼케이스
@@ -8,9 +8,14 @@ import { Canvas, MindMap, Node, Markdown } from '@magam/core';
 export default function ShowcaseMarkdown() {
     return (
         <Canvas>
-            <MindMap layout="bidirectional">
+            <Text id="showcase-markdown-map.seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
+            <MindMap id="showcase-markdown-map" layout="bidirectional">
                 {/* Root */}
-                <Node id="root" bubble>
+                <Node
+                    id="root"
+                    bubble
+                    from={{ node: 'showcase-markdown-map.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}
+                >
                     <Markdown>{`# Magam + AI
 
 > "magam" 스킬로 대화하면

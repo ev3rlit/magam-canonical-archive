@@ -54,6 +54,24 @@ describe('filePatcher', () => {
     expect(patched.includes('<Edge from={"new-id"}')).toBe(true);
   });
 
+  it('update: id 변경 시 from object의 node 참조도 갱신한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <Node id="old-id" />
+          <Shape id="child" from={{ node: "old-id", edge: { label: "L1" } }} />
+        </Canvas>;
+      }
+    `);
+
+    await patchFile(filePath, 'old-id', { id: 'new-id' });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id={"new-id"}')).toBe(true);
+    expect(patched.includes('node: "new-id"')).toBe(true);
+    expect(patched.includes('label: "L1"')).toBe(true);
+  });
+
   it('update: markdown content를 Markdown 자식으로 반영한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {
@@ -205,6 +223,23 @@ describe('filePatcher', () => {
     await patchNodeReparent(filePath, 'b', 'c');
     const patched = await readFile(filePath, 'utf-8');
     expect(patched.includes('id="b" from={"c"}')).toBe(true);
+  });
+
+  it('reparent: from object 사용 시 edge payload를 보존한 채 node만 변경한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <Node id="a" />
+          <Shape id="b" from={{ node: "a", edge: { label: { text: "link" }, pattern: "dashed" } }} />
+        </Canvas>;
+      }
+    `);
+
+    await patchNodeReparent(filePath, 'b', 'c');
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('node: "c"')).toBe(true);
+    expect(patched.includes('text: "link"')).toBe(true);
+    expect(patched.includes('pattern: "dashed"')).toBe(true);
   });
 
   it('reparent: cycle이면 MINDMAP_CYCLE 에러', async () => {

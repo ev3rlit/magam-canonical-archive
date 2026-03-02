@@ -1,4 +1,4 @@
-import { Canvas, MindMap, Node, Markdown } from '@magam/core';
+import { Canvas, MindMap, Node, Markdown, Text } from '@magam/core';
 
 /**
  * 마인드맵 레이아웃 쇼케이스
@@ -8,9 +8,14 @@ import { Canvas, MindMap, Node, Markdown } from '@magam/core';
 export default function ShowcaseMindmap() {
     return (
         <Canvas>
-            <MindMap layout="bidirectional">
+            <Text id="showcase-mindmap-map.seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
+            <MindMap id="showcase-mindmap-map" layout="bidirectional">
                 {/* Root */}
-                <Node id="root" bubble>
+                <Node
+                    id="root"
+                    bubble
+                    from={{ node: 'showcase-mindmap-map.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}
+                >
                     <Markdown>{`# MindMap 컴포넌트
 
 > 계층 구조를 자동으로 배치합니다`}</Markdown>
