@@ -20,6 +20,90 @@ export interface HttpServerResult {
   close: () => Promise<void>;
 }
 
+interface RenderPipelineTiming {
+  totalMs: number;
+  hashMs: number;
+  transpileMs: number;
+  executeMs: number;
+}
+
+interface RenderPipelineResult {
+  graph: RenderLikeNode;
+  sourceVersion: string;
+  timing: RenderPipelineTiming;
+}
+
+interface RenderCacheEntry extends RenderPipelineResult {
+  cachedAt: number;
+}
+
+const RENDER_CACHE_MAX = parseInt(process.env.MAGAM_RENDER_CACHE_MAX || '200', 10);
+const RENDER_CACHE_TTL_MS = parseInt(process.env.MAGAM_RENDER_CACHE_TTL_MS || `${10 * 60 * 1000}`, 10);
+const renderCache = new Map<string, RenderCacheEntry>();
+const renderInFlight = new Map<string, Promise<RenderPipelineResult>>();
+
+function createRenderCacheKey(absolutePath: string, sourceVersion: string): string {
+  return `${absolutePath}::${sourceVersion}`;
+}
+
+function pruneRenderCache(now = Date.now()) {
+  for (const [key, entry] of renderCache.entries()) {
+    if ((now - entry.cachedAt) > RENDER_CACHE_TTL_MS) {
+      renderCache.delete(key);
+    }
+  }
+
+  while (renderCache.size > RENDER_CACHE_MAX) {
+    const oldest = renderCache.keys().next().value;
+    if (!oldest) {
+      break;
+    }
+    renderCache.delete(oldest);
+  }
+}
+
+function getRenderCacheEntry(key: string): RenderCacheEntry | null {
+  const now = Date.now();
+  const entry = renderCache.get(key);
+  if (!entry) {
+    return null;
+  }
+
+  if ((now - entry.cachedAt) > RENDER_CACHE_TTL_MS) {
+    renderCache.delete(key);
+    return null;
+  }
+
+  return entry;
+}
+
+function setRenderCacheEntry(key: string, value: RenderPipelineResult): RenderCacheEntry {
+  const entry: RenderCacheEntry = {
+    ...value,
+    cachedAt: Date.now(),
+  };
+  renderCache.set(key, entry);
+  pruneRenderCache(entry.cachedAt);
+  return entry;
+}
+
+function logRenderPipeline(
+  filePath: string,
+  cache: 'hit' | 'miss' | 'dedupe-hit',
+  timing: RenderPipelineTiming,
+  sourceVersion: string,
+) {
+  console.info('[Perf][render]', {
+    filePath,
+    cache,
+    sourceVersion,
+    totalMs: timing.totalMs,
+    hashMs: timing.hashMs,
+    transpileMs: timing.transpileMs,
+    executeMs: timing.executeMs,
+  });
+}
+
 /**
  * File tree node structure for folder tree view
  */
@@ -133,39 +217,105 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
   }
 
   try {
-    const transpiled = await transpile(absolutePath);
+    const requestStart = performance.now();
+    const hashStart = performance.now();
+    const fileContents = fs.readFileSync(absolutePath, 'utf-8');
+    const sourceVersion = `sha256:${createHash('sha256').update(fileContents).digest('hex')}`;
+    const hashMs = performance.now() - hashStart;
+    const cacheKey = createRenderCacheKey(absolutePath, sourceVersion);
+    const cached = getRenderCacheEntry(cacheKey);
 
-    const result = await execute(transpiled);
-
-    if (result.isOk()) {
-      const graph = result.value as RenderLikeNode;
-      for (const child of graph.children ?? []) {
-        injectSourceMeta(child);
-      }
-
-      const fileContents = fs.readFileSync(absolutePath, 'utf-8');
-      const sourceVersion = `sha256:${createHash('sha256').update(fileContents).digest('hex')}`;
-
+    if (cached) {
+      const timing: RenderPipelineTiming = {
+        ...cached.timing,
+        hashMs,
+        totalMs: performance.now() - requestStart,
+      };
+      logRenderPipeline(body.filePath, 'hit', timing, sourceVersion);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ graph, sourceVersion }));
-    } else {
-      console.error('[HttpServer] Execution failed:', result.error);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        error: result.error.message,
-        type: result.error.type || 'EXECUTION_ERROR',
-        details: result.error.originalError
-      }));
+      res.end(JSON.stringify({ graph: cached.graph, sourceVersion }));
+      return;
+    }
+
+    const inFlight = renderInFlight.get(cacheKey);
+    if (inFlight) {
+      const deduped = await inFlight;
+      const timing: RenderPipelineTiming = {
+        ...deduped.timing,
+        hashMs,
+        totalMs: performance.now() - requestStart,
+      };
+      logRenderPipeline(body.filePath, 'dedupe-hit', timing, sourceVersion);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ graph: deduped.graph, sourceVersion: deduped.sourceVersion }));
+      return;
+    }
+
+    const renderPromise = runRenderPipeline({
+      absolutePath,
+      sourceVersion,
+      hashMs,
+      requestStart,
+    });
+    renderInFlight.set(cacheKey, renderPromise);
+
+    try {
+      const pipelineResult = await renderPromise;
+      const cachedEntry = setRenderCacheEntry(cacheKey, pipelineResult);
+      logRenderPipeline(body.filePath, 'miss', cachedEntry.timing, sourceVersion);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ graph: cachedEntry.graph, sourceVersion: cachedEntry.sourceVersion }));
+    } finally {
+      renderInFlight.delete(cacheKey);
     }
   } catch (error: any) {
     console.error('Render Error:', error);
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       error: error.message,
-      type: 'RENDER_ERROR',
-      details: error.stack
+      type: error.type || 'RENDER_ERROR',
+      details: error.details || error.stack
     }));
   }
+}
+
+async function runRenderPipeline(input: {
+  absolutePath: string;
+  sourceVersion: string;
+  hashMs: number;
+  requestStart: number;
+}): Promise<RenderPipelineResult> {
+  const transpileStart = performance.now();
+  const transpiled = await transpile(input.absolutePath);
+  const transpileMs = performance.now() - transpileStart;
+
+  const executeStart = performance.now();
+  const result = await execute(transpiled);
+  const executeMs = performance.now() - executeStart;
+
+  if (!result.isOk()) {
+    console.error('[HttpServer] Execution failed:', result.error);
+    const error = new Error(result.error.message);
+    (error as Error & { type?: string; details?: unknown }).type = result.error.type || 'EXECUTION_ERROR';
+    (error as Error & { details?: unknown }).details = result.error.originalError;
+    throw error;
+  }
+
+  const graph = result.value as RenderLikeNode;
+  for (const child of graph.children ?? []) {
+    injectSourceMeta(child);
+  }
+
+  return {
+    graph,
+    sourceVersion: input.sourceVersion,
+    timing: {
+      hashMs: input.hashMs,
+      transpileMs,
+      executeMs,
+      totalMs: performance.now() - input.requestStart,
+    },
+  };
 }
 
 type RenderLikeNode = {
