@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>✿ Diary Deco Mind Map ✿</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Nanum+Pen+Script&family=Patrick+Hand&family=Gaegu:wght@300;400;700&family=Single+Day&family=Gamja+Flower&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #faf5eb; --warm-white: #fefcf7; --kraft: #c9a96e; --kraft-light: #e8d5a8;
+    --pink-soft: #f7c5cc; --pink-hot: #e8668a; --mint: #b8e6d0; --mint-deep: #7cc4a5;
+    --lavender: #d4c5f0; --lavender-deep: #a88fd4; --butter: #fce588; --butter-deep: #f0c93a;
+    --peach: #fbd0b0; --peach-deep: #f0a070; --sky: #b3d9f2; --sky-deep: #6db3e0;
+    --coral: #f09080; --brown-ink: #5a3e28; --gray-soft: #b8b0a8;
+    --shadow-warm: rgba(90,62,40,0.12); --shadow-deep: rgba(90,62,40,0.22);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--cream); font-family:'Caveat',cursive; overflow:auto;
+    cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ctext y='18' font-size='18'%3E✏️%3C/text%3E%3C/svg%3E") 2 20,auto; min-height:100vh; }
+  body::before { content:''; position:fixed; inset:0;
+    background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(180,160,130,0.03) 2px,rgba(180,160,130,0.03) 4px),
+    repeating-linear-gradient(90deg,transparent,transparent 2px,rgba(180,160,130,0.03) 2px,rgba(180,160,130,0.03) 4px);
+    pointer-events:none; z-index:0; }
+  body::after { content:''; position:fixed; inset:0; opacity:0.3;
+    background:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.4'/%3E%3C/svg%3E");
+    pointer-events:none; z-index:9999; mix-blend-mode:multiply; }
+  .mindmap-wrapper { position:relative; width:1400px; height:1100px; margin:20px auto; z-index:1; }
+  .connections-layer { position:absolute; inset:0; z-index:1; pointer-events:none; }
+  .conn-line { fill:none; stroke-width:3; stroke-linecap:round; opacity:0.55; filter:url(#pencil-sketch);
+    stroke-dasharray:600; stroke-dashoffset:600; animation:draw-path 1.8s ease-out forwards; }
+  @keyframes draw-path { from{stroke-dashoffset:600} to{stroke-dashoffset:0} }
+  .node { position:absolute; z-index:5; transition:transform .35s cubic-bezier(.34,1.56,.64,1),box-shadow .3s ease; }
+  .node:hover { z-index:40; }
+  .node-center { width:220px; padding:24px 20px; background:linear-gradient(135deg,#fff9b0 0%,#fce588 40%,#f5d85a 100%);
+    border-radius:50% 46% 54% 48%/48% 52% 46% 54%; text-align:center;
+    box-shadow:3px 4px 12px var(--shadow-deep),inset 0 -3px 8px rgba(240,200,50,0.2); z-index:20; }
+  .node-center::before { content:''; position:absolute; inset:-4px; border:3px dashed var(--butter-deep);
+    border-radius:50% 46% 54% 48%/48% 52% 46% 54%; opacity:0.4; }
+  .node-center:hover { transform:scale(1.06)!important; box-shadow:4px 6px 20px var(--shadow-deep); }
+  .node-center .title { font-family:'Nanum Pen Script',cursive; font-size:32px; color:var(--brown-ink); line-height:1.2; }
+  .node-center .subtitle { font-family:'Gaegu',cursive; font-size:16px; color:#7a6a5a; margin-top:4px; }
+  .node-category { padding:14px 16px 20px; min-width:130px; max-width:170px; border-radius:3px;
+    box-shadow:2px 3px 6px var(--shadow-warm),inset 0 -2px 4px rgba(0,0,0,0.03); cursor:pointer; z-index:10; }
+  .node-category::before { content:''; position:absolute; top:0;left:0;right:0; height:26px;
+    background:linear-gradient(180deg,rgba(255,255,255,0.28) 0%,transparent 100%); pointer-events:none; border-radius:3px 3px 0 0; }
+  .node-category::after { content:''; position:absolute; bottom:0;right:0; width:24px;height:24px;
+    background:linear-gradient(135deg,transparent 50%,rgba(0,0,0,0.05) 50%); }
+  .node-category:hover { transform:scale(1.08) rotate(0deg)!important; box-shadow:4px 6px 16px var(--shadow-deep); }
+  .node-category .cat-icon { font-size:22px; margin-bottom:4px; }
+  .node-category .cat-title { font-family:'Gamja Flower',cursive; font-size:20px; color:var(--brown-ink); line-height:1.2; }
+  .cat-yellow{background:linear-gradient(135deg,#fff9b0 0%,#fce588 60%,#f5d85a 100%)}
+  .cat-pink{background:linear-gradient(135deg,#fdd0d8 0%,#f7b0c0 60%,#f098aa 100%)}
+  .cat-blue{background:linear-gradient(135deg,#d0ecf8 0%,#b0d8f0 60%,#90c8e8 100%)}
+  .cat-green{background:linear-gradient(135deg,#d0f0d8 0%,#b0e0c0 60%,#90d0a8 100%)}
+  .cat-orange{background:linear-gradient(135deg,#ffe0c0 0%,#fcc898 60%,#f0b070 100%)}
+  .cat-lavender{background:linear-gradient(135deg,#e8ddf5 0%,#d4c5f0 60%,#c0ade8 100%)}
+  .node-leaf { padding:10px 14px; max-width:140px; background:var(--warm-white); border-radius:2px;
+    box-shadow:1px 2px 5px var(--shadow-warm); font-family:'Gaegu',cursive; font-size:15px;
+    color:var(--brown-ink); line-height:1.4; z-index:8; }
+  .node-leaf:hover { transform:scale(1.06) rotate(0deg)!important; box-shadow:3px 4px 12px var(--shadow-warm); }
+  .leaf-lined { background-image:linear-gradient(transparent 19px,#e8ddd0 19px); background-size:100% 20px; background-color:var(--warm-white); }
+  .leaf-grid { background-image:linear-gradient(rgba(180,170,155,0.15) 1px,transparent 1px),linear-gradient(90deg,rgba(180,170,155,0.15) 1px,transparent 1px); background-size:14px 14px; background-color:var(--warm-white); }
+  .leaf-kraft { background:var(--kraft-light); }
+  .leaf-torn { clip-path:polygon(0% 0%,100% 0%,100% 88%,96% 90%,92% 87%,88% 91%,84% 88%,80% 92%,76% 89%,72% 93%,68% 88%,64% 91%,60% 87%,56% 92%,52% 89%,48% 93%,44% 88%,40% 91%,36% 87%,32% 92%,28% 89%,24% 93%,20% 88%,16% 91%,12% 87%,8% 92%,4% 89%,0% 91%); padding-bottom:18px; }
+  .washi { position:absolute; height:22px; border-radius:1px; opacity:0.8; z-index:30; mix-blend-mode:multiply; }
+  .washi::before { content:''; position:absolute; inset:0; background:repeating-linear-gradient(90deg,transparent 0px,transparent 3px,rgba(255,255,255,0.15) 3px,rgba(255,255,255,0.15) 4px); }
+  .washi-pink{background-color:var(--pink-soft);background-image:repeating-linear-gradient(45deg,transparent,transparent 4px,rgba(255,255,255,0.2) 4px,rgba(255,255,255,0.2) 8px)}
+  .washi-mint{background-color:var(--mint);background-image:repeating-linear-gradient(-45deg,transparent,transparent 3px,rgba(255,255,255,0.25) 3px,rgba(255,255,255,0.25) 6px)}
+  .washi-butter{background-color:var(--butter);background-image:repeating-linear-gradient(0deg,transparent,transparent 5px,rgba(255,200,50,0.3) 5px,rgba(255,200,50,0.3) 6px)}
+  .washi-lavender{background-color:var(--lavender);background-image:repeating-linear-gradient(60deg,transparent,transparent 3px,rgba(255,255,255,0.2) 3px,rgba(255,255,255,0.2) 5px)}
+  .washi-sky{background-color:var(--sky);background-image:radial-gradient(circle 1.5px,rgba(255,255,255,0.3) 1px,transparent 1px);background-size:7px 7px}
+  .washi-peach{background-color:var(--peach);background-image:repeating-linear-gradient(90deg,transparent,transparent 7px,rgba(240,160,112,0.3) 7px,rgba(240,160,112,0.3) 9px)}
+  .pin { position:absolute; width:14px;height:14px; border-radius:50%; z-index:35;
+    box-shadow:0 1px 3px rgba(0,0,0,0.25),inset 0 -1px 2px rgba(0,0,0,0.15); }
+  .pin::after { content:''; position:absolute; top:3px;left:4px; width:3px;height:2px; border-radius:50%; background:rgba(255,255,255,0.5); }
+  .pin-red{background:radial-gradient(circle at 40% 35%,#ff8888,#cc3333)}
+  .pin-yellow{background:radial-gradient(circle at 40% 35%,#fff088,#e8c020)}
+  .pin-blue{background:radial-gradient(circle at 40% 35%,#88bbff,#3366cc)}
+  .pin-green{background:radial-gradient(circle at 40% 35%,#88dd88,#33aa55)}
+  .emoji-deco { position:absolute; z-index:25; filter:drop-shadow(1px 2px 2px rgba(0,0,0,0.12));
+    transition:transform .3s cubic-bezier(.34,1.56,.64,1); cursor:pointer; user-select:none; }
+  .emoji-deco:hover { transform:scale(1.3)!important; }
+  .sticker-svg { position:absolute; z-index:25; filter:drop-shadow(1px 2px 2px rgba(90,62,40,0.2));
+    transition:transform .3s cubic-bezier(.34,1.56,.64,1); }
+  .sticker-svg:hover { transform:scale(1.25) rotate(0deg)!important; }
+  .stamp { position:absolute; display:inline-block; border:2.5px solid; border-radius:3px; padding:4px 10px;
+    font-family:'Patrick Hand',cursive; font-size:13px; text-transform:uppercase; letter-spacing:1.5px; opacity:0.55; z-index:25; }
+  @keyframes fadeSlideUp { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes pop-in { 0%{opacity:0;transform:scale(0.3)} 60%{transform:scale(1.1)} 100%{opacity:1;transform:scale(1)} }
+  @keyframes float-gentle { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+  @keyframes stamp-slam { 0%{opacity:0;transform:scale(2.5) rotate(-12deg)} 50%{opacity:0.6;transform:scale(0.95) rotate(-6deg)} 100%{opacity:0.55;transform:scale(1) rotate(-6deg)} }
+  .anim-fade{animation:fadeSlideUp .7s ease-out both} .anim-pop{animation:pop-in .5s cubic-bezier(.34,1.56,.64,1) both}
+  .anim-float{animation:float-gentle 4s ease-in-out infinite} .anim-stamp{animation:stamp-slam .5s ease-out both}
+  .d1{animation-delay:.1s}.d2{animation-delay:.2s}.d3{animation-delay:.35s}.d4{animation-delay:.5s}
+  .d5{animation-delay:.65s}.d6{animation-delay:.8s}.d7{animation-delay:.95s}.d8{animation-delay:1.1s}
+  .d9{animation-delay:1.3s}.d10{animation-delay:1.5s}.d11{animation-delay:1.7s}.d12{animation-delay:1.9s}
+  .d13{animation-delay:2.1s}.d14{animation-delay:2.3s}.d15{animation-delay:2.5s}.d16{animation-delay:2.7s}
+  .d17{animation-delay:2.9s}.d18{animation-delay:3.1s}
+  .page-title { text-align:center; padding:14px 0 0; position:relative; z-index:2; }
+  .page-title h1 { font-family:'Nanum Pen Script',cursive; font-size:40px; color:var(--brown-ink); display:inline-block; position:relative; }
+  .page-title h1 svg { position:absolute; bottom:-6px; left:-6px; width:calc(100% + 12px); height:12px; overflow:visible; }
+  .page-title .sub { font-family:'Gaegu',cursive; font-size:16px; color:#8a7a6a; margin-top:2px; }
+  .legend { position:absolute; bottom:20px; right:30px; background:var(--warm-white); padding:14px 18px;
+    border-radius:8px; box-shadow:2px 3px 8px var(--shadow-warm); font-family:'Gaegu',cursive;
+    font-size:14px; color:var(--brown-ink); z-index:10; transform:rotate(1deg); line-height:1.8; }
+  ::-webkit-scrollbar{width:10px;height:10px} ::-webkit-scrollbar-track{background:var(--cream)}
+  ::-webkit-scrollbar-thumb{background:var(--kraft-light);border-radius:5px;border:2px solid var(--cream)}
+  @media(max-width:1400px){.mindmap-wrapper{transform-origin:top center;transform:scale(0.75);margin-top:-80px}}
+  @media(max-width:1000px){.mindmap-wrapper{transform:scale(0.55);margin-top:-180px}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <filter id="pencil-sketch"><feTurbulence type="fractalNoise" baseFrequency="0.5" numOctaves="3" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="1.8" xChannelSelector="R" yChannelSelector="G"/></filter>
+  <symbol id="flower-1" viewBox="0 0 60 60"><circle cx="30" cy="18" r="10" fill="#f7c5cc"/><circle cx="42" cy="30" r="10" fill="#f7c5cc"/><circle cx="36" cy="44" r="10" fill="#f7c5cc"/><circle cx="24" cy="44" r="10" fill="#f7c5cc"/><circle cx="18" cy="30" r="10" fill="#f7c5cc"/><circle cx="30" cy="30" r="8" fill="#fce588"/></symbol>
+  <symbol id="flower-2" viewBox="0 0 50 50"><ellipse cx="25" cy="12" rx="7" ry="10" fill="#d4c5f0" transform="rotate(0 25 25)"/><ellipse cx="25" cy="12" rx="7" ry="10" fill="#d4c5f0" transform="rotate(72 25 25)"/><ellipse cx="25" cy="12" rx="7" ry="10" fill="#d4c5f0" transform="rotate(144 25 25)"/><ellipse cx="25" cy="12" rx="7" ry="10" fill="#d4c5f0" transform="rotate(216 25 25)"/><ellipse cx="25" cy="12" rx="7" ry="10" fill="#d4c5f0" transform="rotate(288 25 25)"/><circle cx="25" cy="25" r="6" fill="#fce588"/></symbol>
+  <symbol id="heart" viewBox="0 0 40 40"><path d="M20 35 C15 30,2 22,2 13 C2 7,7 2,13 2 C16.5 2,19 4,20 7 C21 4,23.5 2,27 2 C33 2,38 7,38 13 C38 22,25 30,20 35Z" fill="#f7c5cc" stroke="#e8668a" stroke-width="0.5"/></symbol>
+  <symbol id="star" viewBox="0 0 40 40"><path d="M20 2 L24.5 14.5 L38 15 L27.5 24 L30.5 37 L20 30 L9.5 37 L12.5 24 L2 15 L15.5 14.5Z" fill="#fce588" stroke="#f0c93a" stroke-width="1"/></symbol>
+  <symbol id="leaf" viewBox="0 0 40 50"><path d="M20 5 C10 15,5 30,20 45 C35 30,30 15,20 5Z" fill="#b8e6d0" stroke="#7cc4a5" stroke-width="1"/><path d="M20 12 L20 40" stroke="#7cc4a5" stroke-width="1" fill="none"/></symbol>
+</defs></svg>
+
+<div class="page-title anim-fade d1">
+  <h1>✿ 다이어리 꾸미기 Mind Map ✿
+    <svg viewBox="0 0 400 12" preserveAspectRatio="none"><path d="M5 7 Q60 2,120 8 T240 5 T395 7" stroke="var(--pink-hot)" fill="none" stroke-width="3" stroke-linecap="round" style="stroke-dasharray:400;stroke-dashoffset:400;animation:draw-path 2s ease-out .5s forwards;"/></svg>
+  </h1>
+  <div class="sub">Journal Decorating — Stationery & Scrapbook Universe</div>
+</div>
+
+<div class="mindmap-wrapper">
+  <svg class="connections-layer" viewBox="0 0 1400 1100">
+    <path class="conn-line d2" d="M660 440 C580 380,440 320,340 240" stroke="var(--pink-hot)" style="animation-delay:.3s"/>
+    <path class="conn-line d3" d="M700 420 C700 340,700 280,720 180" stroke="var(--butter-deep)" style="animation-delay:.5s"/>
+    <path class="conn-line d4" d="M760 440 C840 380,950 320,1060 240" stroke="var(--mint-deep)" style="animation-delay:.7s"/>
+    <path class="conn-line d5" d="M790 490 C880 490,980 490,1100 460" stroke="var(--sky-deep)" style="animation-delay:.9s"/>
+    <path class="conn-line d6" d="M760 540 C840 600,960 680,1060 740" stroke="var(--lavender-deep)" style="animation-delay:1.1s"/>
+    <path class="conn-line d7" d="M700 560 C700 640,680 720,680 800" stroke="var(--peach-deep)" style="animation-delay:1.3s"/>
+    <path class="conn-line d8" d="M640 540 C560 600,440 680,340 740" stroke="var(--kraft)" style="animation-delay:1.5s"/>
+    <path class="conn-line d9" d="M620 490 C530 490,420 490,300 460" stroke="var(--coral)" style="animation-delay:1.7s"/>
+    <path class="conn-line d10" d="M310 210 C260 170,200 140,160 110" stroke="var(--pink-soft)" stroke-width="2" style="animation-delay:2s"/>
+    <path class="conn-line d10" d="M280 240 C220 250,170 260,120 270" stroke="var(--pink-soft)" stroke-width="2" style="animation-delay:2.1s"/>
+    <path class="conn-line d10" d="M350 200 C360 150,380 110,420 80" stroke="var(--pink-soft)" stroke-width="2" style="animation-delay:2.2s"/>
+    <path class="conn-line d11" d="M690 155 C630 110,570 80,520 50" stroke="var(--butter)" stroke-width="2" style="animation-delay:2.3s"/>
+    <path class="conn-line d11" d="M750 155 C800 110,850 80,900 50" stroke="var(--butter)" stroke-width="2" style="animation-delay:2.4s"/>
+    <path class="conn-line d12" d="M1090 210 C1130 170,1170 140,1210 100" stroke="var(--mint)" stroke-width="2" style="animation-delay:2.5s"/>
+    <path class="conn-line d12" d="M1100 260 C1160 270,1210 280,1260 280" stroke="var(--mint)" stroke-width="2" style="animation-delay:2.6s"/>
+    <path class="conn-line d12" d="M1040 210 C1000 160,970 120,940 90" stroke="var(--mint)" stroke-width="2" style="animation-delay:2.7s"/>
+    <path class="conn-line d13" d="M1140 430 C1190 390,1230 360,1270 340" stroke="var(--sky)" stroke-width="2" style="animation-delay:2.8s"/>
+    <path class="conn-line d13" d="M1160 470 C1220 480,1270 490,1300 500" stroke="var(--sky)" stroke-width="2" style="animation-delay:2.9s"/>
+    <path class="conn-line d14" d="M1090 770 C1140 800,1190 830,1230 840" stroke="var(--lavender)" stroke-width="2" style="animation-delay:3s"/>
+    <path class="conn-line d14" d="M1060 780 C1050 840,1040 880,1020 920" stroke="var(--lavender)" stroke-width="2" style="animation-delay:3.1s"/>
+    <path class="conn-line d15" d="M640 830 C580 870,520 900,470 920" stroke="var(--peach)" stroke-width="2" style="animation-delay:3.2s"/>
+    <path class="conn-line d15" d="M720 830 C780 870,830 900,890 920" stroke="var(--peach)" stroke-width="2" style="animation-delay:3.3s"/>
+    <path class="conn-line d15" d="M680 840 C680 890,680 930,680 970" stroke="var(--peach)" stroke-width="2" style="animation-delay:3.4s"/>
+    <path class="conn-line d16" d="M310 770 C260 800,210 830,170 850" stroke="var(--kraft)" stroke-width="2" style="animation-delay:3.5s"/>
+    <path class="conn-line d16" d="M340 780 C350 840,360 880,370 930" stroke="var(--kraft)" stroke-width="2" style="animation-delay:3.6s"/>
+    <path class="conn-line d17" d="M260 430 C210 390,160 360,120 340" stroke="var(--coral)" stroke-width="2" style="animation-delay:3.7s"/>
+    <path class="conn-line d17" d="M250 470 C190 490,140 510,90 530" stroke="var(--coral)" stroke-width="2" style="animation-delay:3.8s"/>
+  </svg>
+
+  <!-- CENTER -->
+  <div class="node node-center anim-pop d2" style="left:590px;top:440px;">
+    <div class="title">📒 다이어리<br>꾸미기</div><div class="subtitle">Journal Decorating</div>
+    <div class="pin pin-red" style="top:-6px;left:50%;margin-left:-7px;"></div>
+  </div>
+
+  <!-- 1. TAPE -->
+  <div class="node node-category cat-pink anim-pop d4" style="left:260px;top:195px;transform:rotate(-2deg);">
+    <div class="cat-icon">🎀</div><div class="cat-title">테이프류</div>
+    <div style="font-family:'Gaegu';font-size:13px;color:#7a5a5a;margin-top:2px;">Tapes</div>
+    <div class="washi washi-pink" style="width:60px;top:-11px;left:20px;transform:rotate(4deg);"></div>
+  </div>
+  <div class="node node-leaf leaf-lined anim-fade d10" style="left:90px;top:80px;transform:rotate(-3deg);">🎗️ 마스킹 테이프<br><span style="font-size:12px;color:#999;">Masking Tape</span></div>
+  <div class="node node-leaf anim-fade d11" style="left:50px;top:240px;transform:rotate(1deg);">✨ 와시 테이프<br><span style="font-size:12px;color:#999;">Washi Tape</span></div>
+  <div class="node node-leaf leaf-kraft anim-fade d12" style="left:370px;top:45px;transform:rotate(2deg);">📎 글루 테이프<br><span style="font-size:12px;color:#999;">Glue Tape</span></div>
+
+  <!-- 2. STICKER -->
+  <div class="node node-category cat-yellow anim-pop d5" style="left:660px;top:120px;transform:rotate(1deg);">
+    <div class="cat-icon">⭐</div><div class="cat-title">스티커류</div>
+    <div style="font-family:'Gaegu';font-size:13px;color:#7a6a3a;margin-top:2px;">Stickers</div>
+  </div>
+  <div class="node node-leaf anim-fade d13" style="left:440px;top:18px;transform:rotate(-2deg);">🌸 씰 스티커<br><span style="font-size:12px;color:#999;">Seal Sticker</span></div>
+  <div class="node node-leaf leaf-grid anim-fade d14" style="left:840px;top:15px;transform:rotate(2deg);">📝 떡메모지<br><span style="font-size:12px;color:#999;">Deco Memo Pad</span></div>
+
+  <!-- 3. PAPER -->
+  <div class="node node-category cat-green anim-pop d6" style="left:1010px;top:195px;transform:rotate(2deg);">
+    <div class="cat-icon">📄</div><div class="cat-title">종이 & 소재</div>
+    <div style="font-family:'Gaegu';font-size:13px;color:#4a6a4a;margin-top:2px;">Papers</div>
+    <div class="washi washi-mint" style="width:55px;top:-11px;right:10px;transform:rotate(-3deg);"></div>
+  </div>
+  <div class="node node-leaf leaf-torn anim-fade d14" style="left:890px;top:55px;transform:rotate(-1deg);">📋 트레이싱지<br><span style="font-size:12px;color:#999;">Tracing Paper</span></div>
+  <div class="node node-leaf leaf-kraft anim-fade d15" style="left:1170px;top:70px;transform:rotate(3deg);">📦 크래프트지<br><span style="font-size:12px;color:#999;">Kraft Paper</span></div>
+  <div class="node node-leaf leaf-lined anim-fade d16" style="left:1220px;top:250px;transform:rotate(-2deg);">✉️ 콜라주 페이퍼<br><span style="font-size:12px;color:#999;">Collage Paper</span></div>
+
+  <!-- 4. PEN -->
+  <div class="node node-category cat-blue anim-pop d7" style="left:1080px;top:420px;transform:rotate(-1deg);">
+    <div class="cat-icon">🖊️</div><div class="cat-title">필기구</div>
+    <div style="font-family:'Gaegu';font-size:13px;color:#4a5a7a;margin-top:2px;">Pens</div>
+  </div>
+  <div class="node node-leaf anim-fade d15" style="left:1230px;top:310px;transform:rotate(2deg);">✍️ 컬러 젤펜<br><span style="font-size:12px;color:#999;">Color Gel Pen</span></div>
+  <div class="node node-leaf leaf-grid anim-fade d16" style="left:1260px;top:470px;transform:rotate(-1deg);">🖌️ 브러시펜<br><span style="font-size:12px;color:#999;">Brush Pen</span></div>
+
+  <!-- 5. STAMP -->
+  <div class="node node-category cat-lavender anim-pop d8" style="left:1010px;top:720px;transform:rotate(1.5deg);">
+    <div class="cat-icon">🔏</div><div class="cat-title">스탬프류</div>
+    <div style="font-family:'Gaegu';font-size:13px;color:#6a5a7a;margin-top:2px;">Stamps</div>
+  </div>
+  <div class="node node-leaf anim-fade d16" style="left:1190px;top:810px;transform:rotate(-2deg);">🏷️ 고무 스탬프<br><span style="font-size:12px;color:#999;">Rubber Stamp</span></div>
+  <div class="node node-leaf leaf-kraft anim-fade d17" style="left:970px;top:900px;transform:rotate(2deg);">🎨 잉크 패드<br><span style="font-size:12px;color:#999;">Ink Pad</span></div>
+
+  <!-- 6. TOOL -->
+  <div class="node node-category cat-orange anim-pop d9" style="left:610px;top:790px;transform:rotate(-1deg);">
+    <div class="cat-icon">✂️</div><div class="cat-title">도구류</div>
+    <div style="font-family:'Gaegu';font-size:13px;color:#7a5a3a;margin-top:2px;">Tools</div>
+    <div class="washi washi-peach" style="width:50px;top:-11px;left:15px;transform:rotate(-5deg);"></div>
+  </div>
+  <div class="node node-leaf anim-fade d17" style="left:390px;top:895px;transform:rotate(2deg);">✂️ 데코가위<br><span style="font-size:12px;color:#999;">Deco Scissors</span></div>
+  <div class="node node-leaf leaf-lined anim-fade d17" style="left:840px;top:895px;transform:rotate(-3deg);">🔲 모양펀치<br><span style="font-size:12px;color:#999;">Shape Punch</span></div>
+  <div class="node node-leaf leaf-grid anim-fade d18" style="left:610px;top:960px;transform:rotate(1deg);">📏 커팅매트 & 자<br><span style="font-size:12px;color:#999;">Cutting Mat</span></div>
+
+  <!-- 7. CLIP -->
+  <div class="node node-category cat-yellow anim-pop d10" style="left:260px;top:720px;transform:rotate(-2deg);">
+    <div class="cat-icon">📎</div><div class="cat-title">클립 & 핀</div>
+    <div style="font-family:'Gaegu';font-size:13px;color:#7a6a3a;margin-top:2px;">Clips & Pins</div>
+  </div>
+  <div class="node node-leaf leaf-kraft anim-fade d18" style="left:100px;top:825px;transform:rotate(3deg);">🪵 우드 클립<br><span style="font-size:12px;color:#999;">Wood Clip</span></div>
+  <div class="node node-leaf anim-fade d18" style="left:310px;top:910px;transform:rotate(-1deg);">📌 브래드 핀<br><span style="font-size:12px;color:#999;">Brad Pin</span></div>
+
+  <!-- 8. ETC -->
+  <div class="node node-category cat-pink anim-pop d11" style="left:210px;top:420px;transform:rotate(1.5deg);">
+    <div class="cat-icon">🎨</div><div class="cat-title">기타 소재</div>
+    <div style="font-family:'Gaegu';font-size:13px;color:#7a5a5a;margin-top:2px;">Extras</div>
+    <div class="washi washi-lavender" style="width:50px;top:-11px;right:5px;transform:rotate(6deg);"></div>
+  </div>
+  <div class="node node-leaf anim-fade d17" style="left:40px;top:310px;transform:rotate(-2deg);">🌹 드라이플라워<br><span style="font-size:12px;color:#999;">Dried Flowers</span></div>
+  <div class="node node-leaf leaf-lined anim-fade d18" style="left:20px;top:500px;transform:rotate(2deg);">🕯️ 씰링 왁스<br><span style="font-size:12px;color:#999;">Sealing Wax</span></div>
+
+  <!-- DECORATIONS -->
+  <svg class="sticker-svg anim-pop d12" width="40" height="40" viewBox="0 0 60 60" style="left:540px;top:320px;transform:rotate(-10deg);"><use href="#flower-1"/></svg>
+  <svg class="sticker-svg anim-pop d14" width="35" height="35" viewBox="0 0 50 50" style="left:830px;top:350px;transform:rotate(18deg);"><use href="#flower-2"/></svg>
+  <svg class="sticker-svg anim-pop d13" width="30" height="30" viewBox="0 0 60 60" style="left:480px;top:620px;transform:rotate(25deg);"><use href="#flower-1"/></svg>
+  <svg class="sticker-svg anim-pop d11" width="28" height="28" viewBox="0 0 40 40" style="left:860px;top:550px;transform:rotate(-12deg);"><use href="#heart"/></svg>
+  <svg class="sticker-svg anim-pop d15" width="22" height="22" viewBox="0 0 40 40" style="left:180px;top:600px;transform:rotate(8deg);"><use href="#heart"/></svg>
+  <svg class="sticker-svg anim-pop d10 anim-float" width="30" height="30" viewBox="0 0 40 40" style="left:920px;top:160px;transform:rotate(10deg);"><use href="#star"/></svg>
+  <svg class="sticker-svg anim-pop d16" width="24" height="24" viewBox="0 0 40 40" style="left:500px;top:160px;transform:rotate(-15deg);"><use href="#star"/></svg>
+  <svg class="sticker-svg anim-pop d14" width="24" height="30" viewBox="0 0 40 50" style="left:470px;top:780px;transform:rotate(20deg);"><use href="#leaf"/></svg>
+  <svg class="sticker-svg anim-pop d16" width="20" height="26" viewBox="0 0 40 50" style="left:910px;top:660px;transform:rotate(-25deg);"><use href="#leaf"/></svg>
+
+  <span class="emoji-deco anim-pop d8" style="left:560px;top:190px;font-size:22px;transform:rotate(5deg);">🦋</span>
+  <span class="emoji-deco anim-pop d10 anim-float" style="left:840px;top:460px;font-size:20px;">✨</span>
+  <span class="emoji-deco anim-pop d12" style="left:150px;top:160px;font-size:18px;transform:rotate(-8deg);">🌷</span>
+  <span class="emoji-deco anim-pop d14" style="left:1150px;top:610px;font-size:20px;transform:rotate(12deg);">🎶</span>
+  <span class="emoji-deco anim-pop d16" style="left:760px;top:860px;font-size:18px;transform:rotate(-5deg);">💐</span>
+  <span class="emoji-deco anim-pop d15" style="left:140px;top:730px;font-size:20px;">🌿</span>
+  <span class="emoji-deco anim-pop d13" style="left:1170px;top:170px;font-size:18px;transform:rotate(10deg);">📐</span>
+
+  <div class="washi washi-sky" style="width:80px;left:570px;top:680px;transform:rotate(-8deg);"></div>
+  <div class="washi washi-butter" style="width:70px;left:950px;top:480px;transform:rotate(12deg);"></div>
+
+  <div class="stamp anim-stamp d18" style="left:1100px;top:890px;border-color:var(--coral);color:var(--coral);transform:rotate(-6deg);">★ Creative ★</div>
+  <div class="stamp anim-stamp d17" style="left:50px;top:420px;border-color:var(--lavender-deep);color:var(--lavender-deep);transform:rotate(8deg);font-size:11px;">Handmade</div>
+
+  <div class="pin pin-blue" style="left:105px;top:74px;"></div>
+  <div class="pin pin-yellow" style="left:870px;top:10px;"></div>
+  <div class="pin pin-green" style="left:620px;top:955px;"></div>
+
+  <div class="legend anim-fade d18">
+    <strong style="font-family:'Gamja Flower';font-size:16px;">🗺️ Map Legend</strong><br>
+    <span style="display:inline-block;width:12px;height:12px;background:var(--butter);border-radius:50%;vertical-align:middle;"></span> 중심 주제<br>
+    <span style="display:inline-block;width:12px;height:12px;background:var(--pink-soft);border-radius:3px;vertical-align:middle;"></span> 카테고리<br>
+    <span style="display:inline-block;width:12px;height:3px;background:var(--pink-hot);vertical-align:middle;opacity:.5;"></span> 연결선<br>
+    <span style="display:inline-block;width:12px;height:12px;background:var(--warm-white);border:1px solid #ddd;vertical-align:middle;"></span> 세부 항목
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  document.querySelectorAll('.node-leaf').forEach(el=>{
+    const b=parseFloat(el.style.transform?.match(/rotate\(([^)]+)\)/)?.[1])||0;
+    el.style.transform=el.style.transform.replace(/rotate\([^)]+\)/,`rotate(${b+(Math.random()-.5)*2}deg)`);
+  });
+  document.querySelectorAll('.emoji-deco,.sticker-svg,.node-category').forEach(el=>{
+    el.addEventListener('click',e=>{
+      const em=['✨','🌸','💕','⭐','🎀','🌷','💫','🦋','📌','✂️'];
+      for(let i=0;i<6;i++){const p=document.createElement('span');p.textContent=em[Math.floor(Math.random()*em.length)];
+      p.style.cssText=`position:fixed;left:${e.clientX}px;top:${e.clientY}px;font-size:${14+Math.random()*16}px;pointer-events:none;z-index:10000;transition:all .9s cubic-bezier(.25,.46,.45,.94);`;
+      document.body.appendChild(p);requestAnimationFrame(()=>{p.style.transform=`translate(${(Math.random()-.5)*140}px,${-50-Math.random()*100}px) rotate(${Math.random()*360}deg)`;p.style.opacity='0';});
+      setTimeout(()=>p.remove(),1000);}
+    });
+  });
+});
+</script>
+</body>
+</html>

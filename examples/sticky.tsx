@@ -48,7 +48,13 @@ export default function StickyShowcase() {
     `);
 
   return (
-    <Canvas>
+    <Canvas background={{
+        gap: 4,
+        pattern: ({ size }) => `
+          <line x1="0" y1="${size}" x2="${size}" y2="${size}" stroke="rgba(180,160,130,0.08)" stroke-width="0.5" />
+          <line x1="${size}" y1="0" x2="${size}" y2="${size}" stroke="rgba(180,160,130,0.08)" stroke-width="0.5" />
+        `,
+      }}>
       {/* === Title === */}
       <Text id="bg-title" x={80} y={30} className="text-lg font-light text-[#8b7355] tracking-[0.15em]">
         My Journal  2026.03.02
