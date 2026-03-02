@@ -48,6 +48,21 @@ export default function LayoutComparison() {
       <MindMap id="bidir-map" layout="bidirectional" x={0} y={500}>
         <DesignSystemNodes label='layout="bidirectional"' />
       </MindMap>
+
+      {/* Compact tree (d3-flextree, tighter packing) */}
+      <MindMap id="compact-map" layout="compact" x={0} y={1000}>
+        <DesignSystemNodes label='layout="compact"' />
+      </MindMap>
+
+      {/* Compact bidirectional (d3-flextree, left/right split) */}
+      <MindMap id="compact-bidir-map" layout="compact-bidir" x={0} y={1500}>
+        <DesignSystemNodes label='layout="compact-bidir"' />
+      </MindMap>
+
+      {/* Depth hybrid (L1 grid + L2+ compact) */}
+      <MindMap id="depth-hybrid-map" layout="depth-hybrid" x={0} y={2000}>
+        <DesignSystemNodes label='layout="depth-hybrid"' />
+      </MindMap>
     </Canvas>
   );
 }

@@ -91,7 +91,7 @@ interface RenderNode {
     width?: number;
     height?: number;
     // MindMap container specific
-    layout?: 'tree' | 'bidirectional' | 'radial';
+    layout?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid';
     spacing?: number;
     outlineWidth?: number;
     outlineColor?: string;
@@ -665,7 +665,7 @@ export default function Home() {
           // Track MindMap groups for layout
           const mindMapGroups: {
             id: string;
-            layoutType: 'tree' | 'bidirectional' | 'radial';
+            layoutType: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid';
             basePosition: { x: number; y: number };
             spacing?: number;
             anchor?: string;
@@ -753,7 +753,7 @@ export default function Home() {
                 // MindMap container: extract ID and process children with scope
                 const mmId = child.props.id || `mindmap-${mindmapIdCounter++}`;
                 const layoutType =
-                  (child.props.layout as 'tree' | 'bidirectional' | 'radial') ||
+                  (child.props.layout as 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid') ||
                   'tree';
                 const baseX = child.props.x ?? 0;
                 const baseY = child.props.y ?? 0;

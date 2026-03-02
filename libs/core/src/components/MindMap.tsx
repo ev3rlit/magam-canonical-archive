@@ -13,8 +13,8 @@ export interface MindMapProps {
   position?: 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   gap?: number;
   align?: 'start' | 'center' | 'end';
-  /** 레이아웃 알고리즘. 'tree' (단방향) | 'bidirectional' (양방향) | 'radial' (방사형). 기본값 'tree' */
-  layout?: 'tree' | 'bidirectional' | 'radial';
+  /** 레이아웃 알고리즘. 기본값 'tree' */
+  layout?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid';
   /** 노드 간 간격 (px). 기본값 50 */
   spacing?: number;
   /** 컨테이너 스타일 (Tailwind CSS) */

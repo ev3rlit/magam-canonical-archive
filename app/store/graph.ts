@@ -38,7 +38,7 @@ export interface AppError {
 
 export interface MindMapGroup {
   id: string;
-  layoutType: 'tree' | 'bidirectional' | 'radial';
+  layoutType: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid';
   basePosition: { x: number; y: number };
   spacing?: number;
   anchor?: string;
@@ -106,7 +106,7 @@ export interface GraphState {
   error: AppError | null;
   selectedNodeIds: string[];
   needsAutoLayout: boolean; // true for MindMap, false for Canvas with explicit positions
-  layoutType: 'tree' | 'bidirectional' | 'radial'; // Layout algorithm type (legacy, for single MindMap)
+  layoutType: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid'; // Layout algorithm type (legacy, for single MindMap)
   mindMapGroups: MindMapGroup[]; // Multiple MindMap support
   openTabs: TabState[];
   activeTabId: string | null;
@@ -118,7 +118,7 @@ export interface GraphState {
   activeResultIndex: number;
   highlightElementIds: string[];
   lastExecutedSearch?: SearchResult;
-  setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null }) => void;
+  setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null }) => void;
   setSourceVersion: (version: string | null) => void;
   setLastAppliedCommandId: (commandId?: string) => void;
   setFiles: (files: string[]) => void;
