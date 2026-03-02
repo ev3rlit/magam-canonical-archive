@@ -1,15 +1,9 @@
 import { useCallback, useState } from 'react';
-import { useReactFlow, Node, Edge } from 'reactflow';
+import { useReactFlow } from 'reactflow';
 import type { MindMapGroup } from '@/store/graph';
-import {
-    DEFAULT_LAYOUT_OPTIONS,
-    findRootNode,
-    collectDescendants,
-    getNodeDimensions,
-    runElkLayout,
-    getYBounds,
-    calculateGroupBoundingBox,
-} from '@/utils/layoutUtils';
+import { getLayoutStrategy } from '@/utils/strategies';
+import { runElkLayout } from '@/utils/elkUtils';
+import { calculateGroupBoundingBox } from '@/utils/layoutUtils';
 import {
     buildGroupMetaNodes,
     calculateGlobalGroupLayout,
@@ -22,92 +16,18 @@ import {
     AnchorPosition as AnchorPos,
 } from '@/utils/anchorResolver';
 
-interface UseElkLayoutOptions {
+interface UseLayoutOptions {
     direction?: 'RIGHT' | 'DOWN' | 'LEFT' | 'UP';
     spacing?: number;
-    bidirectional?: boolean;
     mindMapGroups?: MindMapGroup[];
 }
 
-/**
- * Layout a single group with bidirectional layout
- */
-async function layoutBidirectionalGroup(
-    groupNodes: Node[],
-    groupEdges: Edge[],
-    spacing: number
-): Promise<Map<string, { x: number; y: number }>> {
-    const rootNode = findRootNode(groupNodes, groupEdges);
-
-    if (!rootNode) {
-        // Fallback to unidirectional
-        return runElkLayout(groupNodes, groupEdges, 'RIGHT', spacing);
-    }
-
-    const rootChildren = groupEdges
-        .filter(e => e.source === rootNode.id)
-        .map(e => e.target);
-
-    if (rootChildren.length < 2) {
-        // Not enough children for bidirectional
-        return runElkLayout(groupNodes, groupEdges, 'RIGHT', spacing);
-    }
-
-    const midpoint = Math.ceil(rootChildren.length / 2);
-    const leftChildIds = rootChildren.slice(0, midpoint);
-    const rightChildIds = rootChildren.slice(midpoint);
-
-    const leftNodeIds = collectDescendants(leftChildIds, groupEdges);
-    const rightNodeIds = collectDescendants(rightChildIds, groupEdges);
-    leftNodeIds.add(rootNode.id);
-    rightNodeIds.add(rootNode.id);
-
-    const leftNodes = groupNodes.filter(n => leftNodeIds.has(n.id));
-    const rightNodes = groupNodes.filter(n => rightNodeIds.has(n.id));
-    const leftEdges = groupEdges.filter(e => leftNodeIds.has(e.source) && leftNodeIds.has(e.target));
-    const rightEdges = groupEdges.filter(e => rightNodeIds.has(e.source) && rightNodeIds.has(e.target));
-
-    const [leftPos, rightPos] = await Promise.all([
-        runElkLayout(leftNodes, leftEdges, 'LEFT', spacing),
-        runElkLayout(rightNodes, rightEdges, 'RIGHT', spacing),
-    ]);
-
-    // Merge with Y-center alignment
-    const positions = new Map<string, { x: number; y: number }>();
-    positions.set(rootNode.id, { x: 0, y: 0 });
-
-    const leftRootPos = leftPos.get(rootNode.id);
-    const rightRootPos = rightPos.get(rootNode.id);
-    const leftYOffset = -getYBounds(leftPos, rootNode.id).center;
-    const rightYOffset = -getYBounds(rightPos, rootNode.id).center;
-
-    leftPos.forEach((p, id) => {
-        if (id !== rootNode.id) {
-            positions.set(id, {
-                x: p.x - (leftRootPos?.x || 0),
-                y: p.y + leftYOffset
-            });
-        }
-    });
-
-    rightPos.forEach((p, id) => {
-        if (id !== rootNode.id) {
-            positions.set(id, {
-                x: p.x - (rightRootPos?.x || 0),
-                y: p.y + rightYOffset
-            });
-        }
-    });
-
-    return positions;
-}
-
-export function useElkLayout() {
+export function useLayout() {
     const { getNodes, getEdges, setNodes, fitView } = useReactFlow();
     const [isLayouting, setIsLayouting] = useState(false);
 
     const calculateLayout = useCallback(
-        async (options: UseElkLayoutOptions = {}) => {
+        async (options: UseLayoutOptions = {}) => {
             const nodes = getNodes();
             const edges = getEdges();
 
@@ -137,13 +57,12 @@ export function useElkLayout() {
 
                         console.log(`[ELK Layout]   Group "${group.id}": ${groupNodes.length} nodes, type: ${group.layoutType}`);
 
-                        let positions: Map<string, { x: number; y: number }>;
-
-                        if (group.layoutType === 'bidirectional') {
-                            positions = await layoutBidirectionalGroup(groupNodes, groupEdges, group.spacing || 60);
-                        } else {
-                            positions = await runElkLayout(groupNodes, groupEdges, 'RIGHT', group.spacing || 60);
-                        }
+                        const strategy = getLayoutStrategy(group.layoutType);
+                        const positions = await strategy.layoutGroup({
+                            nodes: groupNodes,
+                            edges: groupEdges,
+                            spacing: group.spacing || 60,
+                        });
 
                         // Store positions (relative to group origin 0,0)
                         positions.forEach((pos, nodeId) => {
@@ -255,32 +174,6 @@ export function useElkLayout() {
                     setNodes(finalNodes);
                     window.requestAnimationFrame(() => fitView({ padding: 0.1, duration: 200 }));
                     console.log('[ELK Layout] Complete.');
-                    return;
-                }
-
-                // ========================================
-                // Single MindMap: Bidirectional Layout
-                // ========================================
-                if (options.bidirectional) {
-                    console.log('[ELK Bidirectional] Starting bidirectional layout...');
-
-                    const positions = await layoutBidirectionalGroup(nodes, edges, options.spacing || 60);
-
-                    const newNodes = nodes.map(node => {
-                        const pos = positions.get(node.id);
-                        if (pos) {
-                            return {
-                                ...node,
-                                position: { x: pos.x, y: pos.y },
-                                style: { ...node.style, opacity: 1 },
-                            };
-                        }
-                        return { ...node, style: { ...node.style, opacity: 1 } };
-                    });
-
-                    setNodes(newNodes);
-                    window.requestAnimationFrame(() => fitView({ padding: 0.1, duration: 200 }));
-                    console.log('[ELK Bidirectional] Complete.');
                     return;
                 }
 

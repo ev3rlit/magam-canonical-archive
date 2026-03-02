@@ -19,7 +19,7 @@ import WashiTapeNode from './nodes/WashiTapeNode';
 import MarkdownNode from './nodes/MarkdownNode';
 import SequenceDiagramNode from './nodes/SequenceDiagramNode';
 import FloatingEdge from './edges/FloatingEdge';
-import { useElkLayout } from '../hooks/useElkLayout';
+import { useLayout } from '../hooks/useLayout';
 import { resolveAnchors } from '@/utils/anchorResolver';
 import { NavigationProvider } from '@/contexts/NavigationContext';
 import { ZoomProvider, useZoom } from '@/contexts/ZoomContext';
@@ -96,7 +96,7 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
     [canvasFontFamily, globalFontFamily],
   );
 
-  const { calculateLayout, isLayouting } = useElkLayout();
+  const { calculateLayout, isLayouting } = useLayout();
   const nodesInitialized = useNodesInitialized();
   const { zoomIn, zoomOut, fitView, getZoom, setNodes, getNodes } = useReactFlow();
   const { isOpen: isContextMenuOpen, context: contextMenuContext, items: contextMenuItems, openMenu, closeMenu } = useContextMenu();
@@ -284,7 +284,6 @@ function GraphCanvasContent({ onNodeDragStop, onWashiPresetChange }: GraphCanvas
           console.log(`[Layout] Triggering ELK layout (${layoutType} mode, ${mindMapGroups.length} group(s))...`);
           await calculateLayout({
             direction: 'RIGHT',
-            bidirectional: layoutType === 'bidirectional',
             mindMapGroups,
           });
         } else {

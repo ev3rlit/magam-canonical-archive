@@ -3,7 +3,8 @@ import { Node } from 'reactflow';
 import ELK from 'elkjs/lib/elk.bundled';
 import { ElkNode, ElkExtendedEdge } from 'elkjs/lib/elk-api';
 import type { MindMapGroup } from '@/store/graph';
-import { calculateGroupBoundingBox, DEFAULT_LAYOUT_OPTIONS } from './layoutUtils';
+import { calculateGroupBoundingBox } from './layoutUtils';
+import { DEFAULT_LAYOUT_OPTIONS } from './elkUtils';
 
 export type AnchorPosition =
     | 'top' | 'bottom' | 'left' | 'right'
