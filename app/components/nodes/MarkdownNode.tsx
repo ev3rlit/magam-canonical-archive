@@ -1,13 +1,12 @@
 import React, { isValidElement, memo, useCallback, useMemo } from 'react';
 import { NodeProps } from 'reactflow';
-import ReactMarkdown from 'react-markdown';
 import { twMerge } from 'tailwind-merge';
 import { BaseNode } from './BaseNode';
-import remarkGfm from 'remark-gfm';
 import { CodeBlock } from '../ui/CodeBlock';
 import { useNodeNavigation } from '@/contexts/NavigationContext';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import { useGraphStore } from '@/store/graph';
+import { LazyMarkdownRenderer } from '@/components/markdown/LazyMarkdownRenderer';
 import type { RenderableChild } from '@/utils/childComposition';
 import type { FontFamilyPreset } from '@magam/core';
 import {
@@ -109,13 +108,11 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
             className="prose prose-sm prose-slate max-w-none pointer-events-none select-none"
             style={{ fontFamily: resolvedFontFamily }}
         >
-            <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+            <LazyMarkdownRenderer
+                content={data.label}
                 urlTransform={(url) => url}
                 components={components}
-            >
-                {data.label}
-            </ReactMarkdown>
+            />
         </div>
     ), [data.label, components, resolvedFontFamily]);
 

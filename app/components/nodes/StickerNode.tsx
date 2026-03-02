@@ -5,12 +5,11 @@ import { normalizeStickerData } from '@/utils/stickerDefaults';
 import { useGraphStore } from '@/store/graph';
 import { getLucideIconByName } from '@/utils/lucideRegistry';
 import { toAssetApiUrl } from '@/utils/imageSource';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import type { RenderableChild, RenderChildNode } from '@/utils/childComposition';
 import { stickerDebugLog } from '@/utils/stickerDebug';
 import { getStickerJitterAngle, resolveStickerRotation } from '@/utils/stickerJitter';
 import type { FontFamilyPreset } from '@magam/core';
+import { LazyMarkdownRenderer } from '@/components/markdown/LazyMarkdownRenderer';
 import {
   hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
@@ -772,9 +771,7 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
                   className="prose prose-slate prose-sm max-w-none"
                   style={{ lineHeight: 1.2, fontFamily: resolvedFontFamily }}
                 >
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {child.content}
-                  </ReactMarkdown>
+                  <LazyMarkdownRenderer content={child.content} />
                 </div>
               );
             }

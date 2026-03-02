@@ -69,3 +69,37 @@
     outline-offset: -2px;
     box-shadow: 0 0 0 3px rgb(254 215 170 / 0.55);
 }
+
+.perf-lazy-markdown {
+    display: grid;
+    gap: 8px;
+    width: 100%;
+    min-height: 28px;
+}
+
+.perf-lazy-skeleton {
+    height: 10px;
+    width: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #e2e8f0 0%, #f8fafc 45%, #e2e8f0 100%);
+    background-size: 200% 100%;
+    animation: perf-lazy-shimmer 1.3s ease-in-out infinite;
+}
+
+.perf-lazy-skeleton-short {
+    width: 68%;
+}
+
+.perf-lazy-code {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+}
+
+@keyframes perf-lazy-shimmer {
+    0% {
+        background-position: 100% 0;
+    }
+
+    100% {
+        background-position: -100% 0;
+    }
+}

@@ -1,8 +1,7 @@
 import React from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { getLucideIconByName } from '@/utils/lucideRegistry';
 import type { RenderableChild } from '@/utils/childComposition';
+import { LazyMarkdownRenderer } from '@/components/markdown/LazyMarkdownRenderer';
 
 interface RenderNodeContentOptions {
   children?: RenderableChild[];
@@ -47,9 +46,7 @@ export function renderNodeContent({
             className="prose prose-slate prose-sm max-w-none"
             style={{ lineHeight: 1.2, ...textStyle }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {child.content}
-            </ReactMarkdown>
+            <LazyMarkdownRenderer content={child.content} />
           </div>
         );
       }

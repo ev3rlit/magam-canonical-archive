@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import { getNodesBounds, getViewportForBounds, Node, useReactFlow, useStoreApi } from 'reactflow';
 import { toPng, toJpeg, toSvg } from 'html-to-image';
-import { jsPDF } from 'jspdf';
 
 export type ExportFormat = 'png' | 'jpg' | 'svg' | 'pdf';
 export type ExportBackground = 'grid' | 'transparent' | 'solid';
@@ -71,6 +70,15 @@ const EXPORT_SELECTION_CLASS_PATTERNS = [
   /^scale-105$/,
   /^shadow-xl$/,
 ] as const;
+
+let jsPdfModulePromise: Promise<typeof import('jspdf')> | null = null;
+
+async function loadJsPdf() {
+  if (!jsPdfModulePromise) {
+    jsPdfModulePromise = import('jspdf');
+  }
+  return jsPdfModulePromise;
+}
 
 type MeasuredExportNode = Node & {
   measured?: {
@@ -498,6 +506,7 @@ export function useExportImage(): ExportReturn {
       }
 
       const pngDataUrl = await toPng(captureTarget, captureOptions);
+      const { jsPDF } = await loadJsPdf();
       const orientation = captureWidth >= captureHeight ? 'landscape' : 'portrait';
       const pdf = new jsPDF({
         orientation,
