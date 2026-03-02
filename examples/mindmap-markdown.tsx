@@ -1,4 +1,4 @@
-import { Canvas, MindMap, Node, Markdown } from '@magam/core';
+import { Canvas, MindMap, Node, Markdown, Text } from '@magam/core';
 
 /**
  * Markdown Showcase Example
@@ -8,10 +8,11 @@ import { Canvas, MindMap, Node, Markdown } from '@magam/core';
 export default function MarkdownShowcaseExample() {
     return (
         <Canvas>
-            <MindMap layout="tree" spacing={100}>
+            <Text id="markdown-showcase.seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
+            <MindMap id="markdown-showcase" layout="tree" spacing={100}>
 
                 {/* Root: Magam */}
-                <Node id="root">
+                <Node id="root" from={{ node: 'markdown-showcase.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown>
                         {`# 📝 Magam
 

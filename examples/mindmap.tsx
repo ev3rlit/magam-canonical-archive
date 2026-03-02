@@ -8,9 +8,15 @@ import { Canvas, MindMap, Node, Text, Markdown } from '@magam/core';
 export default function MindMapFeaturesExample() {
   return (
     <Canvas>
-      <MindMap layout="bidirectional">
+      <Text id="mindmap-features-a.seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
+      <MindMap id="mindmap-features-a" layout="bidirectional">
         {/* Root node */}
-        <Node id="mindmap">🧠 MindMap Features</Node>
+        <Node
+          id="mindmap"
+          from={{ node: 'mindmap-features-a.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}
+        >
+          🧠 MindMap Features
+        </Node>
 
         {/* Node types */}
         <Node id="node-types" from="mindmap">Node Types</Node>
@@ -60,9 +66,15 @@ function hello() {
         <Node id="auto-edges" from="connections">Auto edge generation</Node>
       </MindMap>
 
-      <MindMap layout="bidirectional">
+      <Text id="mindmap-features-b.seed" x={12} y={12} className="text-[1px] text-transparent select-none">.</Text>
+      <MindMap id="mindmap-features-b" layout="bidirectional">
         {/* Root node */}
-        <Node id="mindmap">🧠 MindMap Features</Node>
+        <Node
+          id="mindmap"
+          from={{ node: 'mindmap-features-b.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}
+        >
+          🧠 MindMap Features
+        </Node>
 
         {/* Node types */}
         <Node id="node-types" from="mindmap">Node Types</Node>

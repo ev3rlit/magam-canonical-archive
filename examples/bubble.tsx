@@ -11,9 +11,10 @@ import { Canvas, MindMap, Node, Shape, Markdown, Text } from '@magam/core';
 export default function BubbleExample() {
     return (
         <Canvas>
+            <Text id="features.seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
             {/* MindMap with bubble labels */}
             <MindMap id="features" layout="bidirectional">
-                <Node id="root">
+                <Node id="root" from={{ node: 'features.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown bubble>{`
 # 🔍 Semantic Zoom
 

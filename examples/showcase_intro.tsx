@@ -1,4 +1,4 @@
-import { Canvas, MindMap, Node, Markdown } from '@magam/core';
+import { Canvas, MindMap, Node, Markdown, Text } from '@magam/core';
 
 /**
  * Magam 소개 — 포트폴리오 썸네일용
@@ -8,9 +8,14 @@ import { Canvas, MindMap, Node, Markdown } from '@magam/core';
 export default function ShowcaseIntro() {
     return (
         <Canvas>
-            <MindMap layout="bidirectional">
+            <Text id="showcase-intro-map.seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
+            <MindMap id="showcase-intro-map" layout="bidirectional">
                 {/* Root */}
-                <Node id="root" bubble>
+                <Node
+                    id="root"
+                    bubble
+                    from={{ node: 'showcase-intro-map.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}
+                >
                     <Markdown>{`# Magam
 
 > 코드로 그리는 화이트보드`}</Markdown>

@@ -1,4 +1,4 @@
-import { Canvas, MindMap, Node, Markdown } from '@magam/core';
+import { Canvas, MindMap, Node, Markdown, Text } from '@magam/core';
 
 /**
  * Magam 로드맵 & TODO
@@ -9,9 +9,18 @@ import { Canvas, MindMap, Node, Markdown } from '@magam/core';
 export default function TODORoadmap() {
     return (
         <Canvas>
+            <Text id="root.seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
+            <Text id="core.seed" x={-360} y={0} className="text-[1px] text-transparent select-none">.</Text>
+            <Text id="ui.seed" x={-360} y={320} className="text-[1px] text-transparent select-none">.</Text>
+            <Text id="content.seed" x={0} y={-320} className="text-[1px] text-transparent select-none">.</Text>
+            <Text id="diagrams.seed" x={360} y={0} className="text-[1px] text-transparent select-none">.</Text>
+            <Text id="learning.seed" x={360} y={320} className="text-[1px] text-transparent select-none">.</Text>
+            <Text id="export.seed" x={0} y={360} className="text-[1px] text-transparent select-none">.</Text>
+            <Text id="mcp.seed" x={420} y={360} className="text-[1px] text-transparent select-none">.</Text>
+
             {/* 중앙 타이틀 */}
             <MindMap id="root" layout="bidirectional">
-                <Node id="title" bubble>
+                <Node id="title" bubble from={{ node: 'root.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown>{`# 🚀 Magam 로드맵
 
 > **"코드로 시각화하고, 시각화로 생각한다"**
@@ -23,7 +32,7 @@ export default function TODORoadmap() {
 
             {/* ========== 핵심 기능 (왼쪽 상단) ========== */}
             <MindMap id="core" layout="bidirectional" anchor="root" position="left" gap={350}>
-                <Node id="title" bubble>
+                <Node id="title" bubble from={{ node: 'core.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown className="border-l-4 border-blue-500 pl-3 bg-blue-50">{`## 🔧 핵심 기능 개선
 
 에디터 경험을 향상시키는 필수 기능들`}</Markdown>
@@ -127,7 +136,7 @@ export default function TODORoadmap() {
 
             {/* ========== UI/UX (왼쪽 하단) ========== */}
             <MindMap id="ui" layout="bidirectional" anchor="core" position="bottom" gap={120}>
-                <Node id="title" bubble>
+                <Node id="title" bubble from={{ node: 'ui.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown className="border-l-4 border-purple-500 pl-3 bg-purple-50">{`## 🎨 UI/UX 개선
 
 더 아름답고 사용하기 편한 인터페이스`}</Markdown>
@@ -221,7 +230,7 @@ export default function TODORoadmap() {
 
             {/* ========== 콘텐츠 기능 (상단) ========== */}
             <MindMap id="content" layout="bidirectional" anchor="root" position="top" gap={250}>
-                <Node id="title" bubble>
+                <Node id="title" bubble from={{ node: 'content.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown className="border-t-4 border-green-500 pt-3 bg-green-50">{`## 📝 콘텐츠 기능
 
 노드 내부 콘텐츠를 풍부하게`}</Markdown>
@@ -353,7 +362,7 @@ import { NetworkMap } from './Network';
 
             {/* ========== 다이어그램 플러그인 (오른쪽 상단) ========== */}
             <MindMap id="diagrams" layout="bidirectional" anchor="root" position="right" gap={350}>
-                <Node id="title" bubble>
+                <Node id="title" bubble from={{ node: 'diagrams.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown className="border-r-4 border-amber-500 pr-3 bg-amber-50">{`## 📊 다이어그램 플러그인
 
 확장 가능한 다이어그램 생태계`}</Markdown>
@@ -452,7 +461,7 @@ Entity-Relationship 다이어그램.
 
             {/* ========== 학습 기능 (오른쪽 하단) ========== */}
             <MindMap id="learning" layout="bidirectional" anchor="diagrams" position="bottom" gap={120}>
-                <Node id="title" bubble>
+                <Node id="title" bubble from={{ node: 'learning.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown className="border-r-4 border-pink-500 pr-3 bg-pink-50">{`## 🧠 학습 강화 기능
 
 지식 습득과 기억을 돕는 기능들`}</Markdown>
@@ -584,7 +593,7 @@ AI가 가이드하며 콘텐츠 채워넣기.
 
             {/* ========== 내보내기 & 통합 (하단) ========== */}
             <MindMap id="export" layout="bidirectional" anchor="root" position="bottom" gap={250}>
-                <Node id="title" bubble>
+                <Node id="title" bubble from={{ node: 'export.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown className="border-b-4 border-cyan-500 pb-3 bg-cyan-50">{`## 📤 내보내기 & 외부 통합
 
 다른 도구들과의 연결`}</Markdown>
@@ -678,7 +687,7 @@ VS Code에서 .tsx 파일을 작성하면서
 
             {/* ========== MCP & AI 통합 (하단 우측) ========== */}
             <MindMap id="mcp" layout="bidirectional" anchor="export" position="right" gap={150}>
-                <Node id="title" bubble>
+                <Node id="title" bubble from={{ node: 'mcp.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown className="border-b-4 border-violet-500 pb-3 bg-violet-50">{`## 🤖 MCP & AI 통합
 
 Model Context Protocol로 AI 직접 연결`}</Markdown>

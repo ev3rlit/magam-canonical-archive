@@ -1,12 +1,13 @@
-import { Canvas, MindMap, Node, Markdown } from '@magam/core';
+import { Canvas, MindMap, Node, Markdown, Text } from '@magam/core';
 
 export default function MagamIntro() {
     return (
         <Canvas>
-            <MindMap layout="tree" spacing={80}>
+            <Text id="readme-map.seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
+            <MindMap id="readme-map" layout="tree" spacing={80}>
 
                 {/* Root: Philosophy */}
-                <Node id="root">
+                <Node id="root" from={{ node: 'readme-map.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown>
                         {`# Magam
 > **"The future of knowledge work is not 'drawing' but 'describing'."**

@@ -1,4 +1,4 @@
-import { Canvas, MindMap, Node, Markdown } from '@magam/core';
+import { Canvas, MindMap, Node, Markdown, Text } from '@magam/core';
 
 /**
  * Node Links Example
@@ -10,8 +10,9 @@ import { Canvas, MindMap, Node, Markdown } from '@magam/core';
 export default function NodeLinks() {
     return (
         <Canvas>
+            <Text id="main.seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
             <MindMap id="main" layout="bidirectional">
-                <Node id="title">
+                <Node id="title" from={{ node: 'main.seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
                     <Markdown>{`
 # Node Link Navigation
 

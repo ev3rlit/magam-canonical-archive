@@ -32,15 +32,20 @@ function ServiceCluster({ label, anchorId, anchorPosition }: {
 
 function InfraMap({ anchorId }: { anchorId: string }) {
     return (
-        <MindMap id="map" anchor={anchorId} position="right" gap={200}>
-            <Node id="root">Infrastructure</Node>
-            <Node id="k8s" from="root">Kubernetes</Node>
-            <Node id="pod1" from="k8s">Auth Pod</Node>
-            <Node id="pod2" from="k8s">Billing Pod</Node>
-            <Node id="monitoring" from="root">Monitoring</Node>
-            <Node id="grafana" from="monitoring">Grafana</Node>
-            <Node id="prometheus" from="monitoring">Prometheus</Node>
-        </MindMap>
+        <>
+            <Text id="map.map-seed" x={0} y={0} className="text-[1px] text-transparent select-none">.</Text>
+            <MindMap id="map" anchor={anchorId} position="right" gap={200}>
+                <Node id="root" from={{ node: 'map.map-seed', edge: { stroke: 'transparent', strokeWidth: 0 } }}>
+                    Infrastructure
+                </Node>
+                <Node id="k8s" from="root">Kubernetes</Node>
+                <Node id="pod1" from="k8s">Auth Pod</Node>
+                <Node id="pod2" from="k8s">Billing Pod</Node>
+                <Node id="monitoring" from="root">Monitoring</Node>
+                <Node id="grafana" from="monitoring">Grafana</Node>
+                <Node id="prometheus" from="monitoring">Prometheus</Node>
+            </MindMap>
+        </>
     );
 }
 
