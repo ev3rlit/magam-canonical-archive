@@ -3,12 +3,14 @@ import type {
   MaterialPresetMeta as CoreMaterialPresetMeta,
   MaterialPresetId as CoreMaterialPresetId,
   PaperMaterial as CorePaperMaterial,
+  PaperTextureParams as CorePaperTextureParams,
 } from '@magam/core';
 
 export { MATERIAL_PRESET_IDS } from '@magam/core';
 export type MaterialPresetId = CoreMaterialPresetId;
 export type PaperMaterial = CorePaperMaterial;
 export type MaterialPresetMeta = CoreMaterialPresetMeta;
+export type PaperTextureParams = CorePaperTextureParams;
 
 export interface SegmentAt {
   type: 'segment';
@@ -119,4 +121,5 @@ export interface WashiPresetCatalogItem {
   backgroundImage?: string;
   backgroundSize?: string;
   textColor: string;
+  texture?: PaperTextureParams;
 }

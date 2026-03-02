@@ -70,14 +70,18 @@ function isCssColorLike(value: string): boolean {
 }
 
 function buildPresetCatalog(presetIds: readonly MaterialPresetId[]): WashiPresetCatalogItem[] {
-  return presetIds.map((id) => ({
-    id,
-    label: MATERIAL_PRESET_REGISTRY[id].label,
-    backgroundColor: MATERIAL_PRESET_REGISTRY[id].backgroundColor,
-    backgroundImage: MATERIAL_PRESET_REGISTRY[id].backgroundImage,
-    backgroundSize: MATERIAL_PRESET_REGISTRY[id].backgroundSize,
-    textColor: MATERIAL_PRESET_REGISTRY[id].textColor,
-  }));
+  return presetIds.map((id) => {
+    const entry = MATERIAL_PRESET_REGISTRY[id] as Record<string, unknown>;
+    return {
+      id,
+      label: entry.label as string,
+      backgroundColor: entry.backgroundColor as string,
+      backgroundImage: entry.backgroundImage as string | undefined,
+      backgroundSize: entry.backgroundSize as string | undefined,
+      textColor: entry.textColor as string,
+      texture: entry.texture as WashiPresetCatalogItem['texture'],
+    };
+  });
 }
 
 export function getPresetPatternCatalog(

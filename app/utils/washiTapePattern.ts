@@ -1,4 +1,4 @@
-import type { MaterialPresetId, PaperMaterial } from '@/types/washiTape';
+import type { MaterialPresetId, PaperMaterial, PaperTextureParams } from '@/types/washiTape';
 import {
   DEFAULT_STICKY_PRESET_ID,
   DEFAULT_WASHI_PRESET_ID,
@@ -15,6 +15,7 @@ export interface ResolvedWashiPattern {
   backgroundRepeat?: string;
   backgroundSize?: string;
   textColor?: string;
+  texture?: PaperTextureParams;
   fallbackApplied: boolean;
   debugReason?: string;
 }
@@ -64,6 +65,7 @@ function resolvePresetStyle(
     backgroundRepeat: preset?.backgroundImage ? 'repeat' : undefined,
     backgroundSize: preset?.backgroundSize,
     textColor: preset?.textColor,
+    texture: preset?.texture,
     fallbackApplied: false,
   };
 }
