@@ -53,14 +53,17 @@ export function runFlextreeLayout(
     nodes: Node[],
     edges: Edge[],
     spacing: number,
+    direction: 'right' | 'left' | 'down' | 'up' = 'right',
 ): Map<string, { x: number; y: number }> {
     const rootDatum = buildHierarchy(nodes, edges);
     if (!rootDatum) return new Map();
 
+    const verticalGap = Math.round(spacing * 0.3);
+
     const tree = flextree<HierarchyDatum>({
         nodeSize: (node) => [
-            node.data.height + spacing,  // breadth (vertical spacing between siblings)
-            node.data.width + spacing,   // depth (horizontal spacing between layers)
+            node.data.height + verticalGap,  // breadth (tighter vertical gap between siblings)
+            node.data.width + spacing,        // depth (horizontal spacing between layers)
         ],
     });
 
@@ -69,8 +72,16 @@ export function runFlextreeLayout(
 
     const positions = new Map<string, { x: number; y: number }>();
     laid.each((node) => {
-        // Swap: flextree y (depth) → our x, flextree x (breadth) → our y
-        positions.set(node.data.id, { x: node.y, y: node.x });
+        // flextree: x = breadth, y = depth (top-to-bottom)
+        // Transform based on desired direction:
+        let x: number, y: number;
+        switch (direction) {
+            case 'right': x = node.y;  y = node.x;  break; // depth→x, breadth→y (default)
+            case 'left':  x = -node.y; y = node.x;  break; // mirror x
+            case 'down':  x = node.x;  y = node.y;  break; // no swap
+            case 'up':    x = node.x;  y = -node.y; break; // mirror y
+        }
+        positions.set(node.data.id, { x, y });
     });
 
     return positions;
