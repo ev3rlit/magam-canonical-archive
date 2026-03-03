@@ -1,3 +1,4 @@
+import type { Node } from 'reactflow';
 import { findRootNode, collectDescendants, getNodeDimensions } from '../layoutUtils';
 import { runFlextreeLayout } from './flextreeUtils';
 import type { LayoutStrategy, LayoutContext } from './types';
@@ -5,12 +6,19 @@ import type { LayoutStrategy, LayoutContext } from './types';
 /**
  * QuadrantPackStrategy:
  *   Root at center (0,0). L1 subtrees individually laid out via flextree,
- *   then distributed across 4 quadrants (TR/TL/BR/BL) using greedy
- *   area balancing. Left-side subtrees get mirrored X for directional inheritance.
+ *   then distributed across 4 quadrants (TR/TL/BR/BL) using greedy area
+ *   balancing. Each quadrant stacks outward from root edges, creating a
+ *   diamond shape. Left-side subtrees get mirrored X for directional inheritance.
  */
 export class QuadrantPackStrategy implements LayoutStrategy {
     async layoutGroup(context: LayoutContext): Promise<Map<string, { x: number; y: number }>> {
-        const { nodes, edges, spacing } = context;
+        const { nodes, edges, spacing, density: rawDensity } = context;
+        const density = rawDensity ?? 0.5;
+        const maxGap = spacing * 2;
+        const minGap = spacing * 0.1;
+        const effectiveGap = maxGap - density * (maxGap - minGap);
+        const innerSpacing = spacing * (1 - density * 0.9);
+        console.log(`[QuadrantPack] density=${density}, spacing=${spacing}, effectiveGap=${effectiveGap.toFixed(1)}, innerSpacing=${innerSpacing.toFixed(1)}`);
         const rootNode = findRootNode(nodes, edges);
         if (!rootNode) return runFlextreeLayout(nodes, edges, spacing);
 
@@ -31,7 +39,7 @@ export class QuadrantPackStrategy implements LayoutStrategy {
                 e => subtreeNodeIds.has(e.source) && subtreeNodeIds.has(e.target),
             );
 
-            const pos = runFlextreeLayout(subtreeNodes, subtreeEdges, spacing);
+            const pos = runFlextreeLayout(subtreeNodes, subtreeEdges, innerSpacing);
             const rootPos = pos.get(rootNode.id) || { x: 0, y: 0 };
 
             // Compute bbox relative to root
@@ -49,53 +57,50 @@ export class QuadrantPackStrategy implements LayoutStrategy {
                 maxY = Math.max(maxY, ry + height);
             });
 
-            const bboxW = maxX - minX;
-            const bboxH = maxY - minY;
-
             return {
                 childId,
                 positions: pos,
                 rootPos,
-                bbox: { minX, maxX, minY, maxY, width: bboxW, height: bboxH },
-                area: bboxW * bboxH,
+                bbox: { minX, maxX, minY, maxY, width: maxX - minX, height: maxY - minY },
+                area: (maxX - minX) * (maxY - minY),
             };
         });
 
         // 2. Greedy area balancing: assign to 4 quadrants (TR=0, TL=1, BR=2, BL=3)
         const sorted = [...subtrees].sort((a, b) => b.area - a.area);
-        const quadrantAreas = [0, 0, 0, 0]; // TR, TL, BR, BL
-        const quadrantAssignments: (typeof subtrees)[] = [[], [], [], []];
+        const qAreas = [0, 0, 0, 0];
+        const quadrants: (typeof subtrees)[] = [[], [], [], []];
 
         for (const st of sorted) {
             let minIdx = 0;
             for (let i = 1; i < 4; i++) {
-                if (quadrantAreas[i] < quadrantAreas[minIdx]) minIdx = i;
+                if (qAreas[i] < qAreas[minIdx]) minIdx = i;
             }
-            quadrantAssignments[minIdx].push(st);
-            quadrantAreas[minIdx] += st.area;
+            quadrants[minIdx].push(st);
+            qAreas[minIdx] += st.area;
         }
 
-        // 3. Group into right (TR+BR) and left (TL+BL) sides
-        const rightSubtrees = [...quadrantAssignments[0], ...quadrantAssignments[2]]; // TR + BR
-        const leftSubtrees = [...quadrantAssignments[1], ...quadrantAssignments[3]];  // TL + BL
+        // Sort within each quadrant: largest closest to root
+        for (const q of quadrants) {
+            q.sort((a, b) => b.area - a.area);
+        }
 
         const rootDims = getNodeDimensions(rootNode);
-        const gap = spacing;
 
         const positions = new Map<string, { x: number; y: number }>();
         positions.set(rootNode.id, { x: 0, y: 0 });
 
-        const rootCenterY = rootDims.height / 2;
-
-        // 4. Place subtrees on each side
-        placeSide(rightSubtrees, 1, rootDims.width, gap, rootCenterY, spacing, nodes, rootNode.id, positions);
-        placeSide(leftSubtrees, -1, rootDims.width, gap, rootCenterY, spacing, nodes, rootNode.id, positions);
+        // 3. Place each quadrant — stacking outward from root edges
+        placeQuadrant(quadrants[0], 1, -1, rootDims, effectiveGap, effectiveGap, nodes, rootNode.id, positions); // TR
+        placeQuadrant(quadrants[1], -1, -1, rootDims, effectiveGap, effectiveGap, nodes, rootNode.id, positions); // TL
+        placeQuadrant(quadrants[2], 1, 1, rootDims, effectiveGap, effectiveGap, nodes, rootNode.id, positions);  // BR
+        placeQuadrant(quadrants[3], -1, 1, rootDims, effectiveGap, effectiveGap, nodes, rootNode.id, positions); // BL
 
         return positions;
     }
 }
 
-function placeSide(
+function placeQuadrant(
     subtrees: Array<{
         childId: string;
         positions: Map<string, { x: number; y: number }>;
@@ -104,25 +109,25 @@ function placeSide(
         area: number;
     }>,
     xSign: 1 | -1,
-    rootWidth: number,
+    yDir: 1 | -1,   // -1 = stack upward (top), 1 = stack downward (bottom)
+    rootDims: { width: number; height: number },
     gap: number,
-    rootCenterY: number,
     verticalGap: number,
-    allNodes: import('reactflow').Node[],
+    allNodes: Node[],
     rootId: string,
     positions: Map<string, { x: number; y: number }>,
 ) {
     if (subtrees.length === 0) return;
 
-    // Total height of all subtrees stacked vertically
-    const totalHeight = subtrees.reduce(
-        (sum, st) => sum + st.bbox.height, 0,
-    ) + verticalGap * (subtrees.length - 1);
-
-    const sideStartY = rootCenterY - totalHeight / 2;
-    let stackOffset = 0;
+    // Start at root edge + gap, then stack outward
+    let stackY = yDir === -1 ? -gap : rootDims.height + gap;
 
     for (const st of subtrees) {
+        // Calculate where this subtree's bbox top-left goes
+        const subtreeStartY = yDir === -1
+            ? stackY - st.bbox.height   // upward: bottom edge at stackY
+            : stackY;                    // downward: top edge at stackY
+
         st.positions.forEach((p, id) => {
             if (id === rootId) return;
             const node = allNodes.find(n => n.id === id);
@@ -134,17 +139,19 @@ function placeSide(
 
             let finalX: number;
             if (xSign === 1) {
-                // RIGHT: extend rightward from root
-                finalX = rootWidth + gap + relX;
+                finalX = rootDims.width + gap + relX;
             } else {
-                // LEFT: mirror x, extend leftward
                 finalX = -gap - relX - width;
             }
 
-            const finalY = sideStartY + stackOffset + relY;
-            positions.set(id, { x: finalX, y: finalY });
+            positions.set(id, { x: finalX, y: subtreeStartY + relY });
         });
 
-        stackOffset += st.bbox.height + verticalGap;
+        // Advance stackY outward
+        if (yDir === -1) {
+            stackY = subtreeStartY - verticalGap;
+        } else {
+            stackY = subtreeStartY + st.bbox.height + verticalGap;
+        }
     }
 }

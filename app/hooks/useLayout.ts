@@ -73,6 +73,7 @@ export function useLayout() {
                             nodes: groupNodes,
                             edges: groupEdges,
                             spacing: group.spacing || 60,
+                            density: group.density,
                         });
 
                         // Store positions (relative to group origin 0,0)
