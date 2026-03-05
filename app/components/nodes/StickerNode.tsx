@@ -10,6 +10,8 @@ import { stickerDebugLog } from '@/utils/stickerDebug';
 import { getStickerJitterAngle, resolveStickerRotation } from '@/utils/stickerJitter';
 import type { FontFamilyPreset } from '@magam/core';
 import { LazyMarkdownRenderer } from '@/components/markdown/LazyMarkdownRenderer';
+import { emitSizeWarning } from '@/utils/sizeWarnings';
+import { resolveTypography } from '@/utils/sizeResolver';
 import {
   hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
@@ -418,6 +420,16 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
       globalFontFamily,
     })
     : undefined;
+  useEffect(() => {
+    const sizeInput = (data as { size?: unknown }).size;
+    if (sizeInput === undefined) return;
+    emitSizeWarning({
+      code: 'UNSUPPORTED_LEGACY_SIZE_API',
+      component: 'StickerNode',
+      inputPath: 'size',
+      fallbackApplied: 'ignored legacy input',
+    });
+  }, [(data as { size?: unknown }).size]);
 
   const hasChildren = children.length > 0;
   const isTextMode = useMemo(
@@ -590,12 +602,20 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
       return <Icon key={`icon-${child.name}-${index}`} className="w-6 h-6" />;
     }
 
+    const typography = child.fontSize !== undefined
+      ? resolveTypography(child.fontSize, {
+          component: 'StickerNode',
+          inputPath: `children[${index}].fontSize`,
+        })
+      : null;
+
     return (
       <span
         key={`text-${index}`}
         style={{
           color: '#111827',
-          fontSize: hasChildren ? 22 : 20,
+          fontSize: typography ? typography.fontSizePx : hasChildren ? 22 : 20,
+          ...(typography ? { lineHeight: `${typography.lineHeightPx}px` } : {}),
           fontWeight: 700,
           fontFamily: resolvedFontFamily,
           letterSpacing: '0.02em',

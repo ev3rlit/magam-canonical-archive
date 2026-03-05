@@ -6,13 +6,19 @@ import { BaseNode } from './BaseNode';
 import type { RenderableChild } from '@/utils/childComposition';
 import { renderNodeContent } from './renderableContent';
 import { useGraphStore } from '@/store/graph';
-import type { FontFamilyPreset, PaperMaterial, PaperTextureParams } from '@magam/core';
+import type {
+  FontFamilyPreset,
+  ObjectSizeInput,
+  PaperMaterial,
+  PaperTextureParams,
+} from '@magam/core';
 import {
   hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import { normalizeStickyDefaults } from '@/utils/washiTapeDefaults';
 import { resolveStickyPattern } from '@/utils/washiTapePattern';
+import { normalizeObjectSizeInput, resolveObject2D } from '@/utils/sizeResolver';
 
 type StickyShape = 'rectangle' | 'heart' | 'cloud' | 'speech';
 
@@ -21,7 +27,10 @@ interface StickyNodeData {
   color?: string;
   pattern?: PaperMaterial;
   shape?: StickyShape;
+  size?: ObjectSizeInput;
+  // Legacy size API (unsupported for standardized size contract)
   width?: number;
+  // Legacy size API (unsupported for standardized size contract)
   height?: number;
   fontFamily?: FontFamilyPreset;
   labelColor?: string;
@@ -213,10 +222,28 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     () => resolveStickyPattern(normalized.pattern),
     [normalized.pattern],
   );
+  const resolvedObjectSize = useMemo(() => {
+    const normalizedSize = normalizeObjectSizeInput(raw.size, {
+      component: 'StickyNode',
+      inputPath: 'size',
+      defaultRatio: 'landscape',
+    });
+    const resolved = resolveObject2D(normalizedSize, {
+      component: 'StickyNode',
+      inputPath: 'size',
+    });
+    return resolved.mode === 'fixed' ? resolved : null;
+  }, [raw.size]);
   const sizing = useMemo(
-    () => resolveStickySizing(raw.width ?? normalized.width, raw.height ?? normalized.height),
-    [normalized.height, normalized.width, raw.height, raw.width],
+    () => {
+      if (!resolvedObjectSize) {
+        return resolveStickySizing(undefined, undefined);
+      }
+      return resolveStickySizing(resolvedObjectSize.widthPx, resolvedObjectSize.heightPx);
+    },
+    [resolvedObjectSize],
   );
+  const isContentDrivenAuto = !sizing.hasWidth && !sizing.hasHeight;
 
   const legacyColorClassName = (
     typeof raw.color === 'string'
@@ -250,8 +277,8 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     minWidth: sizing.hasWidth ? sizing.width : 160,
     maxWidth: sizing.hasWidth ? sizing.width : 360,
     height: sizing.hasHeight ? sizing.height : undefined,
-    minHeight: sizing.hasHeight ? sizing.height : 96,
-    padding: 16,
+    minHeight: sizing.hasHeight ? sizing.height : isContentDrivenAuto ? undefined : 96,
+    padding: isContentDrivenAuto ? '10px 14px' : 16,
     backgroundColor: resolvedPattern.backgroundColor ?? '#fce588',
     backgroundImage: resolvedPattern.backgroundImage,
     backgroundRepeat: resolvedPattern.backgroundRepeat,
@@ -305,7 +332,9 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
                 children: raw.children,
                 fallbackLabel: raw.label,
                 iconClassName: 'w-4 h-4 shrink-0',
-                textClassName: 'text-base leading-relaxed font-medium',
+                textClassName: isContentDrivenAuto
+                  ? 'text-base leading-normal font-medium'
+                  : 'text-base leading-relaxed font-medium',
                 textStyle: {
                   fontFamily: resolvedFontFamily,
                   color: textColor,

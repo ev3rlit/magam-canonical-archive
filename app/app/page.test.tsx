@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { normalizeStickyDefaults } from '@/utils/washiTapeDefaults';
+import { parseRenderGraph } from '@/features/render/parseRenderGraph';
 import {
   assertMindMapTopology,
   buildMindMapEdge,
@@ -141,5 +142,52 @@ describe('mindmap parser topology contracts', () => {
     expect(resolveNodeId('child', 'mapA')).toBe('mapA.child');
     expect(resolveNodeId('child', 'mapB')).toBe('mapB.child');
     expect(resolveNodeId('mapA.child', 'mapB')).toBe('mapA.child');
+  });
+});
+
+describe('size non-goal contracts', () => {
+  it('keeps Sequence/Sticker size token paths unsupported with warning + ignore', () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = ((message: string) => warnings.push(String(message))) as typeof console.warn;
+
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-sequence',
+            props: {
+              id: 'seq-ignored',
+              x: 0,
+              y: 0,
+              size: { token: 'm', ratio: 'portrait' },
+            },
+            children: [],
+          },
+          {
+            type: 'graph-sticker',
+            props: {
+              id: 'sticker-ignored',
+              x: 0,
+              y: 0,
+              size: 'l',
+              width: 180,
+              height: 120,
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    console.warn = originalWarn;
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.nodes.map((node) => node.id)).toEqual(
+      expect.arrayContaining(['seq-ignored', 'sticker-ignored']),
+    );
+    expect(
+      warnings.some((line) => line.includes('UNSUPPORTED_LEGACY_SIZE_API')),
+    ).toBe(true);
   });
 });

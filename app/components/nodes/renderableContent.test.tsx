@@ -56,4 +56,21 @@ describe('renderNodeContent', () => {
     expect(html).not.toContain('icon-class');
     expect(html).toContain('Fallback text');
   });
+
+  it('keeps sticker text rendering content-driven even with irrelevant size metadata', () => {
+    const html = renderToStaticMarkup(
+      <>
+        {renderNodeContent({
+          children: [
+            { type: 'text', text: 'Sticker body', size: 'xl' } as any,
+          ],
+          fallbackLabel: 'Ignored',
+          iconClassName: 'icon-class',
+          textClassName: 'text-class',
+        })}
+      </>,
+    );
+
+    expect(html).toContain('Sticker body');
+  });
 });

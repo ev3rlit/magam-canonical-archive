@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { NodeProps, Handle, Position } from 'reactflow';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -7,12 +7,18 @@ import { useGraphStore } from '@/store/graph';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import type { RenderableChild } from '@/utils/childComposition';
 import { renderNodeContent } from './renderableContent';
-import type { FontFamilyPreset } from '@magam/core';
+import type { FontFamilyPreset, ObjectSizeInput } from '@magam/core';
 import {
   hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import { useZoom } from '@/contexts/ZoomContext';
+import {
+  normalizeObjectSizeInput,
+  resolveObject2D,
+  resolveShapeDefaultRatio,
+} from '@/utils/sizeResolver';
+import { emitSizeWarning } from '@/utils/sizeWarnings';
 
 interface PortData {
   id: string;
@@ -28,6 +34,7 @@ interface ShapeNodeData {
   bubble?: boolean;
   // Shape styling
   color?: string;
+  size?: ObjectSizeInput;
   // Rich text styling
   labelColor?: string;
   labelFontSize?: number;
@@ -101,6 +108,51 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
       globalFontFamily,
     })
     : undefined;
+  const resolvedObjectSize = useMemo(() => {
+    const defaultRatio = resolveShapeDefaultRatio(data.type);
+    const normalized = normalizeObjectSizeInput(data.size, {
+      component: 'ShapeNode',
+      inputPath: 'size',
+      defaultRatio,
+    });
+    if (normalized.mode === 'auto') {
+      return null;
+    }
+    let normalizedRatio = normalized.ratio;
+    if (
+      (data.type === 'circle' || data.type === 'triangle')
+      && normalized.mode === 'token'
+      && normalizedRatio !== 'square'
+    ) {
+      emitSizeWarning({
+        code: 'UNSUPPORTED_RATIO',
+        component: 'ShapeNode',
+        inputPath: 'size.ratio',
+        fallbackApplied: 'ratio=square',
+      });
+      normalizedRatio = 'square';
+    }
+    const resolved = resolveObject2D(
+      {
+        ...normalized,
+        ratio: normalizedRatio,
+      },
+      {
+        component: 'ShapeNode',
+        inputPath: 'size',
+      },
+    );
+    return resolved.mode === 'fixed' ? resolved : null;
+  }, [data.size, data.type]);
+  const frameStyle = resolvedObjectSize
+    ? {
+      width: resolvedObjectSize.widthPx,
+      height: resolvedObjectSize.heightPx,
+      minWidth: resolvedObjectSize.widthPx,
+      minHeight: resolvedObjectSize.heightPx,
+    }
+    : undefined;
+  const isContentDrivenAuto = resolvedObjectSize === null;
   const shapeClasses = clsx(
     'flex items-center justify-center transition-all duration-200',
     {
@@ -112,7 +164,9 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
 
   const containerClasses = twMerge(
     clsx(
-      'min-w-36 min-h-20 w-auto h-auto flex items-center justify-center p-4',
+      resolvedObjectSize
+        ? 'w-auto h-auto flex items-center justify-center p-4'
+        : 'w-auto h-auto flex items-center justify-center px-3 py-2',
       'bg-white border-2 border-node-border text-node-text transition-all duration-300',
       'shadow-node rounded-lg',
       // Only apply hover effects if NOT selected
@@ -162,9 +216,14 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     backgroundSize: data.imageFit || 'cover',
   } : undefined;
 
-  if (data.type === 'triangle') {
+  if (data.type === 'triangle' && !isContentDrivenAuto) {
     return (
-      <BaseNode className="w-32 h-32 flex items-center justify-center" bubble={data.bubble} label={data.label}>
+      <BaseNode
+        className="flex items-center justify-center"
+        bubble={data.bubble}
+        label={data.label}
+        style={frameStyle ?? { width: 128, height: 128, minWidth: 128, minHeight: 128 }}
+      >
         <div
           className={twMerge(
             clsx(
@@ -210,16 +269,21 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
       className={containerClasses}
       bubble={data.bubble}
       label={data.label}
-      style={imageStyle}
+      style={frameStyle ? { ...frameStyle, ...imageStyle } : imageStyle}
     >
-      <div className="w-full flex items-start justify-center text-left break-words p-4 pointer-events-none select-none">
+      <div className={clsx(
+        'w-full flex justify-center text-left break-words pointer-events-none select-none',
+        isContentDrivenAuto ? 'items-center px-2 py-1.5' : 'items-start p-4',
+      )}>
         <div className="flex items-center gap-2">
           {renderNodeContent({
             children: data.children,
             fallbackLabel: data.label,
             iconClassName: 'w-4 h-4 text-slate-500 shrink-0',
             textClassName:
-              'text-sm font-medium leading-relaxed text-slate-700 whitespace-pre-wrap',
+              isContentDrivenAuto
+                ? 'text-sm font-medium leading-normal text-slate-700 whitespace-pre-wrap'
+                : 'text-sm font-medium leading-relaxed text-slate-700 whitespace-pre-wrap',
             textStyle: labelStyle,
           })}
         </div>

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useInMindMap } from '../context/MindMapContext';
 import { MagamError } from '../errors';
 import { useNodeId } from '../hooks/useNodeId';
+import type { ObjectSizeInput } from '../lib/size';
 import type { PaperMaterial } from '../material/types';
 import type { FontFamilyPreset } from '../types/font';
 import type { AtDef } from './WashiTape.helpers';
@@ -12,7 +13,10 @@ export interface StickyProps {
   text?: string;
   x?: number;
   y?: number;
+  size?: ObjectSizeInput;
+  // Legacy experimental API (unsupported in standardized size contract)
   width?: number;
+  // Legacy experimental API (unsupported in standardized size contract)
   height?: number;
   color?: string;
   fontFamily?: FontFamilyPreset;

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useInMindMap } from '../context/MindMapContext';
 import { MagamError } from '../errors';
 import { useNodeId } from '../hooks/useNodeId';
+import type { ObjectSizeInput } from '../lib/size';
 import type { FontFamilyPreset } from '../types/font';
 import type { FromProp } from './Node';
 
@@ -20,8 +21,11 @@ export interface ShapeProps {
   position?: AnchorPosition; // Position relative to anchor
   gap?: number;              // Gap from anchor (default: 40)
   align?: 'start' | 'center' | 'end'; // Alignment (default: center)
+  size?: ObjectSizeInput;
   // Size
+  // Legacy experimental API (unsupported in standardized size contract)
   width?: number;
+  // Legacy experimental API (unsupported in standardized size contract)
   height?: number;
   // Shape styles
   fill?: string;

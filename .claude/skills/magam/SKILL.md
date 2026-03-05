@@ -90,12 +90,14 @@ Rectangle/box element for architecture diagrams and flowcharts.
 **Props:**
 - `id` (required): Unique identifier
 - `x`, `y`: Absolute position coordinates
-- `width`, `height`: Size in pixels
+- `size`: Token-first sizing (`'xs'|'s'|'m'|'l'|'xl'`, `number`, or object union)
+- `type`: `rectangle` | `circle` | `triangle` (default ratio: rectangle=landscape, circle/triangle=square)
 - `label`: Text label (alternative to children)
 - `className`: Tailwind CSS classes for styling
 - `anchor`: ID of another Shape for relative positioning
 - `position`: Position relative to anchor ("right", "bottom", "left", "top")
 - `gap`: Distance from anchor element
+- Legacy `width`/`height`: not part of the standardized contract (runtime warning + ignore)
 
 **Usage Patterns:**
 
@@ -103,8 +105,12 @@ Rectangle/box element for architecture diagrams and flowcharts.
 {/* Absolute positioning */}
 <Shape id="box1" x={100} y={100}>Content</Shape>
 
-{/* With size */}
-<Shape id="box2" x={200} y={100} width={180} height={80}>Sized Box</Shape>
+{/* Token-first size */}
+<Shape id="box2" x={200} y={100} size="m">Sized Box</Shape>
+
+{/* Ratio / widthHeight variants */}
+<Shape id="box3" x={380} y={100} size={{ token: 's', ratio: 'portrait' }}>Portrait Box</Shape>
+<Shape id="box4" x={560} y={100} size={{ widthHeight: 'l' }}>Square Box</Shape>
 
 {/* Relative positioning with anchor */}
 <Shape id="api" anchor="users" position="right" gap={120}>
@@ -128,8 +134,10 @@ Use Sticky for "idea cards", "action notes", "context labels", and diary note bl
 - Placement: either `x` + `y`, or `at` (`anchor` / `attach`)
 - Material: `pattern` (`preset` / `solid` / `svg` / `image`)
 - Shape: `shape` (`rectangle` | `heart` | `cloud` | `speech`)
-- Sizing: auto, width-only, or fixed frame (`width` + `height`)
+- Sizing: token-first `size` (`number|token|{token,ratio}|{widthHeight}|{width,height}`)
+- Default ratio: `landscape` (primitive `number`/`token`도 동일 경로로 해석)
 - Legacy bridge: old `color` still works (internally normalized to `solid(color)`)
+- Legacy `width`/`height`: standardized size contract에서는 미지원 (runtime warning + ignore)
 
 ```tsx
 {/* Default postit preset (pattern omitted) */}
@@ -138,18 +146,21 @@ Use Sticky for "idea cards", "action notes", "context labels", and diary note bl
   <Edge to="target" />
 </Sticky>
 
-{/* Preset + shape + fixed frame */}
+{/* Preset + shape + token size */}
 <Sticky
   id="retro-note"
   x={340}
   y={90}
-  width={220}
-  height={140}
+  size={{ token: 'm', ratio: 'portrait' }}
   shape="cloud"
   pattern={{ type: 'preset', id: 'lined-warm' }}
 >
   Retro Actions
 </Sticky>
+
+{/* Primitive number and widthHeight are both supported */}
+<Sticky id="retro-note-2" x={620} y={90} size={160}>Numeric Primitive</Sticky>
+<Sticky id="retro-note-3" x={820} y={90} size={{ widthHeight: 's' }}>Square Sticky</Sticky>
 
 {/* Relative placement with at={anchor(...)} */}
 <Sticky
@@ -355,25 +366,30 @@ Standalone or inline text element.
 **Props:**
 - `id`: Identifier (for standalone)
 - `x`, `y`: Position (for standalone)
+- `fontSize`: `number | 'xs'|'s'|'m'|'l'|'xl'`
 - `className`: Tailwind CSS classes
 
 ```tsx
 {/* Standalone text on canvas */}
-<Text id="title" x={200} y={30}>Page Title</Text>
+<Text id="title" x={200} y={30} fontSize="xl">Page Title</Text>
 
 {/* Styled text */}
-<Text className="text-xl font-bold text-blue-600">Styled Text</Text>
+<Text fontSize="s" className="font-bold text-blue-600">Styled Text</Text>
 
 {/* Inside Shape */}
 <Shape id="box">
-  <Text className="font-bold">Title</Text>
-  <Text className="text-sm text-gray-500">Subtitle</Text>
+  <Text fontSize="m" className="font-bold">Title</Text>
+  <Text fontSize={12} className="text-gray-500">Subtitle</Text>
 </Shape>
 ```
 
 ### Markdown
 
 Rich text content with Markdown support. Typically used inside Node.
+
+**Size contract (`size` single entry):**
+- Primitive (`number|token`) => 1D typography scaling
+- Object (`{ token, ratio } | { widthHeight } | { width, height }`) => 2D frame sizing
 
 **Supported Features:**
 - Headers: `# H1`, `## H2`, `### H3`
@@ -385,7 +401,7 @@ Rich text content with Markdown support. Typically used inside Node.
 
 ```tsx
 <Node id="docs">
-  <Markdown>{`
+  <Markdown size="s">{`
 ### API Reference
 
 | Method | Endpoint |
@@ -399,6 +415,10 @@ function hello() {
 }
 \`\`\`
   `}</Markdown>
+</Node>
+
+<Node id="docs-card">
+  <Markdown size={{ token: 'm', ratio: 'portrait' }}>{`## Card Layout`}</Markdown>
 </Node>
 ```
 
@@ -438,6 +458,13 @@ Learn the basics first, then move on.
 
 **Styling:** Node links are styled with indigo color and arrow prefix (→) to distinguish from external links.
 
+### Standardized Size Scope (v1)
+
+- In scope: `Text.fontSize`, `Shape.size`, `Sticky.size`, `Markdown.size`
+- Out of scope: `Sequence` size tokenization (keep existing spacing props)
+- Out of scope: `Sticker` size tokenization (sticker remains content-driven die-cut)
+- Legacy experimental `width`/`height` sizing APIs are unsupported in the standardized contract
+
 ### EmbedScope
 
 ID namespace isolation for reusable components. Wrapping elements in `EmbedScope` automatically prefixes all child IDs with the scope name, preventing collisions when the same component is used multiple times.
@@ -461,14 +488,14 @@ ID namespace isolation for reusable components. Wrapping elements in `EmbedScope
 function ServiceCluster({ label }: { label: string }) {
   return (
     <>
-      <Shape id="lb" anchor="gateway" position="bottom" gap={80} width={120} height={50}>
+      <Shape id="lb" anchor="gateway" position="bottom" gap={80} size={{ token: 's', ratio: 'landscape' }}>
         Load Balancer
       </Shape>
-      <Shape id="app" anchor="lb" position="bottom" gap={60} width={120} height={50}>
+      <Shape id="app" anchor="lb" position="bottom" gap={60} size={{ token: 's', ratio: 'landscape' }}>
         {label} Server
         <Edge to="db" />
       </Shape>
-      <Shape id="db" anchor="app" position="bottom" gap={60} width={120} height={50}>
+      <Shape id="db" anchor="app" position="bottom" gap={60} size={{ token: 's', ratio: 'landscape' }}>
         Database
       </Shape>
       <Edge from="lb" to="app" />
@@ -479,7 +506,7 @@ function ServiceCluster({ label }: { label: string }) {
 export default function Example() {
   return (
     <Canvas>
-      <Shape id="gateway" x={0} y={0} width={140} height={50}>API Gateway</Shape>
+      <Shape id="gateway" x={0} y={0} size={{ token: 's', ratio: 'landscape' }}>API Gateway</Shape>
 
       {/* IDs become auth.lb, auth.app, auth.db */}
       <EmbedScope id="auth">
@@ -569,8 +596,9 @@ All components support `className` prop for Tailwind CSS styling.
 
 ### Sizing
 ```tsx
-<Shape width={180} height={80}>Props sizing</Shape>
-<Shape className="w-[200px] h-[60px]">Tailwind sizing</Shape>
+<Shape size="m">Token-first sizing</Shape>
+<Shape size={{ token: 's', ratio: 'portrait' }}>Ratio sizing</Shape>
+<Shape size={{ widthHeight: 'l' }}>Unified width/height token</Shape>
 ```
 
 ## Common Patterns
@@ -688,8 +716,8 @@ Extract repeated patterns into components and use EmbedScope to isolate IDs. Anc
 function DatabaseCluster() {
   return (
     <>
-      <Shape id="primary" x={0} y={0} width={120} height={50}>Primary</Shape>
-      <Shape id="replica" anchor="primary" position="right" gap={80} width={120} height={50}>
+      <Shape id="primary" x={0} y={0} size={{ token: 's', ratio: 'landscape' }}>Primary</Shape>
+      <Shape id="replica" anchor="primary" position="right" gap={80} size={{ token: 's', ratio: 'landscape' }}>
         Replica
       </Shape>
       <Edge from="primary" to="replica" label="sync" />

@@ -5,16 +5,17 @@ import { BaseNode } from './BaseNode';
 import type { RenderableChild } from '@/utils/childComposition';
 import { renderNodeContent } from './renderableContent';
 import { useGraphStore } from '@/store/graph';
-import type { FontFamilyPreset } from '@magam/core';
+import type { FontFamilyPreset, FontSizeInput } from '@magam/core';
 import {
     hasExplicitFontFamilyClass,
     resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import { useZoom } from '@/contexts/ZoomContext';
+import { resolveTypography } from '@/utils/sizeResolver';
 
 interface TextNodeData {
     label: string;
-    fontSize?: number;
+    fontSize?: FontSizeInput;
     color?: string;
     fontFamily?: FontFamilyPreset;
     bold?: boolean;
@@ -43,6 +44,10 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
         })
         : undefined;
     const isActiveEditor = Boolean(nodeId && selected && activeTextEditNodeId === nodeId);
+    const typography = resolveTypography(data.fontSize, {
+        component: 'TextNode',
+        inputPath: 'fontSize',
+    });
 
     const beginEditing = useCallback(() => {
         if (!nodeId || !selected) return;
@@ -96,7 +101,8 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
                 <div
                     className="flex items-center justify-center gap-2 whitespace-pre-wrap leading-tight pointer-events-none"
                     style={{
-                        fontSize: data.fontSize || 16,
+                        fontSize: typography.fontSizePx,
+                        lineHeight: `${typography.lineHeightPx}px`,
                         color: data.color || '#374151', // text-gray-700
                         fontWeight: (isZoomBold || data.bold) ? 'bold' : 'normal',
                         fontStyle: data.italic ? 'italic' : 'normal',

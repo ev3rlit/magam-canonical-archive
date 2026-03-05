@@ -1,3 +1,5 @@
+import type { FontSizeInput } from '@magam/core';
+
 export interface RenderChildNode {
   type: string;
   props?: {
@@ -15,7 +17,7 @@ export interface RenderChildNode {
 }
 
 export type RenderableChild =
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; fontSize?: FontSizeInput }
   | { type: 'lucide-icon'; name: string }
   | { type: 'graph-image'; src: string; alt?: string; width?: number; height?: number }
   | { type: 'graph-markdown'; content: string }
@@ -53,9 +55,19 @@ export function isLucideChild(node: RenderChildNode): boolean {
   return getLucideNameFromChild(node) !== null;
 }
 
-function pushText(parsed: RenderableChild[], value: unknown): void {
+function isFontSizeInput(value: unknown): value is FontSizeInput {
+  if (typeof value === 'number') return Number.isFinite(value);
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function pushText(parsed: RenderableChild[], value: unknown, fontSize?: unknown): void {
   if (typeof value === 'string' || typeof value === 'number') {
-    parsed.push({ type: 'text', text: String(value) });
+    const resolvedFontSize = isFontSizeInput(fontSize) ? fontSize : undefined;
+    parsed.push({
+      type: 'text',
+      text: String(value),
+      ...(resolvedFontSize !== undefined ? { fontSize: resolvedFontSize } : {}),
+    });
   }
 }
 
@@ -137,9 +149,9 @@ export function parseStickerChildren(
     if (child.type === 'graph-text') {
       const textNode = child.children?.find((grandChild) => grandChild.type === 'text');
       if (textNode) {
-        pushText(parsed, textNode.props?.text);
+        pushText(parsed, textNode.props?.text, child.props?.fontSize);
       } else {
-        pushText(parsed, child.props?.children);
+        pushText(parsed, child.props?.children, child.props?.fontSize);
       }
       return;
     }

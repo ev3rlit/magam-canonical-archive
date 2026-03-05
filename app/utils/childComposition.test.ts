@@ -75,6 +75,29 @@ describe('childComposition', () => {
     ]);
   });
 
+  it('preserves graph-text fontSize metadata for sticker text children', () => {
+    expect(
+      parseStickerChildren(
+        [
+          {
+            type: 'graph-text',
+            props: { fontSize: 'xl' },
+            children: [{ type: 'text', props: { text: 'Big sticker text' }, children: [] }],
+          },
+          {
+            type: 'graph-text',
+            props: { fontSize: 42 },
+            children: [{ type: 'text', props: { text: 'Numeric size' }, children: [] }],
+          },
+        ],
+        undefined,
+      ),
+    ).toEqual([
+      { type: 'text', text: 'Big sticker text', fontSize: 'xl' },
+      { type: 'text', text: 'Numeric size', fontSize: 42 },
+    ]);
+  });
+
   it('warns and ignores unsupported sticker child types', () => {
     const originalWarn = console.warn;
     let called = 0;

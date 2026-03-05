@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect } from 'react';
 import { NodeProps } from 'reactflow';
 import { useGraphStore } from '@/store/graph';
 import type { FontFamilyPreset } from '@magam/core';
@@ -6,6 +6,7 @@ import {
   hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
+import { emitSizeWarning } from '@/utils/sizeWarnings';
 
 interface ParticipantData {
   id: string;
@@ -47,6 +48,16 @@ const SequenceDiagramNode = ({ data }: NodeProps<SequenceDiagramData>) => {
       globalFontFamily,
     })
     : undefined;
+  useEffect(() => {
+    const sizeInput = (data as { size?: unknown }).size;
+    if (sizeInput === undefined) return;
+    emitSizeWarning({
+      code: 'UNSUPPORTED_LEGACY_SIZE_API',
+      component: 'SequenceDiagramNode',
+      inputPath: 'size',
+      fallbackApplied: 'ignored legacy input',
+    });
+  }, [(data as { size?: unknown }).size]);
 
   if (participants.length === 0) return null;
 

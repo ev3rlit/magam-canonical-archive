@@ -10,8 +10,14 @@ import {
 } from '@/utils/washiTapeGeometry';
 import { stickerDebugLog } from '@/utils/stickerDebug';
 import type { CanvasBackgroundStyle, MindMapGroup } from '@/store/graph';
-import type { FontFamilyPreset } from '@magam/core';
+import type {
+  FontFamilyPreset,
+  MarkdownSizeInput,
+  ObjectSizeInput,
+  SizeValue,
+} from '@magam/core';
 import { isFontFamilyPreset } from '@/utils/fontHierarchy';
+import { emitSizeWarning } from '@/utils/sizeWarnings';
 import {
   assertMindMapTopology,
   buildMindMapEdge,
@@ -36,7 +42,7 @@ export interface RenderNode {
     color?: string;
     bg?: string;
     className?: string;
-    fontSize?: number;
+    fontSize?: SizeValue;
     labelColor?: string;
     labelFontSize?: number;
     labelBold?: boolean;
@@ -66,6 +72,7 @@ export interface RenderNode {
     position?: string;
     gap?: number;
     align?: 'start' | 'center' | 'end';
+    size?: unknown;
     width?: number;
     height?: number;
     layout?:
@@ -165,6 +172,14 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
   const normalizeFontFamily = (value?: unknown): FontFamilyPreset | undefined => (
     isFontFamilyPreset(value) ? value : undefined
   );
+  const warnUnsupportedLegacySizeApi = (component: string, inputPath: string): void => {
+    emitSizeWarning({
+      code: 'UNSUPPORTED_LEGACY_SIZE_API',
+      component,
+      inputPath,
+      fallbackApplied: 'ignored legacy input',
+    });
+  };
 
   let nodeIdCounter = 0;
   let edgeIdCounter = 0;
@@ -276,6 +291,9 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           processChildren(child.children, mmId);
         }
       } else if (child.type === 'graph-sequence') {
+        if (child.props.size !== undefined) {
+          warnUnsupportedLegacySizeApi('SequenceDiagramNode', 'size');
+        }
         const rawSequenceId =
           child.props.id || `sequence-${sequenceIdCounter++}`;
         const seqId = resolveNodeId(rawSequenceId, mindmapId);
@@ -376,6 +394,12 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           textChildren.map((content) => content.text).join('\n') ||
           child.props.label ||
           '';
+        const markdownChild = rendererChildren.find(
+          (rendererChild: RenderNode) => rendererChild.type === 'graph-markdown',
+        );
+        const markdownSize = markdownChild?.props?.size as
+          | MarkdownSizeInput
+          | undefined;
 
         const hasMarkdown = rendererChildren.some(
           (c: RenderNode) =>
@@ -403,13 +427,17 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             fontSize: child.props.fontSize,
             labelColor: child.props.labelColor || child.props.color,
             labelFontSize:
-              child.props.labelFontSize || child.props.fontSize,
+              child.props.labelFontSize
+              || (typeof child.props.fontSize === 'number'
+                ? child.props.fontSize
+                : undefined),
             labelBold: child.props.labelBold || child.props.bold,
             fill: child.props.fill,
             stroke: child.props.stroke,
             fontFamily: nodeFontFamily,
             children: parsedChildren,
             bubble: nodeBubble,
+            size: markdownSize,
           },
         });
 
@@ -442,6 +470,9 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           createMindMapEdge(child, { nodeId: imageId, mindmapId });
         }
       } else if (child.type === 'graph-sticker') {
+        if (child.props.size !== undefined) {
+          warnUnsupportedLegacySizeApi('StickerNode', 'size');
+        }
         const rawStickerId = child.props.id || `sticker-${nodeIdCounter++}`;
         const stickerId = resolveNodeId(rawStickerId, mindmapId);
         const stickerFontFamily = normalizeFontFamily(child.props.fontFamily);
@@ -629,6 +660,27 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             : child.type === 'graph-text'
               ? 'text'
               : 'shape';
+        const isObjectSizedNode = nodeType === 'sticky' || nodeType === 'shape';
+        if (
+          isObjectSizedNode
+          && (child.props.width !== undefined || child.props.height !== undefined)
+        ) {
+          if (child.props.width !== undefined) {
+            warnUnsupportedLegacySizeApi(
+              nodeType === 'sticky' ? 'StickyNode' : 'ShapeNode',
+              'width',
+            );
+          }
+          if (child.props.height !== undefined) {
+            warnUnsupportedLegacySizeApi(
+              nodeType === 'sticky' ? 'StickyNode' : 'ShapeNode',
+              'height',
+            );
+          }
+        }
+        const objectSizeInput = isObjectSizedNode
+          ? (child.props.size as ObjectSizeInput | undefined)
+          : undefined;
 
         const normalizedSticky = nodeType === 'sticky'
           ? normalizeStickyDefaults({
@@ -663,12 +715,16 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             fontSize: child.props.fontSize,
             labelColor: child.props.labelColor || child.props.color,
             labelFontSize:
-              child.props.labelFontSize || child.props.fontSize,
+              child.props.labelFontSize
+              || (typeof child.props.fontSize === 'number'
+                ? child.props.fontSize
+                : undefined),
             labelBold: child.props.labelBold || child.props.bold,
             fill: child.props.fill,
             stroke: child.props.stroke,
             fontFamily: nodeFontFamily,
             children: parsedChildren,
+            size: objectSizeInput,
             imageSrc: child.props.imageSrc,
             imageFit: child.props.imageFit,
             ports,
@@ -676,8 +732,8 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             position: child.props.position,
             gap: child.props.gap,
             align: child.props.align,
-            width: nodeType === 'sticky' ? (normalizedSticky?.width ?? child.props.width) : child.props.width,
-            height: nodeType === 'sticky' ? (normalizedSticky?.height ?? child.props.height) : child.props.height,
+            width: isObjectSizedNode ? undefined : child.props.width,
+            height: isObjectSizedNode ? undefined : child.props.height,
             bubble: child.props.bubble,
             sourceMeta: child.props.sourceMeta || {
               sourceId: nodeId,

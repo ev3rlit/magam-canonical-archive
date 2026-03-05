@@ -49,3 +49,4 @@ export * from './renderer';
 export * from './result';
 export * from './logger';
 export * from './types/font';
+export * from './lib/size';

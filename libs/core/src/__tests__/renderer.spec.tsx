@@ -4,6 +4,7 @@ import { renderToGraph } from '../renderer';
 import { Sticky } from '../components/Sticky';
 import { Shape } from '../components/Shape';
 import { Text } from '../components/Text';
+import { Markdown } from '../components/Markdown';
 import { Edge } from '../components/Edge';
 import { Group } from '../components/Group';
 import { MindMap } from '../components/MindMap';
@@ -54,6 +55,37 @@ describe('Magam Renderer', () => {
         },
       ],
     });
+  });
+
+  it('serializes token-first size props for Text/Sticky/Shape/Markdown', async () => {
+    const element = (
+      <canvas>
+        <Text id="text-1" x={0} y={0} fontSize="l">
+          Heading
+        </Text>
+        <Sticky id="sticky-1" x={20} y={10} size={{ token: 'm', ratio: 'portrait' }} />
+        <Shape id="shape-1" x={40} y={20} size={120} />
+        <Node id="node-1">
+          <Markdown size={{ widthHeight: 's' }}>
+            {`# Title`}
+          </Markdown>
+        </Node>
+      </canvas>
+    );
+
+    const result = unwrapOrThrow(await renderToGraph(element));
+    const canvasChildren = result.children[0].children;
+
+    const textNode = canvasChildren.find((child: any) => child.type === 'graph-text');
+    const stickyNode = canvasChildren.find((child: any) => child.type === 'graph-sticky');
+    const shapeNode = canvasChildren.find((child: any) => child.type === 'graph-shape');
+    const nodeNode = canvasChildren.find((child: any) => child.type === 'graph-node');
+    const markdownNode = nodeNode?.children?.find((child: any) => child.type === 'graph-markdown');
+
+    expect(textNode?.props?.fontSize).toBe('l');
+    expect(stickyNode?.props?.size).toEqual({ token: 'm', ratio: 'portrait' });
+    expect(shapeNode?.props?.size).toBe(120);
+    expect(markdownNode?.props?.size).toEqual({ widthHeight: 's' });
   });
 
   it('should implicitly set "from" prop for Edge nested in Sticky', async () => {

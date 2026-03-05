@@ -1,4 +1,5 @@
 import * as React from 'react';
+import type { MarkdownSizeInput } from '../lib/size';
 import type { FontFamilyPreset } from '../types/font';
 
 export interface MarkdownProps {
@@ -10,6 +11,8 @@ export interface MarkdownProps {
     fontFamily?: FontFamilyPreset;
     /** 스타일 프리셋. 기본값 'default' */
     variant?: 'default' | 'minimal';
+    /** 단일 size 인터페이스 (primitive=1D, object=2D) */
+    size?: MarkdownSizeInput;
     [key: string]: any;
 }
 

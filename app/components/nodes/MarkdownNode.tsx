@@ -8,16 +8,18 @@ import { toAssetApiUrl } from '@/utils/imageSource';
 import { useGraphStore } from '@/store/graph';
 import { LazyMarkdownRenderer } from '@/components/markdown/LazyMarkdownRenderer';
 import type { RenderableChild } from '@/utils/childComposition';
-import type { FontFamilyPreset } from '@magam/core';
+import type { FontFamilyPreset, MarkdownSizeInput } from '@magam/core';
 import {
     hasExplicitFontFamilyClass,
     resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
+import { resolveMarkdownSize } from '@/utils/sizeResolver';
 
 interface MarkdownNodeData {
     label: string;
     /** Enable bubble overlay when zoomed out. Text auto-extracted from label. */
     bubble?: boolean;
+    size?: MarkdownSizeInput;
     fontFamily?: FontFamilyPreset;
     className?: string;
     variant?: 'default' | 'minimal';
@@ -43,6 +45,27 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
             globalFontFamily,
         })
         : undefined;
+    const resolvedSize = resolveMarkdownSize(data.size, {
+        component: 'MarkdownNode',
+        inputPath: 'size',
+    });
+    const typographyStyle = resolvedSize.mode === 'typography'
+        ? {
+            fontSize: `${resolvedSize.typography.fontSizePx}px`,
+            lineHeight: `${resolvedSize.typography.lineHeightPx}px`,
+        }
+        : undefined;
+    const frameStyle = resolvedSize.mode === 'object2d'
+        && resolvedSize.object2d.mode === 'fixed'
+        ? {
+            width: resolvedSize.object2d.widthPx,
+            height: resolvedSize.object2d.heightPx,
+            minWidth: resolvedSize.object2d.widthPx,
+            minHeight: resolvedSize.object2d.heightPx,
+        }
+        : undefined;
+    const isContentDrivenAuto = resolvedSize.mode === 'object2d'
+        && resolvedSize.object2d.mode === 'auto';
 
     const handleLinkClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
         e.preventDefault();
@@ -112,8 +135,12 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
 
     const markdownContent = useMemo(() => (
         <div
-            className="prose prose-sm prose-slate max-w-none pointer-events-none select-none"
-            style={{ fontFamily: resolvedFontFamily }}
+            className={twMerge(
+                "prose prose-sm prose-slate max-w-none pointer-events-none select-none",
+                isContentDrivenAuto
+                    && "prose-headings:my-1.5 prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5"
+            )}
+            style={{ fontFamily: resolvedFontFamily, ...typographyStyle }}
         >
             <LazyMarkdownRenderer
                 content={data.label}
@@ -121,7 +148,7 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
                 components={components}
             />
         </div>
-    ), [data.label, components, resolvedFontFamily]);
+    ), [data.label, components, isContentDrivenAuto, resolvedFontFamily]);
 
     const isActiveEditor = Boolean(nodeId && selected && activeTextEditNodeId === nodeId);
 
@@ -146,9 +173,11 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
 
     return (
         <BaseNode
-            style={{ pointerEvents: 'auto' }}
+            style={{ pointerEvents: 'auto', ...frameStyle }}
             className={twMerge(
-                "min-w-64 min-h-20 w-auto h-auto flex flex-col justify-center p-6 text-left",
+                isContentDrivenAuto
+                    ? "w-auto h-auto flex flex-col justify-center px-4 py-3 text-left"
+                    : "min-w-64 min-h-20 w-auto h-auto flex flex-col justify-center p-6 text-left",
                 "bg-white border-2 border-slate-200 text-slate-800 transition-all duration-300",
                 "shadow-lg rounded-xl",
                 !selected && "hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1",
@@ -181,7 +210,7 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
                     />
                     <div
                         className="prose prose-sm prose-slate max-w-none rounded border border-dashed border-slate-300 bg-slate-50 p-3"
-                        style={{ fontFamily: resolvedFontFamily }}
+                        style={{ fontFamily: resolvedFontFamily, ...typographyStyle }}
                     >
                         <LazyMarkdownRenderer
                             content={textEditDraft}
