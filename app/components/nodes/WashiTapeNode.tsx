@@ -87,8 +87,9 @@ const WashiTapeNode = ({
 
   const label = getWashiLabel(
     raw.children,
-    (typeof raw.label === 'string' && raw.label.trim().length > 0) ? raw.label : 'Washi Tape',
+    (typeof raw.label === 'string') ? raw.label.trim() : '',
   );
+  const hasLabel = label.length > 0;
 
   const length = Math.max(24, Math.round(geometry.length));
   const thickness = Math.max(10, Math.round(geometry.thickness));
@@ -177,24 +178,26 @@ const WashiTapeNode = ({
               'repeating-linear-gradient(-12deg, rgba(15,23,42,0.16) 0 1px, rgba(15,23,42,0.03) 1px 4px)',
           }}
         />
-        <span
-          className="relative z-10 block leading-tight"
-          style={{
-            color: textColor,
-            fontSize: textSize,
-            textAlign,
-            fontWeight: 600,
-            maxWidth: '100%',
-            overflow: 'hidden',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            transform: `skewX(${-shapeSkewAngle}deg)`,
-            transformOrigin: 'center center',
-          }}
-        >
-          {label}
-        </span>
+        {hasLabel ? (
+          <span
+            className="relative z-10 block leading-tight"
+            style={{
+              color: textColor,
+              fontSize: textSize,
+              textAlign,
+              fontWeight: 600,
+              maxWidth: '100%',
+              overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical',
+              transform: `skewX(${-shapeSkewAngle}deg)`,
+              transformOrigin: 'center center',
+            }}
+          >
+            {label}
+          </span>
+        ) : null}
       </div>
     </BaseNode>
   );
