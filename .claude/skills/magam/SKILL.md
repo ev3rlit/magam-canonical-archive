@@ -21,6 +21,7 @@ Magam is a React-based library for creating visual diagrams through code. It ena
 
 ## References
 
+- `reference/frame.md`: `frame(...)` for reusable graph components across Canvas and MindMap, including nested frame composition.
 - `reference/sticky.md`: Sticky patterns, shapes, sizing modes, and `at` placement workflows.
 - `reference/washi_tape.md`: WashiTape patterns, placement modes, and sticker-mix layout examples.
 
@@ -70,8 +71,51 @@ Multiple nodes can be selected and copied at once. Each ID is separated by a new
 All components are imported from `@magam/core`:
 
 ```tsx
-import { Canvas, Shape, Sticky, Sticker, Image, WashiTape, MindMap, Node, Edge, Text, Markdown, EmbedScope } from '@magam/core';
+import { Canvas, Shape, Sticky, Sticker, Image, WashiTape, MindMap, Node, Edge, Text, Markdown, frame } from '@magam/core';
 ```
+
+## Reusable Composition with `frame(...)`
+
+Use `frame(...)` when the user wants reusable diagram components that can be mounted in Canvas or MindMap.
+
+- Prefer `frame(...)` over exposing `EmbedScope` or `MindMapEmbed` in newly generated user-facing code.
+- Treat `EmbedScope` and `MindMapEmbed` as low-level primitives unless the user is explicitly working on core internals.
+- Keep ids inside a frame local, such as `app`, `db`, `details`.
+- Let the runtime expand scoped ids at mount time.
+- A frame can contain child frames.
+
+Typical pattern:
+
+```tsx
+const ServiceFrame = frame(function ServiceFrame({ label }: { label: string }) {
+  return (
+    <>
+      <Shape id="app" x={0} y={0}>{label} Service</Shape>
+      <Shape id="db" anchor="app" position="bottom" gap={48}>Database</Shape>
+    </>
+  );
+});
+```
+
+Canvas usage:
+
+```tsx
+<Canvas>
+  <ServiceFrame id="auth" x={120} y={120} label="Auth" />
+  <ServiceFrame id="billing" anchor="auth.db" position="right" gap={220} label="Billing" />
+</Canvas>
+```
+
+MindMap usage:
+
+```tsx
+<MindMap id="services">
+  <Node id="platform">Platform</Node>
+  <ServiceFrame id="auth" from="platform" label="Auth" />
+</MindMap>
+```
+
+For more complete examples, see `reference/frame.md`.
 
 ### Canvas (Required Root)
 
