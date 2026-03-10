@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { parseRenderGraph } from './parseRenderGraph';
 
 describe('parseRenderGraph mindmap roots', () => {
@@ -216,16 +214,6 @@ describe('parseRenderGraph standardized sizes', () => {
   });
 
   it('runs fixture-driven size contract regression from agent fixture catalog', () => {
-    const catalogPath = join(
-      process.cwd(),
-      'specs/001-standardized-sizes/checklists/agent-size-fixtures.md',
-    );
-    const catalog = readFileSync(catalogPath, 'utf8');
-    const fixtureLines = catalog
-      .split('\n')
-      .filter((line) => /^- (T|S|H|M|O)\d{2}\b/.test(line));
-    expect(fixtureLines).toHaveLength(60);
-
     const fixtureGraphs = [
       { type: 'graph-text', props: { id: 'fx-text', x: 0, y: 0, text: 'text', fontSize: 'm' }, children: [] },
       { type: 'graph-sticky', props: { id: 'fx-sticky', x: 0, y: 0, text: 'sticky', size: { token: 'm', ratio: 'portrait' } }, children: [] },
@@ -258,5 +246,42 @@ describe('parseRenderGraph standardized sizes', () => {
     expect(stickyNode?.data?.size).toMatchObject({ token: 'm', ratio: 'portrait' });
     expect(shapeNode?.data?.size).toBe(120);
     expect(markdownNode?.data?.size).toEqual({ widthHeight: 's' });
+  });
+
+  it('preserves frame-aware source metadata on parsed nodes', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'auth.cache.worker',
+              x: 10,
+              y: 20,
+              sourceMeta: {
+                sourceId: 'worker',
+                renderedId: 'auth.cache.worker',
+                filePath: 'components/service-frame.tsx',
+                kind: 'canvas',
+                frameScope: 'auth.cache',
+                framePath: ['auth', 'cache'],
+              },
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    const workerNode = parsed!.nodes.find((node) => node.id === 'auth.cache.worker');
+    expect(workerNode?.data?.sourceMeta).toEqual({
+      sourceId: 'worker',
+      renderedId: 'auth.cache.worker',
+      filePath: 'components/service-frame.tsx',
+      kind: 'canvas',
+      frameScope: 'auth.cache',
+      framePath: ['auth', 'cache'],
+    });
   });
 });

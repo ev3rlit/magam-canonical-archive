@@ -10,6 +10,7 @@ import { MindMap } from '../components/MindMap';
 import { Node } from '../components/Node';
 import { Sticker } from '../components/Sticker';
 import { EmbedScope } from '../components/EmbedScope';
+import { frame } from '../components/frame';
 
 async function render(element: React.ReactNode) {
   const resultAsync = renderToGraph(element);
@@ -183,6 +184,68 @@ describe('EmbedScope', () => {
     const children = result.children[0].children;
     expect(children[0].props.id).toBe('left.box');
     expect(children[1].props.id).toBe('right.box');
+  });
+
+  it('should mount frame instances in Canvas with a scoped group root', async () => {
+    const ServiceFrame = frame(function ServiceFrame({ label }: { label: string }) {
+      return (
+        <>
+          <Shape id="lb" x={0} y={0}>{label} LB</Shape>
+          <Shape id="app" anchor="lb" position="bottom" gap={60}>{label} App</Shape>
+        </>
+      );
+    });
+
+    const element = (
+      <canvas>
+        <ServiceFrame id="auth" x={120} y={80} label="Auth" />
+      </canvas>
+    );
+
+    const result = await render(element);
+    const group = result.children[0].children[0];
+    const lb = group.children.find((child: any) => child.props.id === 'auth.lb');
+    const app = group.children.find((child: any) => child.props.id === 'auth.app');
+
+    expect(group.type).toBe('graph-group');
+    expect(group.props).toEqual(expect.objectContaining({ id: 'auth', x: 120, y: 80 }));
+    expect(lb.props.parentId).toBe('auth');
+    expect(app.props.anchor).toBe('auth.lb');
+  });
+
+  it('should support nested frame instances in Canvas', async () => {
+    const CacheFrame = frame(function CacheFrame() {
+      return (
+        <>
+          <Shape id="redis" x={0} y={0}>Redis</Shape>
+          <Shape id="worker" anchor="redis" position="bottom" gap={40}>Worker</Shape>
+        </>
+      );
+    });
+
+    const ServiceFrame = frame(function ServiceFrame() {
+      return (
+        <>
+          <Shape id="app" x={0} y={0}>App</Shape>
+          <CacheFrame id="cache" anchor="app" position="right" gap={120} />
+        </>
+      );
+    });
+
+    const element = (
+      <canvas>
+        <ServiceFrame id="auth" x={80} y={40} />
+      </canvas>
+    );
+
+    const result = await render(element);
+    const group = result.children[0].children[0];
+    const nestedGroup = group.children.find((child: any) => child.type === 'graph-group');
+    const nestedRedis = nestedGroup.children.find((child: any) => child.props.id === 'auth.cache.redis');
+
+    expect(nestedGroup.props.id).toBe('auth.cache');
+    expect(nestedGroup.props.anchor).toBe('auth.app');
+    expect(nestedRedis.props.parentId).toBe('auth.cache');
   });
 
   it('should resolve anchor prop to scoped ID within same scope', async () => {

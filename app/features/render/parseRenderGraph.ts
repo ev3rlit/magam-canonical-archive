@@ -101,8 +101,12 @@ export interface RenderNode {
       filePath?: string;
       kind: 'canvas' | 'mindmap';
       scopeId?: string;
+      renderedId?: string;
+      frameScope?: string;
+      framePath?: string[];
     };
     __mindmapEmbedScope?: string;
+    __magamScope?: string;
     children?: any;
   };
   children?: RenderNode[];

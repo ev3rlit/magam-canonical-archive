@@ -9,7 +9,17 @@ type RpcLikeError = {
 type NodeSourceMeta = {
   sourceId?: unknown;
   filePath?: unknown;
+  frameScope?: unknown;
 };
+
+function deriveLocalSourceId(nodeId: string, frameScope: unknown): string {
+  if (typeof frameScope !== 'string' || frameScope.length === 0) {
+    return nodeId;
+  }
+
+  const prefix = `${frameScope}.`;
+  return nodeId.startsWith(prefix) ? nodeId.slice(prefix.length) : nodeId;
+}
 
 export function resolveNodeEditTarget(
   node: Pick<Node, 'id' | 'data'>,
@@ -18,7 +28,7 @@ export function resolveNodeEditTarget(
   const sourceMeta = ((node.data || {}) as { sourceMeta?: NodeSourceMeta }).sourceMeta;
   const sourceId = typeof sourceMeta?.sourceId === 'string' && sourceMeta.sourceId.length > 0
     ? sourceMeta.sourceId
-    : node.id;
+    : deriveLocalSourceId(node.id, sourceMeta?.frameScope);
   const filePath = typeof sourceMeta?.filePath === 'string' && sourceMeta.filePath.length > 0
     ? sourceMeta.filePath
     : currentFile;

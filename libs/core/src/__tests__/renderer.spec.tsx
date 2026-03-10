@@ -12,6 +12,7 @@ import { MindMapEmbed } from '../components/MindMapEmbed';
 import { Node } from '../components/Node';
 import { Sticker } from '../components/Sticker';
 import { WashiTape } from '../components/WashiTape';
+import { frame } from '../components/frame';
 import { MagamError } from '../errors';
 
 function unwrapOrThrow(result: Awaited<ReturnType<typeof renderToGraph>>) {
@@ -259,6 +260,91 @@ describe('Magam Renderer', () => {
     expect(
       mindmapChildren.some((child: any) => '__mindmapEmbedMountFrom' in child.props),
     ).toBe(false);
+  });
+
+  it('should mount frame instances inside a MindMap using local IDs', async () => {
+    const ServiceFrame = frame(function ServiceFrame({ label }: { label: string }) {
+      return (
+        <>
+          <Node id="root">{label}</Node>
+          <Node id="details" from="root">{label} Details</Node>
+        </>
+      );
+    });
+
+    const element = (
+      <canvas>
+        <MindMap id="system">
+          <Node id="platform">Platform</Node>
+          <ServiceFrame id="auth" from="platform" label="Auth" />
+        </MindMap>
+      </canvas>
+    );
+
+    const result = unwrapOrThrow(await renderToGraph(element));
+    const mindmapChildren = result.children[0].children[0].children;
+
+    expect(mindmapChildren).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'graph-node',
+          props: expect.objectContaining({ id: 'auth.root', from: 'platform' }),
+        }),
+        expect.objectContaining({
+          type: 'graph-node',
+          props: expect.objectContaining({ id: 'auth.details', from: 'auth.root' }),
+        }),
+      ]),
+    );
+  });
+
+  it('should support nested frame instances inside a MindMap', async () => {
+    const DatabaseFrame = frame(function DatabaseFrame() {
+      return (
+        <>
+          <Node id="store">Database</Node>
+          <Node id="replica" from="store">Replica</Node>
+        </>
+      );
+    });
+
+    const ServiceFrame = frame(function ServiceFrame() {
+      return (
+        <>
+          <Node id="root">Service</Node>
+          <DatabaseFrame id="database" from="root" />
+        </>
+      );
+    });
+
+    const element = (
+      <canvas>
+        <MindMap id="system">
+          <Node id="platform">Platform</Node>
+          <ServiceFrame id="auth" from="platform" />
+        </MindMap>
+      </canvas>
+    );
+
+    const result = unwrapOrThrow(await renderToGraph(element));
+    const mindmapChildren = result.children[0].children[0].children;
+
+    expect(mindmapChildren).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'graph-node',
+          props: expect.objectContaining({ id: 'auth.root', from: 'platform' }),
+        }),
+        expect.objectContaining({
+          type: 'graph-node',
+          props: expect.objectContaining({ id: 'auth.database.store', from: 'auth.root' }),
+        }),
+        expect.objectContaining({
+          type: 'graph-node',
+          props: expect.objectContaining({ id: 'auth.database.replica', from: 'auth.database.store' }),
+        }),
+      ]),
+    );
   });
 
   it('should propagate errors from the render phase', async () => {

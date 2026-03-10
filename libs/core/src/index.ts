@@ -29,6 +29,7 @@ export * from './material/types';
 export * from './material/presets';
 export * from './material/helpers';
 export * from './components/Group';
+export * from './components/frame';
 export * from './components/MindMap';
 export * from './components/MindMapEmbed';
 export * from './components/Node';

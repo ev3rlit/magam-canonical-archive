@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { MagamError } from '../errors';
-import { useMindMapScopedId } from '../hooks/useMindMapScopedProps';
+import { useMindMapEmbedMeta, useMindMapScopedId } from '../hooks/useMindMapScopedProps';
 import type { FontSizeInput } from '../lib/size';
 import type { FontFamilyPreset } from '../types/font';
 
@@ -32,6 +32,7 @@ export interface TextProps {
 
 export const Text: React.FC<TextProps> = (props) => {
   const scopedId = useMindMapScopedId(props.id);
+  const embedMeta = useMindMapEmbedMeta();
 
-  return React.createElement('graph-text', { ...props, id: scopedId }, props.children);
+  return React.createElement('graph-text', { ...props, ...embedMeta, id: scopedId }, props.children);
 };

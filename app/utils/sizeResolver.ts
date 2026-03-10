@@ -215,10 +215,16 @@ export function normalizeObjectSizeInput(
     return toAuto();
   }
 
-  const hasToken = input.token !== undefined;
-  const hasUniform = input.widthHeight !== undefined;
-  const hasExplicit = input.width !== undefined || input.height !== undefined;
-  const hasCompleteExplicit = input.width !== undefined && input.height !== undefined;
+  const tokenValue = 'token' in input ? input.token : undefined;
+  const ratioValue = 'ratio' in input ? input.ratio : undefined;
+  const uniformValue = 'widthHeight' in input ? input.widthHeight : undefined;
+  const widthValue = 'width' in input ? input.width : undefined;
+  const heightValue = 'height' in input ? input.height : undefined;
+
+  const hasToken = tokenValue !== undefined;
+  const hasUniform = uniformValue !== undefined;
+  const hasExplicit = widthValue !== undefined || heightValue !== undefined;
+  const hasCompleteExplicit = widthValue !== undefined && heightValue !== undefined;
   const modes = [hasToken, hasUniform, hasCompleteExplicit].filter(Boolean).length;
 
   if (modes !== 1 || (hasExplicit && !hasCompleteExplicit)) {
@@ -231,7 +237,7 @@ export function normalizeObjectSizeInput(
   }
 
   if (hasToken) {
-    const token = input.token;
+    const token = tokenValue;
     if (isAutoObject2DToken(token)) {
       return toAuto();
     }
@@ -245,7 +251,7 @@ export function normalizeObjectSizeInput(
     }
     return {
       mode: 'token',
-      ratio: normalizeRatio(input.ratio, context, defaultRatio),
+      ratio: normalizeRatio(ratioValue, context, defaultRatio),
       token,
       primitive: token,
       width: null,
@@ -255,7 +261,7 @@ export function normalizeObjectSizeInput(
   }
 
   if (hasUniform) {
-    if (isAutoObject2DToken(input.widthHeight)) {
+    if (isAutoObject2DToken(uniformValue)) {
       return toAuto();
     }
     return {
@@ -263,8 +269,8 @@ export function normalizeObjectSizeInput(
       ratio: 'square',
       token: null,
       primitive: null,
-      width: input.widthHeight as SizeValue,
-      height: input.widthHeight as SizeValue,
+      width: uniformValue as SizeValue,
+      height: uniformValue as SizeValue,
       source,
     };
   }
@@ -274,8 +280,8 @@ export function normalizeObjectSizeInput(
     ratio: defaultRatio,
     token: null,
     primitive: null,
-    width: input.width as SizeValue,
-    height: input.height as SizeValue,
+    width: widthValue as SizeValue,
+    height: heightValue as SizeValue,
     source,
   };
 }
@@ -314,7 +320,7 @@ export function resolveObject2D(
     return {
       mode: 'auto',
       ratioUsed: normalized.ratio,
-      tokenUsed: OBJECT2D_AUTO_TOKEN,
+      tokenUsed: 'auto',
     };
   }
 
@@ -352,7 +358,7 @@ export function resolveObject2D(
     return {
       mode: 'auto',
       ratioUsed: normalized.ratio,
-      tokenUsed: OBJECT2D_AUTO_TOKEN,
+      tokenUsed: 'auto',
     };
   }
 
@@ -375,7 +381,7 @@ export function resolveObject2D(
   return {
     mode: 'auto',
     ratioUsed: CATEGORY_DEFAULTS.object2d.ratio,
-    tokenUsed: CATEGORY_DEFAULTS.object2d.token,
+    tokenUsed: 'auto',
   };
 }
 

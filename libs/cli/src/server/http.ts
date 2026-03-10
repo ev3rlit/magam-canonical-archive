@@ -451,6 +451,22 @@ type RenderLikeNode = {
   children?: RenderLikeNode[];
 };
 
+function deriveLocalSourceId(
+  renderedId: string | undefined,
+  magamScope: string | undefined,
+): string {
+  if (!renderedId) {
+    return '';
+  }
+
+  if (!magamScope) {
+    return renderedId;
+  }
+
+  const prefix = `${magamScope}.`;
+  return renderedId.startsWith(prefix) ? renderedId.slice(prefix.length) : renderedId;
+}
+
 function injectSourceMeta(
   node: RenderLikeNode,
   input: {
@@ -469,6 +485,9 @@ function injectSourceMeta(
     jsxSource?.fileName,
     input.fallbackFilePath,
   );
+  const magamScope = typeof node.props.__magamScope === 'string'
+    ? node.props.__magamScope as string
+    : undefined;
 
   const isRenderableNode =
     node.type === 'graph-node' ||
@@ -480,7 +499,8 @@ function injectSourceMeta(
     node.type === 'graph-washi-tape';
 
   if (isRenderableNode) {
-    const sourceId = (node.props.id as string | undefined) ?? '';
+    const renderedId = node.props.id as string | undefined;
+    const sourceId = deriveLocalSourceId(renderedId, magamScope);
     const existingSourceMeta = (
       node.props.sourceMeta && typeof node.props.sourceMeta === 'object'
         ? node.props.sourceMeta as Record<string, unknown>
@@ -492,10 +512,13 @@ function injectSourceMeta(
       filePath: sourceFilePath,
       kind: nextScopeId ? 'mindmap' : 'canvas',
       ...(nextScopeId ? { scopeId: nextScopeId } : {}),
+      ...(renderedId ? { renderedId } : {}),
+      ...(magamScope ? { frameScope: magamScope, framePath: magamScope.split('.') } : {}),
     };
   }
 
   delete node.props.__source;
+  delete node.props.__magamScope;
 
   for (const child of node.children ?? []) {
     injectSourceMeta(child, input, nextScopeId);

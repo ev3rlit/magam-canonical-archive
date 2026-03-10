@@ -289,6 +289,7 @@ describe('HTTP Render Server', () => {
       expect(response.status).toBe(200);
       expect(body.graph.children[0].props.sourceMeta).toEqual({
         sourceId: 'root',
+        renderedId: 'root',
         filePath: 'components/auth.tsx',
         kind: 'canvas',
       });
@@ -296,6 +297,50 @@ describe('HTTP Render Server', () => {
         'exists.tsx': expect.stringMatching(/^sha256:/),
         'components/auth.tsx': expect.stringMatching(/^sha256:/),
       });
+    });
+
+    it('should derive frame-local sourceId for scoped reusable nodes', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockTranspileWithMetadata.mockResolvedValue({
+        code: 'transpiled code',
+        inputs: [
+          `${targetDir}/exists.tsx`,
+          `${targetDir}/components/service-frame.tsx`,
+        ],
+      });
+      mockExecute.mockResolvedValue({
+        isOk: () => true,
+        value: {
+          children: [
+            {
+              type: 'graph-shape',
+              props: {
+                id: 'auth.cache.worker',
+                __magamScope: 'auth.cache',
+                __source: { fileName: '/tmp/test/components/service-frame.tsx' },
+              },
+              children: [],
+            },
+          ],
+        },
+      } as any);
+
+      const response = await fetch(`${baseUrl}/render`, {
+        method: 'POST',
+        body: JSON.stringify({ filePath: 'exists.tsx' }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.graph.children[0].props.sourceMeta).toEqual({
+        sourceId: 'worker',
+        renderedId: 'auth.cache.worker',
+        filePath: 'components/service-frame.tsx',
+        kind: 'canvas',
+        frameScope: 'auth.cache',
+        framePath: ['auth', 'cache'],
+      });
+      expect(body.graph.children[0].props.__magamScope).toBeUndefined();
     });
 
     it('should handle render errors', async () => {

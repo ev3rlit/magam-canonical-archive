@@ -66,6 +66,24 @@ describe('WorkspaceClient text edit isolation', () => {
       filePath: 'examples/main.tsx',
     });
   });
+
+  it('frameScope만 있어도 nested frame local id를 편집 대상으로 유도한다', () => {
+    const target = resolveNodeEditTarget(makeNode({
+      id: 'auth.cache.worker',
+      type: 'shape',
+      data: {
+        sourceMeta: {
+          frameScope: 'auth.cache',
+          filePath: 'components/service-frame.tsx',
+        },
+      },
+    }), 'examples/main.tsx');
+
+    expect(target).toEqual({
+      nodeId: 'worker',
+      filePath: 'components/service-frame.tsx',
+    });
+  });
 });
 
 describe('WorkspaceClient attach rejection guidance', () => {

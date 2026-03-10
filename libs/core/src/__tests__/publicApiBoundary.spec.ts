@@ -9,6 +9,10 @@ describe('public API boundary', () => {
     expect(api).toHaveProperty('Shape');
   });
 
+  it('exposes frame for definition-time reusable graph components', () => {
+    expect(api).toHaveProperty('frame');
+  });
+
   it('exposes MindMapEmbed for reusable mind map subtrees', () => {
     expect(api).toHaveProperty('MindMapEmbed');
   });

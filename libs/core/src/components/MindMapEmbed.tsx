@@ -9,6 +9,10 @@ export interface MindMapEmbedProps {
   children?: React.ReactNode;
 }
 
+/**
+ * Low-level MindMap subtree primitive.
+ * Prefer `frame(...)` for new reusable public APIs.
+ */
 export function MindMapEmbed({ id, from, sourceFile, children }: MindMapEmbedProps) {
   const parentEmbed = useMindMapEmbed();
   const scope = parentEmbed ? `${parentEmbed.scope}.${id}` : id;

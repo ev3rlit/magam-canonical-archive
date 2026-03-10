@@ -5,6 +5,10 @@ export interface GroupProps {
   id?: string;
   x?: number;
   y?: number;
+  anchor?: string;
+  position?: 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  gap?: number;
+  align?: 'start' | 'center' | 'end';
   width?: number;
   height?: number;
   [key: string]: any;

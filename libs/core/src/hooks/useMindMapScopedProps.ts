@@ -1,9 +1,11 @@
 import { useMindMapEmbed } from '../context/MindMapEmbedContext';
 import { useInMindMap } from '../context/MindMapContext';
 import type { FromProp } from '../components/Node';
+import { useEmbedScope } from '../context/EmbedScopeContext';
 import { useNodeId } from './useNodeId';
 
 type EmbedMetaProps = {
+  __magamScope?: string;
   __mindmapEmbedScope?: string;
   __mindmapEmbedMountFrom?: FromProp;
   __mindmapEmbedSourceFile?: string;
@@ -38,12 +40,19 @@ export function useMindMapScopedReference(reference: string | undefined): string
 export function useMindMapEmbedMeta(from?: FromProp): EmbedMetaProps {
   const inMindMap = useInMindMap();
   const mindMapEmbed = useMindMapEmbed();
+  const embedScope = useEmbedScope();
+  const magamScope = inMindMap ? mindMapEmbed?.scope : embedScope;
 
-  if (!inMindMap || !mindMapEmbed) {
+  if (!inMindMap) {
+    return magamScope ? { __magamScope: magamScope } : {};
+  }
+
+  if (!mindMapEmbed) {
     return {};
   }
 
   return {
+    ...(magamScope ? { __magamScope: magamScope } : {}),
     __mindmapEmbedScope: mindMapEmbed.scope,
     ...(from === undefined && mindMapEmbed.from !== undefined
       ? { __mindmapEmbedMountFrom: mindMapEmbed.from }
