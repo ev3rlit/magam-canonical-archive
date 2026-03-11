@@ -83,6 +83,15 @@ describe('font hierarchy state', () => {
 });
 
 describe('mind map layout state', () => {
+  it('setGraph defaults layoutType to compact when no explicit layout metadata is provided', () => {
+    useGraphStore.getState().setGraph({
+      nodes: [],
+      edges: [],
+    });
+
+    expect(useGraphStore.getState().layoutType).toBe('compact');
+  });
+
   it('setGraph infers compact layoutType and defaults omitted group spacing to 50', () => {
     useGraphStore.getState().setGraph({
       nodes: [],

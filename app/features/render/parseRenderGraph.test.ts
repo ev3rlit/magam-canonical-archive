@@ -21,6 +21,14 @@ describe('parseRenderGraph mindmap roots', () => {
     });
 
     expect(parsed).not.toBeNull();
+    expect(parsed!.layoutType).toBe('compact');
+    expect(parsed!.mindMapGroups).toEqual([
+      expect.objectContaining({
+        id: 'map',
+        layoutType: 'compact',
+        spacing: 50,
+      }),
+    ]);
     expect(parsed!.nodes.map((n) => n.id)).toEqual(['map.root', 'map.child']);
     expect(parsed!.edges).toHaveLength(1);
     expect(parsed!.edges[0]).toMatchObject({
@@ -46,6 +54,7 @@ describe('parseRenderGraph mindmap roots', () => {
     });
 
     expect(parsed).not.toBeNull();
+    expect(parsed!.layoutType).toBe('compact');
     expect(parsed!.nodes.map((n) => n.id)).toEqual(['map.root-a', 'map.root-b']);
     expect(parsed!.edges).toHaveLength(0);
   });

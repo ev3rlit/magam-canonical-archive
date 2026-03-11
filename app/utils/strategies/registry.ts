@@ -20,5 +20,5 @@ const strategies = {
 } as const;
 
 export function getLayoutStrategy(layoutType: string): LayoutStrategy {
-    return (strategies as Record<string, LayoutStrategy>)[layoutType] ?? strategies.tree;
+    return (strategies as Record<string, LayoutStrategy>)[layoutType] ?? strategies.compact;
 }

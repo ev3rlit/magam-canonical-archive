@@ -35,7 +35,7 @@ export async function newCommand(fileName: string) {
 export default function ${funcName}() {
   return (
     <Canvas>
-      <MindMap layout="tree">
+      <MindMap>
         <Node id="root" label="${baseName}" />
       </MindMap>
     </Canvas>

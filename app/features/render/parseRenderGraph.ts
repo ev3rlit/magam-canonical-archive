@@ -284,7 +284,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             | 'treemap-pack'
             | 'quadrant-pack'
             | 'voronoi-pack') ||
-          'tree';
+          'compact';
         const baseX = child.props.x ?? 0;
         const baseY = child.props.y ?? 0;
 

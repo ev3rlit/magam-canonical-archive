@@ -14,7 +14,7 @@ export interface MindMapProps {
   position?: 'top' | 'bottom' | 'left' | 'right' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   gap?: number;
   align?: 'start' | 'center' | 'end';
-  /** 레이아웃 알고리즘. 기본값 'tree' */
+  /** 레이아웃 알고리즘. 기본값 'compact' */
   layout?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack';
   /** 노드 간 간격 (px). 기본값 50 */
   spacing?: number;
@@ -35,7 +35,7 @@ export const MindMap: React.FC<MindMapProps> = ({
   position,
   gap,
   align,
-  layout = 'tree',
+  layout = 'compact',
   spacing = 50,
   children,
   ...rest

@@ -244,7 +244,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   error: null,
   selectedNodeIds: [],
   needsAutoLayout: false,
-  layoutType: 'tree',
+  layoutType: 'compact',
   canvasBackground: 'dots',
   globalFontFamily: getStoredGlobalFontFamily(),
   canvasFontFamily: undefined,
@@ -279,7 +279,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   }) => set((state) => {
     const nextSourceVersions = sourceVersions ?? state.sourceVersions;
     const normalizedMindMapGroups = mindMapGroups.map(normalizeMindMapGroup);
-    const resolvedLayoutType = layoutType ?? normalizedMindMapGroups[0]?.layoutType ?? 'tree';
+    const resolvedLayoutType = layoutType ?? normalizedMindMapGroups[0]?.layoutType ?? 'compact';
     return {
       nodes,
       edges,
