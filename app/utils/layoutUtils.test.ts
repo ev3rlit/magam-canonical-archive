@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
   areNodesMeasured,
   getMindMapSizeSignature,
+  getMindMapSizeSignaturesByGroup,
   quantizeSize,
 } from './layoutUtils';
 
@@ -55,6 +56,44 @@ describe('layoutUtils relayout helpers', () => {
     expect(signature).toBe('map.child-a:100x50|map.child-b:122x82');
   });
 
+  it('getMindMapSizeSignaturesByGroup keeps per-group signatures stable and isolated', () => {
+    const nodes = [
+      {
+        id: 'group-b.root',
+        width: 180,
+        height: 82,
+        data: { groupId: 'group-b' },
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: 'group-a.child',
+        width: 101,
+        height: 51,
+        data: { groupId: 'group-a' },
+        position: { x: 20, y: 20 },
+      },
+      {
+        id: 'group-a.root',
+        width: 199,
+        height: 99,
+        data: { groupId: 'group-a' },
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: 'canvas-free',
+        width: 640,
+        height: 480,
+        data: {},
+        position: { x: 0, y: 0 },
+      },
+    ];
+
+    expect(Array.from(getMindMapSizeSignaturesByGroup(nodes as any).entries())).toEqual([
+      ['group-a', 'group-a.child:102x52|group-a.root:200x100'],
+      ['group-b', 'group-b.root:180x82'],
+    ]);
+  });
+
   it('getMindMapSizeSignature changes only when quantized size changes', () => {
     const baseNodes = [
       {
@@ -90,5 +129,42 @@ describe('layoutUtils relayout helpers', () => {
 
     expect(jitter).toBe(base);
     expect(changed).not.toBe(base);
+  });
+
+  it('getMindMapSizeSignaturesByGroup honors custom quantization thresholds', () => {
+    const baseNodes = [
+      {
+        id: 'map.root',
+        width: 200,
+        height: 100,
+        data: { groupId: 'map' },
+        position: { x: 0, y: 0 },
+      },
+    ];
+    const jitterNodes = [
+      {
+        id: 'map.root',
+        width: 200.9,
+        height: 100.9,
+        data: { groupId: 'map' },
+        position: { x: 0, y: 0 },
+      },
+    ];
+    const changedNodes = [
+      {
+        id: 'map.root',
+        width: 206,
+        height: 106,
+        data: { groupId: 'map' },
+        position: { x: 0, y: 0 },
+      },
+    ];
+
+    const base = getMindMapSizeSignaturesByGroup(baseNodes as any, { quantizationPx: 4 });
+    const jitter = getMindMapSizeSignaturesByGroup(jitterNodes as any, { quantizationPx: 4 });
+    const changed = getMindMapSizeSignaturesByGroup(changedNodes as any, { quantizationPx: 4 });
+
+    expect(jitter.get('map')).toBe(base.get('map'));
+    expect(changed.get('map')).not.toBe(base.get('map'));
   });
 });

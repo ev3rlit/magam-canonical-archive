@@ -33,12 +33,14 @@ import { useContextMenu } from '@/hooks/useContextMenu';
 import { ExportDialog } from './ExportDialog';
 import { CustomBackground } from './CustomBackground';
 import { resolveFontFamilyCssValue } from '@/utils/fontHierarchy';
-import { areNodesMeasured, getMindMapSizeSignature } from '@/utils/layoutUtils';
+import { areNodesMeasured, getMindMapSizeSignaturesByGroup } from '@/utils/layoutUtils';
 import {
   AUTO_RELAYOUT_COOLDOWN_MS,
   AUTO_RELAYOUT_DEBOUNCE_MS,
   AUTO_RELAYOUT_MAX_ATTEMPTS,
   AUTO_RELAYOUT_QUANTIZATION_PX,
+  getChangedMindMapGroupIds,
+  getEligibleAutoRelayoutGroupIds,
   shouldScheduleAutoRelayout,
 } from './GraphCanvas.relayout';
 import {
@@ -139,11 +141,11 @@ function GraphCanvasContent({
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('pointer');
   const hasLayouted = useRef(false);
   const lastLayoutedGraphId = useRef<string | null>(null);
-  const lastSizeSignatureRef = useRef<string | null>(null);
+  const lastSizeSignaturesRef = useRef<Map<string, string>>(new Map());
   const relayoutCountRef = useRef<Map<string, number>>(new Map());
   const relayoutTimerRef = useRef<number | null>(null);
   const relayoutInFlightRef = useRef(false);
-  const lastRelayoutAtRef = useRef(0);
+  const lastRelayoutAtRef = useRef<Map<string, number>>(new Map());
   const clipboardHistory = useRef<{ past: GraphSnapshot[]; future: GraphSnapshot[] }>({
     past: [],
     future: [],
@@ -289,11 +291,11 @@ function GraphCanvasContent({
       hasLayouted.current = false;
       setIsGraphVisible(false); // Hide graph=
       lastLayoutedGraphId.current = graphId;
-      lastSizeSignatureRef.current = null;
+      lastSizeSignaturesRef.current = new Map();
+      relayoutCountRef.current = new Map();
       relayoutInFlightRef.current = false;
-      lastRelayoutAtRef.current = 0;
+      lastRelayoutAtRef.current = new Map();
       clearPendingRelayout();
-      relayoutCountRef.current.set(graphId, 0);
     }
   }, [clearPendingRelayout, graphId]);
 
@@ -325,7 +327,7 @@ function GraphCanvasContent({
             mindMapGroups,
           });
           if (layoutSucceeded) {
-            lastSizeSignatureRef.current = getMindMapSizeSignature(currentNodes, {
+            lastSizeSignaturesRef.current = getMindMapSizeSignaturesByGroup(currentNodes, {
               quantizationPx: AUTO_RELAYOUT_QUANTIZATION_PX,
             });
           }
@@ -359,22 +361,24 @@ function GraphCanvasContent({
   }, [nodes, nodesInitialized, calculateLayout, graphId, needsAutoLayout, layoutType, mindMapGroups, setNodes, fitView]);
 
   useEffect(() => {
-    const signature = getMindMapSizeSignature(nodes, {
+    const signaturesByGroup = getMindMapSizeSignaturesByGroup(nodes, {
       quantizationPx: AUTO_RELAYOUT_QUANTIZATION_PX,
     });
-    const attemptCount = relayoutCountRef.current.get(graphId) ?? 0;
+    const changedGroupIds = getChangedMindMapGroupIds(
+      signaturesByGroup,
+      lastSizeSignaturesRef.current,
+    );
     const shouldSchedule = shouldScheduleAutoRelayout({
       needsAutoLayout,
       hasLayouted: hasLayouted.current,
       nodesInitialized,
       nodesMeasured: areNodesMeasured(nodes),
-      signature,
-      lastSignature: lastSizeSignatureRef.current,
+      changedGroupIds,
       inFlight: relayoutInFlightRef.current,
-      attemptCount,
+      attemptCounts: relayoutCountRef.current,
       maxAttempts: AUTO_RELAYOUT_MAX_ATTEMPTS,
       now: Date.now(),
-      lastRelayoutAt: lastRelayoutAtRef.current,
+      lastRelayoutAts: lastRelayoutAtRef.current,
       cooldownMs: AUTO_RELAYOUT_COOLDOWN_MS,
     });
 
@@ -393,20 +397,27 @@ function GraphCanvasContent({
         return;
       }
 
-      const currentAttempt = relayoutCountRef.current.get(scheduledGraphId) ?? 0;
-      if (currentAttempt >= AUTO_RELAYOUT_MAX_ATTEMPTS) {
-        return;
-      }
-
       const latestNodes = useGraphStore.getState().nodes;
       if (!areNodesMeasured(latestNodes)) {
         return;
       }
 
-      const latestSignature = getMindMapSizeSignature(latestNodes, {
+      const latestSignaturesByGroup = getMindMapSizeSignaturesByGroup(latestNodes, {
         quantizationPx: AUTO_RELAYOUT_QUANTIZATION_PX,
       });
-      if (!latestSignature || latestSignature === lastSizeSignatureRef.current) {
+      const changedLatestGroupIds = getChangedMindMapGroupIds(
+        latestSignaturesByGroup,
+        lastSizeSignaturesRef.current,
+      );
+      const eligibleGroupIds = getEligibleAutoRelayoutGroupIds({
+        changedGroupIds: changedLatestGroupIds,
+        attemptCounts: relayoutCountRef.current,
+        maxAttempts: AUTO_RELAYOUT_MAX_ATTEMPTS,
+        now: Date.now(),
+        lastRelayoutAts: lastRelayoutAtRef.current,
+        cooldownMs: AUTO_RELAYOUT_COOLDOWN_MS,
+      });
+      if (eligibleGroupIds.length === 0) {
         return;
       }
 
@@ -420,9 +431,13 @@ function GraphCanvasContent({
         if (!success) {
           return;
         }
-        lastSizeSignatureRef.current = latestSignature;
-        relayoutCountRef.current.set(scheduledGraphId, currentAttempt + 1);
-        lastRelayoutAtRef.current = Date.now();
+        lastSizeSignaturesRef.current = latestSignaturesByGroup;
+        const completedAt = Date.now();
+        eligibleGroupIds.forEach((groupId) => {
+          const currentAttempt = relayoutCountRef.current.get(groupId) ?? 0;
+          relayoutCountRef.current.set(groupId, currentAttempt + 1);
+          lastRelayoutAtRef.current.set(groupId, completedAt);
+        });
       } finally {
         relayoutInFlightRef.current = false;
       }

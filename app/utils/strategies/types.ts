@@ -1,5 +1,35 @@
 import { Node, Edge } from 'reactflow';
 
+export type LayoutDirection = 'right' | 'left' | 'down' | 'up';
+
+export interface LayoutPoint {
+    x: number;
+    y: number;
+}
+
+export interface LayoutBounds {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    width: number;
+    height: number;
+}
+
+export interface SiblingPlacementFrame {
+    parentId: string;
+    childOrder: string[];
+    placements: Map<string, LayoutPoint>;
+    clusterWidth: number;
+    clusterHeight: number;
+    spreadFactor: number;
+}
+
+export interface LayoutGroupResult {
+    positions: Map<string, LayoutPoint>;
+    placementFrames: SiblingPlacementFrame[];
+}
+
 export interface LayoutContext {
     nodes: Node[];
     edges: Edge[];
@@ -8,5 +38,6 @@ export interface LayoutContext {
 }
 
 export interface LayoutStrategy {
-    layoutGroup(context: LayoutContext): Promise<Map<string, { x: number; y: number }>>;
+    layoutGroup(context: LayoutContext): Promise<Map<string, LayoutPoint>>;
+    layoutGroupDetailed?(context: LayoutContext): Promise<LayoutGroupResult>;
 }

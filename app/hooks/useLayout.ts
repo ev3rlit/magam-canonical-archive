@@ -1,9 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
 import { useReactFlow } from 'reactflow';
+import type { Edge, Node } from 'reactflow';
 import type { MindMapGroup } from '@/store/graph';
 import { getLayoutStrategy } from '@/utils/strategies';
 import { runElkLayout } from '@/utils/elkUtils';
 import { calculateGroupBoundingBox } from '@/utils/layoutUtils';
+import type { LayoutGroupResult } from '@/utils/strategies/types';
 import {
     buildGroupMetaNodes,
     calculateGlobalGroupLayout,
@@ -23,8 +25,59 @@ interface UseLayoutOptions {
     fitViewOnComplete?: boolean;
 }
 
+export const DEFAULT_LAYOUT_SPACING = 50;
+
 export function canStartLayout(inFlight: boolean): boolean {
     return !inFlight;
+}
+
+export function resolveLayoutSpacing(spacing?: number): number {
+    return typeof spacing === 'number' && Number.isFinite(spacing)
+        ? spacing
+        : DEFAULT_LAYOUT_SPACING;
+}
+
+export function resolveGroupLayoutSpacing(groupSpacing?: number, fallbackSpacing?: number): number {
+    return resolveLayoutSpacing(groupSpacing ?? fallbackSpacing);
+}
+
+export interface MindMapGroupLayoutExecution extends LayoutGroupResult {
+    groupId: string;
+    spacing: number;
+}
+
+export async function calculateMindMapGroupLayout(input: {
+    group: MindMapGroup;
+    nodes: Node[];
+    edges: Edge[];
+    fallbackSpacing?: number;
+}): Promise<MindMapGroupLayoutExecution | null> {
+    if (input.nodes.length === 0) {
+        return null;
+    }
+
+    const strategy = getLayoutStrategy(input.group.layoutType);
+    const spacing = resolveGroupLayoutSpacing(input.group.spacing, input.fallbackSpacing);
+    const context = {
+        nodes: input.nodes,
+        edges: input.edges,
+        spacing,
+        density: input.group.density,
+    };
+
+    const detailedResult = typeof strategy.layoutGroupDetailed === 'function'
+        ? await strategy.layoutGroupDetailed(context)
+        : {
+            positions: await strategy.layoutGroup(context),
+            placementFrames: [],
+        };
+
+    return {
+        groupId: input.group.id,
+        spacing,
+        positions: detailedResult.positions,
+        placementFrames: detailedResult.placementFrames,
+    };
 }
 
 export function useLayout() {
@@ -68,16 +121,16 @@ export function useLayout() {
 
                         console.log(`[ELK Layout]   Group "${group.id}": ${groupNodes.length} nodes, type: ${group.layoutType}`);
 
-                        const strategy = getLayoutStrategy(group.layoutType);
-                        const positions = await strategy.layoutGroup({
+                        const groupLayout = await calculateMindMapGroupLayout({
+                            group,
                             nodes: groupNodes,
                             edges: groupEdges,
-                            spacing: group.spacing || 60,
-                            density: group.density,
+                            fallbackSpacing: options.spacing,
                         });
+                        if (!groupLayout) continue;
 
                         // Store positions (relative to group origin 0,0)
-                        positions.forEach((pos, nodeId) => {
+                        groupLayout.positions.forEach((pos, nodeId) => {
                             internalPositions.set(nodeId, pos);
                         });
                     }
@@ -200,7 +253,7 @@ export function useLayout() {
                     nodes,
                     edges,
                     options.direction || 'RIGHT',
-                    options.spacing || 60
+                    resolveLayoutSpacing(options.spacing)
                 );
 
                 const newNodes = nodes.map(node => {

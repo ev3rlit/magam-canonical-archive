@@ -50,6 +50,64 @@ describe('parseRenderGraph mindmap roots', () => {
     expect(parsed!.edges).toHaveLength(0);
   });
 
+  it('preserves compact layout metadata and defaults spacing for multi-root mindmaps', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-mindmap',
+            props: { id: 'map', layout: 'compact' },
+            children: [
+              { type: 'graph-node', props: { id: 'root-a', text: 'Root A' }, children: [] },
+              { type: 'graph-node', props: { id: 'root-b', text: 'Root B' }, children: [] },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.needsAutoLayout).toBe(true);
+    expect(parsed!.layoutType).toBe('compact');
+    expect(parsed!.mindMapGroups).toEqual([
+      expect.objectContaining({
+        id: 'map',
+        layoutType: 'compact',
+        basePosition: { x: 0, y: 0 },
+        spacing: 50,
+      }),
+    ]);
+    expect(parsed!.nodes.map((node) => node.id)).toEqual(['map.root-a', 'map.root-b']);
+    expect(parsed!.edges).toHaveLength(0);
+  });
+
+  it('preserves explicit spacing for compact mindmap groups', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-mindmap',
+            props: { id: 'map', layout: 'compact', spacing: 72 },
+            children: [
+              { type: 'graph-node', props: { id: 'root', text: 'Root' }, children: [] },
+              { type: 'graph-node', props: { id: 'child', from: 'root', text: 'Child' }, children: [] },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.layoutType).toBe('compact');
+    expect(parsed!.mindMapGroups).toEqual([
+      expect.objectContaining({
+        id: 'map',
+        layoutType: 'compact',
+        spacing: 72,
+      }),
+    ]);
+  });
+
   it('preserves embedded subtree namespaces within one mindmap', () => {
     const parsed = parseRenderGraph({
       graph: {

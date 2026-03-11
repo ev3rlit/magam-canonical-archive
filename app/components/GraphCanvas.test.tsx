@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { shouldScheduleAutoRelayout } from './GraphCanvas.relayout';
+import {
+  AUTO_RELAYOUT_MAX_ATTEMPTS,
+  getChangedMindMapGroupIds,
+  getEligibleAutoRelayoutGroupIds,
+  shouldScheduleAutoRelayout,
+} from './GraphCanvas.relayout';
 import { shouldCommitDragStop } from './GraphCanvas.drag';
 
 describe('GraphCanvas auto relayout policy', () => {
@@ -8,13 +13,12 @@ describe('GraphCanvas auto relayout policy', () => {
     hasLayouted: true,
     nodesInitialized: true,
     nodesMeasured: true,
-    signature: 'map.a:100x50',
-    lastSignature: 'map.a:98x50',
+    changedGroupIds: ['map-a'],
     inFlight: false,
-    attemptCount: 0,
-    maxAttempts: 3,
+    attemptCounts: new Map<string, number>(),
+    maxAttempts: AUTO_RELAYOUT_MAX_ATTEMPTS,
     now: 1_000,
-    lastRelayoutAt: 0,
+    lastRelayoutAts: new Map<string, number>(),
     cooldownMs: 250,
   };
 
@@ -22,11 +26,11 @@ describe('GraphCanvas auto relayout policy', () => {
     expect(shouldScheduleAutoRelayout(baseInput)).toBe(true);
   });
 
-  it('does not schedule when signature is unchanged', () => {
+  it('does not schedule when no group signature changed', () => {
     expect(
       shouldScheduleAutoRelayout({
         ...baseInput,
-        lastSignature: 'map.a:100x50',
+        changedGroupIds: [],
       }),
     ).toBe(false);
   });
@@ -44,7 +48,7 @@ describe('GraphCanvas auto relayout policy', () => {
     expect(
       shouldScheduleAutoRelayout({
         ...baseInput,
-        attemptCount: 3,
+        attemptCounts: new Map([['map-a', AUTO_RELAYOUT_MAX_ATTEMPTS]]),
       }),
     ).toBe(false);
   });
@@ -54,9 +58,55 @@ describe('GraphCanvas auto relayout policy', () => {
       shouldScheduleAutoRelayout({
         ...baseInput,
         now: 1_200,
-        lastRelayoutAt: 1_000,
+        lastRelayoutAts: new Map([['map-a', 1_000]]),
       }),
     ).toBe(false);
+  });
+
+  it('keeps relayout eligibility isolated per changed group', () => {
+    expect(
+      shouldScheduleAutoRelayout({
+        ...baseInput,
+        changedGroupIds: ['map-a', 'map-b'],
+        attemptCounts: new Map([['map-a', AUTO_RELAYOUT_MAX_ATTEMPTS]]),
+      }),
+    ).toBe(true);
+  });
+});
+
+describe('GraphCanvas auto relayout group helpers', () => {
+  it('detects only the groups whose quantized signatures changed', () => {
+    expect(
+      getChangedMindMapGroupIds(
+        new Map([
+          ['map-a', 'map-a.root:200x100'],
+          ['map-b', 'map-b.root:180x80'],
+        ]),
+        new Map([
+          ['map-a', 'map-a.root:198x100'],
+          ['map-b', 'map-b.root:180x80'],
+        ]),
+      ),
+    ).toEqual(['map-a']);
+  });
+
+  it('returns only groups that still have retry budget and are outside cooldown', () => {
+    expect(
+      getEligibleAutoRelayoutGroupIds({
+        changedGroupIds: ['map-a', 'map-b', 'map-c'],
+        attemptCounts: new Map([
+          ['map-a', AUTO_RELAYOUT_MAX_ATTEMPTS],
+          ['map-b', 1],
+        ]),
+        maxAttempts: AUTO_RELAYOUT_MAX_ATTEMPTS,
+        now: 1_000,
+        lastRelayoutAts: new Map([
+          ['map-b', 900],
+          ['map-c', 100],
+        ]),
+        cooldownMs: 250,
+      }),
+    ).toEqual(['map-c']);
   });
 });
 

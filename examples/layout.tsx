@@ -5,13 +5,13 @@ import { Canvas, MindMap, Node, Markdown } from '@magam/core';
 
 // Depth-level background colors (Tailwind classes)
 const depthCls = [
-  'bg-rose-500 text-white',    // depth 0: root
-  'bg-violet-500 text-white',  // depth 1: fe, be, infra, mobile, ai
-  'bg-cyan-500 text-white',    // depth 2
-  'bg-yellow-400 text-black',  // depth 3
+'bg-rose-500 text-white', // depth 0: root
+'bg-violet-500 text-white', // depth 1: fe, be, infra, mobile, ai
+'bg-cyan-500 text-white', // depth 2
+'bg-yellow-400 text-black' // depth 3
 ] as const;
 
-function ProjectNodes({ label, density }: { label: string; density?: number }) {
+function ProjectNodes({ label, density }: {label: string;density?: number;}) {
   return (
     <>
       {/* Depth 0: Root — large markdown block */}
@@ -99,16 +99,16 @@ GitHub Actions
 - Preview on PR`}</Markdown>
       </Node>
 
-      <Node id="infra-db" from="infra" className={depthCls[2]}>
+      <Node id="infra-db" from="infra" className={depthCls[2]} x={907.6116366538595} y={6598.108483397368}>
         <Markdown>{`### Database
 PostgreSQL 16 + pgvector`}</Markdown>
       </Node>
       <Node id="infra-db-migrations" from="infra-db" className={depthCls[3]}>Drizzle Migrations</Node>
       <Node id="infra-db-replica" from="infra-db" className={depthCls[3]}>Read Replica</Node>
 
-      <Node id="infra-cache" from="infra" className={depthCls[2]}>Redis Cache</Node>
+      <Node id="infra-cache" from="infra" className={depthCls[2]} x={13729.5} y={5298.666666666666}>Redis Cache</Node>
 
-      <Node id="infra-monitoring" from="infra" className={depthCls[2]}>
+      <Node id="infra-monitoring" from="infra" className={depthCls[2]} x={932} y={6987.833333333333}>
         <Markdown>{`### Monitoring
 - Grafana dashboards
 - PagerDuty alerts
@@ -128,12 +128,12 @@ FCM + APNs`}</Markdown>
       </Node>
 
       {/* ─── Branch 5: AI (depth 1, leaf only) ─── */}
-      <Node id="ai" from="root" className={depthCls[1]}>
+      <Node id="ai" from="root" className={depthCls[1]} x={1226.432810138788} y={6331.01739846993}>
         <Markdown>{`## AI Features
 RAG pipeline, embeddings, Claude API`}</Markdown>
       </Node>
-    </>
-  );
+    </>);
+
 }
 
 export default function LayoutComparison() {
@@ -147,8 +147,9 @@ export default function LayoutComparison() {
         <ProjectNodes label='layout="bidirectional"' />
       </MindMap>
 
+      {/* Newly stabilized dense compact layout */}
       <MindMap id="compact-map" layout="compact" x={0} y={1800}>
-        <ProjectNodes label='layout="compact"' />
+        <ProjectNodes label='layout="compact" (dense)' />
       </MindMap>
 
       <MindMap id="compact-bidir-map" layout="compact-bidir" x={0} y={2700}>
@@ -167,9 +168,9 @@ export default function LayoutComparison() {
         <ProjectNodes label='layout="quadrant-pack"' density={1.0} />
       </MindMap>
 
-      <MindMap id="voronoi-pack-map" layout="voronoi-pack"  x={0} y={6300}>
+      <MindMap id="voronoi-pack-map" layout="voronoi-pack" x={0} y={6300}>
         <ProjectNodes label='layout="voronoi-pack"' density={0.5} />
       </MindMap>
-    </Canvas>
-  );
+    </Canvas>);
+
 }

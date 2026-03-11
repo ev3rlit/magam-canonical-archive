@@ -1,30 +1,35 @@
-import { flextree } from 'd3-flextree';
-import { hierarchy } from 'd3-hierarchy';
-import { Node, Edge } from 'reactflow';
-import { findRootNode, getNodeDimensions } from '../layoutUtils';
+import type { Edge, Node } from 'reactflow';
+import { getNodeDimensions } from '../layoutUtils';
+import { runCompactLayout } from './compactPlacement';
+import type { LayoutDirection, LayoutPoint } from './types';
 
-interface HierarchyDatum {
+export interface HierarchyDatum {
     id: string;
     width: number;
     height: number;
     children?: HierarchyDatum[];
 }
 
-/**
- * Build a nested hierarchy from flat nodes/edges.
- * Uses BFS from root to construct the tree.
- */
-export function buildHierarchy(nodes: Node[], edges: Edge[]): HierarchyDatum | null {
-    const root = findRootNode(nodes, edges);
-    if (!root) return null;
-
+export function buildHierarchy(nodes: Node[], edges: Edge[], rootId?: string): HierarchyDatum | null {
     const childrenMap = new Map<string, string[]>();
-    edges.forEach(e => {
-        if (!childrenMap.has(e.source)) childrenMap.set(e.source, []);
-        childrenMap.get(e.source)!.push(e.target);
+    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+    const validEdges = edges.filter((edge) => nodeMap.has(edge.source) && nodeMap.has(edge.target));
+    const incomingCount = new Map<string, number>();
+
+    nodes.forEach((node) => {
+        childrenMap.set(node.id, []);
+        incomingCount.set(node.id, 0);
     });
 
-    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    validEdges.forEach((edge) => {
+        childrenMap.get(edge.source)?.push(edge.target);
+        incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+    });
+
+    const resolvedRootId = rootId ?? nodes.find((node) => (incomingCount.get(node.id) ?? 0) === 0)?.id;
+    if (!resolvedRootId) {
+        return null;
+    }
 
     function buildNode(id: string): HierarchyDatum {
         const node = nodeMap.get(id)!;
@@ -38,51 +43,55 @@ export function buildHierarchy(nodes: Node[], edges: Edge[]): HierarchyDatum | n
         };
     }
 
-    return buildNode(root.id);
+    return buildNode(resolvedRootId);
 }
 
-/**
- * Run flextree layout and return positions as Map<id, {x, y}>.
- *
- * d3-flextree lays out top-to-bottom (x = breadth, y = depth).
- * Magam uses left-to-right, so we swap:
- *   - nodeSize: [height+spacing, width+spacing] (breadth = node height, depth = node width)
- *   - result: flextree.x → final y, flextree.y → final x
- */
+export function buildForest(nodes: Node[], edges: Edge[]): HierarchyDatum[] {
+    if (nodes.length === 0) {
+        return [];
+    }
+
+    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
+    const incomingCount = new Map<string, number>(nodes.map((node) => [node.id, 0]));
+
+    edges
+        .filter((edge) => nodeMap.has(edge.source) && nodeMap.has(edge.target))
+        .forEach((edge) => {
+            incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1);
+        });
+
+    const roots = nodes
+        .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
+        .map((node) => node.id);
+
+    const rootIds = roots.length > 0 ? roots : [nodes[0].id];
+    const built = new Map<string, HierarchyDatum>();
+
+    rootIds.forEach((candidateRootId) => {
+        const hierarchy = buildHierarchy(nodes, edges, candidateRootId);
+        if (hierarchy) {
+            built.set(candidateRootId, hierarchy);
+        }
+    });
+
+    nodes.forEach((node) => {
+        if (built.has(node.id)) {
+            return;
+        }
+        const hierarchy = buildHierarchy(nodes, edges, node.id);
+        if (hierarchy) {
+            built.set(node.id, hierarchy);
+        }
+    });
+
+    return Array.from(built.values());
+}
+
 export function runFlextreeLayout(
     nodes: Node[],
     edges: Edge[],
     spacing: number,
-    direction: 'right' | 'left' | 'down' | 'up' = 'right',
-): Map<string, { x: number; y: number }> {
-    const rootDatum = buildHierarchy(nodes, edges);
-    if (!rootDatum) return new Map();
-
-    const verticalGap = Math.round(spacing * 0.3);
-
-    const tree = flextree<HierarchyDatum>({
-        nodeSize: (node) => [
-            node.data.height + verticalGap,  // breadth (tighter vertical gap between siblings)
-            node.data.width + spacing,        // depth (horizontal spacing between layers)
-        ],
-    });
-
-    const root = hierarchy<HierarchyDatum>(rootDatum);
-    const laid = tree(root);
-
-    const positions = new Map<string, { x: number; y: number }>();
-    laid.each((node) => {
-        // flextree: x = breadth, y = depth (top-to-bottom)
-        // Transform based on desired direction:
-        let x: number, y: number;
-        switch (direction) {
-            case 'right': x = node.y;  y = node.x;  break; // depth→x, breadth→y (default)
-            case 'left':  x = -node.y; y = node.x;  break; // mirror x
-            case 'down':  x = node.x;  y = node.y;  break; // no swap
-            case 'up':    x = node.x;  y = -node.y; break; // mirror y
-        }
-        positions.set(node.data.id, { x, y });
-    });
-
-    return positions;
+    direction: LayoutDirection = 'right',
+): Map<string, LayoutPoint> {
+    return runCompactLayout(nodes, edges, spacing, direction);
 }

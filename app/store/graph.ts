@@ -212,6 +212,13 @@ export const getDefaultTabTitle = (pageId: string): string => {
   return parts.length > 0 ? parts[parts.length - 1] : pageId;
 };
 
+const DEFAULT_MINDMAP_SPACING = 50;
+
+const normalizeMindMapGroup = (group: MindMapGroup): MindMapGroup => ({
+  ...group,
+  spacing: group.spacing ?? DEFAULT_MINDMAP_SPACING,
+});
+
 const selectLeastRecentlyUsedTab = (tabs: TabState[]): TabState | null => {
   return tabs.reduce<TabState | null>((acc, tab) => {
     if (!acc) return tab;
@@ -263,7 +270,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     nodes,
     edges,
     needsAutoLayout = false,
-    layoutType = 'tree',
+    layoutType,
     mindMapGroups = [],
     canvasBackground,
     canvasFontFamily,
@@ -271,12 +278,14 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     sourceVersions,
   }) => set((state) => {
     const nextSourceVersions = sourceVersions ?? state.sourceVersions;
+    const normalizedMindMapGroups = mindMapGroups.map(normalizeMindMapGroup);
+    const resolvedLayoutType = layoutType ?? normalizedMindMapGroups[0]?.layoutType ?? 'tree';
     return {
       nodes,
       edges,
       needsAutoLayout,
-      layoutType,
-      mindMapGroups,
+      layoutType: resolvedLayoutType,
+      mindMapGroups: normalizedMindMapGroups,
       graphId: uuidv4(),
       ...(canvasBackground ? { canvasBackground } : {}),
       ...(isFontFamilyPreset(canvasFontFamily) ? { canvasFontFamily } : { canvasFontFamily: undefined }),

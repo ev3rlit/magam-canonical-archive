@@ -72,20 +72,60 @@ export function quantizeSize(value: number, quantizationPx = 2): number {
     return Math.round(value / unit) * unit;
 }
 
+function getMindMapGroupId(node: Node): string | null {
+    const groupId = (node as NodeWithGroup).data?.groupId;
+    if (typeof groupId !== 'string' || groupId.length === 0) {
+        return null;
+    }
+    return groupId;
+}
+
+function getQuantizedMindMapSizeEntry(node: Node, quantizationPx: number): string {
+    const { width, height } = getNodeDimensions(node);
+    return `${node.id}:${quantizeSize(width, quantizationPx)}x${quantizeSize(height, quantizationPx)}`;
+}
+
+export function getMindMapSizeSignaturesByGroup(
+    nodes: Node[],
+    options?: { quantizationPx?: number },
+): Map<string, string> {
+    const quantizationPx = options?.quantizationPx ?? 2;
+    const entriesByGroup = new Map<string, string[]>();
+
+    nodes.forEach((node) => {
+        const groupId = getMindMapGroupId(node);
+        if (!groupId) {
+            return;
+        }
+
+        const nextEntry = getQuantizedMindMapSizeEntry(node, quantizationPx);
+        const entries = entriesByGroup.get(groupId);
+        if (entries) {
+            entries.push(nextEntry);
+            return;
+        }
+
+        entriesByGroup.set(groupId, [nextEntry]);
+    });
+
+    return new Map(
+        [...entriesByGroup.entries()]
+            .sort(([leftGroupId], [rightGroupId]) => leftGroupId.localeCompare(rightGroupId))
+            .map(([groupId, entries]) => [
+                groupId,
+                entries.sort((leftEntry, rightEntry) => leftEntry.localeCompare(rightEntry)).join('|'),
+            ]),
+    );
+}
+
 export function getMindMapSizeSignature(
     nodes: Node[],
     options?: { quantizationPx?: number },
 ): string {
     const quantizationPx = options?.quantizationPx ?? 2;
     const entries = nodes
-        .filter((node) => {
-            const groupId = (node as NodeWithGroup).data?.groupId;
-            return typeof groupId === 'string' && groupId.length > 0;
-        })
-        .map((node) => {
-            const { width, height } = getNodeDimensions(node);
-            return `${node.id}:${quantizeSize(width, quantizationPx)}x${quantizeSize(height, quantizationPx)}`;
-        })
+        .filter((node) => getMindMapGroupId(node) !== null)
+        .map((node) => getQuantizedMindMapSizeEntry(node, quantizationPx))
         .sort((a, b) => a.localeCompare(b));
     return entries.join('|');
 }
