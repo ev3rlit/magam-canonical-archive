@@ -20,6 +20,7 @@ export interface SiblingPlacementFrame {
     parentId: string;
     childOrder: string[];
     placements: Map<string, LayoutPoint>;
+    directions: Map<string, LayoutDirection>;
     clusterWidth: number;
     clusterHeight: number;
     spreadFactor: number;

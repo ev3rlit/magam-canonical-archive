@@ -34,12 +34,20 @@ interface PlacedSubtree {
     layout: SubtreeLayout;
     x: number;
     y: number;
+    direction?: LayoutDirection;
 }
 
 interface PlacementOptions {
     baseX: number;
     anchorCenterY: number;
     verticalGap: number;
+    fanStep: number;
+}
+
+interface VerticalPlacementOptions {
+    baseY: number;
+    anchorCenterX: number;
+    horizontalGap: number;
     fanStep: number;
 }
 
@@ -52,6 +60,7 @@ interface CardinalPlacementOptions {
 }
 
 type SectorDirection = 'right' | 'left' | 'up' | 'down';
+type NativeLayoutDirection = 'right' | 'down';
 
 interface SectorEntry {
     layout: SubtreeLayout;
@@ -98,7 +107,7 @@ export function runCompactLayoutDetailed(
     const placementFrames: SiblingPlacementFrame[] = [];
 
     for (const rootId of graph.rootIds) {
-        const layout = layoutSubtree(rootId, graph, cache, spacing, placementFrames, true);
+        const layout = layoutSubtree(rootId, graph, cache, spacing, placementFrames, 'right', true);
         subtreeLayouts.push(layout);
         layout.positions.forEach((_, nodeId) => coveredNodeIds.add(nodeId));
     }
@@ -107,7 +116,7 @@ export function runCompactLayoutDetailed(
         if (coveredNodeIds.has(node.id)) {
             continue;
         }
-        const layout = layoutSubtree(node.id, graph, cache, spacing, placementFrames, true);
+        const layout = layoutSubtree(node.id, graph, cache, spacing, placementFrames, 'right', true);
         subtreeLayouts.push(layout);
         layout.positions.forEach((_, nodeId) => coveredNodeIds.add(nodeId));
     }
@@ -115,7 +124,7 @@ export function runCompactLayoutDetailed(
     const forestOutwardGap = Math.max(12, Math.round(sanitizeSpacing(spacing) * ROOT_CLUSTER_GAP_RATIO));
     const forestFanStep = getFanStep(subtreeLayouts, spacing, ROOT_CLUSTER_FANOUT_RATIO);
     const forestPlacements = subtreeLayouts.length > 1
-        ? placeSiblingGroup(subtreeLayouts, {
+        ? placeRightwardSiblingGroup(subtreeLayouts, {
             baseX: forestOutwardGap,
             anchorCenterY: 0,
             verticalGap: getVerticalGap(spacing),
@@ -194,11 +203,28 @@ function layoutSubtree(
     cache: Map<string, SubtreeLayout>,
     spacing: number,
     placementFrames: SiblingPlacementFrame[],
+    direction: LayoutDirection,
     isTopLevelRoot: boolean,
 ): SubtreeLayout {
-    const cached = cache.get(rootId);
+    const cacheKey = getLayoutCacheKey(rootId, direction, isTopLevelRoot);
+    const cached = cache.get(cacheKey);
     if (cached) {
         return cached;
+    }
+
+    if (direction === 'left' || direction === 'up') {
+        const baseLayout = layoutSubtree(
+            rootId,
+            graph,
+            cache,
+            spacing,
+            placementFrames,
+            direction === 'left' ? 'right' : 'down',
+            isTopLevelRoot,
+        );
+        const mirroredLayout = mirrorSubtreeLayout(baseLayout, direction);
+        cache.set(cacheKey, mirroredLayout);
+        return mirroredLayout;
     }
 
     const node = graph.nodeMap.get(rootId);
@@ -211,35 +237,51 @@ function layoutSubtree(
             rects: [],
             bounds: emptyBounds(),
         };
-        cache.set(rootId, emptyLayout);
+        cache.set(cacheKey, emptyLayout);
         return emptyLayout;
     }
 
     const { width, height } = getNodeDimensions(node);
     const childIds = graph.childrenMap.get(rootId) ?? [];
-    const childLayouts = childIds.map((childId) =>
-        layoutSubtree(childId, graph, cache, spacing, placementFrames, false),
-    );
 
     const positions = new Map<string, LayoutPoint>([[rootId, { x: 0, y: 0 }]]);
     const rects: LayoutRect[] = [{ id: rootId, x: 0, y: 0, width, height }];
 
-    if (childLayouts.length > 0) {
+    if (childIds.length > 0) {
+        const useCardinalPlacement = isTopLevelRoot && childIds.length >= 4;
+        const childEntries = useCardinalPlacement
+            ? buildBalancedCardinalEntries(childIds, graph, cache, spacing, placementFrames)
+            : childIds.map((childId, order) => ({
+                layout: layoutSubtree(childId, graph, cache, spacing, placementFrames, direction, false),
+                direction,
+                order,
+            }));
+        const childLayouts = childEntries.map((entry) => entry.layout);
         const fanStep = getFanStep(childLayouts, spacing, FANOUT_RATIO);
-        const placements = isTopLevelRoot && childLayouts.length > 1
-            ? placeCardinalGroup(childLayouts, {
+        const placements = useCardinalPlacement
+            ? placeCardinalGroup(childEntries, {
                 parentWidth: width,
                 parentHeight: height,
                 outwardGap: getHorizontalGap(spacing),
                 crossGap: getVerticalGap(spacing),
                 spacing,
             })
-            : placeSiblingGroup(childLayouts, {
-                baseX: width + getHorizontalGap(spacing),
-                anchorCenterY: height / 2,
-                verticalGap: getVerticalGap(spacing),
-                fanStep,
-            });
+            : placeDirectedSiblingGroup(
+                childLayouts,
+                direction,
+                {
+                    baseX: width + getHorizontalGap(spacing),
+                    anchorCenterY: height / 2,
+                    verticalGap: getVerticalGap(spacing),
+                    fanStep,
+                },
+                {
+                    baseY: height + getHorizontalGap(spacing),
+                    anchorCenterX: width / 2,
+                    horizontalGap: getVerticalGap(spacing),
+                    fanStep,
+                },
+            );
 
         for (const placement of placements) {
             for (const [nodeId, point] of placement.layout.positions) {
@@ -258,7 +300,7 @@ function layoutSubtree(
                 placements,
                 getSpreadFactor(
                     childLayouts,
-                    isTopLevelRoot ? getHorizontalGap(spacing) : fanStep,
+                    useCardinalPlacement ? getHorizontalGap(spacing) : fanStep,
                     spacing,
                 ),
             ),
@@ -274,71 +316,186 @@ function layoutSubtree(
         bounds: calculateBounds(rects),
     };
 
-    cache.set(rootId, layout);
+    cache.set(cacheKey, layout);
     return layout;
 }
 
-function placeCardinalGroup(
-    layouts: SubtreeLayout[],
-    options: CardinalPlacementOptions,
-): PlacedSubtree[] {
-    if (layouts.length === 0) {
-        return [];
-    }
+function getLayoutCacheKey(
+    rootId: string,
+    direction: LayoutDirection,
+    isTopLevelRoot: boolean,
+): string {
+    return `${rootId}:${direction}:${isTopLevelRoot ? 'root' : 'subtree'}`;
+}
 
-    if (layouts.length === 1) {
-        return [{ layout: layouts[0], x: 0, y: 0 }];
-    }
+function buildBalancedCardinalEntries(
+    childIds: string[],
+    graph: GraphIndex,
+    cache: Map<string, SubtreeLayout>,
+    spacing: number,
+    placementFrames: SiblingPlacementFrame[],
+): SectorEntry[] {
+    const evaluatedChildren = childIds.map((childId, order) => ({
+        childId,
+        order,
+        layout: layoutSubtree(childId, graph, cache, spacing, placementFrames, 'right', false),
+    }));
+    const directionAssignments = assignBalancedCardinalDirections(evaluatedChildren);
 
-    const directions: SectorDirection[] = ['right', 'left', 'up', 'down'];
-    const buckets = new Map<SectorDirection, SectorEntry[]>(
-        directions.map((direction) => [direction, []]),
-    );
-    const bucketLoad = new Map<SectorDirection, number>(
+    return evaluatedChildren.map((entry) => ({
+        layout: layoutSubtree(
+            entry.childId,
+            graph,
+            cache,
+            spacing,
+            placementFrames,
+            directionAssignments.get(entry.childId) ?? 'right',
+            false,
+        ),
+        direction: directionAssignments.get(entry.childId) ?? 'right',
+        order: entry.order,
+    }));
+}
+
+function assignBalancedCardinalDirections(
+    entries: Array<{ childId: string; order: number; layout: SubtreeLayout }>,
+): Map<string, SectorDirection> {
+    const directions: SectorDirection[] = ['up', 'right', 'down', 'left'];
+    const directionCounts = new Map<SectorDirection, number>(
         directions.map((direction) => [direction, 0]),
     );
+    const directionLoads = new Map<SectorDirection, number>(
+        directions.map((direction) => [direction, 0]),
+    );
+    const assignments = new Map<string, SectorDirection>();
+    const sortedEntries = [...entries].sort(
+        (left, right) =>
+            getLayoutWeight(right.layout) - getLayoutWeight(left.layout)
+            || left.order - right.order,
+    );
 
-    const sortedLayouts = [...layouts]
-        .map((layout, order) => ({ layout, order }))
-        .sort(
-            ({ layout: leftLayout }, { layout: rightLayout }) =>
-                (rightLayout.bounds.width * rightLayout.bounds.height)
-                - (leftLayout.bounds.width * leftLayout.bounds.height),
+    for (const entry of sortedEntries) {
+        const minimumCount = Math.min(...directions.map((direction) => directionCounts.get(direction) ?? 0));
+        const eligibleDirections = directions.filter(
+            (direction) => (directionCounts.get(direction) ?? 0) === minimumCount,
         );
+        let selectedDirection = eligibleDirections[0];
 
-    for (const entry of sortedLayouts) {
-        let selectedDirection = directions[0];
-        for (const direction of directions.slice(1)) {
-            if ((bucketLoad.get(direction) ?? 0) < (bucketLoad.get(selectedDirection) ?? 0)) {
+        for (const direction of eligibleDirections.slice(1)) {
+            const selectedLoad = directionLoads.get(selectedDirection) ?? 0;
+            const candidateLoad = directionLoads.get(direction) ?? 0;
+            if (candidateLoad < selectedLoad) {
                 selectedDirection = direction;
             }
         }
 
-        buckets.get(selectedDirection)?.push({
-            layout: orientSubtreeLayout(entry.layout, selectedDirection),
-            direction: selectedDirection,
-            order: entry.order,
-        });
-        bucketLoad.set(
+        assignments.set(entry.childId, selectedDirection);
+        directionCounts.set(selectedDirection, (directionCounts.get(selectedDirection) ?? 0) + 1);
+        directionLoads.set(
             selectedDirection,
-            (bucketLoad.get(selectedDirection) ?? 0) + (entry.layout.bounds.width * entry.layout.bounds.height),
+            (directionLoads.get(selectedDirection) ?? 0) + getLayoutWeight(entry.layout),
         );
+    }
+
+    return assignments;
+}
+
+function getLayoutWeight(layout: SubtreeLayout): number {
+    return Math.max(1, layout.bounds.width * layout.bounds.height);
+}
+
+function placeCardinalGroup(
+    entries: SectorEntry[],
+    options: CardinalPlacementOptions,
+): PlacedSubtree[] {
+    if (entries.length === 0) {
+        return [];
+    }
+
+    if (entries.length === 1) {
+        return [{ layout: entries[0].layout, x: 0, y: 0, direction: entries[0].direction }];
+    }
+
+    const directions: SectorDirection[] = ['up', 'right', 'down', 'left'];
+    const buckets = new Map<SectorDirection, SectorEntry[]>(
+        directions.map((direction) => [direction, []]),
+    );
+
+    for (const entry of entries) {
+        buckets.get(entry.direction)?.push(entry);
     }
 
     directions.forEach((direction) => {
         buckets.get(direction)?.sort((left, right) => left.order - right.order);
     });
 
+    const rightPlacements = placeVerticalSector(buckets.get('right') ?? [], 'right', options);
+    const leftPlacements = placeVerticalSector(buckets.get('left') ?? [], 'left', options);
+    const sidePlacements = [...rightPlacements, ...leftPlacements];
+    const sideBounds = getPlacedBounds(sidePlacements);
+
+    const upPlacements = shiftPlacedGroupY(
+        placeHorizontalSector(buckets.get('up') ?? [], 'up', options),
+        (currentBounds) => {
+            const desiredMaxY = Math.min(sideBounds?.minY ?? 0, 0) - options.crossGap;
+            return desiredMaxY - currentBounds.maxY;
+        },
+    );
+
+    const downPlacements = shiftPlacedGroupY(
+        placeHorizontalSector(buckets.get('down') ?? [], 'down', options),
+        (currentBounds) => {
+            const desiredMinY = Math.max(sideBounds?.maxY ?? options.parentHeight, options.parentHeight) + options.crossGap;
+            return desiredMinY - currentBounds.minY;
+        },
+    );
+
     const placements = [
-        ...placeVerticalSector(buckets.get('right') ?? [], 'right', options),
-        ...placeVerticalSector(buckets.get('left') ?? [], 'left', options),
-        ...placeHorizontalSector(buckets.get('up') ?? [], 'up', options),
-        ...placeHorizontalSector(buckets.get('down') ?? [], 'down', options),
+        ...rightPlacements,
+        ...leftPlacements,
+        ...upPlacements,
+        ...downPlacements,
     ];
 
     return placements
         .sort((left, right) => left.order - right.order)
         .map(({ order: _order, ...placement }) => placement);
+}
+
+function getPlacedBounds(
+    placements: Array<PlacedSubtree & { order: number }>,
+): LayoutBounds | null {
+    if (placements.length === 0) {
+        return null;
+    }
+
+    return calculateBounds(
+        placements.flatMap((placement) => shiftRects(placement.layout.rects, placement.x, placement.y)),
+    );
+}
+
+function shiftPlacedGroupY(
+    placements: Array<PlacedSubtree & { order: number }>,
+    resolveDeltaY: (bounds: LayoutBounds) => number,
+): Array<PlacedSubtree & { order: number }> {
+    if (placements.length === 0) {
+        return placements;
+    }
+
+    const bounds = getPlacedBounds(placements);
+    if (!bounds) {
+        return placements;
+    }
+
+    const deltaY = resolveDeltaY(bounds);
+    if (deltaY === 0) {
+        return placements;
+    }
+
+    return placements.map((placement) => ({
+        ...placement,
+        y: placement.y + deltaY,
+    }));
 }
 
 function placeVerticalSector(
@@ -364,6 +521,7 @@ function placeVerticalSector(
             layout: entry.layout,
             x,
             y,
+            direction,
             order: entry.order,
         };
     });
@@ -392,20 +550,17 @@ function placeHorizontalSector(
             layout: entry.layout,
             x,
             y,
+            direction,
             order: entry.order,
         };
     });
 }
 
-function orientSubtreeLayout(
+function mirrorSubtreeLayout(
     layout: SubtreeLayout,
-    direction: SectorDirection,
+    direction: 'left' | 'up',
 ): SubtreeLayout {
-    if (direction === 'right') {
-        return layout;
-    }
-
-    const rects = layout.rects.map((rect) => orientRect(rect, layout, direction));
+    const rects = layout.rects.map((rect) => mirrorRect(rect, layout, direction));
 
     return {
         ...layout,
@@ -415,10 +570,10 @@ function orientSubtreeLayout(
     };
 }
 
-function orientRect(
+function mirrorRect(
     rect: LayoutRect,
     layout: SubtreeLayout,
-    direction: Exclude<SectorDirection, 'right'>,
+    direction: 'left' | 'up',
 ): LayoutRect {
     if (rect.id === layout.rootId) {
         return {
@@ -438,14 +593,8 @@ function orientRect(
         case 'up':
             return {
                 ...rect,
-                x: rect.y,
-                y: layout.rootWidth - rect.x - rect.height,
-            };
-        case 'down':
-            return {
-                ...rect,
-                x: rect.y,
-                y: rect.x - layout.rootWidth + layout.rootHeight,
+                x: rect.x,
+                y: layout.rootHeight - rect.y - rect.height,
             };
         default:
             return rect;
@@ -471,13 +620,29 @@ function createPlacementFrame(
                 { x: placement.x, y: placement.y } satisfies LayoutPoint,
             ]),
         ),
+        directions: new Map(
+            placements
+                .filter((placement): placement is PlacedSubtree & { direction: LayoutDirection } => Boolean(placement.direction))
+                .map((placement) => [placement.layout.rootId, placement.direction]),
+        ),
         clusterWidth: bounds.width,
         clusterHeight: bounds.height,
         spreadFactor,
     };
 }
 
-function placeSiblingGroup(layouts: SubtreeLayout[], options: PlacementOptions): PlacedSubtree[] {
+function placeDirectedSiblingGroup(
+    layouts: SubtreeLayout[],
+    direction: NativeLayoutDirection,
+    horizontalOptions: PlacementOptions,
+    verticalOptions: VerticalPlacementOptions,
+): PlacedSubtree[] {
+    return direction === 'right'
+        ? placeRightwardSiblingGroup(layouts, horizontalOptions)
+        : placeDownwardSiblingGroup(layouts, verticalOptions);
+}
+
+function placeRightwardSiblingGroup(layouts: SubtreeLayout[], options: PlacementOptions): PlacedSubtree[] {
     if (layouts.length === 0) {
         return [];
     }
@@ -508,6 +673,37 @@ function placeSiblingGroup(layouts: SubtreeLayout[], options: PlacementOptions):
     }));
 }
 
+function placeDownwardSiblingGroup(layouts: SubtreeLayout[], options: VerticalPlacementOptions): PlacedSubtree[] {
+    if (layouts.length === 0) {
+        return [];
+    }
+
+    const placedRects: LayoutRect[] = [];
+    const placements: PlacedSubtree[] = [];
+    const centeredMidpoint = (layouts.length - 1) / 2;
+
+    for (let index = 0; index < layouts.length; index += 1) {
+        const layout = layouts[index];
+        const centeredIndex = Math.abs(index - centeredMidpoint);
+        const y = options.baseY + centeredIndex * options.fanStep;
+        const candidateRects = shiftRects(layout.rects, 0, y);
+        const x = placedRects.length === 0
+            ? 0
+            : computeContourHorizontalOffset(placedRects, candidateRects, options.horizontalGap);
+
+        placements.push({ layout, x, y });
+        placedRects.push(...shiftRects(layout.rects, x, y));
+    }
+
+    const packedBounds = calculateBounds(placedRects);
+    const clusterShiftX = options.anchorCenterX - ((packedBounds.minX + packedBounds.maxX) / 2);
+
+    return placements.map((placement) => ({
+        ...placement,
+        x: placement.x + clusterShiftX,
+    }));
+}
+
 function computeContourVerticalOffset(
     placedRects: LayoutRect[],
     candidateRects: LayoutRect[],
@@ -524,6 +720,29 @@ function computeContourVerticalOffset(
             requiredOffset = Math.max(
                 requiredOffset,
                 placed.y + placed.height + gap - candidate.y,
+            );
+        }
+    }
+
+    return requiredOffset;
+}
+
+function computeContourHorizontalOffset(
+    placedRects: LayoutRect[],
+    candidateRects: LayoutRect[],
+    gap: number,
+): number {
+    let requiredOffset = 0;
+
+    for (const placed of placedRects) {
+        for (const candidate of candidateRects) {
+            if (!rangesOverlap(placed.y, placed.y + placed.height, candidate.y, candidate.y + candidate.height)) {
+                continue;
+            }
+
+            requiredOffset = Math.max(
+                requiredOffset,
+                placed.x + placed.width + gap - candidate.x,
             );
         }
     }

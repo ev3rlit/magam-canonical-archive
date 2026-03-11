@@ -120,6 +120,53 @@ export function createContourCompressionFixture(): FixtureGraph {
     return { nodes, edges, spacing: DEFAULT_SPACING };
 }
 
+export function createProjectStressFixture(): FixtureGraph {
+    const nodes: Node[] = [
+        createNode('root', 280, 120),
+    ];
+    const edges: Edge[] = [];
+
+    const branches = [
+        { id: 'fe', width: 190, height: 94, groups: 6, leaves: 4 },
+        { id: 'be', width: 190, height: 94, groups: 6, leaves: 4 },
+        { id: 'infra', width: 196, height: 96, groups: 6, leaves: 4 },
+        { id: 'mobile', width: 172, height: 92, groups: 6, leaves: 4 },
+        { id: 'ai', width: 168, height: 90, groups: 3, leaves: 3 },
+        { id: 'data', width: 168, height: 90, groups: 3, leaves: 3 },
+        { id: 'growth', width: 168, height: 90, groups: 3, leaves: 3 },
+        { id: 'platform', width: 168, height: 90, groups: 3, leaves: 3 },
+        { id: 'security', width: 168, height: 90, groups: 3, leaves: 3 },
+        { id: 'support', width: 168, height: 90, groups: 3, leaves: 3 },
+    ];
+
+    branches.forEach((branch, branchIndex) => {
+        nodes.push(createNode(branch.id, branch.width, branch.height));
+        edges.push(createEdge('root', branch.id));
+
+        for (let groupIndex = 1; groupIndex <= branch.groups; groupIndex += 1) {
+            const childId = `${branch.id}-group-${groupIndex}`;
+            nodes.push(createNode(
+                childId,
+                150 + ((groupIndex + branchIndex) % 3) * 28,
+                58 + ((groupIndex + branchIndex) % 2) * 18,
+            ));
+            edges.push(createEdge(branch.id, childId));
+
+            for (let leafIndex = 1; leafIndex <= branch.leaves; leafIndex += 1) {
+                const leafId = `${childId}-leaf-${leafIndex}`;
+                nodes.push(createNode(
+                    leafId,
+                    80 + ((leafIndex + groupIndex) % 4) * 26,
+                    30 + ((leafIndex + branchIndex) % 2) * 10,
+                ));
+                edges.push(createEdge(childId, leafId));
+            }
+        }
+    });
+
+    return { nodes, edges, spacing: DEFAULT_SPACING };
+}
+
 export function countLayoutOverlaps(nodes: Node[], positions: Map<string, LayoutPoint>): number {
     const rects = getRects(nodes, positions);
     let overlaps = 0;

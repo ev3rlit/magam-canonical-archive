@@ -126,6 +126,7 @@ function serializePlacementFrames(
     clusterWidth: number;
     clusterHeight: number;
     spreadFactor: number;
+    directions: Map<string, 'right' | 'left' | 'up' | 'down'>;
     placements: Map<string, { x: number; y: number }>;
   }>,
 ) {
@@ -135,6 +136,7 @@ function serializePlacementFrames(
     clusterWidth: frame.clusterWidth,
     clusterHeight: frame.clusterHeight,
     spreadFactor: frame.spreadFactor,
+    directions: Array.from(frame.directions.entries()).sort(([leftId], [rightId]) => leftId.localeCompare(rightId)),
     placements: serializePositions(frame.placements),
   }));
 }
