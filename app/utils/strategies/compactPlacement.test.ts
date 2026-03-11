@@ -107,6 +107,40 @@ describe('runCompactLayout', () => {
         expect(downDescendantBounds.minY).toBeGreaterThanOrEqual(downRect.y + downRect.height);
     });
 
+    it('keeps up and down root children close to the root instead of pushing them beyond full side bounds', () => {
+        const fixture = createProjectStressFixture();
+        const detailed = runCompactLayoutDetailed(fixture.nodes, fixture.edges, fixture.spacing);
+        const rootFrame = detailed.placementFrames.find((frame) => frame.parentId === 'root');
+        const upChildId = findChildInSector(rootFrame?.directions ?? new Map(), 'up');
+        const downChildId = findChildInSector(rootFrame?.directions ?? new Map(), 'down');
+
+        expect(upChildId).toBeDefined();
+        expect(downChildId).toBeDefined();
+
+        const rootRect = getNodeRect(fixture.nodes, detailed.positions, 'root');
+        const upRect = getNodeRect(fixture.nodes, detailed.positions, upChildId!);
+        const downRect = getNodeRect(fixture.nodes, detailed.positions, downChildId!);
+        const verticalGapLimit = Math.round(fixture.spacing * 2.5);
+
+        expect(rootRect.y - (upRect.y + upRect.height)).toBeLessThanOrEqual(verticalGapLimit);
+        expect(downRect.y - (rootRect.y + rootRect.height)).toBeLessThanOrEqual(verticalGapLimit);
+    });
+
+    it('relaxes right-sector root children independently instead of applying one shared shove', () => {
+        const fixture = createProjectStressFixture();
+        const detailed = runCompactLayoutDetailed(fixture.nodes, fixture.edges, fixture.spacing);
+        const rootFrame = detailed.placementFrames.find((frame) => frame.parentId === 'root');
+        const rightChildIds = Array.from(rootFrame?.directions.entries() ?? [])
+            .filter(([, direction]) => direction === 'right')
+            .map(([childId]) => childId);
+        const rightChildXs = rightChildIds.map((childId) =>
+            getNodeRect(fixture.nodes, detailed.positions, childId).x,
+        );
+
+        expect(rightChildXs.length).toBeGreaterThan(1);
+        expect(new Set(rightChildXs).size).toBeGreaterThan(1);
+    });
+
     it('compresses deep and shallow sibling gaps using contour-aware packing', () => {
         const fixture = createContourCompressionFixture();
         const compact = runCompactLayout(fixture.nodes, fixture.edges, fixture.spacing);

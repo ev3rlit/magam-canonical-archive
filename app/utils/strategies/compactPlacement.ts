@@ -429,30 +429,56 @@ function placeCardinalGroup(
         buckets.get(direction)?.sort((left, right) => left.order - right.order);
     });
 
-    const rightPlacements = placeVerticalSector(buckets.get('right') ?? [], 'right', options);
-    const leftPlacements = placeVerticalSector(buckets.get('left') ?? [], 'left', options);
+    const initialUpPlacements = placeHorizontalSector(buckets.get('up') ?? [], 'up', options);
+    const initialDownPlacements = placeHorizontalSector(buckets.get('down') ?? [], 'down', options);
+    const centerBand = getPlacedRootBounds([...initialUpPlacements, ...initialDownPlacements]);
+    const rightPlacements = shiftPlacedGroupXToClearBand(
+        placeVerticalSector(buckets.get('right') ?? [], 'right', options),
+        centerBand,
+        'right',
+        options.crossGap,
+    );
+    const leftPlacements = shiftPlacedGroupXToClearBand(
+        placeVerticalSector(buckets.get('left') ?? [], 'left', options),
+        centerBand,
+        'left',
+        options.crossGap,
+    );
     const sidePlacements = [...rightPlacements, ...leftPlacements];
-    const sideBounds = getPlacedBounds(sidePlacements);
 
-    const upPlacements = shiftPlacedGroupY(
-        placeHorizontalSector(buckets.get('up') ?? [], 'up', options),
-        (currentBounds) => {
-            const desiredMaxY = Math.min(sideBounds?.minY ?? 0, 0) - options.crossGap;
-            return desiredMaxY - currentBounds.maxY;
-        },
+    const upPlacements = shiftPlacedGroupVerticallyToAvoidOverlaps(
+        initialUpPlacements,
+        sidePlacements,
+        'up',
+        options.crossGap,
     );
 
-    const downPlacements = shiftPlacedGroupY(
-        placeHorizontalSector(buckets.get('down') ?? [], 'down', options),
-        (currentBounds) => {
-            const desiredMinY = Math.max(sideBounds?.maxY ?? options.parentHeight, options.parentHeight) + options.crossGap;
-            return desiredMinY - currentBounds.minY;
-        },
+    const downPlacements = shiftPlacedGroupVerticallyToAvoidOverlaps(
+        initialDownPlacements,
+        sidePlacements,
+        'down',
+        options.crossGap,
+    );
+    const relaxedRightPlacements = relaxSidePlacementsTowardRoot(
+        rightPlacements,
+        [...upPlacements, ...downPlacements],
+        'right',
+        options.crossGap,
+        options.parentWidth,
+        options.parentHeight,
+    );
+    const relaxedLeftPlacements = relaxSidePlacementsTowardRoot(
+        leftPlacements,
+        [...upPlacements, ...downPlacements],
+        'left',
+        options.crossGap,
+        options.parentWidth,
+        options.parentHeight,
     );
 
     const placements = [
-        ...rightPlacements,
-        ...leftPlacements,
+        ...relaxedRightPlacements,
+        ...relaxedLeftPlacements,
         ...upPlacements,
         ...downPlacements,
     ];
@@ -462,40 +488,378 @@ function placeCardinalGroup(
         .map(({ order: _order, ...placement }) => placement);
 }
 
-function getPlacedBounds(
+function shiftPlacedGroupVerticallyToAvoidOverlaps(
+    placements: Array<PlacedSubtree & { order: number }>,
+    referencePlacements: Array<PlacedSubtree & { order: number }>,
+    direction: 'up' | 'down',
+    gap: number,
+): Array<PlacedSubtree & { order: number }> {
+    if (placements.length === 0 || referencePlacements.length === 0) {
+        return placements;
+    }
+
+    const rootDeltaY = resolveVerticalClearanceDelta(
+        getPlacedRootRects(placements),
+        getPlacedRootRects(referencePlacements),
+        direction,
+        gap,
+    );
+    const rootShiftedPlacements = rootDeltaY === 0
+        ? placements
+        : placements.map((placement) => ({
+            ...placement,
+            y: placement.y + rootDeltaY,
+        }));
+    const overlapDeltaY = resolveVerticalOverlapDelta(
+        rootShiftedPlacements.flatMap((placement) => shiftRects(placement.layout.rects, placement.x, placement.y)),
+        referencePlacements.flatMap((placement) => shiftRects(placement.layout.rects, placement.x, placement.y)),
+        direction,
+        gap,
+    );
+
+    if (overlapDeltaY === 0) {
+        return rootShiftedPlacements;
+    }
+
+    return rootShiftedPlacements.map((placement) => ({
+        ...placement,
+        y: placement.y + overlapDeltaY,
+    }));
+}
+
+function shiftPlacedGroupXToClearBand(
+    placements: Array<PlacedSubtree & { order: number }>,
+    band: LayoutBounds | null,
+    direction: 'left' | 'right',
+    gap: number,
+): Array<PlacedSubtree & { order: number }> {
+    if (placements.length === 0 || !band) {
+        return placements;
+    }
+
+    const rootBounds = getPlacedRootBounds(placements);
+    if (!rootBounds) {
+        return placements;
+    }
+
+    const deltaX = direction === 'left'
+        ? Math.min(0, (band.minX - gap) - rootBounds.maxX)
+        : Math.max(0, (band.maxX + gap) - rootBounds.minX);
+
+    if (deltaX === 0) {
+        return placements;
+    }
+
+    return placements.map((placement) => ({
+        ...placement,
+        x: placement.x + deltaX,
+    }));
+}
+
+function relaxSidePlacementsTowardRoot(
+    placements: Array<PlacedSubtree & { order: number }>,
+    referencePlacements: Array<PlacedSubtree & { order: number }>,
+    direction: 'left' | 'right',
+    gap: number,
+    parentWidth: number,
+    parentHeight: number,
+): Array<PlacedSubtree & { order: number }> {
+    if (placements.length === 0) {
+        return placements;
+    }
+
+    const referenceRects = [
+        ...referencePlacements.flatMap((placement) => shiftRects(placement.layout.rects, placement.x, placement.y)),
+        {
+            id: '__parent_root__',
+            x: 0,
+            y: 0,
+            width: parentWidth,
+            height: parentHeight,
+        } satisfies LayoutRect,
+    ];
+
+    return placements.map((placement) => {
+        const candidateRects = shiftRects(placement.layout.rects, placement.x, placement.y);
+        const deltaX = direction === 'right'
+            ? resolvePullLeftRelaxationDelta(candidateRects, referenceRects, gap)
+            : resolvePullRightRelaxationDelta(candidateRects, referenceRects, gap);
+
+        if (deltaX === 0) {
+            return placement;
+        }
+
+        return {
+            ...placement,
+            x: placement.x + deltaX,
+        };
+    });
+}
+
+function resolveVerticalClearanceDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    direction: 'up' | 'down',
+    gap: number,
+): number {
+    return direction === 'up'
+        ? resolveUpwardClearanceDelta(candidateRects, referenceRects, gap)
+        : resolveDownwardClearanceDelta(candidateRects, referenceRects, gap);
+}
+
+function resolveVerticalOverlapDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    direction: 'up' | 'down',
+    gap: number,
+): number {
+    return direction === 'up'
+        ? resolveUpwardOverlapDelta(candidateRects, referenceRects, gap)
+        : resolveDownwardOverlapDelta(candidateRects, referenceRects, gap);
+}
+
+function resolveHorizontalClearanceDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    direction: 'left' | 'right',
+    gap: number,
+): number {
+    return direction === 'left'
+        ? resolveLeftwardClearanceDelta(candidateRects, referenceRects, gap)
+        : resolveRightwardClearanceDelta(candidateRects, referenceRects, gap);
+}
+
+function resolvePullLeftRelaxationDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    gap: number,
+): number {
+    let lowerBound = -Infinity;
+
+    for (const candidateRect of candidateRects) {
+        for (const reference of referenceRects) {
+            if (!rangesOverlap(candidateRect.y, candidateRect.y + candidateRect.height, reference.y, reference.y + reference.height)) {
+                continue;
+            }
+
+            const candidateLowerBound = (reference.x + reference.width + gap) - candidateRect.x;
+            if (candidateLowerBound > lowerBound) {
+                lowerBound = candidateLowerBound;
+            }
+        }
+    }
+
+    if (!Number.isFinite(lowerBound)) {
+        return 0;
+    }
+
+    return Math.min(0, lowerBound);
+}
+
+function resolvePullRightRelaxationDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    gap: number,
+): number {
+    let upperBound = Infinity;
+
+    for (const candidateRect of candidateRects) {
+        for (const reference of referenceRects) {
+            if (!rangesOverlap(candidateRect.y, candidateRect.y + candidateRect.height, reference.y, reference.y + reference.height)) {
+                continue;
+            }
+
+            const candidateUpperBound = (reference.x - gap) - (candidateRect.x + candidateRect.width);
+            if (candidateUpperBound < upperBound) {
+                upperBound = candidateUpperBound;
+            }
+        }
+    }
+
+    if (!Number.isFinite(upperBound)) {
+        return 0;
+    }
+
+    return Math.max(0, upperBound);
+}
+
+function resolveLeftwardClearanceDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    gap: number,
+): number {
+    let requiredDelta = 0;
+
+    for (const candidateRect of candidateRects) {
+        for (const reference of referenceRects) {
+            if (!rangesOverlap(candidateRect.y, candidateRect.y + candidateRect.height, reference.y, reference.y + reference.height)) {
+                continue;
+            }
+
+            const overlapDelta = (reference.x - gap) - (candidateRect.x + candidateRect.width);
+            if (overlapDelta < requiredDelta) {
+                requiredDelta = overlapDelta;
+            }
+        }
+    }
+
+    return requiredDelta;
+}
+
+function resolveRightwardClearanceDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    gap: number,
+): number {
+    let requiredDelta = 0;
+
+    for (const candidateRect of candidateRects) {
+        for (const reference of referenceRects) {
+            if (!rangesOverlap(candidateRect.y, candidateRect.y + candidateRect.height, reference.y, reference.y + reference.height)) {
+                continue;
+            }
+
+            const overlapDelta = (reference.x + reference.width + gap) - candidateRect.x;
+            if (overlapDelta > requiredDelta) {
+                requiredDelta = overlapDelta;
+            }
+        }
+    }
+
+    return requiredDelta;
+}
+
+function resolveUpwardClearanceDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    gap: number,
+): number {
+    let requiredDelta = 0;
+
+    for (const candidate of candidateRects) {
+        for (const reference of referenceRects) {
+            if (!rangesOverlap(candidate.x, candidate.x + candidate.width, reference.x, reference.x + reference.width)) {
+                continue;
+            }
+
+            const overlapDelta = (reference.y - gap) - (candidate.y + candidate.height);
+            if (overlapDelta < requiredDelta) {
+                requiredDelta = overlapDelta;
+            }
+        }
+    }
+
+    return requiredDelta;
+}
+
+function resolveDownwardClearanceDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    gap: number,
+): number {
+    let requiredDelta = 0;
+
+    for (const candidate of candidateRects) {
+        for (const reference of referenceRects) {
+            if (!rangesOverlap(candidate.x, candidate.x + candidate.width, reference.x, reference.x + reference.width)) {
+                continue;
+            }
+
+            const overlapDelta = (reference.y + reference.height + gap) - candidate.y;
+            if (overlapDelta > requiredDelta) {
+                requiredDelta = overlapDelta;
+            }
+        }
+    }
+
+    return requiredDelta;
+}
+
+function resolveUpwardOverlapDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    gap: number,
+): number {
+    let requiredDelta = 0;
+
+    for (const candidate of candidateRects) {
+        for (const reference of referenceRects) {
+            if (!rangesOverlap(candidate.x, candidate.x + candidate.width, reference.x, reference.x + reference.width)) {
+                continue;
+            }
+
+            if (candidate.y + candidate.height <= reference.y - gap || candidate.y >= reference.y + reference.height + gap) {
+                continue;
+            }
+
+            const overlapDelta = (reference.y - gap) - (candidate.y + candidate.height);
+            if (overlapDelta < requiredDelta) {
+                requiredDelta = overlapDelta;
+            }
+        }
+    }
+
+    return requiredDelta;
+}
+
+function resolveDownwardOverlapDelta(
+    candidateRects: LayoutRect[],
+    referenceRects: LayoutRect[],
+    gap: number,
+): number {
+    let requiredDelta = 0;
+
+    for (const candidate of candidateRects) {
+        for (const reference of referenceRects) {
+            if (!rangesOverlap(candidate.x, candidate.x + candidate.width, reference.x, reference.x + reference.width)) {
+                continue;
+            }
+
+            if (candidate.y + candidate.height <= reference.y - gap || candidate.y >= reference.y + reference.height + gap) {
+                continue;
+            }
+
+            const overlapDelta = (reference.y + reference.height + gap) - candidate.y;
+            if (overlapDelta > requiredDelta) {
+                requiredDelta = overlapDelta;
+            }
+        }
+    }
+
+    return requiredDelta;
+}
+
+function getPlacedRootBounds(
     placements: Array<PlacedSubtree & { order: number }>,
 ): LayoutBounds | null {
     if (placements.length === 0) {
         return null;
     }
 
-    return calculateBounds(
-        placements.flatMap((placement) => shiftRects(placement.layout.rects, placement.x, placement.y)),
-    );
+    return calculateBounds(getPlacedRootRects(placements));
 }
 
-function shiftPlacedGroupY(
+function getPlacedRootRects(
     placements: Array<PlacedSubtree & { order: number }>,
-    resolveDeltaY: (bounds: LayoutBounds) => number,
-): Array<PlacedSubtree & { order: number }> {
-    if (placements.length === 0) {
-        return placements;
-    }
+): LayoutRect[] {
+    return placements.map((placement) => {
+        const rootRect = placement.layout.rects.find((rect) => rect.id === placement.layout.rootId);
+        if (!rootRect) {
+            return {
+                id: placement.layout.rootId,
+                x: placement.x,
+                y: placement.y,
+                width: placement.layout.rootWidth,
+                height: placement.layout.rootHeight,
+            } satisfies LayoutRect;
+        }
 
-    const bounds = getPlacedBounds(placements);
-    if (!bounds) {
-        return placements;
-    }
-
-    const deltaY = resolveDeltaY(bounds);
-    if (deltaY === 0) {
-        return placements;
-    }
-
-    return placements.map((placement) => ({
-        ...placement,
-        y: placement.y + deltaY,
-    }));
+        return {
+            ...rootRect,
+            x: rootRect.x + placement.x,
+            y: rootRect.y + placement.y,
+        };
+    });
 }
 
 function placeVerticalSector(
