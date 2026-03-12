@@ -13,6 +13,12 @@ Accepted input forms:
 - feature directory path
 - other document path that clearly serves as the feature brief or PRD
 
+Input resolution:
+- If input is plain text, treat it as the source brief
+- If input is a file path, validate and use that file as the source brief
+- If input is a directory path, look for `README.md` first, then the most product-facing feature brief
+- If multiple candidate briefs exist, choose the strongest source document and report the choice explicitly
+
 Workflow boundary:
 - Allowed: README refinement only when needed to make the feature legible to the speckit workflow
 - Allowed: `speckit-specify`
@@ -35,6 +41,16 @@ Skill usage:
   8. Use `speckit-analyze`
 - If the source brief is too weak for reliable downstream generation, improve the source document only when that is clearly helpful, or stop and report the gap clearly
 
+Resume behavior:
+- If feature artifacts already exist, inspect them before regenerating anything
+- Continue from the first incomplete, missing, or clearly invalid stage
+- Do not blindly rebuild all artifacts unless the source brief changed materially or the user explicitly asks for regeneration
+
+Clarify policy:
+- Run `speckit-clarify` only when ambiguity would materially change scope, UX behavior, acceptance criteria, core data model assumptions, or task structure
+- Skip clarify when reasonable defaults preserve the same product intent
+- Report clearly whether clarify was used or intentionally skipped
+
 Operating rules:
 - Work on one feature at a time
 - Accept either text or path input without forcing a specific source path format
@@ -42,6 +58,13 @@ Operating rules:
 - Prefer explicit artifact generation over long explanatory prose
 - Keep clarify optional; do not force it when the README is already specific enough
 - Do not hide ambiguity; either resolve it through clarify or report it explicitly
+
+Stage gates:
+- After specify: confirm the spec matches the source brief and is usable for planning
+- After plan: confirm planning artifacts are present and actionable
+- After tasks: confirm tasks are dependency-ordered and formatted for execution
+- After analyze: confirm whether any critical findings block implementation readiness
+- If a gate fails, stop and report the failing stage instead of continuing blindly
 
 Success criteria:
 - A usable `spec.md` exists and matches the source brief intent
@@ -52,8 +75,11 @@ Success criteria:
 
 Return a concise final report with:
 - source input type and, if applicable, source path
+- start stage and end stage
 - generated or updated artifact paths
 - whether clarify was skipped or used
 - top analyze findings or confirmation that no critical issues were found
+- `implementation_ready: yes` or `implementation_ready: no`
+- blocking stage or finding if not ready
 - explicit statement that the workflow stopped before implementation
 """
