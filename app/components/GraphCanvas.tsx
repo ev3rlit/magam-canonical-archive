@@ -45,8 +45,11 @@ import {
 } from './GraphCanvas.relayout';
 import {
   applyGraphSnapshot,
+  createGraphClipboardPayload,
   createPastedGraphState,
   isGraphClipboardPayload,
+  serializeNodeIdsForClipboard,
+  type GraphClipboardPayload,
   snapshotGraphState,
   type GraphSnapshot,
 } from '@/utils/clipboardGraph';
@@ -150,6 +153,7 @@ function GraphCanvasContent({
     past: [],
     future: [],
   });
+  const graphClipboardRef = useRef<{ payload: GraphClipboardPayload; text: string } | null>(null);
   const dragOriginPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
   const selectedWashiNodeIds = useMemo(
@@ -636,28 +640,17 @@ function GraphCanvasContent({
         e.preventDefault();
 
         const { nodes, edges, selectedNodeIds } = useGraphStore.getState();
-        let dataToCopy;
+        const dataToCopy = createGraphClipboardPayload(nodes, edges, selectedNodeIds);
+        const clipboardText = serializeNodeIdsForClipboard(dataToCopy);
+        graphClipboardRef.current = {
+          payload: dataToCopy,
+          text: clipboardText,
+        };
 
-        if (selectedNodeIds.length > 0) {
-          const selectedNodeIdSet = new Set(selectedNodeIds);
-          const selectedNodes = nodes.filter((node) => selectedNodeIdSet.has(node.id));
-          const relatedEdges = edges.filter(
-            (edge) => selectedNodeIdSet.has(edge.source) && selectedNodeIdSet.has(edge.target),
-          );
-
-          dataToCopy = {
-            nodes: selectedNodes,
-            edges: relatedEdges,
-          };
-        } else {
-          dataToCopy = { nodes, edges };
-        }
-
-        const jsonString = JSON.stringify(dataToCopy, null, 2);
         navigator.clipboard
-          .writeText(jsonString)
+          .writeText(clipboardText)
           .then(() => {
-            console.log('Copied to clipboard:', dataToCopy);
+            console.log('Copied node ids to clipboard:', clipboardText);
           })
           .catch((err) => {
             console.error('Failed to copy:', err);
@@ -666,18 +659,29 @@ function GraphCanvasContent({
       }
 
       if (isPaste) {
-        if (typeof navigator.clipboard?.readText !== 'function') return;
         e.preventDefault();
 
         try {
-          const text = await navigator.clipboard.readText();
-          const parsed = JSON.parse(text);
-          if (!isGraphClipboardPayload(parsed)) return;
+          const clipboardText = typeof navigator.clipboard?.readText === 'function'
+            ? await navigator.clipboard.readText()
+            : null;
+          const copiedGraph = graphClipboardRef.current;
+          let parsedPayload: GraphClipboardPayload | null = null;
+
+          if (copiedGraph && (clipboardText === null || clipboardText === copiedGraph.text)) {
+            parsedPayload = copiedGraph.payload;
+          } else if (clipboardText) {
+            const parsed = JSON.parse(clipboardText);
+            if (!isGraphClipboardPayload(parsed)) return;
+            parsedPayload = parsed;
+          }
+
+          if (!parsedPayload) return;
 
           const { nodes, edges } = useGraphStore.getState();
           pushHistory(snapshotGraphState(nodes, edges));
 
-          const next = createPastedGraphState(parsed, nodes, edges);
+          const next = createPastedGraphState(parsedPayload, nodes, edges);
           useGraphStore.setState({
             nodes: next.nodes,
             edges: next.edges,

@@ -16,6 +16,33 @@ function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+export function createGraphClipboardPayload(
+  nodes: Node[],
+  edges: Edge[],
+  selectedNodeIds: string[],
+): GraphClipboardPayload {
+  if (selectedNodeIds.length === 0) {
+    return {
+      nodes: deepClone(nodes),
+      edges: deepClone(edges),
+    };
+  }
+
+  const selectedNodeIdSet = new Set(selectedNodeIds);
+  return {
+    nodes: nodes
+      .filter((node) => selectedNodeIdSet.has(node.id))
+      .map((node) => deepClone(node)),
+    edges: edges
+      .filter((edge) => selectedNodeIdSet.has(edge.source) && selectedNodeIdSet.has(edge.target))
+      .map((edge) => deepClone(edge)),
+  };
+}
+
+export function serializeNodeIdsForClipboard(payload: GraphClipboardPayload): string {
+  return payload.nodes.map((node) => node.id).join('\n');
+}
+
 export function isGraphClipboardPayload(value: unknown): value is GraphClipboardPayload {
   if (!value || typeof value !== 'object') return false;
   const payload = value as Record<string, unknown>;

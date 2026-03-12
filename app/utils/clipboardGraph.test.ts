@@ -2,8 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import type { Edge, Node } from 'reactflow';
 import {
   applyGraphSnapshot,
+  createGraphClipboardPayload,
   createPastedGraphState,
   isGraphClipboardPayload,
+  serializeNodeIdsForClipboard,
   snapshotGraphState,
 } from './clipboardGraph';
 
@@ -59,6 +61,37 @@ describe('clipboardGraph', () => {
     expect(restored.nodes).toEqual(nodes);
     expect(restored.edges).toEqual(edges);
     expect(restored.selectedNodeIds).toEqual(['n1']);
+  });
+
+  it('creates selected clipboard payload and serializes ids as plain text', () => {
+    const nodes = [
+      { id: 'n1', type: 'text', position: { x: 0, y: 0 }, data: {} } as unknown as Node,
+      { id: 'n2', type: 'text', position: { x: 10, y: 10 }, data: {} } as unknown as Node,
+      { id: 'n3', type: 'text', position: { x: 20, y: 20 }, data: {} } as unknown as Node,
+    ];
+    const edges = [
+      { id: 'e1', source: 'n1', target: 'n2' } as unknown as Edge,
+      { id: 'e2', source: 'n2', target: 'n3' } as unknown as Edge,
+    ];
+
+    const payload = createGraphClipboardPayload(nodes, edges, ['n1', 'n2']);
+
+    expect(payload.nodes.map((node) => node.id)).toEqual(['n1', 'n2']);
+    expect(payload.edges.map((edge) => edge.id)).toEqual(['e1']);
+    expect(serializeNodeIdsForClipboard(payload)).toBe('n1\nn2');
+  });
+
+  it('falls back to the full graph payload when nothing is selected', () => {
+    const nodes = [
+      { id: 'n1', type: 'text', position: { x: 0, y: 0 }, data: {} } as unknown as Node,
+      { id: 'n2', type: 'text', position: { x: 10, y: 10 }, data: {} } as unknown as Node,
+    ];
+    const edges = [{ id: 'e1', source: 'n1', target: 'n2' } as unknown as Edge];
+
+    const payload = createGraphClipboardPayload(nodes, edges, []);
+
+    expect(payload.nodes.map((node) => node.id)).toEqual(['n1', 'n2']);
+    expect(payload.edges.map((edge) => edge.id)).toEqual(['e1']);
   });
 
   it('creates pasted nodes while keeping washi pattern/placement fields', () => {
