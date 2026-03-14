@@ -1,35 +1,81 @@
-# magam-washi-tape Development Guidelines
+# AGENTS.md
 
-Auto-generated from all feature plans. Last updated: 2026-03-01
+This file defines how agents should work in this repository. It focuses on project and task principles, not codebase inventory.
 
-## Active Technologies
-- TypeScript 5.9.x, React 18, Bun 1.x workspace runtime + React Flow 11, Next.js app runtime, ELK (`elkjs`), Zustand graph store, `@magam/core` host components (003-mindmap-polymorphic-children)
-- TSX source-based graph AST + client runtime state (Zustand), 신규 DB 없음 (003-mindmap-polymorphic-children)
-- TypeScript 5.9.2, React 18.3.x, Bun 1.x workspace runtime + `@magam/core` host components, React Flow 11, Zustand, Tailwind CSS 3.4.3, `tailwind-merge`, `clsx` (001-standardized-sizes)
-- TSX source AST + runtime graph state(Zustand), 신규 DB 없음 (001-standardized-sizes)
+## 1. Think Before Coding
 
-- TypeScript 5.9.x, React 18, Bun 1.x workspace runtime + React Flow 11, Next.js app runtime, `@babel/*` AST patcher, Tailwind CSS, `zod` (필요 시 런타임 검증) (001-add-washi-tape)
+Do not guess through ambiguity.
 
-## Project Structure
+- State assumptions explicitly before implementation when requirements, boundaries, or contracts are unclear.
+- Surface competing interpretations instead of silently picking one.
+- Prefer the structurally simpler design when it improves ownership clarity, change safety, and local reasoning.
+- Stop and name the ambiguity before broad code motion if the task affects shared contracts, dependency direction, rendering behavior, or cross-team ownership.
 
-```text
-src/
-tests/
-```
+## 2. Structural Simplicity
 
-## Commands
+Optimize for maintainability, not cleverness or low line count.
 
-npm test && npm run lint
+- Add no feature or abstraction beyond the task.
+- Introduce abstractions only when they provide present-day value: clearer boundaries, repeated logic removal, contract stability, ownership isolation, testability, or cleaner dependency flow.
+- Do not merge distinct responsibilities just to reduce file count.
+- Make invariants explicit, but avoid ceremony that does not improve current change safety.
 
-## Code Style
+## 3. Dependency-Linear Design
 
-TypeScript 5.9.x, React 18, Bun 1.x workspace runtime: Follow standard conventions
+Keep dependencies explicit, narrow, and one-way.
 
-## Recent Changes
-- 001-standardized-sizes: Added TypeScript 5.9.2, React 18.3.x, Bun 1.x workspace runtime + `@magam/core` host components, React Flow 11, Zustand, Tailwind CSS 3.4.3, `tailwind-merge`, `clsx`
-- 003-mindmap-polymorphic-children: Added TypeScript 5.9.x, React 18, Bun 1.x workspace runtime + React Flow 11, Next.js app runtime, ELK (`elkjs`), Zustand graph store, `@magam/core` host components
+- Prefer acyclic dependency flow and obvious ownership boundaries.
+- Keep public surfaces small and hide internal implementation details.
+- Put shared contracts, types, schemas, and validators in the lowest stable place that can be depended on safely.
+- Prefer composition over inheritance.
+- When parallel work is expected, define contracts and ownership before implementation spreads.
 
-- 001-add-washi-tape: Added TypeScript 5.9.x, React 18, Bun 1.x workspace runtime + React Flow 11, Next.js app runtime, `@babel/*` AST patcher, Tailwind CSS, `zod` (필요 시 런타임 검증)
+## 4. Promptable Boundaries and Minimal Context
 
-<!-- MANUAL ADDITIONS START -->
-<!-- MANUAL ADDITIONS END -->
+Shape modules so a human or agent can work safely without scanning unrelated parts of the repository.
+
+- Keep the number of files needed for one task as low as practical.
+- Make each module's purpose, non-goals, dependencies, and verification path easy to discover.
+- Avoid hidden side effects, broad implicit shared state, and convenience imports that cross boundaries.
+- Favor explicit, machine-readable contracts where practical.
+
+## 5. Surgical Changes
+
+Touch only what the task requires.
+
+- Do not bundle unrelated cleanup, formatting, or opportunistic refactors into the same diff.
+- Match local style unless the task requires exposing or protecting a clearer boundary.
+- Refactor only when it is the smallest safe way to isolate the change, preserve dependency direction, or reduce hidden coupling.
+- Remove imports, symbols, and helpers made unused by your change, but do not delete unrelated dead code unless asked.
+
+## 6. Contracts, Errors, and Diagnostics
+
+Be explicit at boundaries and make failures actionable.
+
+- Type public interfaces and validate external or unstable inputs.
+- Do not hide failures behind silent fallbacks or broad success-shaped defaults.
+- Respect the repository's existing error-handling conventions instead of inventing a parallel style.
+- Make diagnostics specific enough to identify the failing module, command, composition, or stage when possible.
+
+## 7. Goal-Driven and Verifiable Execution
+
+No task is done until the outcome is verified.
+
+- Turn requests into concrete checks before or during implementation.
+- Match verification depth to change risk.
+- Bug fixes should include regression coverage when practical.
+- Treat architecture and boundary rules as enforceable constraints, not as advisory prose.
+
+## Working Workflow
+
+- Start significant architectural or boundary changes with a spec, task brief, or ADR.
+- Decompose work into units that can be completed with minimal unrelated context.
+- Keep diffs task-focused and split unrelated cleanup into separate work.
+- Update local guidance when shared expectations change, and keep guidance files consistent with this document.
+- Make exceptions explicit, narrow, and documented instead of relying on informal precedent.
+
+## Review Bar
+
+- Review for correctness, boundary clarity, dependency direction, hidden coupling, contract stability, and verification quality.
+- Complexity carries the burden of proof.
+- Challenge speculative abstractions and architecture drift before they become normal practice.
