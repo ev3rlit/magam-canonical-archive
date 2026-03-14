@@ -5,9 +5,9 @@ module.exports = {
   content: [
     './app/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
-    '../examples/**/*.{js,ts,jsx,tsx,mdx}',
     '../libs/**/*.{js,ts,jsx,tsx}',
   ],
+  safelist: require('./tailwind.workspace-safelist.cjs'),
   darkMode: 'class',
   theme: {
     extend: {

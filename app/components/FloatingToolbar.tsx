@@ -13,7 +13,7 @@ import {
   Plus,
   Square,
   Sticker,
-  Tape,
+  Ticket,
   Type,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
@@ -117,7 +117,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     { id: 'text', label: 'Text', icon: <Type className="w-4 h-4" /> },
     { id: 'markdown', label: 'Markdown', icon: <FileText className="w-4 h-4" /> },
     { id: 'sticker', label: 'Sticker', icon: <Sticker className="w-4 h-4" /> },
-    { id: 'washi-tape', label: 'Washi', icon: <Tape className="w-4 h-4" /> },
+    { id: 'washi-tape', label: 'Washi', icon: <Ticket className="w-4 h-4" /> },
   ];
   const activeCreateLabel = createOptions.find((option) => option.id === createMode)?.label ?? null;
 

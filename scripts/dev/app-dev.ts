@@ -59,6 +59,19 @@ export function buildCliDevCommand(input: {
 
 async function run(): Promise<void> {
   const repoRoot = resolveRepoRoot();
+  const targetDir = resolveDevTargetDir(repoRoot, process.env.MAGAM_TARGET_DIR);
+
+  const generateTailwindSafelist = spawn({
+    cmd: ['node', 'scripts/generate-tailwind-workspace-safelist.mjs', targetDir],
+    cwd: repoRoot,
+    env: process.env,
+    stdio: ['inherit', 'inherit', 'inherit'],
+  });
+
+  const safelistExitCode = await generateTailwindSafelist.exited;
+  if (safelistExitCode !== 0) {
+    process.exit(safelistExitCode);
+  }
 
   const buildCore = spawn({
     cmd: ['bun', 'run', 'build:core'],
@@ -76,7 +89,7 @@ async function run(): Promise<void> {
     cmd: buildCliDevCommand({
       repoRoot,
       args: process.argv.slice(2),
-      envTargetDir: process.env.MAGAM_TARGET_DIR,
+      envTargetDir: targetDir,
     }),
     cwd: repoRoot,
     env: process.env,
