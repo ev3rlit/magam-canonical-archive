@@ -32,6 +32,10 @@ import { ContextMenu } from './ContextMenu';
 import { useContextMenu } from '@/hooks/useContextMenu';
 import { ExportDialog } from './ExportDialog';
 import { CustomBackground } from './CustomBackground';
+import {
+  resolveViewportToRestore,
+  toTabViewportState,
+} from './GraphCanvas.viewport';
 import { resolveFontFamilyCssValue } from '@/utils/fontHierarchy';
 import { areNodesMeasured, getMindMapSizeSignaturesByGroup } from '@/utils/layoutUtils';
 import {
@@ -45,8 +49,11 @@ import {
 } from './GraphCanvas.relayout';
 import {
   applyGraphSnapshot,
+  createGraphClipboardPayload,
   createPastedGraphState,
   isGraphClipboardPayload,
+  serializeNodeIdsForClipboard,
+  type GraphClipboardPayload,
   snapshotGraphState,
   type GraphSnapshot,
 } from '@/utils/clipboardGraph';
@@ -150,6 +157,7 @@ function GraphCanvasContent({
     setSelectedNodes,
     selectNodesByType,
     focusNextNodeByType,
+    currentFile,
     graphId,
     needsAutoLayout,
     layoutType,
@@ -157,6 +165,9 @@ function GraphCanvasContent({
     canvasBackground,
     globalFontFamily,
     canvasFontFamily,
+    activeTabId,
+    openTabs,
+    updateTabSnapshot,
   } = useGraphStore();
 
   const { isZoomBold } = useZoom();
@@ -168,7 +179,7 @@ function GraphCanvasContent({
 
   const { calculateLayout, isLayouting } = useLayout();
   const nodesInitialized = useNodesInitialized();
-  const { zoomIn, zoomOut, fitView, getZoom, setNodes, getNodes, screenToFlowPosition } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, getZoom, setNodes, getNodes, getViewport, setViewport, screenToFlowPosition } = useReactFlow();
   const { isOpen: isContextMenuOpen, context: contextMenuContext, items: contextMenuItems, openMenu, closeMenu } = useContextMenu();
   const { copyImageToClipboard } = useExportImage();
   const [exportDialog, setExportDialog] = useState<{
@@ -191,10 +202,13 @@ function GraphCanvasContent({
   const relayoutTimerRef = useRef<number | null>(null);
   const relayoutInFlightRef = useRef(false);
   const lastRelayoutAtRef = useRef<Map<string, number>>(new Map());
+  const previousFileRef = useRef<string | null>(currentFile);
+  const pendingViewportRestoreRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const clipboardHistory = useRef<{ past: GraphSnapshot[]; future: GraphSnapshot[] }>({
     past: [],
     future: [],
   });
+  const graphClipboardRef = useRef<{ payload: GraphClipboardPayload; text: string } | null>(null);
   const dragOriginPositions = useRef<Map<string, DragOriginState>>(new Map());
   const dragGenerationRef = useRef<Map<string, number>>(new Map());
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
@@ -224,6 +238,11 @@ function GraphCanvasContent({
     return allSame ? first : null;
   }, [nodes, selectedWashiNodeIds]);
 
+  const activeTab = useMemo(
+    () => openTabs.find((tab) => tab.tabId === activeTabId) ?? null,
+    [activeTabId, openTabs],
+  );
+
   const showToast = (message: string) => {
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 2000);
@@ -240,9 +259,37 @@ function GraphCanvasContent({
     clearPendingRelayout();
   }, [clearPendingRelayout]);
 
+  const persistActiveTabViewport = useCallback((viewport: { x: number; y: number; zoom: number }) => {
+    if (!activeTabId) {
+      return;
+    }
+
+    updateTabSnapshot(activeTabId, {
+      lastViewport: toTabViewportState(viewport),
+    });
+  }, [activeTabId, updateTabSnapshot]);
+
+  const restorePendingViewport = useCallback(async () => {
+    const pending = pendingViewportRestoreRef.current;
+    if (!pending) {
+      return false;
+    }
+
+    pendingViewportRestoreRef.current = null;
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        void setViewport(pending, { duration: 0 });
+        persistActiveTabViewport(pending);
+        resolve();
+      });
+    });
+    return true;
+  }, [persistActiveTabViewport, setViewport]);
+
   const handleZoomIn = () => {
     zoomIn({ duration: 300 });
     setTimeout(() => {
+      persistActiveTabViewport(getViewport());
       showToast(`Zoom: ${Math.round(getZoom() * 100)}%`);
     }, 350);
   };
@@ -250,6 +297,7 @@ function GraphCanvasContent({
   const handleZoomOut = () => {
     zoomOut({ duration: 300 });
     setTimeout(() => {
+      persistActiveTabViewport(getViewport());
       showToast(`Zoom: ${Math.round(getZoom() * 100)}%`);
     }, 350);
   };
@@ -257,6 +305,7 @@ function GraphCanvasContent({
   const handleFitView = () => {
     fitView({ duration: 300 });
     setTimeout(() => {
+      persistActiveTabViewport(getViewport());
       showToast('Fit to view');
     }, 350);
   };
@@ -407,16 +456,24 @@ function GraphCanvasContent({
   useEffect(() => {
     if (graphId !== lastLayoutedGraphId.current) {
       console.log('[Layout] New graph detected, resetting layout state.');
+      pendingViewportRestoreRef.current = resolveViewportToRestore({
+        hasRenderedGraph: lastLayoutedGraphId.current !== null,
+        previousFile: previousFileRef.current,
+        currentFile,
+        currentViewport: getViewport(),
+        savedViewport: activeTab?.lastViewport,
+      });
       hasLayouted.current = false;
       setIsGraphVisible(false); // Hide graph=
       lastLayoutedGraphId.current = graphId;
+      previousFileRef.current = currentFile;
       lastSizeSignaturesRef.current = new Map();
       relayoutCountRef.current = new Map();
       relayoutInFlightRef.current = false;
       lastRelayoutAtRef.current = new Map();
       clearPendingRelayout();
     }
-  }, [clearPendingRelayout, graphId]);
+  }, [activeTab?.lastViewport, clearPendingRelayout, currentFile, getViewport, graphId]);
 
   // Trigger Layout when all nodes are initialized (measured)
   useEffect(() => {
@@ -424,6 +481,8 @@ function GraphCanvasContent({
 
     if (nodes.length > 0 && nodesInitialized && measured && !hasLayouted.current) {
       const runLayout = async () => {
+        const shouldRestoreViewport = pendingViewportRestoreRef.current !== null;
+
         // Double-check: wait one more frame to ensure DOM is fully settled
         await new Promise(resolve => requestAnimationFrame(resolve));
 
@@ -444,6 +503,7 @@ function GraphCanvasContent({
           const layoutSucceeded = await calculateLayout({
             direction: 'RIGHT',
             mindMapGroups,
+            fitViewOnComplete: !shouldRestoreViewport,
           });
           if (layoutSucceeded) {
             lastSizeSignaturesRef.current = getMindMapSizeSignaturesByGroup(currentNodes, {
@@ -464,10 +524,16 @@ function GraphCanvasContent({
             console.log('[Layout] Canvas mode with anchors, resolving anchor positions...');
             const resolved = resolveAnchors(currentNodes);
             setNodes(resolved);
-            setTimeout(() => fitView({ duration: 300 }), 50);
+            if (!shouldRestoreViewport) {
+              setTimeout(() => fitView({ duration: 300 }), 50);
+            }
           } else {
             console.log('[Layout] Canvas mode, no anchors, skipping layout.');
           }
+        }
+
+        if (shouldRestoreViewport) {
+          await restorePendingViewport();
         }
 
         console.log('[Layout] Layout pipeline finished.');
@@ -477,7 +543,7 @@ function GraphCanvasContent({
 
       runLayout();
     }
-  }, [nodes, nodesInitialized, calculateLayout, graphId, needsAutoLayout, layoutType, mindMapGroups, setNodes, fitView]);
+  }, [nodes, nodesInitialized, calculateLayout, graphId, needsAutoLayout, layoutType, mindMapGroups, setNodes, fitView, restorePendingViewport]);
 
   useEffect(() => {
     const signaturesByGroup = getMindMapSizeSignaturesByGroup(nodes, {
@@ -794,28 +860,17 @@ function GraphCanvasContent({
         e.preventDefault();
 
         const { nodes, edges, selectedNodeIds } = useGraphStore.getState();
-        let dataToCopy;
+        const dataToCopy = createGraphClipboardPayload(nodes, edges, selectedNodeIds);
+        const clipboardText = serializeNodeIdsForClipboard(dataToCopy);
+        graphClipboardRef.current = {
+          payload: dataToCopy,
+          text: clipboardText,
+        };
 
-        if (selectedNodeIds.length > 0) {
-          const selectedNodeIdSet = new Set(selectedNodeIds);
-          const selectedNodes = nodes.filter((node) => selectedNodeIdSet.has(node.id));
-          const relatedEdges = edges.filter(
-            (edge) => selectedNodeIdSet.has(edge.source) && selectedNodeIdSet.has(edge.target),
-          );
-
-          dataToCopy = {
-            nodes: selectedNodes,
-            edges: relatedEdges,
-          };
-        } else {
-          dataToCopy = { nodes, edges };
-        }
-
-        const jsonString = JSON.stringify(dataToCopy, null, 2);
         navigator.clipboard
-          .writeText(jsonString)
+          .writeText(clipboardText)
           .then(() => {
-            console.log('Copied to clipboard:', dataToCopy);
+            console.log('Copied node ids to clipboard:', clipboardText);
           })
           .catch((err) => {
             console.error('Failed to copy:', err);
@@ -824,18 +879,29 @@ function GraphCanvasContent({
       }
 
       if (isPaste) {
-        if (typeof navigator.clipboard?.readText !== 'function') return;
         e.preventDefault();
 
         try {
-          const text = await navigator.clipboard.readText();
-          const parsed = JSON.parse(text);
-          if (!isGraphClipboardPayload(parsed)) return;
+          const clipboardText = typeof navigator.clipboard?.readText === 'function'
+            ? await navigator.clipboard.readText()
+            : null;
+          const copiedGraph = graphClipboardRef.current;
+          let parsedPayload: GraphClipboardPayload | null = null;
+
+          if (copiedGraph && (clipboardText === null || clipboardText === copiedGraph.text)) {
+            parsedPayload = copiedGraph.payload;
+          } else if (clipboardText) {
+            const parsed = JSON.parse(clipboardText);
+            if (!isGraphClipboardPayload(parsed)) return;
+            parsedPayload = parsed;
+          }
+
+          if (!parsedPayload) return;
 
           const { nodes, edges } = useGraphStore.getState();
           pushHistory(snapshotGraphState(nodes, edges));
 
-          const next = createPastedGraphState(parsed, nodes, edges);
+          const next = createPastedGraphState(parsedPayload, nodes, edges);
           useGraphStore.setState({
             nodes: next.nodes,
             edges: next.edges,
@@ -952,6 +1018,9 @@ function GraphCanvasContent({
           onPaneClick={onPaneClick}
           onPaneContextMenu={onPaneContextMenu}
           onSelectionChange={onSelectionChange}
+          onMoveEnd={(_event, viewport) => {
+            persistActiveTabViewport(viewport);
+          }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           nodesDraggable={true}

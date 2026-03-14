@@ -250,6 +250,31 @@ describe('parseRenderGraph standardized sizes', () => {
     expect(markdownNode?.data?.size).toEqual({ widthHeight: 's' });
   });
 
+  it('defaults embedded markdown nodes without size to auto content sizing', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-node',
+            props: { id: 'doc-auto', x: 0, y: 0 },
+            children: [
+              {
+                type: 'graph-markdown',
+                props: { content: '# Title\n\n- one\n- two' },
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    const markdownNode = parsed!.nodes.find((node) => node.id === 'doc-auto');
+    expect(markdownNode?.type).toBe('markdown');
+    expect(markdownNode?.data?.size).toEqual({ token: 'auto' });
+  });
+
   it('keeps Sequence and Sticker size token paths unsupported with warnings', () => {
     const warnings: string[] = [];
     const originalWarn = console.warn;
