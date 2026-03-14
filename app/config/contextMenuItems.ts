@@ -1,4 +1,14 @@
-import { Copy, Download, Maximize, MousePointerSquareDashed } from 'lucide-react';
+import {
+  Copy,
+  Download,
+  FileText,
+  Maximize,
+  MousePointerSquareDashed,
+  Pencil,
+  Plus,
+  Square,
+  Type,
+} from 'lucide-react';
 import type { ContextMenuItem } from '@/types/contextMenu';
 
 export const nodeMenuItems: ContextMenuItem[] = [
@@ -32,6 +42,51 @@ export const nodeMenuItems: ContextMenuItem[] = [
     },
     order: 2,
   },
+  {
+    type: 'action',
+    id: 'rename-node',
+    label: 'ID 변경',
+    icon: Pencil,
+    when: (ctx) => ctx.nodeId !== undefined,
+    handler: (ctx) => {
+      if (ctx.nodeId === undefined || !ctx.actions?.renameNode) {
+        return;
+      }
+
+      return ctx.actions.renameNode(ctx.nodeId);
+    },
+    order: 3,
+  },
+  {
+    type: 'action',
+    id: 'mindmap-add-child',
+    label: '자식 추가',
+    icon: Plus,
+    when: (ctx) => ctx.nodeId !== undefined && ctx.nodeFamily === 'mindmap-member',
+    handler: (ctx) => {
+      if (ctx.nodeId === undefined || !ctx.actions?.createMindMapChild) {
+        return;
+      }
+
+      return ctx.actions.createMindMapChild(ctx.nodeId);
+    },
+    order: 4,
+  },
+  {
+    type: 'action',
+    id: 'mindmap-add-sibling',
+    label: '형제 추가',
+    icon: Plus,
+    when: (ctx) => ctx.nodeId !== undefined && ctx.nodeFamily === 'mindmap-member',
+    handler: (ctx) => {
+      if (ctx.nodeId === undefined || !ctx.actions?.createMindMapSibling) {
+        return;
+      }
+
+      return ctx.actions.createMindMapSibling(ctx.nodeId);
+    },
+    order: 5,
+  },
   { type: 'separator' },
   {
     type: 'action',
@@ -53,6 +108,49 @@ export const nodeMenuItems: ContextMenuItem[] = [
 export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
+    id: 'create-shape',
+    label: '도형 생성',
+    icon: Square,
+    handler: (ctx) => {
+      if (!ctx.actions?.createCanvasNode) {
+        return;
+      }
+
+      return ctx.actions.createCanvasNode('shape', ctx.position);
+    },
+    order: 1,
+  },
+  {
+    type: 'action',
+    id: 'create-text',
+    label: '텍스트 생성',
+    icon: Type,
+    handler: (ctx) => {
+      if (!ctx.actions?.createCanvasNode) {
+        return;
+      }
+
+      return ctx.actions.createCanvasNode('text', ctx.position);
+    },
+    order: 2,
+  },
+  {
+    type: 'action',
+    id: 'create-markdown',
+    label: '마크다운 생성',
+    icon: FileText,
+    handler: (ctx) => {
+      if (!ctx.actions?.createCanvasNode) {
+        return;
+      }
+
+      return ctx.actions.createCanvasNode('markdown', ctx.position);
+    },
+    order: 3,
+  },
+  { type: 'separator' },
+  {
+    type: 'action',
     id: 'export-all',
     label: '전체 내보내기',
     icon: Download,
@@ -63,9 +161,8 @@ export const paneMenuItems: ContextMenuItem[] = [
 
       ctx.actions.openExportDialog('full');
     },
-    order: 1,
+    order: 10,
   },
-  { type: 'separator' },
   {
     type: 'action',
     id: 'fit-view',
@@ -79,6 +176,6 @@ export const paneMenuItems: ContextMenuItem[] = [
 
       ctx.actions.fitView();
     },
-    order: 10,
+    order: 20,
   },
 ];

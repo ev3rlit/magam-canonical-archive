@@ -26,6 +26,7 @@ import {
   resolveNodeId,
   type FromProp,
 } from '@/app/mindmapParser';
+import { deriveEditMeta } from '@/features/editing/editability';
 
 const DEFAULT_MINDMAP_SPACING = 50;
 
@@ -146,6 +147,29 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
   const { children } = data.graph;
   const nodes: any[] = [];
   const edges: any[] = [];
+
+  const withEditMeta = (
+    nodeType: string,
+    nodeId: string,
+    nodeData: Record<string, unknown>,
+  ): Record<string, unknown> => {
+    const dataWithSource = {
+      ...nodeData,
+      sourceMeta: nodeData.sourceMeta || {
+        sourceId: nodeId,
+        kind: 'canvas',
+      },
+    };
+
+    return {
+      ...dataWithSource,
+      editMeta: deriveEditMeta({
+        id: nodeId,
+        type: nodeType,
+        data: dataWithSource,
+      }),
+    };
+  };
 
   const getEdgeType = (type?: string) => {
     switch (type) {
@@ -356,7 +380,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           id: seqId,
           type: 'sequence-diagram',
           position: { x: child.props.x || 0, y: child.props.y || 0 },
-          data: {
+          data: withEditMeta('sequence-diagram', seqId, {
             participants,
             messages,
             participantSpacing: child.props.participantSpacing ?? 200,
@@ -372,7 +396,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
               kind: mindmapId ? 'mindmap' : 'canvas',
               scopeId: mindmapId,
             },
-          },
+          }),
         });
 
         if (mindmapId) {
@@ -441,7 +465,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           id: nodeId,
           type: hasMarkdown ? 'markdown' : 'shape',
           position: { x: child.props.x || 0, y: child.props.y || 0 },
-          data: {
+          data: withEditMeta(hasMarkdown ? 'markdown' : 'shape', nodeId, {
             label: safeLabel,
             type: child.props.type || 'rectangle',
             color: child.props.color || child.props.bg,
@@ -466,7 +490,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             children: parsedChildren,
             bubble: nodeBubble,
             size: resolvedMarkdownSize,
-          },
+          }),
         });
 
         if (mindmapId) {
@@ -483,7 +507,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           id: imageId,
           type: 'image',
           position: { x: child.props.x || 0, y: child.props.y || 0 },
-          data: {
+          data: withEditMeta('image', imageId, {
             src: child.props.src || '',
             alt: child.props.alt,
             width: child.props.width,
@@ -495,7 +519,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
               kind: mindmapId ? 'mindmap' : 'canvas',
               scopeId: mindmapId,
             },
-          },
+          }),
         });
 
         if (mindmapId) {
@@ -537,7 +561,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           id: stickerId,
           type: 'sticker',
           position: { x: child.props.x || 0, y: child.props.y || 0 },
-          data: {
+          data: withEditMeta('sticker', stickerId, {
             label: stickerLabel || child.props.label || '',
             width: child.props.width,
             height: child.props.height,
@@ -558,7 +582,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
               kind: mindmapId ? 'mindmap' : 'canvas',
               scopeId: mindmapId,
             },
-          },
+          }),
         });
 
         if (mindmapId) {
@@ -605,7 +629,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
                 ? child.props.y
                 : defaultPosition.y,
           },
-          data: {
+          data: withEditMeta('washi-tape', washiId, {
             label: washiLabel || child.props.label || '',
             pattern: child.props.pattern ?? normalizedWashi.pattern,
             edge: child.props.edge,
@@ -622,7 +646,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
               kind: mindmapId ? 'mindmap' : 'canvas',
               scopeId: mindmapId,
             },
-          },
+          }),
         });
 
         if (mindmapId) {
@@ -751,7 +775,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             x: typeof child.props.x === 'number' ? child.props.x : 0,
             y: typeof child.props.y === 'number' ? child.props.y : 0,
           },
-          data: {
+          data: withEditMeta(nodeType, nodeId, {
             label: safeLabel,
             type: child.props.type || 'rectangle',
             shape: nodeType === 'sticky' ? normalizedSticky?.shape : undefined,
@@ -794,7 +818,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
               kind: mindmapId ? 'mindmap' : 'canvas',
               scopeId: mindmapId,
             },
-          },
+          }),
         });
 
         if (mindmapId) {

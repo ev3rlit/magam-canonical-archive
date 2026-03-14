@@ -41,6 +41,7 @@ export const RPC_ERRORS = {
     VERSION_CONFLICT: { code: 40901, message: 'VERSION_CONFLICT' },
     MINDMAP_CYCLE: { code: 40902, message: 'MINDMAP_CYCLE' },
     ID_COLLISION: { code: 40903, message: 'ID_COLLISION' },
+    EDIT_NOT_ALLOWED: { code: 42201, message: 'EDIT_NOT_ALLOWED' },
     PATCH_FAILED: { code: 50001, message: 'PATCH_FAILED' },
 } as const;
 

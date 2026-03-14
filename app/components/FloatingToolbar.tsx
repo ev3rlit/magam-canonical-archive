@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  FileText,
   MousePointer2,
   Hand,
   ZoomIn,
@@ -9,9 +10,15 @@ import {
   Maximize,
   Bookmark,
   Check,
+  Plus,
+  Square,
+  Sticker,
+  Ticket,
+  Type,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { FontSelector } from './FontSelector';
+import type { GraphCanvasCreateMode } from './GraphCanvas.drag';
 
 export type InteractionMode = 'pointer' | 'hand';
 
@@ -23,6 +30,8 @@ interface WashiPresetOption {
 interface FloatingToolbarProps {
   interactionMode: InteractionMode;
   onInteractionModeChange: (mode: InteractionMode) => void;
+  createMode: GraphCanvasCreateMode;
+  onCreateModeChange: (mode: GraphCanvasCreateMode) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitView: () => void;
@@ -35,6 +44,8 @@ interface FloatingToolbarProps {
 export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   interactionMode,
   onInteractionModeChange,
+  createMode,
+  onCreateModeChange,
   onZoomIn,
   onZoomOut,
   onFitView,
@@ -44,7 +55,9 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   onSelectWashiPreset,
 }) => {
   const [isWashiPresetMenuOpen, setIsWashiPresetMenuOpen] = useState(false);
+  const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
   const presetMenuRef = useRef<HTMLDivElement>(null);
+  const createMenuRef = useRef<HTMLDivElement>(null);
   const canOpenWashiPreset = washiPresetEnabled && washiPresets.length > 0;
   const activeWashiPresetLabel = useMemo(
     () => washiPresets.find((preset) => preset.id === activeWashiPresetId)?.label ?? null,
@@ -73,6 +86,41 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     };
   }, [isWashiPresetMenuOpen]);
 
+  useEffect(() => {
+    if (!isCreateMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!createMenuRef.current || !event.target) {
+        return;
+      }
+      if (!createMenuRef.current.contains(event.target as Node)) {
+        setIsCreateMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('touchstart', handlePointerDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('touchstart', handlePointerDown);
+    };
+  }, [isCreateMenuOpen]);
+
+  const createOptions: Array<{
+    id: Exclude<GraphCanvasCreateMode, null>;
+    label: string;
+    icon: React.ReactNode;
+  }> = [
+    { id: 'shape', label: 'Shape', icon: <Square className="w-4 h-4" /> },
+    { id: 'text', label: 'Text', icon: <Type className="w-4 h-4" /> },
+    { id: 'markdown', label: 'Markdown', icon: <FileText className="w-4 h-4" /> },
+    { id: 'sticker', label: 'Sticker', icon: <Sticker className="w-4 h-4" /> },
+    { id: 'washi-tape', label: 'Washi', icon: <Ticket className="w-4 h-4" /> },
+  ];
+  const activeCreateLabel = createOptions.find((option) => option.id === createMode)?.label ?? null;
+
   return (
     <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-full shadow-xl">
       <ToolbarButton
@@ -87,6 +135,60 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
         title="Pan Mode (H)"
         icon={<Hand className="w-4 h-4" />}
       />
+
+      <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+
+      <div className="relative" ref={createMenuRef}>
+        <ToolbarButton
+          active={isCreateMenuOpen || createMode !== null}
+          onClick={() => setIsCreateMenuOpen((prev) => !prev)}
+          title={activeCreateLabel ? `Create Mode: ${activeCreateLabel}` : 'Open Create Modes'}
+          icon={<Plus className="w-4 h-4" />}
+        />
+
+        {isCreateMenuOpen && (
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-12 w-56 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
+            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+              Create on pane click
+            </div>
+            <div className="py-1">
+              {createOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={cn(
+                    'w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-2',
+                    'hover:bg-slate-100 dark:hover:bg-slate-800/80',
+                    createMode === option.id
+                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                      : 'text-slate-700 dark:text-slate-200',
+                  )}
+                  onClick={() => {
+                    onCreateModeChange(option.id);
+                    setIsCreateMenuOpen(false);
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    {option.icon}
+                    {option.label}
+                  </span>
+                  {createMode === option.id && <Check className="w-3.5 h-3.5 shrink-0" />}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="w-full border-t border-slate-200 dark:border-slate-700 px-3 py-2 text-left text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+              onClick={() => {
+                onCreateModeChange(null);
+                setIsCreateMenuOpen(false);
+              }}
+            >
+              Create mode off
+            </button>
+          </div>
+        )}
+      </div>
 
       <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
 

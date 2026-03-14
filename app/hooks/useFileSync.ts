@@ -7,15 +7,19 @@ import { useGraphStore } from '@/store/graph';
 import type { EditCompletionEvent } from '@/store/graph';
 import { editDebugLog, isEditDebugEnabled } from '@/utils/editDebug';
 
-const PORT = process.env.NEXT_PUBLIC_MAGAM_WS_PORT || '3001';
-const WS_URL = `ws://localhost:${PORT}`;
 const REQUEST_TIMEOUT = 5000;
+const OWN_COMMAND_TTL_MS = 60_000;
 
 export const MAX_VERSION_CONFLICT_RETRY = 1;
 export const VERSION_CONFLICT_METRIC_WINDOW_MS = 10 * 60 * 1000;
 export const VERSION_CONFLICT_RATE_THRESHOLD = 0.02;
 
-type MutationMethod = 'node.update' | 'node.move' | 'node.create' | 'node.reparent';
+type MutationMethod = 'node.update' | 'node.move' | 'node.create' | 'node.delete' | 'node.reparent';
+type UpdateNodeCommandType =
+    | 'node.move.relative'
+    | 'node.content.update'
+    | 'node.style.update'
+    | 'node.rename';
 
 interface JsonRpcRequest {
     jsonrpc: '2.0';
@@ -33,11 +37,40 @@ interface JsonRpcResponse {
     params?: Record<string, unknown>;
 }
 
+type PendingRequestEntry = {
+    resolve: (result: unknown) => void;
+    reject: (error: Error) => void;
+    meta: {
+        method: string;
+        startedAt: number;
+        filePath?: string;
+        nodeId?: string;
+        commandType?: string;
+    };
+};
+
 export interface RpcMutationResult {
     success?: boolean;
     newVersion?: string;
     commandId?: string;
     filePath?: string;
+}
+
+export interface UpdateNodeMutationOptions {
+    commandType?: UpdateNodeCommandType;
+}
+
+export interface EditEventMutators {
+    moveNode: (nodeId: string, x: number, y: number, targetFilePath?: string | null) => Promise<unknown>;
+    updateNode: (
+        nodeId: string,
+        props: Record<string, unknown>,
+        targetFilePath?: string | null,
+        options?: UpdateNodeMutationOptions,
+    ) => Promise<unknown>;
+    createNode: (node: Record<string, unknown>, targetFilePath?: string | null) => Promise<unknown>;
+    deleteNode: (nodeId: string, targetFilePath?: string | null) => Promise<unknown>;
+    reparentNode: (nodeId: string, newParentId?: string | null, targetFilePath?: string | null) => Promise<unknown>;
 }
 
 type VersionConflictData = {
@@ -116,6 +149,42 @@ export class RpcClientError extends Error {
 }
 
 let requestIdCounter = 0;
+
+export function resolveFileSyncWsUrl(input?: {
+    port?: string;
+    location?: {
+        protocol?: string;
+        hostname?: string;
+    };
+}): string {
+    const port = input?.port ?? process.env.NEXT_PUBLIC_MAGAM_WS_PORT ?? '3001';
+    const protocol = input?.location?.protocol === 'https:' ? 'wss' : 'ws';
+    const hostname = input?.location?.hostname || 'localhost';
+    return `${protocol}://${hostname}:${port}`;
+}
+
+export function normalizeWatchedFiles(filePath: string | null, dependencyFiles: string[]): string[] {
+    return Array.from(new Set(
+        [filePath, ...dependencyFiles].filter((value): value is string => typeof value === 'string' && value.length > 0),
+    )).sort();
+}
+
+export function buildWatchedFilesSignature(files: string[]): string {
+    return files.join('\n');
+}
+
+function pruneExpiredOwnCommands(commands: Map<string, number>, now: number): void {
+    commands.forEach((issuedAt, commandId) => {
+        if ((now - issuedAt) > OWN_COMMAND_TTL_MS) {
+            commands.delete(commandId);
+        }
+    });
+}
+
+function rememberOwnCommand(commands: Map<string, number>, commandId: string, now: number): void {
+    pruneExpiredOwnCommands(commands, now);
+    commands.set(commandId, now);
+}
 
 function pruneExpiredTimestamps(timestamps: number[], now: number, windowMs: number): void {
     while (timestamps.length > 0 && (now - timestamps[0]) > windowMs) {
@@ -262,6 +331,104 @@ export function createPerFileMutationExecutor(input: CreateMutationExecutorInput
     };
 }
 
+export function shouldReloadAfterHistoryReplay(event: EditCompletionEvent): boolean {
+    return (
+        event.type === 'NODE_RENAMED'
+        || event.type === 'NODE_CREATED'
+        || event.type === 'NODE_REPARENTED'
+    );
+}
+
+export async function applyEditCompletionSnapshot(
+    event: EditCompletionEvent,
+    direction: 'before' | 'after',
+    mutators: EditEventMutators,
+): Promise<void> {
+    const snapshot = direction === 'before' ? event.before : event.after;
+
+    if (event.type === 'ABSOLUTE_MOVE_COMMITTED') {
+        const x = snapshot.x;
+        const y = snapshot.y;
+        if (typeof x !== 'number' || typeof y !== 'number') {
+            throw new Error('INVALID_EVENT_SNAPSHOT');
+        }
+        await mutators.moveNode(event.nodeId, x, y, event.filePath);
+        return;
+    }
+
+    if (event.type === 'TEXT_EDIT_COMMITTED' || event.type === 'CONTENT_UPDATED') {
+        const content = snapshot.content;
+        if (typeof content !== 'string') {
+            throw new Error('INVALID_EVENT_SNAPSHOT');
+        }
+        await mutators.updateNode(event.nodeId, { content }, event.filePath, {
+            commandType: 'node.content.update',
+        });
+        return;
+    }
+
+    if (event.type === 'STYLE_UPDATED') {
+        await mutators.updateNode(event.nodeId, snapshot, event.filePath, {
+            commandType: 'node.style.update',
+        });
+        return;
+    }
+
+    if (event.type === 'NODE_RENAMED') {
+        const beforeId = event.before.id;
+        const afterId = event.after.id;
+        if (typeof beforeId !== 'string' || typeof afterId !== 'string') {
+            throw new Error('INVALID_EVENT_SNAPSHOT');
+        }
+        const targetNodeId = direction === 'before' ? afterId : beforeId;
+        const nextId = direction === 'before' ? beforeId : afterId;
+        await mutators.updateNode(targetNodeId, { id: nextId }, event.filePath, {
+            commandType: 'node.rename',
+        });
+        return;
+    }
+
+    if (event.type === 'NODE_CREATED') {
+        const createInput = event.after.create;
+        if (!createInput || typeof createInput !== 'object') {
+            throw new Error('INVALID_EVENT_SNAPSHOT');
+        }
+        if (direction === 'before') {
+            const createdId = (createInput as { id?: unknown }).id;
+            if (typeof createdId !== 'string') {
+                throw new Error('INVALID_EVENT_SNAPSHOT');
+            }
+            await mutators.deleteNode(createdId, event.filePath);
+            return;
+        }
+        await mutators.createNode(createInput as Record<string, unknown>, event.filePath);
+        return;
+    }
+
+    if (event.type === 'NODE_REPARENTED') {
+        const parentId = 'parentId' in snapshot ? snapshot.parentId : undefined;
+        if (parentId !== null && parentId !== undefined && typeof parentId !== 'string') {
+            throw new Error('INVALID_EVENT_SNAPSHOT');
+        }
+        await mutators.reparentNode(event.nodeId, parentId ?? undefined, event.filePath);
+        return;
+    }
+
+    const patchProps: Record<string, unknown> = {};
+    if ('gap' in snapshot && typeof snapshot.gap === 'number') {
+        patchProps.gap = snapshot.gap;
+    }
+    if ('at' in snapshot && snapshot.at && typeof snapshot.at === 'object') {
+        patchProps.at = snapshot.at;
+    }
+    if (Object.keys(patchProps).length === 0) {
+        throw new Error('INVALID_EVENT_SNAPSHOT');
+    }
+    await mutators.updateNode(event.nodeId, patchProps, event.filePath, {
+        commandType: 'node.move.relative',
+    });
+}
+
 export function shouldReloadForFileChange(input: {
     changedFile: string;
     currentFile: string | null;
@@ -269,17 +436,25 @@ export function shouldReloadForFileChange(input: {
     incomingOriginId?: unknown;
     incomingCommandId?: unknown;
     clientId: string;
+    recentOwnCommandIds?: Set<string>;
     lastAppliedCommandId?: string;
 }): boolean {
     if (!input.watchedFiles.has(input.changedFile)) return false;
 
     const isSelfEvent =
-        input.changedFile === input.currentFile &&
         input.incomingOriginId === input.clientId &&
-        typeof input.incomingCommandId === 'string' &&
+        typeof input.incomingCommandId === 'string';
+
+    if (isSelfEvent && input.recentOwnCommandIds?.has(input.incomingCommandId as string)) {
+        return false;
+    }
+
+    const isCurrentFileSelfEvent =
+        input.changedFile === input.currentFile &&
+        isSelfEvent &&
         input.incomingCommandId === input.lastAppliedCommandId;
 
-    return !isSelfEvent;
+    return !isCurrentFileSelfEvent;
 }
 
 export function useFileSync(
@@ -289,15 +464,44 @@ export function useFileSync(
     dependencyFiles: string[] = [],
 ) {
     const wsRef = useRef<WebSocket | null>(null);
-    const pendingRequestsRef = useRef<Map<number, {
-        resolve: (result: unknown) => void;
-        reject: (error: Error) => void;
-    }>>(new Map());
+    const pendingRequestsRef = useRef<Map<number, PendingRequestEntry>>(new Map());
     const currentFileRef = useRef<string | null>(null);
     const watchedFilesRef = useRef<Set<string>>(new Set());
-    const watchedFiles = useMemo(() => Array.from(new Set(
-        [filePath, ...dependencyFiles].filter((value): value is string => typeof value === 'string' && value.length > 0),
-    )).sort(), [dependencyFiles, filePath]);
+    const wsUrlRef = useRef<string>(resolveFileSyncWsUrl());
+    const recentOwnCommandsRef = useRef<Map<string, number>>(new Map());
+    const dependencyFilesSignature = useMemo(
+        () => buildWatchedFilesSignature([...dependencyFiles].sort()),
+        [dependencyFiles],
+    );
+    const watchedFiles = useMemo(
+        () => normalizeWatchedFiles(filePath, dependencyFiles),
+        [dependencyFilesSignature, filePath],
+    );
+    const watchedFilesSignature = useMemo(
+        () => buildWatchedFilesSignature(watchedFiles),
+        [watchedFiles],
+    );
+
+    const rejectPendingRequests = useCallback((reason: string) => {
+        if (pendingRequestsRef.current.size === 0) {
+            return;
+        }
+
+        const error = new Error(reason);
+        pendingRequestsRef.current.forEach((pending) => {
+            editDebugLog('rpc-request-aborted', error, {
+                method: pending.meta.method,
+                filePath: pending.meta.filePath ?? null,
+                nodeId: pending.meta.nodeId ?? null,
+                commandType: pending.meta.commandType ?? null,
+                durationMs: Date.now() - pending.meta.startedAt,
+                wsUrl: wsUrlRef.current,
+                readyState: wsRef.current?.readyState ?? null,
+            });
+            pending.reject(error);
+        });
+        pendingRequestsRef.current.clear();
+    }, []);
 
     const sendRequest = useCallback(async (method: string, params: Record<string, unknown>): Promise<unknown> => {
         return new Promise((resolve, reject) => {
@@ -308,12 +512,33 @@ export function useFileSync(
 
             const id = ++requestIdCounter;
             const request: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
-            pendingRequestsRef.current.set(id, { resolve, reject });
+            pendingRequestsRef.current.set(id, {
+                resolve,
+                reject,
+                meta: {
+                    method,
+                    startedAt: Date.now(),
+                    filePath: typeof params.filePath === 'string' ? params.filePath : undefined,
+                    nodeId: typeof params.nodeId === 'string' ? params.nodeId : undefined,
+                    commandType: typeof params.commandType === 'string' ? params.commandType : undefined,
+                },
+            });
 
             setTimeout(() => {
-                if (pendingRequestsRef.current.has(id)) {
+                const pending = pendingRequestsRef.current.get(id);
+                if (pending) {
                     pendingRequestsRef.current.delete(id);
-                    reject(new Error(`Request timeout: ${method}`));
+                    const timeoutError = new Error(`Request timeout: ${method}`);
+                    editDebugLog('rpc-request-timeout', timeoutError, {
+                        method: pending.meta.method,
+                        filePath: pending.meta.filePath ?? null,
+                        nodeId: pending.meta.nodeId ?? null,
+                        commandType: pending.meta.commandType ?? null,
+                        durationMs: Date.now() - pending.meta.startedAt,
+                        wsUrl: wsUrlRef.current,
+                        readyState: wsRef.current?.readyState ?? null,
+                    });
+                    pending.reject(timeoutError);
                 }
             }, REQUEST_TIMEOUT);
 
@@ -350,6 +575,7 @@ export function useFileSync(
                 const incomingOriginId = data.params?.originId;
                 const incomingCommandId = data.params?.commandId;
                 const { clientId, lastAppliedCommandId, setSourceVersionForFile } = useGraphStore.getState();
+                pruneExpiredOwnCommands(recentOwnCommandsRef.current, Date.now());
 
                 if (typeof incomingVersion === 'string') {
                     setSourceVersionForFile(changedFile, incomingVersion);
@@ -362,6 +588,7 @@ export function useFileSync(
                     incomingOriginId,
                     incomingCommandId,
                     clientId,
+                    recentOwnCommandIds: new Set(recentOwnCommandsRef.current.keys()),
                     lastAppliedCommandId,
                 });
 
@@ -384,7 +611,16 @@ export function useFileSync(
 
         currentFileRef.current = filePath;
         watchedFilesRef.current = new Set(watchedFiles);
-        const ws = new WebSocket(WS_URL);
+        const wsUrl = resolveFileSyncWsUrl({
+            location: typeof window !== 'undefined'
+                ? {
+                    protocol: window.location.protocol,
+                    hostname: window.location.hostname,
+                }
+                : undefined,
+        });
+        wsUrlRef.current = wsUrl;
+        const ws = new WebSocket(wsUrl);
         wsRef.current = ws;
 
         ws.onopen = () => {
@@ -395,19 +631,20 @@ export function useFileSync(
 
         ws.onmessage = handleMessage;
         ws.onerror = (error) => console.error('[FileSync] WebSocket error:', error);
-        ws.onclose = () => console.log('[FileSync] Disconnected from server');
+        ws.onclose = () => {
+            rejectPendingRequests('WebSocket disconnected before response');
+            console.log('[FileSync] Disconnected from server');
+        };
 
         return () => {
-            if (ws.readyState === WebSocket.OPEN) {
-                watchedFiles.forEach((watchedFilePath) => {
-                    sendRequest('file.unsubscribe', { filePath: watchedFilePath }).catch(() => { });
-                });
-            }
+            rejectPendingRequests('WebSocket connection was reset');
             ws.close();
-            wsRef.current = null;
+            if (wsRef.current === ws) {
+                wsRef.current = null;
+            }
             watchedFilesRef.current = new Set();
         };
-    }, [filePath, handleMessage, sendRequest, watchedFiles]);
+    }, [filePath, handleMessage, rejectPendingRequests, sendRequest, watchedFiles, watchedFilesSignature]);
 
     const withCommon = useCallback((params: Record<string, unknown>) => {
         const targetFilePath = typeof params.filePath === 'string' ? params.filePath : filePath;
@@ -422,6 +659,7 @@ export function useFileSync(
             throw new Error('SOURCE_VERSION_NOT_READY');
         }
         const commandId = crypto.randomUUID();
+        rememberOwnCommand(recentOwnCommandsRef.current, commandId, Date.now());
         useGraphStore.getState().setLastAppliedCommandId(commandId);
 
         return {
@@ -442,6 +680,7 @@ export function useFileSync(
             }
         }
         if (typed?.commandId) {
+            rememberOwnCommand(recentOwnCommandsRef.current, typed.commandId, Date.now());
             useGraphStore.getState().setLastAppliedCommandId(typed.commandId);
         }
         return typed;
@@ -493,12 +732,18 @@ export function useFileSync(
         nodeId: string,
         props: Record<string, unknown>,
         targetFilePath: string | null = filePath,
+        options?: UpdateNodeMutationOptions,
     ): Promise<RpcMutationResult> => {
         if (!targetFilePath) return {};
         return mutationExecutor.enqueueMutation({
             method: 'node.update',
             filePath: targetFilePath,
-            buildParams: () => ({ filePath: targetFilePath, nodeId, props }),
+            buildParams: () => ({
+                filePath: targetFilePath,
+                nodeId,
+                props,
+                ...(options?.commandType ? { commandType: options.commandType } : {}),
+            }),
         });
     }, [filePath, mutationExecutor]);
 
@@ -516,25 +761,44 @@ export function useFileSync(
         });
     }, [filePath, mutationExecutor]);
 
-    const createNode = useCallback(async (node: Record<string, unknown>, targetFilePath: string | null = filePath) => {
+    const createNode = useCallback(async (
+        node: Record<string, unknown>,
+        targetFilePath: string | null = filePath,
+    ): Promise<RpcMutationResult> => {
         if (!targetFilePath) return;
-        await mutationExecutor.enqueueMutation({
+        return mutationExecutor.enqueueMutation({
             method: 'node.create',
             filePath: targetFilePath,
             buildParams: () => ({ filePath: targetFilePath, node }),
         });
     }, [filePath, mutationExecutor]);
 
+    const deleteNode = useCallback(async (
+        nodeId: string,
+        targetFilePath: string | null = filePath,
+    ): Promise<RpcMutationResult> => {
+        if (!targetFilePath) return {};
+        return mutationExecutor.enqueueMutation({
+            method: 'node.delete',
+            filePath: targetFilePath,
+            buildParams: () => ({ filePath: targetFilePath, nodeId }),
+        });
+    }, [filePath, mutationExecutor]);
+
     const reparentNode = useCallback(async (
         nodeId: string,
-        newParentId?: string,
+        newParentId?: string | null,
         targetFilePath: string | null = filePath,
-    ) => {
-        if (!targetFilePath) return;
-        await mutationExecutor.enqueueMutation({
+    ): Promise<RpcMutationResult> => {
+        if (!targetFilePath) return {};
+        return mutationExecutor.enqueueMutation({
             method: 'node.reparent',
             filePath: targetFilePath,
-            buildParams: () => ({ filePath: targetFilePath, nodeId, newParentId }),
+            buildParams: () => ({
+                filePath: targetFilePath,
+                nodeId,
+                ...(newParentId ? { newParentId } : {}),
+            }),
         });
     }, [filePath, mutationExecutor]);
 
@@ -542,39 +806,14 @@ export function useFileSync(
         event: EditCompletionEvent,
         direction: 'before' | 'after',
     ): Promise<void> => {
-        const snapshot = direction === 'before' ? event.before : event.after;
-
-        if (event.type === 'ABSOLUTE_MOVE_COMMITTED') {
-            const x = snapshot.x;
-            const y = snapshot.y;
-            if (typeof x !== 'number' || typeof y !== 'number') {
-                throw new Error('INVALID_EVENT_SNAPSHOT');
-            }
-            await moveNode(event.nodeId, x, y, event.filePath);
-            return;
-        }
-
-        if (event.type === 'TEXT_EDIT_COMMITTED') {
-            const content = snapshot.content;
-            if (typeof content !== 'string') {
-                throw new Error('INVALID_EVENT_SNAPSHOT');
-            }
-            await updateNode(event.nodeId, { content }, event.filePath);
-            return;
-        }
-
-        const patchProps: Record<string, unknown> = {};
-        if ('gap' in snapshot && typeof snapshot.gap === 'number') {
-            patchProps.gap = snapshot.gap;
-        }
-        if ('at' in snapshot && snapshot.at && typeof snapshot.at === 'object') {
-            patchProps.at = snapshot.at;
-        }
-        if (Object.keys(patchProps).length === 0) {
-            throw new Error('INVALID_EVENT_SNAPSHOT');
-        }
-        await updateNode(event.nodeId, patchProps, event.filePath);
-    }, [moveNode, updateNode]);
+        await applyEditCompletionSnapshot(event, direction, {
+            moveNode,
+            updateNode,
+            createNode,
+            deleteNode,
+            reparentNode,
+        });
+    }, [createNode, deleteNode, moveNode, reparentNode, updateNode]);
 
     const undoLastEdit = useCallback(async (): Promise<boolean> => {
         const state = useGraphStore.getState();
@@ -584,8 +823,11 @@ export function useFileSync(
         }
         await applyEventSnapshot(event, 'before');
         useGraphStore.getState().commitUndoEventSuccess(event.eventId);
+        if (shouldReloadAfterHistoryReplay(event)) {
+            onFileChange();
+        }
         return true;
-    }, [applyEventSnapshot]);
+    }, [applyEventSnapshot, onFileChange]);
 
     const redoLastEdit = useCallback(async (): Promise<boolean> => {
         const state = useGraphStore.getState();
@@ -595,8 +837,11 @@ export function useFileSync(
         }
         await applyEventSnapshot(event, 'after');
         useGraphStore.getState().commitRedoEventSuccess(event.eventId);
+        if (shouldReloadAfterHistoryReplay(event)) {
+            onFileChange();
+        }
         return true;
-    }, [applyEventSnapshot]);
+    }, [applyEventSnapshot, onFileChange]);
 
-    return { updateNode, moveNode, createNode, reparentNode, undoLastEdit, redoLastEdit };
+    return { updateNode, moveNode, createNode, deleteNode, reparentNode, undoLastEdit, redoLastEdit };
 }

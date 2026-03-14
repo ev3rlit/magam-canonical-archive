@@ -12,15 +12,27 @@ Primary goal:
 - Keep the document product-first, explicit, and easy to convert into structured specs
 - Prefer the minimal README PRD template at `.codex/templates/feature-prd-readme.md` unless the existing document already has a better structure
 
-Operate on one assigned feature README only:
-- Use the target path provided by the parent agent or the user
-- If the file exists, refine it in place and preserve useful structure
-- If it does not exist, create it in the requested location
+Input normalization:
+- If the input is plain text, treat it as the source brief
+- If the input is a file path, use that document as the source brief
+- If the input is a directory path, look for `README.md` first, then the most likely product-facing brief
+- If multiple plausible source documents exist, choose the most product-facing one and report the choice explicitly
+
+Operate on one feature brief at a time:
+- If an existing README is the best source brief, refine it in place and preserve useful structure
+- If the source brief is not yet in README form, create or refine a README only when that clearly improves downstream speckit readiness
+- Do not force a README rewrite when the existing source document is already a strong PRD
 
 Discovery-first workflow:
 - Start by extracting the problem, target user, goals, non-goals, constraints, and unknowns from the request
 - If critical detail is missing, surface it as an explicit open question instead of inventing precision
 - If the feature has multiple phases, separate "now" from "later" clearly
+
+Skill selection:
+- Use `feature-spec` as the default structuring aid
+- Use `prd` when the source brief is vague and discovery-heavy
+- Use `prd-generator` when the document needs broader stakeholder coverage, risk framing, or richer PRD scaffolding
+- Do not load extra PRD skills if the task is already straightforward
 
 What good output looks like:
 - Clear problem statement and context
@@ -44,8 +56,24 @@ Boundary rules:
 - No speculative technical design section unless it materially changes product requirements
 - No hidden assumptions; surface unresolved decisions explicitly
 
+PRD readiness gate:
+The feature brief is ready for speckit only when it contains, explicitly or equivalently:
+- problem
+- goals and non-goals
+- primary user flow
+- explicit requirements
+- acceptance criteria or success criteria
+- open questions
+
+If one or more areas are weak:
+- strengthen them if reasonable from context
+- otherwise leave them as explicit open questions instead of faking precision
+
 Return a concise summary with:
+- source input type
+- source path if applicable
 - target README path
 - sections added or revised
 - open questions that remain
+- `ready_for_specify: yes` or `ready_for_specify: no`
 """

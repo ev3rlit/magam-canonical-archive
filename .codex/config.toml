@@ -17,3 +17,7 @@ config_file = "agents/feature-prd-writer.toml"
 [agents.speckit-master]
 description = "Speckit pipeline master for one feature. Accepts feature text or a file path, then drives specify, optional clarify, plan, tasks, and analyze, and stops before implementation."
 config_file = "agents/speckit-master.toml"
+
+[agents.agent-evaluator]
+description = "Evaluation and tuning agent for Codex agents. Runs agents, scores outcomes with optional human feedback, and proposes or applies the smallest useful prompt improvements."
+config_file = "agents/agent-evaluator.toml"

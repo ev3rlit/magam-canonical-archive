@@ -3,7 +3,10 @@ import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import {
   canCommitTextEdit,
+  canRunNodeCommand,
+  getAllowedNodeStylePatch,
   mapEditRpcErrorToToast,
+  resolveNodeEditContext,
   resolveNodeEditTarget,
 } from './workspaceEditUtils';
 
@@ -119,5 +122,73 @@ describe('WorkspaceClient attach rejection guidance', () => {
         message: 'ID_COLLISION',
       }),
     ).toContain('ID 중복');
+  });
+
+  it('EDIT_NOT_ALLOWED 에러는 read-only 안내 메시지로 매핑된다', () => {
+    expect(
+      mapEditRpcErrorToToast({
+        code: 42201,
+        message: 'EDIT_NOT_ALLOWED',
+      }),
+    ).toContain('웹 편집 범위');
+  });
+
+  it('MindMap reparent 후보가 없으면 구조 편집 안내 메시지를 반환한다', () => {
+    expect(
+      mapEditRpcErrorToToast({
+        code: 42201,
+        message: 'EDIT_NOT_ALLOWED',
+        data: { reason: 'NO_VALID_PARENT' },
+      }),
+    ).toContain('부모를 바꿔야');
+  });
+});
+
+describe('WorkspaceClient editability helpers', () => {
+  const editableNode = makeNode({
+    id: 'sticker-1',
+    type: 'sticker',
+    data: {
+      sourceMeta: { sourceId: 'sticker-1', filePath: 'examples/demo.tsx' },
+      editMeta: {
+        family: 'canvas-absolute',
+        styleEditableKeys: ['outlineColor', 'outlineWidth', 'shadow'],
+        createMode: 'canvas',
+      },
+    },
+  });
+
+  it('resolveNodeEditContext returns target + editMeta together', () => {
+    expect(resolveNodeEditContext(editableNode, 'examples/fallback.tsx')).toEqual({
+      target: {
+        nodeId: 'sticker-1',
+        filePath: 'examples/demo.tsx',
+      },
+      editMeta: {
+        family: 'canvas-absolute',
+        styleEditableKeys: ['outlineColor', 'outlineWidth', 'shadow'],
+        createMode: 'canvas',
+      },
+      readOnlyReason: undefined,
+    });
+  });
+
+  it('canRunNodeCommand respects editMeta gating', () => {
+    expect(canRunNodeCommand(editableNode, 'node.style.update')).toBe(true);
+    expect(canRunNodeCommand(editableNode, 'node.reparent')).toBe(false);
+  });
+
+  it('getAllowedNodeStylePatch filters non-whitelisted keys', () => {
+    expect(getAllowedNodeStylePatch(editableNode, {
+      outlineColor: '#fff',
+      shadow: 'lg',
+      anchor: 'shape-1',
+    })).toEqual({
+      patch: {
+        outlineColor: '#fff',
+        shadow: 'lg',
+      },
+      rejectedKeys: ['anchor'],
+    });
   });
 });

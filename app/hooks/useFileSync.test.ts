@@ -1,9 +1,14 @@
 import { describe, expect, it, mock } from 'bun:test';
 import {
+  applyEditCompletionSnapshot,
   createPerFileMutationExecutor,
   createVersionConflictMetricsTracker,
   MAX_VERSION_CONFLICT_RETRY,
   RpcClientError,
+  buildWatchedFilesSignature,
+  normalizeWatchedFiles,
+  resolveFileSyncWsUrl,
+  shouldReloadAfterHistoryReplay,
   shouldReloadForFileChange,
   VERSION_CONFLICT_METRIC_WINDOW_MS,
   VERSION_CONFLICT_RATE_THRESHOLD,
@@ -12,6 +17,51 @@ import {
 async function waitForAsyncTurn(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
+
+describe('useFileSync ws url resolution', () => {
+  it('브라우저 location을 기준으로 ws url을 만든다', () => {
+    expect(resolveFileSyncWsUrl({
+      port: '3012',
+      location: {
+        protocol: 'http:',
+        hostname: '127.0.0.1',
+      },
+    })).toBe('ws://127.0.0.1:3012');
+  });
+
+  it('https 환경이면 wss를 사용한다', () => {
+    expect(resolveFileSyncWsUrl({
+      port: '4444',
+      location: {
+        protocol: 'https:',
+        hostname: 'dev.local',
+      },
+    })).toBe('wss://dev.local:4444');
+  });
+});
+
+describe('useFileSync watched files normalization', () => {
+  it('현재 파일과 의존 파일을 unique + stable sort로 정규화한다', () => {
+    expect(normalizeWatchedFiles('examples/a.tsx', [
+      'examples/b.tsx',
+      'examples/a.tsx',
+      'examples/b.tsx',
+    ])).toEqual([
+      'examples/a.tsx',
+      'examples/b.tsx',
+    ]);
+  });
+
+  it('watch signature는 같은 파일 집합이면 동일 문자열을 만든다', () => {
+    expect(buildWatchedFilesSignature([
+      'examples/a.tsx',
+      'examples/b.tsx',
+    ])).toBe(buildWatchedFilesSignature([
+      'examples/a.tsx',
+      'examples/b.tsx',
+    ]));
+  });
+});
 
 describe('useFileSync notification guard', () => {
   it('self-origin + same command 는 무시한다', () => {
@@ -22,6 +72,7 @@ describe('useFileSync notification guard', () => {
       incomingOriginId: 'client-1',
       incomingCommandId: 'cmd-1',
       clientId: 'client-1',
+      recentOwnCommandIds: new Set(['cmd-1']),
       lastAppliedCommandId: 'cmd-1',
     });
 
@@ -36,6 +87,7 @@ describe('useFileSync notification guard', () => {
       incomingOriginId: 'external',
       incomingCommandId: 'cmd-x',
       clientId: 'client-1',
+      recentOwnCommandIds: new Set(['cmd-1']),
       lastAppliedCommandId: 'cmd-1',
     });
 
@@ -50,6 +102,7 @@ describe('useFileSync notification guard', () => {
       incomingOriginId: 'external',
       incomingCommandId: 'cmd-x',
       clientId: 'client-1',
+      recentOwnCommandIds: new Set(['cmd-1']),
       lastAppliedCommandId: 'cmd-1',
     });
 
@@ -64,10 +117,26 @@ describe('useFileSync notification guard', () => {
       incomingOriginId: 'client-1',
       incomingCommandId: 'cmd-1',
       clientId: 'client-1',
+      recentOwnCommandIds: new Set(),
       lastAppliedCommandId: 'cmd-1',
     });
 
     expect(shouldReload).toBe(true);
+  });
+
+  it('self-origin dependency file change도 own command면 리렌더하지 않는다', () => {
+    const shouldReload = shouldReloadForFileChange({
+      changedFile: 'components/auth.tsx',
+      currentFile: 'examples/a.tsx',
+      watchedFiles: new Set(['examples/a.tsx', 'components/auth.tsx']),
+      incomingOriginId: 'client-1',
+      incomingCommandId: 'cmd-2',
+      clientId: 'client-1',
+      recentOwnCommandIds: new Set(['cmd-2']),
+      lastAppliedCommandId: 'cmd-1',
+    });
+
+    expect(shouldReload).toBe(false);
   });
 });
 
@@ -306,5 +375,154 @@ describe('version conflict metrics tracker', () => {
     const snapshot = tracker.getSnapshot();
     expect(snapshot.versionConflictRate10m).toBe(VERSION_CONFLICT_RATE_THRESHOLD);
     expect(snapshot.shouldEnableServerMutex).toBe(true);
+  });
+});
+
+describe('history replay helpers', () => {
+  it('rename undo/redo는 현재/이전 id를 올바르게 바꿔 replay한다', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const mutators = {
+      moveNode: async () => undefined,
+      updateNode: async (nodeId: string, props: Record<string, unknown>, filePath?: string | null, options?: { commandType?: string }) => {
+        calls.push({ nodeId, props, filePath, commandType: options?.commandType });
+        return undefined;
+      },
+      createNode: async () => undefined,
+      deleteNode: async () => undefined,
+      reparentNode: async () => undefined,
+    };
+    const event = {
+      eventId: 'rename-1',
+      type: 'NODE_RENAMED' as const,
+      nodeId: 'old-id',
+      filePath: 'examples/a.tsx',
+      commandId: 'cmd-rename-1',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: { id: 'old-id' },
+      after: { id: 'new-id' },
+      committedAt: Date.now(),
+    };
+
+    await applyEditCompletionSnapshot(event, 'before', mutators);
+    await applyEditCompletionSnapshot(event, 'after', mutators);
+
+    expect(calls).toEqual([
+      {
+        nodeId: 'new-id',
+        props: { id: 'old-id' },
+        filePath: 'examples/a.tsx',
+        commandType: 'node.rename',
+      },
+      {
+        nodeId: 'old-id',
+        props: { id: 'new-id' },
+        filePath: 'examples/a.tsx',
+        commandType: 'node.rename',
+      },
+    ]);
+  });
+
+  it('create undo/redo는 delete/create inverse를 각각 사용한다', async () => {
+    const calls: string[] = [];
+    const mutators = {
+      moveNode: async () => undefined,
+      updateNode: async () => undefined,
+      createNode: async (node: Record<string, unknown>) => {
+        calls.push(`create:${String(node.id)}`);
+        return undefined;
+      },
+      deleteNode: async (nodeId: string) => {
+        calls.push(`delete:${nodeId}`);
+        return undefined;
+      },
+      reparentNode: async () => undefined,
+    };
+    const event = {
+      eventId: 'create-1',
+      type: 'NODE_CREATED' as const,
+      nodeId: 'shape-1',
+      filePath: 'examples/a.tsx',
+      commandId: 'cmd-create-1',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: { created: false },
+      after: {
+        create: {
+          id: 'shape-1',
+          type: 'shape',
+          props: { x: 10, y: 20 },
+          placement: { mode: 'canvas-absolute', x: 10, y: 20 },
+        },
+      },
+      committedAt: Date.now(),
+    };
+
+    await applyEditCompletionSnapshot(event, 'before', mutators);
+    await applyEditCompletionSnapshot(event, 'after', mutators);
+
+    expect(calls).toEqual(['delete:shape-1', 'create:shape-1']);
+  });
+
+  it('reparent undo/redo는 parentId snapshot을 그대로 replay한다', async () => {
+    const calls: Array<{ nodeId: string; newParentId?: string | null }> = [];
+    const mutators = {
+      moveNode: async () => undefined,
+      updateNode: async () => undefined,
+      createNode: async () => undefined,
+      deleteNode: async () => undefined,
+      reparentNode: async (nodeId: string, newParentId?: string | null) => {
+        calls.push({ nodeId, newParentId });
+        return undefined;
+      },
+    };
+    const event = {
+      eventId: 'reparent-1',
+      type: 'NODE_REPARENTED' as const,
+      nodeId: 'child',
+      filePath: 'examples/map.tsx',
+      commandId: 'cmd-reparent-1',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: { parentId: 'root-a' },
+      after: { parentId: 'root-b' },
+      committedAt: Date.now(),
+    };
+
+    await applyEditCompletionSnapshot(event, 'before', mutators);
+    await applyEditCompletionSnapshot(event, 'after', mutators);
+
+    expect(calls).toEqual([
+      { nodeId: 'child', newParentId: 'root-a' },
+      { nodeId: 'child', newParentId: 'root-b' },
+    ]);
+  });
+
+  it('rename/create/reparent 이벤트만 graph reload를 요구한다', () => {
+    expect(shouldReloadAfterHistoryReplay({
+      eventId: 'style-1',
+      type: 'STYLE_UPDATED',
+      nodeId: 'n1',
+      filePath: 'examples/a.tsx',
+      commandId: 'cmd-style',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: { fill: '#fff' },
+      after: { fill: '#000' },
+      committedAt: 1,
+    })).toBe(false);
+
+    expect(shouldReloadAfterHistoryReplay({
+      eventId: 'create-1',
+      type: 'NODE_CREATED',
+      nodeId: 'n1',
+      filePath: 'examples/a.tsx',
+      commandId: 'cmd-create',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: { created: false },
+      after: { create: { id: 'n1' } },
+      committedAt: 1,
+    })).toBe(true);
   });
 });

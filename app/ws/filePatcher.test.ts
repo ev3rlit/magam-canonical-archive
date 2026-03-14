@@ -5,12 +5,18 @@ import { tmpdir } from 'os';
 import {
   getGlobalIdentifierCollisions,
   patchFile,
+  patchNodeContent,
   patchNodeCreate,
+  patchNodeDelete,
   patchNodePosition,
+  patchNodeRelativePosition,
+  patchNodeRename,
   patchNodeReparent,
+  patchNodeStyle,
 } from './filePatcher';
 import {
   ATTACH_FIXTURE_TSX,
+  MOVE_FIXTURE_TSX,
   TEXT_FIXTURE_TSX,
 } from './__fixtures__/bidirectional-editing';
 import { expectIncludesAll, expectIncludesNone, expectSameSnippetCount } from './testUtils';
@@ -111,6 +117,17 @@ describe('filePatcher', () => {
     expectSameSnippetCount(after, 'id="text-2"', 1);
   });
 
+  it('update: patchNodeContent는 label carrier를 직접 갱신한다', async () => {
+    const filePath = await makeTempTsx(MOVE_FIXTURE_TSX);
+
+    await patchNodeContent(filePath, 'move-1', 'Renamed');
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('label={"Renamed"}')).toBe(true);
+    expect(patched.includes('x={40}')).toBe(true);
+    expect(patched.includes('y={80}')).toBe(true);
+  });
+
   it('move: patchNodePosition은 x/y만 갱신한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {
@@ -141,7 +158,52 @@ describe('filePatcher', () => {
     expect(patched.includes('hello')).toBe(true);
   });
 
-  it('create: sticker 타입은 Sticky JSX로 생성된다', async () => {
+  it('create: canvas-absolute placement는 Shape에 x/y를 직접 기록한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Node id="root" /></Canvas>;
+      }
+    `);
+
+    await patchNodeCreate(filePath, {
+      id: 'shape-new',
+      type: 'shape',
+      props: { content: 'Card' },
+      placement: { mode: 'canvas-absolute', x: 80, y: 120 },
+    });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('<Shape')).toBe(true);
+    expect(patched.includes('id={"shape-new"}')).toBe(true);
+    expect(patched.includes('x={80}')).toBe(true);
+    expect(patched.includes('y={120}')).toBe(true);
+  });
+
+  it('create: mindmap-child placement는 같은 MindMap container 안에 from을 붙여 삽입한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <MindMap id="map">
+            <Node id="root">Root</Node>
+          </MindMap>
+        </Canvas>;
+      }
+    `);
+
+    await patchNodeCreate(filePath, {
+      id: 'child-new',
+      type: 'shape',
+      props: { content: 'Child' },
+      placement: { mode: 'mindmap-child', parentId: 'root' },
+    });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('<MindMap id="map">')).toBe(true);
+    expect(patched.includes('id={"child-new"}')).toBe(true);
+    expect(patched.includes('from={"root"}')).toBe(true);
+  });
+
+  it('create: sticker 타입은 Sticker JSX로 생성된다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {
         return <Canvas><Node id="root" /></Canvas>;
@@ -163,7 +225,7 @@ describe('filePatcher', () => {
     });
 
     const patched = await readFile(filePath, 'utf-8');
-    expect(patched.includes('<Sticky')).toBe(true);
+    expect(patched.includes('<Sticker')).toBe(true);
     expect(patched.includes('id={"s-new"}')).toBe(true);
     expect(patched.includes('text={"note"}')).toBe(true);
     expect(patched.includes('anchor={"root"}')).toBe(true);
@@ -237,7 +299,7 @@ describe('filePatcher', () => {
   it('update: attach 상대 이동에서 Washi at.offset만 갱신해도 기존 필드를 보존한다', async () => {
     const filePath = await makeTempTsx(ATTACH_FIXTURE_TSX);
 
-    await patchFile(filePath, 'washi-1', {
+    await patchNodeRelativePosition(filePath, 'washi-1', {
       at: { offset: 44 },
     });
 
@@ -255,7 +317,7 @@ describe('filePatcher', () => {
   it('update: attach 상대 이동에서 Sticker gap만 갱신한다', async () => {
     const filePath = await makeTempTsx(ATTACH_FIXTURE_TSX);
 
-    await patchFile(filePath, 'sticker-1', {
+    await patchNodeRelativePosition(filePath, 'sticker-1', {
       gap: 62,
     });
 
@@ -269,12 +331,43 @@ describe('filePatcher', () => {
     ]);
   });
 
+  it('update: patchNodeStyle는 허용된 스타일 필드만 반영한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Sticker id="sticker-1" outlineColor={"#fff"} outlineWidth={4} shadow={"md"}>Hi</Sticker></Canvas>;
+      }
+    `);
+
+    await patchNodeStyle(filePath, 'sticker-1', {
+      outlineColor: '#111111',
+      shadow: 'lg',
+    });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('outlineColor={"#111111"}')).toBe(true);
+    expect(patched.includes('shadow={"lg"}')).toBe(true);
+    expect(patched.includes('outlineWidth={4}')).toBe(true);
+  });
+
+  it('update: patchNodeStyle는 비허용 필드를 거부한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Sticker id="sticker-1" outlineColor={"#fff"}>Hi</Sticker></Canvas>;
+      }
+    `);
+
+    await expect(patchNodeStyle(filePath, 'sticker-1', {
+      anchor: 'shape-1',
+    })).rejects.toThrow('EDIT_NOT_ALLOWED');
+  });
+
   it('reparent: 부모 변경 성공', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {
         return <Canvas>
           <Node id="a" />
           <Node id="b" from="a" />
+          <Node id="c" />
         </Canvas>;
       }
     `);
@@ -289,6 +382,7 @@ describe('filePatcher', () => {
       export default function Sample() {
         return <Canvas>
           <Node id="a" />
+          <Node id="c" />
           <Shape id="b" from={{ node: "a", edge: { label: { text: "link" }, pattern: "dashed" } }} />
         </Canvas>;
       }
@@ -313,6 +407,38 @@ describe('filePatcher', () => {
     `);
 
     await expect(patchNodeReparent(filePath, 'a', 'c')).rejects.toThrow('MINDMAP_CYCLE');
+  });
+
+  it('reparent: 다른 MindMap container 부모는 EDIT_NOT_ALLOWED 로 거부한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <MindMap id="map-a">
+            <Node id="a-root">A</Node>
+            <Node id="a-child" from="a-root">Child</Node>
+          </MindMap>
+          <MindMap id="map-b">
+            <Node id="b-root">B</Node>
+          </MindMap>
+        </Canvas>;
+      }
+    `);
+
+    await expect(patchNodeReparent(filePath, 'a-child', 'b-root')).rejects.toThrow('EDIT_NOT_ALLOWED');
+  });
+
+  it('delete: patchNodeDelete는 생성된 JSX element를 제거한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Node id="root" /><Text id="temp">Temp</Text></Canvas>;
+      }
+    `);
+
+    await patchNodeDelete(filePath, 'temp');
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id="temp"')).toBe(false);
+    expect(patched.includes('id="root"')).toBe(true);
   });
 
   it('Shape에서도 icon 제거 시 다른 속성은 유지한다 (icon-prop 제거 회귀)', async () => {
@@ -358,5 +484,51 @@ describe('filePatcher', () => {
     `);
 
     await expect(patchFile(filePath, 'a', { id: 'b' })).rejects.toThrow('ID_COLLISION');
+  });
+
+  it('update: patchNodeRename는 id와 참조만 최소 diff로 갱신한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <Node id="old-id" />
+          <Node id="child" from="old-id" anchor="old-id" />
+        </Canvas>;
+      }
+    `);
+
+    await patchNodeRename(filePath, 'old-id', 'new-id');
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id={"new-id"}')).toBe(true);
+    expect(patched.includes('from={"new-id"}')).toBe(true);
+    expect(patched.includes('anchor={"new-id"}')).toBe(true);
+    expectSameSnippetCount(patched, 'id="child"', 1);
+  });
+
+  it('update: mixed command sequence에서도 비대상 필드는 유지된다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <Node id="old-id" x={40} y={80} label={"Before"} fill={"#f8fafc"} />
+          <Node id="child" from="old-id" />
+        </Canvas>;
+      }
+    `);
+
+    await patchNodeContent(filePath, 'old-id', 'After');
+    await patchNodeStyle(filePath, 'old-id', { fill: '#111827' });
+    await patchNodeRename(filePath, 'old-id', 'new-id');
+
+    const patched = await readFile(filePath, 'utf-8');
+    expectIncludesAll(patched, [
+      'id={"new-id"}',
+      'label={"After"}',
+      'fill={"#111827"}',
+      'x={40}',
+      'y={80}',
+      'from={"new-id"}',
+    ]);
+    expectSameSnippetCount(patched, 'x={40}', 1);
+    expectSameSnippetCount(patched, 'y={80}', 1);
   });
 });

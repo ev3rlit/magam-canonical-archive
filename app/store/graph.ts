@@ -24,7 +24,13 @@ type SearchActionResult = {
 export type EditCompletionEventType =
   | 'ABSOLUTE_MOVE_COMMITTED'
   | 'TEXT_EDIT_COMMITTED'
-  | 'ATTACH_RELATIVE_COMMITTED';
+  | 'ATTACH_RELATIVE_COMMITTED'
+  | 'RELATIVE_MOVE_COMMITTED'
+  | 'CONTENT_UPDATED'
+  | 'STYLE_UPDATED'
+  | 'NODE_RENAMED'
+  | 'NODE_CREATED'
+  | 'NODE_REPARENTED';
 
 export interface EditCompletionEvent {
   eventId: string;

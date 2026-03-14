@@ -102,6 +102,30 @@ describe('useLayout compact group integration helpers', () => {
       result?.placementFrames.find((frame) => frame.parentId === 'root')?.spreadFactor ?? 0,
     ).toBeGreaterThan(0);
   });
+
+  it('ignores editMeta-only node data noise when computing compact group layout', async () => {
+    const fixture = createMixedSizeFixture();
+    const enrichedNodes = fixture.nodes.map((node) => ({
+      ...node,
+      data: {
+        ...(node.data || {}),
+        editMeta: {
+          family: 'mindmap-member',
+          styleEditableKeys: ['fontSize'],
+          createMode: 'mindmap-child',
+        },
+      },
+    }));
+
+    const result = await calculateMindMapGroupLayout({
+      group: createCompactGroup('edit-meta-noise'),
+      nodes: enrichedNodes,
+      edges: fixture.edges,
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.positions.size).toBe(fixture.nodes.length);
+  });
 });
 
 function createCompactGroup(id: string, overrides?: Partial<MindMapGroup>): MindMapGroup {

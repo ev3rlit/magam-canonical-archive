@@ -377,4 +377,39 @@ describe('edit completion history', () => {
     expect(useGraphStore.getState().editHistoryFuture).toEqual([]);
     expect(useGraphStore.getState().editHistoryPast.map((item) => item.eventId)).toEqual(['event-1']);
   });
+
+  it('create/reparent 이벤트도 동일한 1-step history 규칙을 따른다', () => {
+    const createEvent = {
+      eventId: 'event-create',
+      type: 'NODE_CREATED' as const,
+      nodeId: 'shape-1',
+      filePath: 'examples/a.tsx',
+      commandId: 'cmd-create',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:create',
+      before: { created: false },
+      after: { create: { id: 'shape-1' } },
+      committedAt: Date.now(),
+    };
+    const reparentEvent = {
+      eventId: 'event-reparent',
+      type: 'NODE_REPARENTED' as const,
+      nodeId: 'child',
+      filePath: 'examples/map.tsx',
+      commandId: 'cmd-reparent',
+      baseVersion: 'sha256:create',
+      nextVersion: 'sha256:reparent',
+      before: { parentId: 'root-a' },
+      after: { parentId: 'root-b' },
+      committedAt: Date.now(),
+    };
+
+    useGraphStore.getState().pushEditCompletionEvent(createEvent);
+    useGraphStore.getState().pushEditCompletionEvent(reparentEvent);
+
+    expect(useGraphStore.getState().peekUndoEditEvent()?.eventId).toBe('event-reparent');
+    useGraphStore.getState().commitUndoEventSuccess('event-reparent');
+    expect(useGraphStore.getState().peekUndoEditEvent()?.eventId).toBe('event-create');
+    expect(useGraphStore.getState().peekRedoEditEvent()?.eventId).toBe('event-reparent');
+  });
 });

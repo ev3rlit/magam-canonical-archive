@@ -7,6 +7,7 @@ import { parse } from '@babel/parser';
 import traverse, { NodePath } from '@babel/traverse';
 import generate from '@babel/generator';
 import * as t from '@babel/types';
+import { getJsxTagStyleEditableKeys } from '@/features/editing/editability';
 
 export interface NodeProps {
     id?: string;
@@ -28,8 +29,17 @@ export interface NodeProps {
 
 export interface CreateNodeInput {
     id: string;
-    type: 'shape' | 'text' | 'markdown' | 'mindmap' | 'sticker' | 'washi-tape';
+    type: 'shape' | 'text' | 'markdown' | 'mindmap' | 'sticky' | 'sticker' | 'washi-tape' | 'image';
     props?: Record<string, unknown>;
+    placement?: (
+        | { mode: 'canvas-absolute'; x: number; y: number }
+        | { mode: 'mindmap-child'; parentId: string }
+        | { mode: 'mindmap-sibling'; siblingOf: string; parentId: string | null }
+    );
+}
+
+function getJsxTagName(node: t.JSXOpeningElement): string | null {
+    return t.isJSXIdentifier(node.name) ? node.name.name : null;
 }
 
 function collectIdOccurrences(ast: t.File): Map<string, number> {
@@ -171,6 +181,138 @@ function getNodeByIdOpeningElement(ast: t.File, nodeId: string): NodePath<t.JSXO
     return target;
 }
 
+function ensureNoSpreadAttributes(node: t.JSXOpeningElement): void {
+    const hasSpread = node.attributes.some((attr) => t.isJSXSpreadAttribute(attr));
+    if (hasSpread) {
+        throw new Error('EDIT_NOT_ALLOWED');
+    }
+}
+
+function setMarkdownChildContent(parentEl: NodePath<t.JSXElement>, content: string): boolean {
+    const markdownChild = parentEl.node.children.find((child: t.JSXElement | t.JSXText | t.JSXExpressionContainer | t.JSXSpreadChild | t.JSXFragment): child is t.JSXElement =>
+        t.isJSXElement(child) &&
+        t.isJSXOpeningElement(child.openingElement) &&
+        t.isJSXIdentifier(child.openingElement.name) &&
+        child.openingElement.name.name === 'Markdown',
+    );
+
+    if (!markdownChild) {
+        return false;
+    }
+
+    markdownChild.children = [
+        t.jsxExpressionContainer(
+            t.templateLiteral([t.templateElement({ raw: content, cooked: content }, true)], []),
+        ),
+    ];
+    return true;
+}
+
+function setTextChildContent(parentEl: NodePath<t.JSXElement>, content: string): void {
+    const hasComplexChildren = parentEl.node.children.some((child) => {
+        if (t.isJSXText(child)) {
+            return false;
+        }
+        if (t.isJSXExpressionContainer(child) && !t.isJSXEmptyExpression(child.expression)) {
+            return true;
+        }
+        if (t.isJSXElement(child)) {
+            return true;
+        }
+        return false;
+    });
+
+    if (hasComplexChildren) {
+        throw new Error('EDIT_NOT_ALLOWED');
+    }
+
+    parentEl.node.children = [t.jsxText(content)];
+}
+
+function patchNodeRenameInAst(ast: t.File, nodeId: string, nextId: string): void {
+    traverse(ast, {
+        JSXOpeningElement(path: NodePath<t.JSXOpeningElement>) {
+            const opening = path.node;
+            ['from', 'to', 'anchor'].forEach((key) => {
+                const attr = getAttrByName(opening, key);
+                if (!attr) return;
+
+                if (key === 'from') {
+                    const value = getAttributeValue(attr);
+                    if (typeof value === 'string') {
+                        if (value === nodeId) {
+                            upsertJsxAttribute(path as NodePath<t.JSXOpeningElement>, key, nextId);
+                        }
+                        return;
+                    }
+                    if (value && typeof value === 'object') {
+                        const fromObject = value as Record<string, unknown>;
+                        if (fromObject.node === nodeId) {
+                            upsertJsxAttribute(path as NodePath<t.JSXOpeningElement>, key, {
+                                ...fromObject,
+                                node: nextId,
+                            });
+                        }
+                    }
+                    return;
+                }
+
+                const value = getStringLikeAttributeValue(attr);
+                if (value === nodeId) {
+                    upsertJsxAttribute(path as NodePath<t.JSXOpeningElement>, key, nextId);
+                }
+            });
+        },
+    });
+}
+
+function findOwningContainerForNodeId(ast: t.File, nodeId: string): NodePath<t.JSXElement> | null {
+    const opening = getNodeByIdOpeningElement(ast, nodeId);
+    if (!opening) {
+        return null;
+    }
+
+    let current: NodePath<t.Node> | null = opening.parentPath;
+    while (current) {
+        if (current.isJSXElement()) {
+            const tagName = getJsxTagName(current.node.openingElement);
+            if (tagName === 'Canvas' || tagName === 'MindMap') {
+                return current;
+            }
+        }
+        current = current.parentPath;
+    }
+
+    return null;
+}
+
+function findFirstCanvasOrMindMap(ast: t.File): NodePath<t.JSXElement> | null {
+    let target: NodePath<t.JSXElement> | null = null;
+
+    traverse(ast, {
+        JSXElement(path: NodePath<t.JSXElement>) {
+            if (target) {
+                path.stop();
+                return;
+            }
+            const tagName = getJsxTagName(path.node.openingElement);
+            if (tagName === 'Canvas' || tagName === 'MindMap') {
+                target = path;
+                path.stop();
+            }
+        },
+    });
+
+    return target;
+}
+
+function appendElementToContainer(
+    container: NodePath<t.JSXElement>,
+    element: t.JSXElement,
+): void {
+    container.node.children.push(t.jsxText('\n'), element, t.jsxText('\n'));
+}
+
 function toJsxAttributeExpression(value: unknown): t.Expression {
     if (value === null) {
         return t.nullLiteral();
@@ -252,14 +394,32 @@ function toJsxChildren(type: CreateNodeInput['type'], props: Record<string, unkn
 }
 
 function buildNodeElement(input: CreateNodeInput): t.JSXElement {
-    const tag = input.type === 'mindmap'
+    const placementMode = input.placement?.mode;
+    const placementProps = placementMode === 'canvas-absolute'
+        ? { x: input.placement.x, y: input.placement.y }
+        : placementMode === 'mindmap-child'
+            ? { from: input.placement.parentId }
+            : placementMode === 'mindmap-sibling'
+                ? { ...(input.placement.parentId ? { from: input.placement.parentId } : {}) }
+                : {};
+    const tag = placementMode === 'mindmap-child' || placementMode === 'mindmap-sibling'
+        ? 'Node'
+        : input.type === 'mindmap'
         ? 'MindMap'
+        : input.type === 'shape'
+            ? 'Shape'
+            : input.type === 'text'
+                ? 'Text'
+                : input.type === 'image'
+                    ? 'Image'
+                    : input.type === 'sticky'
+                        ? 'Sticky'
         : input.type === 'sticker'
-            ? 'Sticky'
+            ? 'Sticker'
             : input.type === 'washi-tape'
                 ? 'WashiTape'
             : 'Node';
-    const props = { ...(input.props || {}), id: input.id };
+    const props = { ...(input.props || {}), ...placementProps, id: input.id };
     const attrs = Object.entries(props)
         .filter(([key, value]) => key !== 'content' && value !== undefined && value !== null)
         .map(([key, value]) =>
@@ -367,60 +527,14 @@ export async function patchFile(filePath: string, nodeId: string, props: NodePro
         if (typeof props.content === 'string') {
             const parentEl = node.parentPath;
             if (parentEl && parentEl.isJSXElement()) {
-                const markdownChild = parentEl.node.children.find((child: t.JSXElement | t.JSXText | t.JSXExpressionContainer | t.JSXSpreadChild | t.JSXFragment): child is t.JSXElement =>
-                    t.isJSXElement(child) &&
-                    t.isJSXOpeningElement(child.openingElement) &&
-                    t.isJSXIdentifier(child.openingElement.name) &&
-                    child.openingElement.name.name === 'Markdown',
-                );
-
-                if (markdownChild) {
-                    markdownChild.children = [
-                        t.jsxExpressionContainer(
-                            t.templateLiteral([t.templateElement({ raw: props.content, cooked: props.content }, true)], []),
-                        ),
-                    ];
-                } else {
+                if (!setMarkdownChildContent(parentEl, props.content)) {
                     parentEl.node.children = [t.jsxText(props.content)];
                 }
             }
         }
 
         if (nextId && nextId !== nodeId) {
-            traverse(ast, {
-                JSXOpeningElement(path: NodePath<t.JSXOpeningElement>) {
-                    const opening = path.node;
-                    ['from', 'to', 'anchor'].forEach((key) => {
-                        const attr = getAttrByName(opening, key);
-                        if (!attr) return;
-
-                        if (key === 'from') {
-                            const value = getAttributeValue(attr);
-                            if (typeof value === 'string') {
-                                if (value === nodeId) {
-                                    upsertJsxAttribute(path as NodePath<t.JSXOpeningElement>, key, nextId);
-                                }
-                                return;
-                            }
-                            if (value && typeof value === 'object') {
-                                const fromObject = value as Record<string, unknown>;
-                                if (fromObject.node === nodeId) {
-                                    upsertJsxAttribute(path as NodePath<t.JSXOpeningElement>, key, {
-                                        ...fromObject,
-                                        node: nextId,
-                                    });
-                                }
-                            }
-                            return;
-                        }
-
-                        const value = getStringLikeAttributeValue(attr);
-                        if (value === nodeId) {
-                            upsertJsxAttribute(path as NodePath<t.JSXOpeningElement>, key, nextId);
-                        }
-                    });
-                },
-            });
+            patchNodeRenameInAst(ast, nodeId, nextId);
         }
 
         return true;
@@ -437,33 +551,165 @@ export async function patchNodePosition(filePath: string, nodeId: string, x: num
     });
 }
 
-export async function patchNodeCreate(filePath: string, input: CreateNodeInput): Promise<void> {
-    const code = await readFile(filePath, 'utf-8');
-    const ast = parse(code, { sourceType: 'module', plugins: ['jsx', 'typescript'] });
+export async function patchNodeRelativePosition(
+    filePath: string,
+    nodeId: string,
+    props: Pick<NodeProps, 'gap' | 'at'>,
+): Promise<void> {
+    await patchWithMutator(filePath, (ast) => {
+        const node = getNodeByIdOpeningElement(ast, nodeId);
+        if (!node) return false;
 
-    let inserted = false;
-    const newElement = buildNodeElement(input);
+        ensureNoSpreadAttributes(node.node);
+        const propKeys = Object.keys(props);
+        if (propKeys.some((key) => key !== 'gap' && key !== 'at')) {
+            throw new Error('EDIT_NOT_ALLOWED');
+        }
+        const hasGap = typeof props.gap === 'number';
+        const nextAt = props.at;
+        const offset = nextAt && typeof nextAt === 'object'
+            ? (nextAt as Record<string, unknown>).offset
+            : undefined;
+        const hasOffset = typeof offset === 'number';
+        if (nextAt && typeof nextAt === 'object') {
+            const nextAtKeys = Object.keys(nextAt as Record<string, unknown>);
+            if (nextAtKeys.some((key) => key !== 'offset')) {
+                throw new Error('EDIT_NOT_ALLOWED');
+            }
+        }
 
-    traverse(ast, {
-        JSXElement(path: NodePath<t.JSXElement>) {
-            if (inserted) return;
-            const opening = path.node.openingElement;
-            if (!t.isJSXIdentifier(opening.name)) return;
-            const tag = opening.name.name;
-            if (tag !== 'Canvas' && tag !== 'MindMap') return;
+        if (!hasGap && !hasOffset) {
+            throw new Error('EDIT_NOT_ALLOWED');
+        }
 
-            path.node.children.push(t.jsxText('\n'), newElement, t.jsxText('\n'));
-            inserted = true;
-            path.stop();
-        },
+        if (hasGap) {
+            upsertJsxAttribute(node, 'gap', props.gap);
+        }
+
+        if (hasOffset) {
+            const existingAt = getAttributeValue(getAttrByName(node.node, 'at'));
+            if (!existingAt || typeof existingAt !== 'object') {
+                throw new Error('EDIT_NOT_ALLOWED');
+            }
+
+            upsertJsxAttribute(node, 'at', {
+                ...(existingAt as Record<string, unknown>),
+                offset,
+            });
+        }
+
+        return true;
     });
+}
 
-    if (!inserted) {
-        throw new Error('NODE_NOT_FOUND');
-    }
+export async function patchNodeContent(filePath: string, nodeId: string, content: string): Promise<void> {
+    await patchWithMutator(filePath, (ast) => {
+        const node = getNodeByIdOpeningElement(ast, nodeId);
+        if (!node) return false;
 
-    const output = generate(ast, { retainLines: true, retainFunctionParens: true });
-    await writeFile(filePath, output.code, 'utf-8');
+        ensureNoSpreadAttributes(node.node);
+        const labelAttr = getAttrByName(node.node, 'label');
+        if (labelAttr) {
+            const currentLabel = getAttributeValue(labelAttr);
+            if (currentLabel === undefined) {
+                throw new Error('EDIT_NOT_ALLOWED');
+            }
+            upsertJsxAttribute(node, 'label', content);
+            return true;
+        }
+
+        const parentEl = node.parentPath;
+        if (!parentEl || !parentEl.isJSXElement()) {
+            throw new Error('EDIT_NOT_ALLOWED');
+        }
+
+        if (setMarkdownChildContent(parentEl, content)) {
+            return true;
+        }
+
+        setTextChildContent(parentEl, content);
+        return true;
+    });
+}
+
+export async function patchNodeStyle(filePath: string, nodeId: string, patch: Record<string, unknown>): Promise<void> {
+    await patchWithMutator(filePath, (ast) => {
+        const node = getNodeByIdOpeningElement(ast, nodeId);
+        if (!node) return false;
+
+        ensureNoSpreadAttributes(node.node);
+        const editableKeys = getJsxTagStyleEditableKeys(getJsxTagName(node.node) || undefined);
+        if (editableKeys.length === 0) {
+            throw new Error('EDIT_NOT_ALLOWED');
+        }
+
+        const allowedKeySet = new Set(editableKeys);
+        const patchEntries = Object.entries(patch);
+        if (patchEntries.length === 0) {
+            throw new Error('EDIT_NOT_ALLOWED');
+        }
+
+        for (const [key, value] of patchEntries) {
+            if (!allowedKeySet.has(key)) {
+                throw new Error('EDIT_NOT_ALLOWED');
+            }
+            upsertJsxAttribute(node, key, value);
+        }
+
+        return true;
+    });
+}
+
+export async function patchNodeRename(filePath: string, nodeId: string, nextId: string): Promise<void> {
+    await patchWithMutator(filePath, (ast) => {
+        const node = getNodeByIdOpeningElement(ast, nodeId);
+        if (!node) return false;
+
+        ensureNoSpreadAttributes(node.node);
+        if (hasConflictingNodeId(ast, nextId, nodeId)) {
+            throw new Error('ID_COLLISION');
+        }
+
+        upsertJsxAttribute(node, 'id', nextId);
+        patchNodeRenameInAst(ast, nodeId, nextId);
+        return true;
+    });
+}
+
+export async function patchNodeCreate(filePath: string, input: CreateNodeInput): Promise<void> {
+    await patchWithMutator(filePath, (ast) => {
+        if (hasConflictingNodeId(ast, input.id, '')) {
+            throw new Error('ID_COLLISION');
+        }
+
+        const newElement = buildNodeElement(input);
+        const placementMode = input.placement?.mode;
+
+        if (placementMode === 'mindmap-child') {
+            const container = findOwningContainerForNodeId(ast, input.placement.parentId);
+            if (!container) {
+                return false;
+            }
+            appendElementToContainer(container, newElement);
+            return true;
+        }
+
+        if (placementMode === 'mindmap-sibling') {
+            const container = findOwningContainerForNodeId(ast, input.placement.siblingOf);
+            if (!container) {
+                return false;
+            }
+            appendElementToContainer(container, newElement);
+            return true;
+        }
+
+        const container = findFirstCanvasOrMindMap(ast);
+        if (!container) {
+            return false;
+        }
+        appendElementToContainer(container, newElement);
+        return true;
+    });
 }
 
 export async function patchNodeReparent(filePath: string, nodeId: string, newParentId: string | null): Promise<void> {
@@ -472,9 +718,21 @@ export async function patchNodeReparent(filePath: string, nodeId: string, newPar
 
     const node = getNodeByIdOpeningElement(ast, nodeId);
     if (!node) throw new Error('NODE_NOT_FOUND');
+    const nodeContainer = findOwningContainerForNodeId(ast, nodeId);
+    if (!nodeContainer) throw new Error('NODE_NOT_FOUND');
 
-    if (newParentId && wouldCreateCycle(ast, nodeId, newParentId)) {
-        throw new Error('MINDMAP_CYCLE');
+    if (newParentId) {
+        const newParent = getNodeByIdOpeningElement(ast, newParentId);
+        if (!newParent) {
+            throw new Error('NODE_NOT_FOUND');
+        }
+        const parentContainer = findOwningContainerForNodeId(ast, newParentId);
+        if (!parentContainer || parentContainer.node !== nodeContainer.node) {
+            throw new Error('EDIT_NOT_ALLOWED');
+        }
+        if (wouldCreateCycle(ast, nodeId, newParentId)) {
+            throw new Error('MINDMAP_CYCLE');
+        }
     }
 
     if (newParentId === null) {
@@ -494,4 +752,31 @@ export async function patchNodeReparent(filePath: string, nodeId: string, newPar
 
     const output = generate(ast, { retainLines: true, retainFunctionParens: true });
     await writeFile(filePath, output.code, 'utf-8');
+}
+
+export async function patchNodeDelete(filePath: string, nodeId: string): Promise<void> {
+    await patchWithMutator(filePath, (ast) => {
+        const node = getNodeByIdOpeningElement(ast, nodeId);
+        if (!node) {
+            return false;
+        }
+
+        const elementPath = node.parentPath;
+        if (!elementPath || !elementPath.isJSXElement()) {
+            throw new Error('EDIT_NOT_ALLOWED');
+        }
+
+        const containerPath = elementPath.parentPath;
+        if (!containerPath || !containerPath.isJSXElement()) {
+            throw new Error('EDIT_NOT_ALLOWED');
+        }
+
+        const targetIndex = containerPath.node.children.findIndex((child) => child === elementPath.node);
+        if (targetIndex < 0) {
+            throw new Error('NODE_NOT_FOUND');
+        }
+
+        containerPath.node.children.splice(targetIndex, 1);
+        return true;
+    });
 }

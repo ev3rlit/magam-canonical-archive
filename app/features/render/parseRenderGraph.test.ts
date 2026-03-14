@@ -376,4 +376,56 @@ describe('parseRenderGraph standardized sizes', () => {
       framePath: ['auth', 'cache'],
     });
   });
+
+  it('derives editMeta for rich content, relative attachments, and mindmap members', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          { type: 'graph-text', props: { id: 'text-1', x: 0, y: 0, text: 'Hello' }, children: [] },
+          {
+            type: 'graph-washi-tape',
+            props: {
+              id: 'washi-1',
+              at: { type: 'attach', target: 'ref', placement: 'top', offset: 12 },
+            },
+            children: [],
+          },
+          {
+            type: 'graph-mindmap',
+            props: { id: 'map' },
+            children: [
+              { type: 'graph-node', props: { id: 'root', text: 'Root' }, children: [] },
+              { type: 'graph-node', props: { id: 'child', from: 'root', text: 'Child' }, children: [] },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+
+    const textNode = parsed!.nodes.find((node) => node.id === 'text-1');
+    const washiNode = parsed!.nodes.find((node) => node.id === 'washi-1');
+    const mindmapNode = parsed!.nodes.find((node) => node.id === 'map.child');
+
+    expect(textNode?.data?.editMeta).toMatchObject({
+      family: 'rich-content',
+      contentCarrier: 'text-child',
+      createMode: 'canvas',
+    });
+    expect(textNode?.data?.editMeta?.styleEditableKeys).toContain('fontSize');
+
+    expect(washiNode?.data?.editMeta).toMatchObject({
+      family: 'relative-attachment',
+      relativeCarrier: 'at.offset',
+      createMode: 'canvas',
+    });
+    expect(washiNode?.data?.editMeta?.styleEditableKeys).toContain('pattern');
+
+    expect(mindmapNode?.data?.editMeta).toMatchObject({
+      family: 'mindmap-member',
+      contentCarrier: 'label-prop',
+      createMode: 'mindmap-child',
+    });
+  });
 });

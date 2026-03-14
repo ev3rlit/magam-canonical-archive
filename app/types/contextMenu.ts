@@ -1,12 +1,18 @@
 import { type ComponentType } from 'react';
+import type { CreatePayload } from '@/features/editing/commands';
 
 export type ContextMenuTargetType = 'node' | 'pane';
+export type CreatableNodeType = Exclude<CreatePayload['nodeType'], 'image'>;
 
 export interface ContextMenuActionsContext {
     fitView?: () => void;
     copyImageToClipboard?: (nodeIds?: string[]) => Promise<void> | void;
     openExportDialog?: (scope: 'selection' | 'full', nodeIds?: string[]) => void;
     selectMindMapGroupByNodeId?: (nodeId: string) => void;
+    renameNode?: (nodeId: string) => Promise<void> | void;
+    createCanvasNode?: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => Promise<void> | void;
+    createMindMapChild?: (nodeId: string) => Promise<void> | void;
+    createMindMapSibling?: (nodeId: string) => Promise<void> | void;
 }
 
 export interface ContextMenuContext {
@@ -15,6 +21,8 @@ export interface ContextMenuContext {
     position: { x: number; y: number };
     /** type === 'node'일 때 해당 노드 ID */
     nodeId?: string;
+    /** type === 'node'일 때 해당 노드 family */
+    nodeFamily?: string;
     /** 현재 선택된 노드 ID 목록 */
     selectedNodeIds: string[];
     /** 선택적 실행 액션 브릿지 */

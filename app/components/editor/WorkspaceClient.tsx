@@ -19,19 +19,36 @@ import {
   LazyChatPanel,
   LazyQuickOpenDialog,
   LazySearchOverlay,
+  LazyStickerInspector,
 } from './LazyPanels';
 import { useChatUiStore } from '@/store/chatUi';
 import { TabState, useGraphStore } from '@/store/graph';
+import {
+  buildAbsoluteMoveCommand,
+  buildContentUpdateCommand,
+  buildCreateCommand,
+  buildRenameCommand,
+  buildReparentCommand,
+  buildRelativeMoveCommand,
+  buildStyleUpdateCommand,
+  toCreateNodeInput,
+  toUpdateNodeProps,
+} from '@/features/editing/commands';
+import { createUniqueNodeId, getCreateDefaults } from '@/features/editing/createDefaults';
 import {
   getWashiPresetPatternCatalog,
 } from '@/utils/washiTapeDefaults';
 import { parseRenderGraph } from '@/features/render/parseRenderGraph';
 import { editDebugLog } from '@/utils/editDebug';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
+import { resolveMindMapReparentIntent } from '@/components/GraphCanvas.drag';
 import {
   buildTextDraftPatch,
   canCommitTextEdit,
+  canRunNodeCommand,
+  getAllowedNodeStylePatch,
   mapEditRpcErrorToToast,
+  resolveNodeEditContext,
   resolveNodeEditTarget,
 } from './workspaceEditUtils';
 
@@ -60,6 +77,32 @@ function getNodeLabel(node: { data?: unknown }): string {
   return typeof data.label === 'string' ? data.label : '';
 }
 
+function pickNodeDataSnapshot(
+  data: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  return keys.reduce<Record<string, unknown>>((acc, key) => {
+    if (key in data) {
+      acc[key] = data[key];
+    }
+    return acc;
+  }, {});
+}
+
+function buildRenderedNodeId(input: {
+  sourceId: string;
+  scopeId?: string;
+  frameScope?: string;
+}): string {
+  const segments = [
+    input.scopeId,
+    input.frameScope,
+    input.sourceId,
+  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+  return segments.length > 0 ? segments.join('.') : input.sourceId;
+}
+
 declare global {
   interface Window {
     __magamTest?: MagamTestHooks;
@@ -75,6 +118,7 @@ export function WorkspaceClient() {
     files,
     nodes,
     selectedNodeIds,
+    setSelectedNodes,
     selectNodesByType,
     focusNextNodeByType,
     openTabs,
@@ -108,6 +152,7 @@ export function WorkspaceClient() {
   const [tabContextMenu, setTabContextMenu] =
     useState<TabContextMenuState | null>(null);
   const tabContextMenuRef = useRef<HTMLDivElement>(null);
+  const pendingSelectionNodeIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') {
@@ -154,6 +199,8 @@ export function WorkspaceClient() {
   const {
     updateNode,
     moveNode,
+    createNode,
+    reparentNode,
     undoLastEdit,
     redoLastEdit,
   } = useFileSync(currentFile, handleFileChange, loadFiles, dependencyFiles);
@@ -231,26 +278,6 @@ export function WorkspaceClient() {
     [openTab],
   );
 
-  const handleWashiPresetChange = useCallback(
-    async (nodeIds: string[], presetId: string) => {
-      await Promise.all(
-        nodeIds.map((nodeId) => {
-          const node = useGraphStore.getState().nodes.find((item) => item.id === nodeId);
-          if (!node) {
-            return Promise.resolve();
-          }
-          const editTarget = resolveNodeEditTarget(node, useGraphStore.getState().currentFile);
-          return updateNode(
-            editTarget.nodeId,
-            { pattern: { type: 'preset', id: presetId } },
-            editTarget.filePath,
-          );
-        }),
-      );
-    },
-    [updateNode],
-  );
-
   const restoreNodeData = useCallback((nodeId: string, previousData: Record<string, unknown> | undefined) => {
     useGraphStore.setState((state) => ({
       nodes: state.nodes.map((node) => (
@@ -260,6 +287,353 @@ export function WorkspaceClient() {
       )),
     }));
   }, []);
+
+  const handleNodeStyleCommit = useCallback(async (payload: {
+    nodeId: string;
+    patch: Record<string, unknown>;
+  }) => {
+    const runtime = useGraphStore.getState();
+    const targetNode = runtime.nodes.find((node) => node.id === payload.nodeId);
+    if (!targetNode) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: payload.nodeId });
+    }
+
+    const editContext = resolveNodeEditContext(targetNode, runtime.currentFile);
+    if (!editContext.target.filePath) {
+      throw new Error('SOURCE_VERSION_NOT_READY');
+    }
+    if (!canRunNodeCommand(targetNode, 'node.style.update')) {
+      throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', {
+        nodeId: payload.nodeId,
+        reason: editContext.readOnlyReason ?? 'STYLE_NOT_ALLOWED',
+      });
+    }
+
+    const { patch, rejectedKeys } = getAllowedNodeStylePatch(targetNode, payload.patch);
+    if (Object.keys(patch).length === 0 || rejectedKeys.length > 0) {
+      throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', {
+        nodeId: payload.nodeId,
+        rejectedKeys,
+      });
+    }
+
+    const baseVersion = runtime.sourceVersions[editContext.target.filePath] ?? null;
+    if (!baseVersion) {
+      throw new Error('SOURCE_VERSION_NOT_READY');
+    }
+
+    const previousData = (targetNode.data || {}) as Record<string, unknown>;
+    const previous = pickNodeDataSnapshot(previousData, Object.keys(patch));
+    const command = buildStyleUpdateCommand({
+      target: {
+        sourceId: editContext.target.nodeId,
+        filePath: editContext.target.filePath,
+        renderedId: targetNode.id,
+        editMeta: editContext.editMeta,
+      },
+      previous,
+      patch,
+    });
+
+    useGraphStore.getState().updateNodeData(payload.nodeId, patch);
+
+    try {
+      const result = await updateNode(
+        command.target.sourceId,
+        toUpdateNodeProps(command),
+        command.target.filePath,
+        { commandType: command.type },
+      );
+      const nextVersion = result.newVersion
+        ?? useGraphStore.getState().sourceVersions[command.target.filePath]
+        ?? baseVersion;
+      const commandId = result.commandId ?? crypto.randomUUID();
+
+      pushEditCompletionEvent({
+        eventId: crypto.randomUUID(),
+        type: 'STYLE_UPDATED',
+        nodeId: command.target.sourceId,
+        filePath: command.target.filePath,
+        commandId,
+        baseVersion,
+        nextVersion,
+        before: command.payload.previous,
+        after: command.payload.patch,
+        committedAt: Date.now(),
+      });
+    } catch (error) {
+      restoreNodeData(payload.nodeId, previousData);
+      const message = mapEditRpcErrorToToast(error) ?? '스타일 저장에 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [pushEditCompletionEvent, restoreNodeData, setGraphError, updateNode]);
+
+  const handleWashiPresetChange = useCallback(
+    async (nodeIds: string[], presetId: string) => {
+      await Promise.all(nodeIds.map((nodeId) => handleNodeStyleCommit({
+        nodeId,
+        patch: { pattern: { type: 'preset', id: presetId } },
+      })));
+    },
+    [handleNodeStyleCommit],
+  );
+
+  const handleNodeRenameCommit = useCallback(async (nodeId: string) => {
+    const runtime = useGraphStore.getState();
+    const targetNode = runtime.nodes.find((node) => node.id === nodeId);
+    if (!targetNode) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId });
+    }
+
+    const editContext = resolveNodeEditContext(targetNode, runtime.currentFile);
+    if (!editContext.target.filePath) {
+      throw new Error('SOURCE_VERSION_NOT_READY');
+    }
+    if (!canRunNodeCommand(targetNode, 'node.rename')) {
+      throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', {
+        nodeId,
+        reason: editContext.readOnlyReason ?? 'RENAME_NOT_ALLOWED',
+      });
+    }
+
+    const currentId = editContext.target.nodeId;
+    const nextId = window.prompt('새 노드 ID', currentId)?.trim();
+    if (!nextId || nextId === currentId) {
+      return;
+    }
+
+    const baseVersion = runtime.sourceVersions[editContext.target.filePath] ?? null;
+    if (!baseVersion) {
+      throw new Error('SOURCE_VERSION_NOT_READY');
+    }
+
+    const command = buildRenameCommand({
+      target: {
+        sourceId: currentId,
+        filePath: editContext.target.filePath,
+        renderedId: targetNode.id,
+        editMeta: editContext.editMeta,
+      },
+      previousId: currentId,
+      nextId,
+    });
+
+    try {
+      const result = await updateNode(
+        command.target.sourceId,
+        toUpdateNodeProps(command),
+        command.target.filePath,
+        { commandType: command.type },
+      );
+      const nextVersion = result.newVersion
+        ?? useGraphStore.getState().sourceVersions[command.target.filePath]
+        ?? baseVersion;
+      const commandId = result.commandId ?? crypto.randomUUID();
+
+      pushEditCompletionEvent({
+        eventId: crypto.randomUUID(),
+        type: 'NODE_RENAMED',
+        nodeId: command.target.sourceId,
+        filePath: command.target.filePath,
+        commandId,
+        baseVersion,
+        nextVersion,
+        before: command.payload.previous,
+        after: command.payload.next,
+        committedAt: Date.now(),
+      });
+      handleFileChange();
+    } catch (error) {
+      const message = mapEditRpcErrorToToast(error) ?? 'ID 변경에 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [handleFileChange, pushEditCompletionEvent, setGraphError, updateNode]);
+
+  const handleCreateNodeCommit = useCallback(async (input: {
+    nodeType: 'shape' | 'text' | 'markdown' | 'sticky' | 'sticker' | 'washi-tape';
+    placement:
+      | { mode: 'canvas-absolute'; x: number; y: number }
+      | { mode: 'mindmap-child'; parentId: string }
+      | { mode: 'mindmap-sibling'; siblingOf: string; parentId: string | null };
+    filePath?: string;
+    scopeId?: string;
+    frameScope?: string;
+  }) => {
+    const runtime = useGraphStore.getState();
+    const targetFile = input.filePath ?? runtime.currentFile;
+    if (!targetFile) {
+      throw new Error('SOURCE_VERSION_NOT_READY');
+    }
+
+    const baseVersion = runtime.sourceVersions[targetFile] ?? null;
+    if (!baseVersion) {
+      throw new Error('SOURCE_VERSION_NOT_READY');
+    }
+
+    const existingSourceIds = runtime.nodes
+      .map((node) => {
+        const sourceMeta = (node.data as { sourceMeta?: { sourceId?: unknown } } | undefined)?.sourceMeta;
+        return typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : node.id;
+      });
+    const nextId = createUniqueNodeId(input.nodeType, existingSourceIds);
+    const defaults = getCreateDefaults(input.nodeType);
+    const command = buildCreateCommand({
+      type: input.placement.mode === 'canvas-absolute'
+        ? 'node.create'
+        : input.placement.mode === 'mindmap-child'
+          ? 'mindmap.child.create'
+          : 'mindmap.sibling.create',
+      target: {
+        sourceId: nextId,
+        filePath: targetFile,
+        scopeId: input.scopeId,
+        frameScope: input.frameScope,
+      },
+      payload: {
+        nodeType: input.nodeType,
+        id: nextId,
+        initialProps: defaults.initialProps,
+        initialContent: defaults.initialContent,
+        placement: input.placement,
+      },
+    });
+
+    const createInput = toCreateNodeInput(command);
+
+    try {
+      const result = await createNode(createInput, targetFile);
+      const nextVersion = result.newVersion
+        ?? useGraphStore.getState().sourceVersions[targetFile]
+        ?? baseVersion;
+      const commandId = result.commandId ?? crypto.randomUUID();
+      const renderedId = buildRenderedNodeId({
+        sourceId: nextId,
+        scopeId: input.scopeId,
+        frameScope: input.frameScope,
+      });
+
+      pendingSelectionNodeIdRef.current = renderedId;
+      pushEditCompletionEvent({
+        eventId: crypto.randomUUID(),
+        type: 'NODE_CREATED',
+        nodeId: nextId,
+        filePath: targetFile,
+        commandId,
+        baseVersion,
+        nextVersion,
+        before: { created: false },
+        after: { create: createInput, renderedId },
+        committedAt: Date.now(),
+      });
+      handleFileChange();
+    } catch (error) {
+      const message = mapEditRpcErrorToToast(error) ?? '오브젝트 생성에 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [createNode, handleFileChange, pushEditCompletionEvent, setGraphError]);
+
+  const handleMindMapReparentCommit = useCallback(async (input: {
+    draggedNodeId: string;
+    newParentNodeId: string;
+  }) => {
+    const runtime = useGraphStore.getState();
+    const targetNode = runtime.nodes.find((node) => node.id === input.draggedNodeId);
+    const parentNode = runtime.nodes.find((node) => node.id === input.newParentNodeId);
+    if (!targetNode || !parentNode) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', input);
+    }
+
+    const targetContext = resolveNodeEditContext(targetNode, runtime.currentFile);
+    const parentContext = resolveNodeEditContext(parentNode, runtime.currentFile);
+    if (!targetContext.target.filePath) {
+      throw new Error('SOURCE_VERSION_NOT_READY');
+    }
+    if (!canRunNodeCommand(targetNode, 'node.reparent')) {
+      throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', {
+        nodeId: input.draggedNodeId,
+        reason: targetContext.readOnlyReason ?? 'REPARENT_NOT_ALLOWED',
+      });
+    }
+
+    const baseVersion = runtime.sourceVersions[targetContext.target.filePath] ?? null;
+    if (!baseVersion) {
+      throw new Error('SOURCE_VERSION_NOT_READY');
+    }
+
+    const currentParentEdge = runtime.edges.find((edge) => edge.target === input.draggedNodeId);
+    const currentParentRenderedId = currentParentEdge?.source ?? null;
+    const currentParentNode = currentParentRenderedId
+      ? runtime.nodes.find((node) => node.id === currentParentRenderedId)
+      : null;
+    const currentParentContext = currentParentNode
+      ? resolveNodeEditContext(currentParentNode, runtime.currentFile)
+      : null;
+    const nextParentId = parentContext.target.nodeId;
+    const previousParentId = currentParentContext?.target.nodeId ?? null;
+    if (previousParentId === nextParentId) {
+      return;
+    }
+
+    const command = buildReparentCommand({
+      target: {
+        sourceId: targetContext.target.nodeId,
+        filePath: targetContext.target.filePath,
+        renderedId: targetNode.id,
+        editMeta: targetContext.editMeta,
+      },
+      previousParentId,
+      nextParentId,
+    });
+
+    try {
+      const result = await reparentNode(
+        command.target.sourceId,
+        command.payload.next.parentId,
+        command.target.filePath,
+      );
+      const nextVersion = result.newVersion
+        ?? useGraphStore.getState().sourceVersions[command.target.filePath]
+        ?? baseVersion;
+      const commandId = result.commandId ?? crypto.randomUUID();
+
+      pushEditCompletionEvent({
+        eventId: crypto.randomUUID(),
+        type: 'NODE_REPARENTED',
+        nodeId: command.target.sourceId,
+        filePath: command.target.filePath,
+        commandId,
+        baseVersion,
+        nextVersion,
+        before: command.payload.previous,
+        after: command.payload.next,
+        committedAt: Date.now(),
+      });
+      handleFileChange();
+    } catch (error) {
+      const message = mapEditRpcErrorToToast(error) ?? 'MindMap 구조 변경에 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [handleFileChange, pushEditCompletionEvent, reparentNode, setGraphError]);
 
   const handleNodeDragCommit = useCallback(async (payload: {
     nodeId: string;
@@ -273,7 +647,8 @@ export function WorkspaceClient() {
     if (!targetNode) {
       throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: payload.nodeId });
     }
-    const editTarget = resolveNodeEditTarget(targetNode, runtime.currentFile);
+    const editContext = resolveNodeEditContext(targetNode, runtime.currentFile);
+    const editTarget = editContext.target;
     const baseVersion = editTarget.filePath
       ? runtime.sourceVersions[editTarget.filePath] ?? null
       : null;
@@ -292,25 +667,65 @@ export function WorkspaceClient() {
       throw new RpcClientError(40401, 'NODE_NOT_FOUND', { reason: relativeUpdate.reason });
     }
 
+    const mindMapReparentIntent = resolveMindMapReparentIntent({
+      draggedNode: targetNode as any,
+      allNodes: runtime.nodes as any,
+      dropPosition: { x: payload.x, y: payload.y },
+    });
+    if (mindMapReparentIntent) {
+      if (mindMapReparentIntent.kind === 'rejected') {
+        throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', {
+          nodeId: payload.nodeId,
+          reason: mindMapReparentIntent.reason,
+        });
+      }
+
+      await handleMindMapReparentCommit({
+        draggedNodeId: payload.nodeId,
+        newParentNodeId: mindMapReparentIntent.newParentNodeId,
+      });
+      return;
+    }
+
     if (relativeUpdate) {
+      if (!canRunNodeCommand(targetNode, 'node.move.relative')) {
+        throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', { nodeId: payload.nodeId });
+      }
+
       const previousData = (targetNode.data || {}) as Record<string, unknown>;
       useGraphStore.getState().updateNodeData(payload.nodeId, relativeUpdate.props);
       try {
-        const result = await updateNode(editTarget.nodeId, relativeUpdate.props, targetFile);
+        const relativeCommand = buildRelativeMoveCommand({
+          target: {
+            sourceId: editTarget.nodeId,
+            filePath: targetFile,
+            renderedId: targetNode.id,
+            editMeta: editContext.editMeta,
+          },
+          carrier: typeof relativeUpdate.props.gap === 'number' ? 'gap' : 'at.offset',
+          previous: relativeUpdate.before,
+          next: relativeUpdate.after,
+        });
+        const result = await updateNode(
+          editTarget.nodeId,
+          toUpdateNodeProps(relativeCommand),
+          targetFile,
+          { commandType: relativeCommand.type },
+        );
         const nextVersion = result.newVersion
           ?? useGraphStore.getState().sourceVersions[targetFile]
           ?? baseVersion;
         const commandId = result.commandId ?? crypto.randomUUID();
         pushEditCompletionEvent({
           eventId: crypto.randomUUID(),
-          type: 'ATTACH_RELATIVE_COMMITTED',
+          type: 'RELATIVE_MOVE_COMMITTED',
           nodeId: editTarget.nodeId,
           filePath: targetFile,
           commandId,
           baseVersion,
           nextVersion,
-          before: relativeUpdate.before,
-          after: relativeUpdate.after,
+          before: relativeCommand.payload.previous,
+          after: relativeCommand.payload.next,
           committedAt: Date.now(),
         });
       } catch (error) {
@@ -320,6 +735,20 @@ export function WorkspaceClient() {
       return;
     }
 
+    if (!canRunNodeCommand(targetNode, 'node.move.absolute')) {
+      throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', { nodeId: payload.nodeId });
+    }
+
+    const absoluteCommand = buildAbsoluteMoveCommand({
+      target: {
+        sourceId: editTarget.nodeId,
+        filePath: targetFile,
+        renderedId: targetNode.id,
+        editMeta: editContext.editMeta,
+      },
+      previous: { x: payload.originX, y: payload.originY },
+      next: { x: payload.x, y: payload.y },
+    });
     const result = await moveNode(editTarget.nodeId, payload.x, payload.y, targetFile);
     const nextVersion = result.newVersion
       ?? useGraphStore.getState().sourceVersions[targetFile]
@@ -333,11 +762,11 @@ export function WorkspaceClient() {
       commandId,
       baseVersion,
       nextVersion,
-      before: { x: payload.originX, y: payload.originY },
-      after: { x: payload.x, y: payload.y },
+      before: absoluteCommand.payload.previous,
+      after: absoluteCommand.payload.next,
       committedAt: Date.now(),
     });
-  }, [moveNode, pushEditCompletionEvent, restoreNodeData, updateNode]);
+  }, [handleMindMapReparentCommit, moveNode, pushEditCompletionEvent, restoreNodeData, updateNode]);
 
   const washiPresetCatalog = useMemo(() => getWashiPresetPatternCatalog(), []);
   const allWashiNodeIds = useMemo(
@@ -367,12 +796,6 @@ export function WorkspaceClient() {
         if (selectedWashiNodeIds.length === 0) {
           return false;
         }
-
-        selectedWashiNodeIds.forEach((nodeId) => {
-          useGraphStore.getState().updateNodeData(nodeId, {
-            pattern: { type: 'preset', id: presetId },
-          });
-        });
 
         try {
           await handleWashiPresetChange(selectedWashiNodeIds, presetId);
@@ -632,10 +1055,15 @@ export function WorkspaceClient() {
         return;
       }
       const editTarget = resolveNodeEditTarget(node, runtime.currentFile);
+      const editContext = resolveNodeEditContext(node, runtime.currentFile);
       const baseVersion = editTarget.filePath
         ? runtime.sourceVersions[editTarget.filePath] ?? null
         : null;
       if (!editTarget.filePath || !baseVersion) {
+        clearTextEditSession();
+        return;
+      }
+      if (!canRunNodeCommand(node, 'node.content.update')) {
         clearTextEditSession();
         return;
       }
@@ -654,10 +1082,24 @@ export function WorkspaceClient() {
       );
 
       try {
+        const contentCarrier = editContext.editMeta?.contentCarrier
+          ?? (node.type === 'markdown' ? 'markdown-child' : 'text-child');
+        const contentCommand = buildContentUpdateCommand({
+          target: {
+            sourceId: editTarget.nodeId,
+            filePath: editTarget.filePath,
+            renderedId: node.id,
+            editMeta: editContext.editMeta,
+          },
+          carrier: contentCarrier,
+          previousContent: beforeContent,
+          nextContent,
+        });
         const result = await updateNode(
-          editTarget.nodeId,
-          { content: nextContent },
-          editTarget.filePath,
+          contentCommand.target.sourceId,
+          toUpdateNodeProps(contentCommand),
+          contentCommand.target.filePath,
+          { commandType: contentCommand.type },
         );
         const nextVersion = result.newVersion
           ?? useGraphStore.getState().sourceVersions[editTarget.filePath]
@@ -666,14 +1108,14 @@ export function WorkspaceClient() {
 
         pushEditCompletionEvent({
           eventId: crypto.randomUUID(),
-          type: 'TEXT_EDIT_COMMITTED',
+          type: 'CONTENT_UPDATED',
           nodeId: editTarget.nodeId,
           filePath: editTarget.filePath,
           commandId,
           baseVersion,
           nextVersion,
-          before: { content: beforeContent },
-          after: { content: nextContent },
+          before: contentCommand.payload.previous,
+          after: contentCommand.payload.next,
           committedAt: Date.now(),
         });
         clearTextEditSession();
@@ -758,6 +1200,14 @@ export function WorkspaceClient() {
         const parsed = parseRenderGraph(data);
         if (parsed) {
           setGraph(parsed);
+          if (pendingSelectionNodeIdRef.current) {
+            const createdNodeId = pendingSelectionNodeIdRef.current;
+            const createdNodeExists = parsed.nodes.some((node) => node.id === createdNodeId);
+            if (createdNodeExists) {
+              setSelectedNodes([createdNodeId]);
+              pendingSelectionNodeIdRef.current = null;
+            }
+          }
         }
       } catch (error) {
         console.error('Failed to render file:', error);
@@ -765,7 +1215,7 @@ export function WorkspaceClient() {
     }
 
     renderFile();
-  }, [currentFile, setGraph, refreshKey]); // refreshKey triggers re-render on file changes
+  }, [currentFile, refreshKey, setGraph, setSelectedNodes]); // refreshKey triggers re-render on file changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white text-slate-900">
@@ -791,7 +1241,10 @@ export function WorkspaceClient() {
             onUndoEditStep={undoLastEdit}
             onRedoEditStep={redoLastEdit}
             mapEditErrorToToast={mapEditRpcErrorToToast}
+            onRenameNode={handleNodeRenameCommit}
+            onCreateNode={handleCreateNodeCommit}
           />
+          <LazyStickerInspector onApplyStylePatch={handleNodeStyleCommit} />
         </main>
 
         <Footer />

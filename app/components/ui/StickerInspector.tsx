@@ -11,10 +11,16 @@ function coerceOutlineWidth(value: string, fallback: number) {
   return Math.max(1, Math.min(14, Math.round(coerceNumber(value, fallback))));
 }
 
-export function StickerInspector() {
+interface StickerInspectorProps {
+  onApplyStylePatch?: (payload: {
+    nodeId: string;
+    patch: Record<string, unknown>;
+  }) => Promise<void> | void;
+}
+
+export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
   const nodes = useGraphStore((state) => state.nodes);
   const selectedNodeIds = useGraphStore((state) => state.selectedNodeIds);
-  const updateNodeData = useGraphStore((state) => state.updateNodeData);
 
   const selectedSticker = useMemo(() => {
     const selectedSet = new Set(selectedNodeIds);
@@ -26,9 +32,15 @@ export function StickerInspector() {
   }
 
   const data = (selectedSticker.data || {}) as Record<string, any>;
+  const applyStylePatch = (patch: Record<string, unknown>) => {
+    Promise.resolve(onApplyStylePatch?.({
+      nodeId: selectedSticker.id,
+      patch,
+    })).catch(() => undefined);
+  };
 
   const applyRealStickerPreset = () => {
-    updateNodeData(selectedSticker.id, {
+    applyStylePatch({
       outlineColor: '#ffffff',
       outlineWidth: 10,
       shadow: 'lg',
@@ -55,7 +67,7 @@ export function StickerInspector() {
           <input
             className="mt-1 w-full rounded border px-2 py-1"
             value={data.outlineColor || '#ffffff'}
-            onChange={(e) => updateNodeData(selectedSticker.id, { outlineColor: e.target.value })}
+            onChange={(e) => applyStylePatch({ outlineColor: e.target.value })}
           />
         </label>
 
@@ -69,7 +81,7 @@ export function StickerInspector() {
               min={1}
               max={14}
               onChange={(e) =>
-                updateNodeData(selectedSticker.id, {
+                applyStylePatch({
                   outlineWidth: coerceOutlineWidth(e.target.value, data.outlineWidth ?? 4),
                 })
               }
@@ -84,7 +96,7 @@ export function StickerInspector() {
               value={data.padding ?? 8}
               min={0}
               onChange={(e) =>
-                updateNodeData(selectedSticker.id, {
+                applyStylePatch({
                   padding: Math.max(0, coerceNumber(e.target.value, data.padding ?? 8)),
                 })
               }
@@ -98,7 +110,7 @@ export function StickerInspector() {
               className="mt-1 w-full rounded border px-2 py-1"
               value={data.rotation ?? 0}
               onChange={(e) =>
-                updateNodeData(selectedSticker.id, {
+                applyStylePatch({
                   rotation: coerceNumber(e.target.value, data.rotation ?? 0),
                 })
               }
@@ -111,7 +123,7 @@ export function StickerInspector() {
               className="mt-1 w-full rounded border px-2 py-1"
               value={data.shadow || 'md'}
               onChange={(e) =>
-                updateNodeData(selectedSticker.id, { shadow: e.target.value })
+                applyStylePatch({ shadow: e.target.value })
               }
             >
               <option value="none">none</option>
