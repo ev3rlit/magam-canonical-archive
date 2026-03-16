@@ -73,4 +73,42 @@ describe('renderNodeContent', () => {
 
     expect(html).toContain('Sticker body');
   });
+
+  it('renders markdown child nodes before plain text sibling content', () => {
+    const html = renderToStaticMarkup(
+      <>
+        {renderNodeContent({
+          children: [
+            { type: 'graph-markdown', content: '# Heading' },
+            { type: 'text', text: 'Trailing body' },
+          ],
+          fallbackLabel: 'Ignored',
+          iconClassName: 'icon-class',
+          textClassName: 'text-class',
+        })}
+      </>,
+    );
+
+    expect(html).toContain('perf-lazy-markdown');
+    expect(html).toContain('Trailing body');
+    expect(html.indexOf('perf-lazy-markdown')).toBeLessThan(html.indexOf('Trailing body'));
+  });
+
+  it('omits media-only children and does not fallback when a renderer child type is unsupported', () => {
+    const html = renderToStaticMarkup(
+      <>
+        {renderNodeContent({
+          children: [
+            { type: 'graph-image', props: { src: 'https://example.com/media.png', alt: 'media' } },
+          ],
+          fallbackLabel: 'Fallback text',
+          iconClassName: 'icon-class',
+          textClassName: 'text-class',
+        })}
+      </>,
+    );
+
+    expect(html).toBe('');
+    expect(html).not.toContain('Fallback text');
+  });
 });

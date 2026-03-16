@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'bun:test';
+import {
+  CANONICAL_OBJECT_FIXTURE_SETS,
+} from './__fixtures__/objectCapabilityFixtures';
+import {
+  assertCanonicalMatch,
+  assertCanonicalValidationFailure,
+} from './objectCapabilityTestUtils';
 import { parseRenderGraph } from './parseRenderGraph';
+import { createCanonicalFromLegacyAliasInput } from './aliasNormalization';
 
 describe('parseRenderGraph mindmap roots', () => {
   it('allows a root node without from and only builds edges for linked nodes', () => {
@@ -166,6 +174,432 @@ describe('parseRenderGraph mindmap roots', () => {
         expect.objectContaining({ source: 'map.billing.root', target: 'map.billing.invoice' }),
       ]),
     );
+  });
+});
+
+describe('parseRenderGraph canonical object normalization', () => {
+  it('normalizes legacy node aliases into canonical text content', () => {
+    const fixture = CANONICAL_OBJECT_FIXTURE_SETS.legacyAliasInference;
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [fixture.input.node as any],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.nodes).toHaveLength(1);
+    assertCanonicalMatch(
+      (parsed!.nodes[0].data as Record<string, unknown>).canonicalObject,
+      fixture.expectedCanonical!,
+    );
+  });
+
+  it('prefers explicit frame props over preset defaults for shape-like nodes', () => {
+    const fixture = CANONICAL_OBJECT_FIXTURE_SETS.explicitOverridePreset;
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [fixture.input.node as any],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.nodes).toHaveLength(1);
+    assertCanonicalMatch(
+      (parsed!.nodes[0].data as Record<string, unknown>).canonicalObject,
+      fixture.expectedCanonical!,
+      );
+  });
+
+  it('applies explicit capability overrides above inferred and alias defaults', () => {
+    const canonicalResult = createCanonicalFromLegacyAliasInput({
+      alias: 'Shape',
+      core: {
+        id: 'shape-explicit-overrides',
+        sourceMeta: {
+          sourceId: 'shape-explicit-overrides',
+          kind: 'canvas',
+        },
+      },
+      legacyProps: {
+        type: 'heart',
+        fill: '#0f172a',
+        stroke: '#38bdf8',
+        strokeWidth: 3,
+        text: 'explicit override stays explicit',
+      },
+      explicitCapabilities: {
+        frame: {
+          shape: 'rectangle',
+          fill: '#ff6b6b',
+          stroke: '#38bdf8',
+          strokeWidth: 7,
+        },
+      },
+    });
+
+    expect(canonicalResult).toMatchObject({ ok: true });
+    if (!canonicalResult.ok) {
+      throw new Error('Expected canonical normalization success');
+    }
+
+    assertCanonicalMatch(
+      canonicalResult.canonical,
+      {
+        semanticRole: 'shape',
+        alias: 'Shape',
+        capabilities: {
+          frame: {
+            shape: 'rectangle',
+            fill: '#ff6b6b',
+            stroke: '#38bdf8',
+            strokeWidth: 7,
+          },
+          content: {
+            kind: 'text',
+            value: 'explicit override stays explicit',
+          },
+        },
+        capabilitySources: {
+          frame: 'explicit',
+          content: 'legacy-inferred',
+        },
+      },
+    );
+  });
+
+  it('prefers legacy-inferred capabilities above preset defaults', () => {
+    const canonicalResult = createCanonicalFromLegacyAliasInput({
+      alias: 'Shape',
+      core: {
+        id: 'shape-inferred',
+        sourceMeta: {
+          sourceId: 'shape-inferred',
+          kind: 'canvas',
+        },
+      },
+      legacyProps: {
+        type: 'speech',
+        text: 'inferred should beat preset frame',
+      },
+    });
+
+    expect(canonicalResult).toMatchObject({ ok: true });
+    if (!canonicalResult.ok) {
+      throw new Error('Expected canonical normalization success');
+    }
+
+    assertCanonicalMatch(
+      canonicalResult.canonical,
+      {
+        semanticRole: 'shape',
+        alias: 'Shape',
+        capabilities: {
+          frame: {
+            shape: 'speech',
+          },
+          content: {
+            kind: 'text',
+            value: 'inferred should beat preset frame',
+          },
+        },
+        capabilitySources: {
+          frame: 'legacy-inferred',
+          content: 'legacy-inferred',
+        },
+      },
+    );
+  });
+
+  it('reuses non-sticky material and attach capabilities on canonical shape nodes', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'shape-reusable-capabilities',
+              x: 12,
+              y: 18,
+              type: 'rectangle',
+              text: 'reused capabilities',
+              pattern: { type: 'preset', id: 'postit' },
+              texture: { opacity: 0.15 },
+              at: {
+                target: 'anchor-node',
+                position: 'top',
+                offset: 10,
+              },
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.nodes).toHaveLength(1);
+    assertCanonicalMatch(
+      (parsed!.nodes[0].data as Record<string, unknown>).canonicalObject,
+      {
+        semanticRole: 'shape',
+        alias: 'Shape',
+        capabilities: {
+          frame: {
+            shape: 'rectangle',
+          },
+          content: {
+            kind: 'text',
+            value: 'reused capabilities',
+          },
+          material: {
+            pattern: { type: 'preset', id: 'postit' },
+          },
+          texture: {
+            texture: {
+              opacity: 0.15,
+            },
+          },
+          attach: {
+            target: 'anchor-node',
+            position: 'top',
+            offset: 10,
+          },
+        },
+        capabilitySources: {
+          frame: 'explicit',
+          content: 'explicit',
+          material: 'explicit',
+          texture: 'explicit',
+          attach: 'explicit',
+        },
+      },
+    );
+  });
+
+  it('keeps sticky-note semantic when defaults are partially reduced', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-sticky',
+            props: {
+              id: 'sticky-partial-defaults',
+              x: 8,
+              y: 14,
+              text: 'sticky semantic with reduced defaults',
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.nodes).toHaveLength(1);
+    assertCanonicalMatch(
+      (parsed!.nodes[0].data as Record<string, unknown>).canonicalObject,
+      {
+        semanticRole: 'sticky-note',
+        alias: 'Sticky',
+        capabilities: {
+          content: {
+            kind: 'text',
+            value: 'sticky semantic with reduced defaults',
+          },
+        },
+        capabilitySources: {
+          content: 'explicit',
+        },
+      },
+    );
+  });
+
+  it('keeps sticky-note semantic when sticky defaults are reduced', () => {
+    const fixture = CANONICAL_OBJECT_FIXTURE_SETS.stickySemanticPreservation;
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [fixture.input.node as any],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.nodes).toHaveLength(1);
+    assertCanonicalMatch(
+      (parsed!.nodes[0].data as Record<string, unknown>).canonicalObject,
+      fixture.expectedCanonical!,
+    );
+  });
+
+  it('stores canonical validation failures for content-kind mismatch inputs', () => {
+    const fixture = CANONICAL_OBJECT_FIXTURE_SETS.contentKindMismatch;
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [fixture.input.node as any],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.nodes).toHaveLength(1);
+    assertCanonicalValidationFailure(
+      (parsed!.nodes[0].data as Record<string, unknown>).canonicalValidation as any,
+      fixture.expectedValidation as any,
+    );
+  });
+
+  it('normalizes top-level image nodes to content:media canonical objects', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-image',
+            props: {
+              id: 'img-media',
+              x: 10,
+              y: 20,
+              src: '/media/diagram.png',
+              alt: 'diagram',
+              fit: 'cover',
+              width: 180,
+              height: 120,
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    const imageNode = parsed!.nodes.find((node) => node.id === 'img-media');
+    expect(imageNode?.type).toBe('image');
+    assertCanonicalMatch(
+      (imageNode?.data as Record<string, unknown>)?.canonicalObject,
+      {
+        semanticRole: 'image',
+        alias: 'Image',
+        capabilities: {
+          content: {
+            kind: 'media',
+            src: '/media/diagram.png',
+            alt: 'diagram',
+            fit: 'cover',
+            width: 180,
+            height: 120,
+          },
+        },
+      },
+    );
+  });
+
+  it('parses graph-sequence nodes as sequence renderer with canonical sequence content', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-sequence',
+            props: {
+              id: 'seq-1',
+              x: 10,
+              y: 20,
+              participantSpacing: 190,
+              messageSpacing: 70,
+            },
+            children: [
+              { type: 'graph-participant', props: { id: 'alice', label: 'Alice' } },
+              { type: 'graph-participant', props: { id: 'bob', label: 'Bob' } },
+              {
+                type: 'graph-message',
+                props: {
+                  from: 'alice',
+                  to: 'bob',
+                  label: 'hello',
+                  type: 'async',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    const seqNode = parsed!.nodes.find((node) => node.id === 'seq-1');
+    expect(seqNode?.type).toBe('sequence-diagram');
+    expect(seqNode?.data).toMatchObject({
+      participantSpacing: 190,
+      messageSpacing: 70,
+      participants: [
+        { id: 'alice', label: 'Alice', className: undefined },
+        { id: 'bob', label: 'Bob', className: undefined },
+      ],
+      messages: [
+        {
+          from: 'alice',
+          to: 'bob',
+          label: 'hello',
+          type: 'async',
+        },
+      ],
+    });
+    assertCanonicalMatch(
+      (seqNode?.data as Record<string, unknown>)?.canonicalObject,
+      {
+        semanticRole: 'sequence',
+        alias: 'Sequence',
+        capabilities: {
+          content: {
+            kind: 'sequence',
+          },
+        },
+      },
+    );
+  });
+
+  it('rejects canonical explicit content mismatches for Image/Markdown/Sequence aliases', () => {
+    const cases = [
+      {
+        alias: 'Image',
+        content: { kind: 'text', value: 'bad media contract' },
+        expectedMessage: 'alias "Image" only supports content kind media.',
+      },
+      {
+        alias: 'Markdown',
+        content: { kind: 'media', src: '/media.png', alt: 'bad markdown contract' },
+        expectedMessage: 'alias "Markdown" only supports content kind markdown.',
+      },
+      {
+        alias: 'Sequence',
+        content: { kind: 'text', value: 'bad sequence contract' },
+        expectedMessage: 'alias "Sequence" only supports content kind sequence.',
+      },
+    ] as const;
+
+    for (const caseItem of cases) {
+      const canonicalResult = createCanonicalFromLegacyAliasInput({
+        alias: caseItem.alias as any,
+        core: {
+          id: `content-kind-mismatch-${caseItem.alias.toLowerCase()}`,
+          sourceMeta: {
+            sourceId: `content-kind-mismatch-${caseItem.alias.toLowerCase()}`,
+            kind: 'canvas',
+          },
+        },
+        legacyProps: {},
+        explicitCapabilities: {
+          content: caseItem.content as any,
+        },
+      });
+
+      expect(canonicalResult).toMatchObject({
+        ok: false,
+        code: 'CONTENT_CONTRACT_VIOLATION',
+        path: 'capabilities.content',
+      });
+      if (canonicalResult.ok) {
+        throw new Error(`Expected ${caseItem.alias} canonicalization mismatch failure`);
+      }
+
+      expect(canonicalResult.message).toContain(caseItem.expectedMessage);
+    }
   });
 });
 

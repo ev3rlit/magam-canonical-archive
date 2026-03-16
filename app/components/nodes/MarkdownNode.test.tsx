@@ -69,4 +69,21 @@ describe('MarkdownNode WYSIWYG parity', () => {
       });
     }
   });
+
+  it('markdown size object with unsupported ratio is normalized into object2d mode', () => {
+    const resolved = resolveMarkdownSize(
+      { token: 'm', ratio: 'diagonal' as any },
+      {
+        component: 'MarkdownNode',
+        inputPath: 'size',
+      },
+    );
+
+    expect(resolved.mode).toBe('object2d');
+    if (resolved.mode === 'object2d') {
+      expect(resolved.object2d.mode).toBe('fixed');
+      expect(resolved.object2d.tokenUsed).toBe('m');
+      expect(['portrait', 'landscape', 'square']).toContain(resolved.object2d.ratioUsed);
+    }
+  });
 });

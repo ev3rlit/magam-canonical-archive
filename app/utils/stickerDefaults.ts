@@ -5,6 +5,8 @@ export interface StickerNormalized {
   padding: number;
 }
 
+export type StickerCreateDefaults = StickerNormalized;
+
 const OUTLINE_WIDTH_MIN = 8;
 const OUTLINE_WIDTH_MAX = 14;
 
@@ -27,4 +29,8 @@ export function normalizeStickerData(input: Record<string, any>): StickerNormali
       : 'md',
     padding: clampPadding(input?.padding),
   };
+}
+
+export function getDefaultStickerCreateProps(): StickerCreateDefaults {
+  return normalizeStickerData({});
 }

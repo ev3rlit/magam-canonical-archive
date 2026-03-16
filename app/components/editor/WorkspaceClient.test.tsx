@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
+import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
+import type { CanonicalObject } from '@/features/render/canonicalObject';
 import {
   canCommitTextEdit,
   canRunNodeCommand,
@@ -18,6 +20,67 @@ function makeNode(input: Partial<Node> & { id: string; type: string; data?: Reco
     data: input.data ?? {},
   } as Node;
 }
+
+function makeCapabilityProfileNodeFromCanonical(
+  input: {
+    id: string;
+    type: string;
+    canonical: CanonicalObject;
+  },
+): Node {
+  const profile = deriveCapabilityProfile(input.canonical);
+  return {
+    id: input.id,
+    type: input.type,
+    position: { x: 0, y: 0 },
+    data: {
+      sourceMeta: {
+        sourceId: input.id,
+      },
+      editMeta: {
+        family: profile.contentCarrier ? 'rich-content' : 'canvas-absolute',
+        contentCarrier: profile.contentCarrier,
+        styleEditableKeys: profile.allowedUpdateKeys,
+        createMode: profile.allowedCommands.includes('node.reparent') ? 'mindmap-child' : 'canvas',
+      },
+    },
+  };
+}
+
+const canonicalProfileNode: CanonicalObject = {
+  core: {
+    id: 'profile-node-1',
+    sourceMeta: {
+      sourceId: 'profile-node-1',
+      filePath: 'examples/profile.tsx',
+    },
+  },
+  semanticRole: 'topic',
+  alias: 'Node',
+  capabilities: {
+    frame: {
+      shape: 'rounded',
+      fill: '#fff',
+    },
+    content: {
+      kind: 'text',
+      value: 'Hello',
+      fontSize: 'm',
+    },
+  },
+};
+
+const canonicalProfileShape: CanonicalObject = {
+  ...canonicalProfileNode,
+  core: {
+    id: 'profile-shape-1',
+    sourceMeta: {
+      sourceId: 'profile-shape-1',
+      filePath: 'examples/profile.tsx',
+    },
+  },
+  alias: 'Shape',
+};
 
 describe('WorkspaceClient text edit isolation', () => {
   it('선택된 activeTextEditNodeId만 커밋 가능하다', () => {
@@ -190,5 +253,57 @@ describe('WorkspaceClient editability helpers', () => {
       },
       rejectedKeys: ['anchor'],
     });
+  });
+});
+
+describe('WorkspaceClient capability-profile editability parity', () => {
+  it('동일 canonical capability 집합은 Node/Shape alias에서 동일한 editability 명령 집합을 만든다', () => {
+    const nodeProfile = deriveCapabilityProfile(canonicalProfileNode);
+    const shapeProfile = deriveCapabilityProfile(canonicalProfileShape);
+
+    expect(nodeProfile.allowedCommands).toEqual(shapeProfile.allowedCommands);
+    expect(nodeProfile.allowedUpdateKeys).toEqual(shapeProfile.allowedUpdateKeys);
+  });
+
+  it('동일 capability 프로파일 기반 editMeta는 alias 타입과 무관하게 UI 커맨드 게이팅을 일치시킨다', () => {
+    const nodeFromCanonicalAlias = makeCapabilityProfileNodeFromCanonical({
+      id: 'profile-node-1',
+      type: 'shape',
+      canonical: canonicalProfileNode,
+    });
+    const nodeFromShapeAlias = makeCapabilityProfileNodeFromCanonical({
+      id: 'profile-shape-1',
+      type: 'text',
+      canonical: canonicalProfileShape,
+    });
+
+    expect(
+      canRunNodeCommand(nodeFromCanonicalAlias, 'node.style.update'),
+    ).toBe(canRunNodeCommand(nodeFromShapeAlias, 'node.style.update'));
+    expect(
+      canRunNodeCommand(nodeFromCanonicalAlias, 'node.content.update'),
+    ).toBe(canRunNodeCommand(nodeFromShapeAlias, 'node.content.update'));
+    expect(
+      canRunNodeCommand(nodeFromCanonicalAlias, 'node.move.absolute'),
+    ).toBe(canRunNodeCommand(nodeFromShapeAlias, 'node.move.absolute'));
+    expect(
+      canRunNodeCommand(nodeFromCanonicalAlias, 'node.rename'),
+    ).toBe(canRunNodeCommand(nodeFromShapeAlias, 'node.rename'));
+
+    expect(
+      getAllowedNodeStylePatch(nodeFromCanonicalAlias, {
+        outlineColor: '#fff',
+        color: '#000',
+        value: 'updated',
+        unknown: 'x',
+      }),
+    ).toEqual(
+      getAllowedNodeStylePatch(nodeFromShapeAlias, {
+        outlineColor: '#fff',
+        color: '#000',
+        value: 'updated',
+        unknown: 'x',
+      }),
+    );
   });
 });

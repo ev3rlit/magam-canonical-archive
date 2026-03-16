@@ -411,4 +411,118 @@ describe('RPC editing methods', () => {
     const patched = await readFile(filePath, 'utf-8');
     expect(patched.includes('id="temp"')).toBe(false);
   });
+
+  it('node.update: Image content-kind mismatch는 CONTENT_CONTRACT_VIOLATION + diagnostics로 거부한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <Image id="img-mismatch" src={"https://example.com/media.png"} alt={"media"}></Image>
+        </Canvas>;
+      }
+    `);
+    const original = await readFile(filePath, 'utf-8');
+
+    let error: unknown;
+    try {
+      await methods['node.update']({
+        filePath,
+        nodeId: 'img-mismatch',
+        props: { content: '# mismatch' },
+        commandType: 'node.content.update',
+        baseVersion: sha(original),
+        originId: 'client-1',
+        commandId: 'cmd-content-kind-mismatch',
+      }, { ws: {}, subscriptions: new Set() });
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toBeDefined();
+    const rejection = error as { code?: number; message?: string; data?: unknown };
+    expect(rejection.code).toBe(42208);
+    expect(rejection.message).toBe('CONTENT_CONTRACT_VIOLATION');
+    if (rejection.data && typeof rejection.data === 'object') {
+      const data = rejection.data as { path?: string; diagnostics?: { path?: string } };
+      expect(data.path ?? data.diagnostics?.path).toBe('capabilities.content');
+    }
+  });
+
+  it('node.update: node.style.update 명령은 Node/Shape alias에서 동일하게 동작한다', async () => {
+    const nodePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Node id="node-alias" /></Canvas>;
+      }
+    `);
+    const shapePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Shape id="shape-alias" /></Canvas>;
+      }
+    `);
+
+    const nodeOriginal = await readFile(nodePath, 'utf-8');
+    const shapeOriginal = await readFile(shapePath, 'utf-8');
+
+    const nodeResult = await methods['node.update']({
+      filePath: nodePath,
+      nodeId: 'node-alias',
+      props: { fill: '#22c55e' },
+      commandType: 'node.style.update',
+      baseVersion: sha(nodeOriginal),
+      originId: 'client-1',
+      commandId: 'cmd-style-update-node',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean; newVersion: string };
+
+    const nodePatched = await readFile(nodePath, 'utf-8');
+    const shapeResult = await methods['node.update']({
+      filePath: shapePath,
+      nodeId: 'shape-alias',
+      props: { fill: '#22c55e' },
+      commandType: 'node.style.update',
+      baseVersion: sha(shapeOriginal),
+      originId: 'client-1',
+      commandId: 'cmd-style-update-shape',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean; newVersion: string };
+
+    const shapePatched = await readFile(shapePath, 'utf-8');
+
+    expect(nodeResult.success).toBe(true);
+    expect(shapeResult.success).toBe(true);
+    expect(nodePatched.includes('id="node-alias"')).toBe(true);
+    expect(shapePatched.includes('id="shape-alias"')).toBe(true);
+    expect(nodePatched.includes('fill={"#22c55e"}')).toBe(true);
+    expect(shapePatched.includes('fill={"#22c55e"}')).toBe(true);
+  });
+
+  it('node.update: node.style.update에서 content 전용 필드(patch)로 비허용 계약을 바꾸면 CONTENT_CONTRACT_VIOLATION', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Node id="node-invalid" /></Canvas>;
+      }
+    `);
+    const original = await readFile(filePath, 'utf-8');
+
+    let error: unknown;
+    try {
+      await methods['node.update']({
+        filePath,
+        nodeId: 'node-invalid',
+        props: { participants: ['A', 'B'] },
+        commandType: 'node.style.update',
+        baseVersion: sha(original),
+        originId: 'client-1',
+        commandId: 'cmd-style-invalid-contract',
+      }, { ws: {}, subscriptions: new Set() });
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toBeDefined();
+    const rejection = error as { code?: number; message?: string; data?: unknown };
+    expect(rejection.code).toBe(42208);
+    expect(rejection.message).toBe('CONTENT_CONTRACT_VIOLATION');
+    if (rejection.data && typeof rejection.data === 'object') {
+      const data = rejection.data as { path?: string; diagnostics?: { path?: string } };
+      expect(data.path ?? data.diagnostics?.path).toBe('capabilities.content');
+    }
+  });
 });

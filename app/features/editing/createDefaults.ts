@@ -1,4 +1,6 @@
 import type { CreatePayload } from './commands';
+import { DEFAULT_WASHI_PRESET_ID } from '@/utils/washiTapeDefaults';
+import { getDefaultStickerCreateProps } from '@/utils/stickerDefaults';
 
 const DEFAULT_NODE_LABEL_BY_TYPE: Record<CreatePayload['nodeType'], string> = {
   shape: 'New shape',
@@ -45,6 +47,7 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
   initialContent?: string;
   initialProps: Record<string, unknown>;
 } {
+  const stickerDefaults = getDefaultStickerCreateProps();
   switch (nodeType) {
     case 'text':
       return {
@@ -60,16 +63,16 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
       return {
         initialContent: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
         initialProps: {
-          outlineColor: '#ffffff',
-          outlineWidth: 4,
-          shadow: 'md',
-          padding: 8,
+          outlineColor: stickerDefaults.outlineColor,
+          outlineWidth: stickerDefaults.outlineWidth,
+          shadow: stickerDefaults.shadow,
+          padding: stickerDefaults.padding,
         },
       };
     case 'washi-tape':
       return {
         initialProps: {
-          pattern: { type: 'preset', id: 'pastel-dots' },
+          pattern: { type: 'preset', id: DEFAULT_WASHI_PRESET_ID },
           opacity: 0.9,
         },
       };

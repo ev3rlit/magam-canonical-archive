@@ -90,4 +90,46 @@ describe('ShapeNode size rules', () => {
       tokenUsed: 'auto',
     });
   });
+
+  it('reuses shared object2d ratio override path for shape aliases', () => {
+    const resolved = resolveObject2D(
+      normalizeObjectSizeInput({ token: 'm', ratio: 'portrait' }, {
+        component: 'ShapeNode',
+        inputPath: 'size',
+        defaultRatio: resolveShapeDefaultRatio('rectangle'),
+      }),
+      {
+        component: 'ShapeNode',
+        inputPath: 'size',
+      },
+    );
+
+    expect(resolved).toMatchObject({
+      mode: 'fixed',
+      widthPx: 120,
+      heightPx: 192,
+      ratioUsed: 'portrait',
+      tokenUsed: 'm',
+    });
+  });
+
+  it('uses shared square handling for widthHeight token on non-sticky aliases', () => {
+    const normalized = normalizeObjectSizeInput({ widthHeight: 'm', ratio: 'landscape' }, {
+      component: 'ShapeNode',
+      inputPath: 'size',
+      defaultRatio: resolveShapeDefaultRatio('rectangle'),
+    });
+    const resolved = resolveObject2D(normalized, {
+      component: 'ShapeNode',
+      inputPath: 'size',
+    });
+
+    expect(resolved).toMatchObject({
+      mode: 'fixed',
+      widthPx: 120,
+      heightPx: 120,
+      ratioUsed: 'square',
+      tokenUsed: 'm',
+    });
+  });
 });
