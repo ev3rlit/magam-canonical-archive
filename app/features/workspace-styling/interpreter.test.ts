@@ -169,6 +169,28 @@ describe('workspace-styling/interpreter', () => {
     });
   });
 
+  it('applies text selection tokens without emitting unsupported diagnostics', () => {
+    const interpreted = interpretWorkspaceStyle({
+      styleInput: makeInput({
+        className: 'text-[1px] text-transparent select-none',
+      }),
+      eligibleProfile: makeEligibleProfile(),
+    });
+
+    expect(interpreted.result.status).toBe('applied');
+    expect(interpreted.result.appliedTokens).toEqual([
+      'text-[1px]',
+      'text-transparent',
+      'select-none',
+    ]);
+    expect(interpreted.result.resolvedStylePayload?.style).toMatchObject({
+      fontSize: '1px',
+      color: 'transparent',
+      userSelect: 'none',
+    });
+    expect(interpreted.diagnostics).toEqual([]);
+  });
+
   it('activates dark and md variants only when runtime context matches', () => {
     const darkAndWide = interpretWorkspaceStyle({
       styleInput: makeInput({

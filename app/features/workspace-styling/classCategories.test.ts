@@ -31,6 +31,7 @@ describe('workspace-styling/classCategories', () => {
     expect(resolveTokenCategory('px-4')).toBe('basic-visual');
     expect(resolveTokenCategory('font-semibold')).toBe('basic-visual');
     expect(resolveTokenCategory('tracking-wide')).toBe('basic-visual');
+    expect(resolveTokenCategory('select-none')).toBe('basic-visual');
     expect(resolveTokenCategory('border-l-4')).toBe('basic-visual');
     expect(resolveTokenCategory('shadow-lg')).toBe('shadow-elevation');
     expect(resolveTokenCategory('ring-2')).toBe('outline-emphasis');

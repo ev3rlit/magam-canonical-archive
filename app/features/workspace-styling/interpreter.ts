@@ -181,6 +181,17 @@ function resolveRadiusValue(token: string): string | null {
   return radiusBySuffix[suffix] ?? null;
 }
 
+function resolveArbitraryTextValue(value: string): { kind: 'fontSize' | 'color'; value: string } {
+  const unwrapped = unwrapArbitraryValue(value);
+  const looksLikeFontSize = /^-?\d*\.?\d+(?:px|rem|em|%|vh|vw|vmin|vmax|ch|ex|pt|pc|cm|mm|in)$/.test(unwrapped)
+    || /^(?:calc|min|max|clamp)\(/.test(unwrapped);
+
+  return {
+    kind: looksLikeFontSize ? 'fontSize' : 'color',
+    value: unwrapped,
+  };
+}
+
 function resolveOpacityValue(token: string): number | null {
   const value = token.slice('opacity-'.length);
   if (isArbitraryValue(value)) {
@@ -485,6 +496,15 @@ function applyBasicVisualToken(accumulator: StyleAccumulator, token: string): vo
       accumulator.style.fontSize = fontSizeByToken[sizeToken];
       return;
     }
+    if (isArbitraryValue(sizeToken)) {
+      const resolved = resolveArbitraryTextValue(sizeToken);
+      if (resolved.kind === 'fontSize') {
+        accumulator.style.fontSize = resolved.value;
+      } else {
+        accumulator.style.color = resolved.value;
+      }
+      return;
+    }
     const color = resolveColorValue(token.slice('text-'.length));
     if (color) accumulator.style.color = color;
     return;
@@ -544,6 +564,21 @@ function applyBasicVisualToken(accumulator: StyleAccumulator, token: string): vo
   if (token.startsWith('gap-')) {
     const gap = resolveSpacingLikeValue(token.slice('gap-'.length), 'width');
     if (gap) accumulator.style.gap = gap;
+    return;
+  }
+
+  if (token.startsWith('select-')) {
+    const selectionMode = token.slice('select-'.length);
+    const userSelectByToken: Record<string, string> = {
+      none: 'none',
+      text: 'text',
+      all: 'all',
+      auto: 'auto',
+    };
+    const resolved = userSelectByToken[selectionMode];
+    if (resolved) {
+      accumulator.style.userSelect = resolved;
+    }
     return;
   }
 
@@ -771,6 +806,7 @@ function buildStyleFromTokensByCategory(
       || token === 'not-italic'
       || token.startsWith('tracking-')
       || token.startsWith('gap-')
+      || token.startsWith('select-')
       || token.startsWith('p-')
       || token.startsWith('px-')
       || token.startsWith('py-')
