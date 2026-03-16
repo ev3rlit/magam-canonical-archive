@@ -153,3 +153,10 @@ export function shouldSuppressDragStopErrorToast(error: unknown): boolean {
     && data?.reason === 'NO_VALID_PARENT'
   );
 }
+
+export function shouldRetainSelectionOnStyleUpdate(input: {
+  selectedNodeIds: string[];
+  updatedNodeId: string;
+}): boolean {
+  return input.selectedNodeIds.includes(input.updatedNodeId);
+}

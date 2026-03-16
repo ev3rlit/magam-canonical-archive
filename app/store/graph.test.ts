@@ -315,6 +315,26 @@ describe('washi selection helpers', () => {
   });
 });
 
+describe('group hover registry', () => {
+  it('tracks hovered node ids per group and removes empty groups on leave', () => {
+    useGraphStore.getState().registerGroupHover('map-1', 'node-a');
+    useGraphStore.getState().registerGroupHover('map-1', 'node-b');
+    useGraphStore.getState().registerGroupHover('map-1', 'node-a');
+
+    expect(useGraphStore.getState().hoveredNodeIdsByGroupId).toEqual({
+      'map-1': ['node-a', 'node-b'],
+    });
+
+    useGraphStore.getState().unregisterGroupHover('map-1', 'node-a');
+    expect(useGraphStore.getState().hoveredNodeIdsByGroupId).toEqual({
+      'map-1': ['node-b'],
+    });
+
+    useGraphStore.getState().unregisterGroupHover('map-1', 'node-b');
+    expect(useGraphStore.getState().hoveredNodeIdsByGroupId).toEqual({});
+  });
+});
+
 describe('text edit session state', () => {
   it('active node id 기반으로 draft를 관리하고 commit 요청을 생성한다', () => {
     useGraphStore.getState().startTextEditSession({

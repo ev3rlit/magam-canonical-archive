@@ -1,4 +1,4 @@
-import React, { ReactNode, useMemo, useEffect, useCallback, memo } from 'react';
+import React, { ReactNode, useMemo, useEffect, useCallback, memo, useState } from 'react';
 import { Handle, Position, useNodeId } from 'reactflow';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -44,6 +44,30 @@ interface BaseNodeProps {
     label?: string;
     style?: React.CSSProperties;
     onDoubleClick?: React.MouseEventHandler<HTMLDivElement>;
+    consumeRuntimePayload?: boolean;
+    trackGroupHover?: boolean;
+}
+
+export function resolveBaseNodeInlineStyle(input: {
+    style?: React.CSSProperties;
+    runtimeStyle?: Record<string, string | number>;
+    hoverStyle?: Record<string, string | number>;
+    focusStyle?: Record<string, string | number>;
+    activeStyle?: Record<string, string | number>;
+    groupHoverStyle?: Record<string, string | number>;
+    isHovered: boolean;
+    isFocused: boolean;
+    isActive: boolean;
+    isGroupHovered: boolean;
+}): React.CSSProperties {
+    return {
+        ...(input.style || {}),
+        ...(input.runtimeStyle || {}),
+        ...(input.isHovered ? (input.hoverStyle || {}) : {}),
+        ...(input.isFocused ? (input.focusStyle || {}) : {}),
+        ...(input.isActive ? (input.activeStyle || {}) : {}),
+        ...(input.isGroupHovered ? (input.groupHoverStyle || {}) : {}),
+    };
 }
 
 export const BaseNodeComponent = ({
@@ -57,14 +81,46 @@ export const BaseNodeComponent = ({
     label,
     style,
     onDoubleClick,
+    consumeRuntimePayload = true,
+    trackGroupHover = true,
 }: BaseNodeProps) => {
     const { registerBubble, unregisterBubble } = useBubbleActions();
     const nodeId = useNodeId();
+    const [isHovered, setIsHovered] = useState(false);
+    const [isFocused, setIsFocused] = useState(false);
+    const [isActive, setIsActive] = useState(false);
     // Optimization: Only subscribe to this specific node's data
     // This prevents re-renders when other nodes are updated (e.g. selection drag)
     const node = useGraphStore(
         useCallback((state) => state.nodes.find((n) => n.id === nodeId), [nodeId])
     );
+    const runtimePayload = useGraphStore(
+        useCallback((state) => {
+            if (!nodeId || !consumeRuntimePayload) return undefined;
+            return state.workspaceStyleByNodeId[nodeId]?.resolvedStylePayload;
+        }, [consumeRuntimePayload, nodeId]),
+    );
+    const registerGroupHover = useGraphStore((state) => state.registerGroupHover);
+    const unregisterGroupHover = useGraphStore((state) => state.unregisterGroupHover);
+    const isGroupHovered = useGraphStore(
+        useCallback((state) => {
+            const groupId = typeof node?.data?.groupId === 'string' ? node.data.groupId : null;
+            if (!groupId) return false;
+            return (state.hoveredNodeIdsByGroupId[groupId] ?? []).length > 0;
+        }, [node]),
+    );
+    const resolvedInlineStyle = useMemo(() => resolveBaseNodeInlineStyle({
+        style,
+        runtimeStyle: runtimePayload?.style,
+        hoverStyle: runtimePayload?.hoverStyle,
+        focusStyle: runtimePayload?.focusStyle,
+        activeStyle: runtimePayload?.activeStyle,
+        groupHoverStyle: runtimePayload?.groupHoverStyle,
+        isHovered,
+        isFocused,
+        isActive,
+        isGroupHovered,
+    }), [isActive, isFocused, isGroupHovered, isHovered, runtimePayload?.activeStyle, runtimePayload?.focusStyle, runtimePayload?.groupHoverStyle, runtimePayload?.hoverStyle, runtimePayload?.style, style]);
 
     const handleClasses = clsx(
         '!w-3 !h-3 !border-0 transition-opacity duration-200',
@@ -105,10 +161,43 @@ export const BaseNodeComponent = ({
         };
     }, [bubble, nodeId, bubbleText, node, registerBubble, unregisterBubble]);
 
+    useEffect(() => {
+        return () => {
+            const groupId = typeof node?.data?.groupId === 'string' ? node.data.groupId : null;
+            if (trackGroupHover && nodeId && groupId) {
+                unregisterGroupHover(groupId, nodeId);
+            }
+        };
+    }, [node, nodeId, trackGroupHover, unregisterGroupHover]);
+
     // Bubble is now rendered in BubbleOverlay, not here
 
     return (
-        <div className={twMerge("relative group", className)} style={style} onDoubleClick={onDoubleClick}>
+        <div
+            className={twMerge("relative group", className)}
+            style={resolvedInlineStyle}
+            onDoubleClick={onDoubleClick}
+            onMouseEnter={() => {
+                setIsHovered(true);
+                const groupId = typeof node?.data?.groupId === 'string' ? node.data.groupId : null;
+                if (trackGroupHover && nodeId && groupId) {
+                    registerGroupHover(groupId, nodeId);
+                }
+            }}
+            onMouseLeave={() => {
+                setIsHovered(false);
+                const groupId = typeof node?.data?.groupId === 'string' ? node.data.groupId : null;
+                if (trackGroupHover && nodeId && groupId) {
+                    unregisterGroupHover(groupId, nodeId);
+                }
+            }}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            onMouseDown={() => setIsActive(true)}
+            onMouseUp={() => setIsActive(false)}
+            onMouseLeaveCapture={() => setIsActive(false)}
+            tabIndex={runtimePayload?.focusStyle || runtimePayload?.activeStyle ? 0 : undefined}
+        >
             {/* Target handle */}
             {endHandle && (
                 <Handle

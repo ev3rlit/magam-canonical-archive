@@ -1,5 +1,6 @@
 import React, { memo, useEffect } from 'react';
 import { NodeProps } from 'reactflow';
+import { BaseNode } from './BaseNode';
 import { useGraphStore } from '@/store/graph';
 import type { FontFamilyPreset } from '@magam/core';
 import {
@@ -36,7 +37,7 @@ const ARROW_SIZE = 8;
 const SELF_LOOP_WIDTH = 30;
 const SELF_LOOP_HEIGHT = 30;
 
-const SequenceDiagramNode = ({ data }: NodeProps<SequenceDiagramData>) => {
+const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>) => {
   const { participants, messages, participantSpacing, messageSpacing } = data;
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
@@ -73,10 +74,14 @@ const SequenceDiagramNode = ({ data }: NodeProps<SequenceDiagramData>) => {
   const totalHeight = PARTICIPANT_HEIGHT + lifelineHeight + PARTICIPANT_HEIGHT;
 
   return (
-    <div
+    <BaseNode
       className={data.className || ''}
-      style={{ position: 'relative', width: totalWidth, height: totalHeight }}
+      selected={selected}
+      startHandle={false}
+      endHandle={false}
+      style={{ width: totalWidth, height: totalHeight }}
     >
+      <div style={{ position: 'relative', width: totalWidth, height: totalHeight }}>
       {/* Participant top boxes + lifelines + bottom boxes */}
       {participants.map((p, i) => {
         const x = i * participantSpacing;
@@ -171,7 +176,8 @@ const SequenceDiagramNode = ({ data }: NodeProps<SequenceDiagramData>) => {
           />
         );
       })}
-    </div>
+      </div>
+    </BaseNode>
   );
 };
 

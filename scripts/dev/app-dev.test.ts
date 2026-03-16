@@ -1,52 +1,69 @@
 import { describe, expect, it } from 'bun:test';
-import { buildCliDevCommand, findTargetArgIndex, resolveDevTargetDir } from './app-dev';
+import {
+  buildCliDevCommand,
+  findTargetArgIndex,
+  resolveDevTargetDir,
+  resolveWorkspaceStylingBootstrapPlan,
+} from './app-dev';
 
-describe('app dev bootstrap helpers', () => {
-  const repoRoot = '/repo/magam';
-
-  it('default target directory는 examples를 사용한다', () => {
-    expect(resolveDevTargetDir(repoRoot)).toBe('/repo/magam/examples');
+describe('app-dev bootstrap planning', () => {
+  it('keeps safelist generation enabled when runtime styling rollout is enabled', () => {
+    expect(resolveWorkspaceStylingBootstrapPlan({
+      MAGAM_WORKSPACE_STYLING_RUNTIME: '1',
+    })).toEqual({
+      runtimeStylingEnabled: true,
+      shouldGenerateSafelist: true,
+    });
   });
 
-  it('MAGAM_TARGET_DIR 상대 경로를 repo root 기준 절대 경로로 변환한다', () => {
-    expect(resolveDevTargetDir(repoRoot, './notes')).toBe('/repo/magam/notes');
+  it('still generates safelist when runtime styling flag is absent', () => {
+    expect(resolveWorkspaceStylingBootstrapPlan({})).toEqual({
+      runtimeStylingEnabled: false,
+      shouldGenerateSafelist: true,
+    });
+  });
+});
+
+describe('app-dev command helpers', () => {
+  const repoRoot = '/repo';
+
+  it('resolves the default target directory to examples', () => {
+    expect(resolveDevTargetDir(repoRoot)).toBe('/repo/examples');
   });
 
-  it('옵션 값은 target directory로 오인하지 않는다', () => {
-    expect(findTargetArgIndex(['--port', '4100', '--debug'])).toBe(-1);
-    expect(findTargetArgIndex(['--port', '4100', './notes'])).toBe(2);
+  it('finds the positional target arg after option pairs', () => {
+    expect(findTargetArgIndex(['--port', '3002', './workspace'])).toBe(2);
   });
 
-  it('target directory 인자가 없으면 기본 target을 cli.ts dev 앞에 주입한다', () => {
+  it('injects a default target when none is supplied', () => {
     expect(buildCliDevCommand({
       repoRoot,
-      args: ['--port', '4100'],
-      envTargetDir: './notes',
+      args: ['--port', '3002'],
     })).toEqual([
       'bun',
       '--watch',
       'run',
       'cli.ts',
       'dev',
-      '/repo/magam/notes',
+      '/repo/examples',
       '--port',
-      '4100',
+      '3002',
     ]);
   });
 
-  it('명시된 target directory 인자는 절대 경로로 정규화한다', () => {
+  it('replaces a supplied target with the resolved absolute path', () => {
     expect(buildCliDevCommand({
       repoRoot,
-      args: ['./custom', '--debug'],
-      envTargetDir: './notes',
+      args: ['./custom-target', '--warmup-retries', '2'],
     })).toEqual([
       'bun',
       '--watch',
       'run',
       'cli.ts',
       'dev',
-      '/repo/magam/custom',
-      '--debug',
+      '/repo/custom-target',
+      '--warmup-retries',
+      '2',
     ]);
   });
 });

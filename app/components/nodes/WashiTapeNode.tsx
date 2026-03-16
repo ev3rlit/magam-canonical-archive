@@ -1,6 +1,6 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { NodeProps } from 'reactflow';
-import { BaseNode } from './BaseNode';
+import { BaseNode, resolveBaseNodeInlineStyle } from './BaseNode';
 import { useGraphStore } from '@/store/graph';
 import type { RenderableChild } from '@/utils/childComposition';
 import type { WashiTapeNodeData } from '@/types/washiTape';
@@ -40,13 +40,57 @@ const alignMap: Record<WashiTextAlign | 'default', React.CSSProperties['textAlig
   default: 'center',
 };
 
+export function resolveWashiTapeSurfaceStyle(input: {
+  baseStyle: React.CSSProperties;
+  runtimePayload?: {
+    style?: Record<string, string | number>;
+    hoverStyle?: Record<string, string | number>;
+    focusStyle?: Record<string, string | number>;
+    activeStyle?: Record<string, string | number>;
+    groupHoverStyle?: Record<string, string | number>;
+  };
+  isHovered: boolean;
+  isFocused: boolean;
+  isActive: boolean;
+  isGroupHovered: boolean;
+}): React.CSSProperties {
+  return resolveBaseNodeInlineStyle({
+    style: input.baseStyle,
+    runtimeStyle: input.runtimePayload?.style,
+    hoverStyle: input.runtimePayload?.hoverStyle,
+    focusStyle: input.runtimePayload?.focusStyle,
+    activeStyle: input.runtimePayload?.activeStyle,
+    groupHoverStyle: input.runtimePayload?.groupHoverStyle,
+    isHovered: input.isHovered,
+    isFocused: input.isFocused,
+    isActive: input.isActive,
+    isGroupHovered: input.isGroupHovered,
+  });
+}
+
 const WashiTapeNode = ({
+  id,
   data,
   selected,
   xPos,
   yPos,
 }: NodeProps<WashiTapeNodeData>) => {
   const nodes = useGraphStore((state) => state.nodes);
+  const registerGroupHover = useGraphStore((state) => state.registerGroupHover);
+  const unregisterGroupHover = useGraphStore((state) => state.unregisterGroupHover);
+  const runtimePayload = useGraphStore(
+    useCallback((state) => state.workspaceStyleByNodeId[id]?.resolvedStylePayload, [id]),
+  );
+  const isGroupHovered = useGraphStore(
+    useCallback((state) => {
+      const groupId = typeof data.groupId === 'string' ? data.groupId : null;
+      if (!groupId) return false;
+      return (state.hoveredNodeIdsByGroupId[groupId] ?? []).length > 0;
+    }, [data.groupId]),
+  );
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const [isActive, setIsActive] = useState(false);
   const raw = (data || {}) as WashiTapeNodeData;
   const normalized = useMemo(
     () => normalizeWashiDefaults(raw as unknown as Record<string, unknown>),
@@ -155,19 +199,58 @@ const WashiTapeNode = ({
     transform: `skewX(${shapeSkewAngle}deg)`,
     transformOrigin: 'center center',
   };
+  const resolvedTapeStyle = useMemo(() => resolveWashiTapeSurfaceStyle({
+    baseStyle: tapeStyle,
+    runtimePayload,
+    isHovered,
+    isFocused,
+    isActive,
+    isGroupHovered,
+  }), [isActive, isFocused, isGroupHovered, isHovered, runtimePayload, tapeStyle]);
+
+  useEffect(() => {
+    return () => {
+      if (data.groupId) {
+        unregisterGroupHover(data.groupId, id);
+      }
+    };
+  }, [data.groupId, id, unregisterGroupHover]);
 
   return (
     <BaseNode
       selected={selected}
       startHandle
       endHandle
+      consumeRuntimePayload={false}
+      trackGroupHover={false}
       style={{
         transform:
           `translate(${offsetX}px, ${offsetY}px)` +
           (geometry.angle !== 0 ? ` rotate(${geometry.angle}deg)` : ''),
       }}
     >
-      <div style={tapeStyle} data-washi-preset={pattern.presetId}>
+      <div
+        style={resolvedTapeStyle}
+        data-washi-preset={pattern.presetId}
+        onMouseEnter={() => {
+          setIsHovered(true);
+          if (data.groupId) {
+            registerGroupHover(data.groupId, id);
+          }
+        }}
+        onMouseLeave={() => {
+          setIsHovered(false);
+          setIsActive(false);
+          if (data.groupId) {
+            unregisterGroupHover(data.groupId, id);
+          }
+        }}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        onMouseDown={() => setIsActive(true)}
+        onMouseUp={() => setIsActive(false)}
+        tabIndex={runtimePayload?.focusStyle || runtimePayload?.activeStyle ? 0 : undefined}
+      >
         <div
           className="pointer-events-none absolute inset-0"
           style={{

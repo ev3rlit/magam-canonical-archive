@@ -9,6 +9,7 @@ import {
   resolveEditHistoryShortcut,
   resolveMindMapDragFeedback,
   resolveMindMapReparentIntent,
+  shouldRetainSelectionOnStyleUpdate,
   shouldCommitDragStop,
   shouldHandlePaneCreate,
   shouldSuppressDragStopErrorToast,
@@ -256,6 +257,20 @@ describe('GraphCanvas mindmap reparent intent', () => {
       kind: 'reparent-ready',
       newParentNodeId: 'parent',
     });
+  });
+});
+
+describe('GraphCanvas style update context retention', () => {
+  it('retains selection for style-only updates on selected nodes', () => {
+    expect(shouldRetainSelectionOnStyleUpdate({
+      selectedNodeIds: ['sticky-1', 'shape-2'],
+      updatedNodeId: 'sticky-1',
+    })).toBe(true);
+
+    expect(shouldRetainSelectionOnStyleUpdate({
+      selectedNodeIds: ['shape-2'],
+      updatedNodeId: 'sticky-1',
+    })).toBe(false);
   });
 });
 

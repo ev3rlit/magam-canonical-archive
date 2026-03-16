@@ -1,3 +1,5 @@
+const workspaceSafelist = require('./tailwind.workspace-safelist.cjs');
+
 /** @type {import('tailwindcss').Config} */
 const typography = require('@tailwindcss/typography');
 
@@ -7,7 +9,8 @@ module.exports = {
     './components/**/*.{js,ts,jsx,tsx,mdx}',
     '../libs/**/*.{js,ts,jsx,tsx}',
   ],
-  safelist: require('./tailwind.workspace-safelist.cjs'),
+  // Runtime styling rollout keeps the existing workspace safelist bootstrap path active.
+  safelist: workspaceSafelist,
   darkMode: 'class',
   theme: {
     extend: {
