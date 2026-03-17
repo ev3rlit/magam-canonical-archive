@@ -1,24 +1,13 @@
 import type { Metadata } from 'next';
-import { Caveat, Gaegu, Inter } from 'next/font/google';
 import './globals.css';
 
-const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
-const gaegu = Gaegu({
-  subsets: ['latin'],
-  variable: '--font-gaegu',
-  weight: ['400', '700'],
-});
-const caveat = Caveat({
-  subsets: ['latin'],
-  variable: '--font-caveat',
-  weight: ['400', '700'],
-});
-
 const KR_FALLBACKS = '"Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Segoe UI", system-ui, sans-serif';
+const HANDWRITING_FALLBACKS = '"Comic Sans MS", "Segoe Print", "Marker Felt", "Bradley Hand", cursive';
+const SANS_FALLBACKS = '"Helvetica Neue", Arial, "Liberation Sans", sans-serif';
 const fontPresetCSS = `:root {
-  --font-preset-hand-gaegu: ${gaegu.style.fontFamily}, ${KR_FALLBACKS};
-  --font-preset-hand-caveat: ${caveat.style.fontFamily}, ${KR_FALLBACKS};
-  --font-preset-sans-inter: ${inter.style.fontFamily}, ${KR_FALLBACKS};
+  --font-preset-hand-gaegu: ${HANDWRITING_FALLBACKS}, ${KR_FALLBACKS};
+  --font-preset-hand-caveat: ${HANDWRITING_FALLBACKS}, ${KR_FALLBACKS};
+  --font-preset-sans-inter: ${SANS_FALLBACKS}, ${KR_FALLBACKS};
 }`;
 
 export const metadata: Metadata = {
@@ -36,7 +25,7 @@ export default function RootLayout({
       <head>
         <style dangerouslySetInnerHTML={{ __html: fontPresetCSS }} />
       </head>
-      <body className={`${inter.className} ${inter.variable} ${gaegu.variable} ${caveat.variable}`}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

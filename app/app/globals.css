@@ -2,8 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Font preset variables (--font-preset-*) are generated in layout.tsx
-   using next/font's resolved style.fontFamily values. */
+/* Font preset variables (--font-preset-*) are injected in layout.tsx
+   using local system/KR fallback stacks. */
 
 /* ========================================
    Semantic Zoom: Bubble Label (Opt-in)

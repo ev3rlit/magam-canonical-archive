@@ -375,6 +375,7 @@ export const BaseNodeComponent = ({
             }}
             onMouseLeave={() => {
                 setIsHovered(false);
+                setIsActive(false);
                 const groupId = typeof node?.data?.groupId === 'string' ? node.data.groupId : null;
                 if (trackGroupHover && nodeId && groupId) {
                     unregisterGroupHover(groupId, nodeId);
@@ -384,7 +385,6 @@ export const BaseNodeComponent = ({
             onBlur={() => setIsFocused(false)}
             onMouseDown={() => setIsActive(true)}
             onMouseUp={() => setIsActive(false)}
-            onMouseLeaveCapture={() => setIsActive(false)}
             tabIndex={runtimePayload?.focusStyle || runtimePayload?.activeStyle ? 0 : undefined}
         >
             {/* Target handle */}
