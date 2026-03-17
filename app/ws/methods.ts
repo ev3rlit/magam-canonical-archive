@@ -5,6 +5,15 @@
 import { readFile } from 'fs/promises';
 import { createHash } from 'crypto';
 import { isAbsolute, resolve } from 'path';
+import { CanonicalPersistenceRepository } from '../../libs/shared/src/lib/canonical-persistence/repository';
+import type {
+    CanonicalMutationEnvelope,
+    CanonicalMutationResultEnvelope,
+    CanonicalQueryRequest,
+    CanonicalQueryResultEnvelope,
+} from '../../libs/shared/src/lib/canonical-mutation-query/contracts';
+import { CanonicalMutationExecutor } from '../../libs/shared/src/lib/canonical-mutation-query/mutation-executor';
+import { CanonicalQueryService } from '../../libs/shared/src/lib/canonical-mutation-query/query-service';
 import {
     patchFile,
     patchNodeCreate,
@@ -39,6 +48,25 @@ type UpdateCommandType =
     | 'node.style.update'
     | 'node.rename';
 const fileMutationLocks = new Map<string, Promise<void>>();
+
+type CanonicalServices = {
+    queryService: {
+        execute: (request: CanonicalQueryRequest) => Promise<CanonicalQueryResultEnvelope>;
+    };
+    mutationExecutor: {
+        execute: (envelope: CanonicalMutationEnvelope) => Promise<CanonicalMutationResultEnvelope>;
+    };
+};
+
+let canonicalServicesPromise: Promise<CanonicalServices> | null = null;
+let canonicalServicesFactoryForTests: (() => Promise<CanonicalServices>) | null = null;
+
+export function __setCanonicalServicesFactoryForTests(
+    factory: (() => Promise<CanonicalServices>) | null,
+): void {
+    canonicalServicesFactoryForTests = factory;
+    canonicalServicesPromise = null;
+}
 
 function ensureString(value: unknown, fieldName: string): string {
     if (!value || typeof value !== 'string') {
@@ -104,6 +132,42 @@ function ensureNumber(value: unknown, fieldName: string): number {
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} must be a number` };
     }
     return value;
+}
+
+function ensureRecord(value: unknown, fieldName: string): Record<string, unknown> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} must be an object` };
+    }
+    return value as Record<string, unknown>;
+}
+
+function isRevisionToken(value: string): boolean {
+    return value.startsWith('rev:');
+}
+
+function ensureCanonicalScope(params: Record<string, unknown>): {
+    workspaceId: string;
+    documentId: string;
+} {
+    return {
+        workspaceId: ensureString(params.workspaceId, 'workspaceId'),
+        documentId: ensureString(params.documentId, 'documentId'),
+    };
+}
+
+function toRpcLikeErrorFromCanonicalFailure(
+    failure: CanonicalMutationResultEnvelope & { ok: false },
+): never {
+    const rpcTemplate = RPC_ERRORS[failure.code as keyof typeof RPC_ERRORS]
+        ?? RPC_ERRORS.INTERNAL_ERROR;
+    throw {
+        ...rpcTemplate,
+        data: {
+            ...(failure.path ? { path: failure.path } : {}),
+            ...(failure.details ? { details: failure.details } : {}),
+            message: failure.message,
+        },
+    };
 }
 
 function ensureCreatePlacement(value: unknown): CreateNodeInput['placement'] | undefined {
@@ -173,6 +237,29 @@ function resolveWorkspaceFilePath(filePath: string): string {
     return resolve(workspaceRoot, filePath);
 }
 
+async function createDefaultCanonicalServices(): Promise<CanonicalServices> {
+    const workspaceRoot = resolve(process.env.MAGAM_TARGET_DIR || process.cwd());
+    const [{ createCanonicalPgliteDb }, { createCanonicalMutationRepositoryAdapter, createCanonicalQueryRepositoryAdapter }] = await Promise.all([
+        import('../../libs/shared/src/lib/canonical-persistence/pglite-db'),
+        import('../../libs/shared/src/lib/canonical-mutation-query/runtime-adapters'),
+    ]);
+
+    const handle = await createCanonicalPgliteDb(workspaceRoot);
+    const repository = new CanonicalPersistenceRepository(handle.db);
+
+    return {
+        queryService: new CanonicalQueryService(createCanonicalQueryRepositoryAdapter(repository)),
+        mutationExecutor: new CanonicalMutationExecutor(createCanonicalMutationRepositoryAdapter(repository)),
+    };
+}
+
+async function getCanonicalServices(): Promise<CanonicalServices> {
+    if (!canonicalServicesPromise) {
+        canonicalServicesPromise = (canonicalServicesFactoryForTests ?? createDefaultCanonicalServices)();
+    }
+    return canonicalServicesPromise;
+}
+
 function ensureCommonParams(params: Record<string, unknown>) {
     const filePath = ensureString(params.filePath, 'filePath');
     const baseVersion = ensureString(params.baseVersion, 'baseVersion');
@@ -222,6 +309,32 @@ async function mutateWithContract(
     });
 }
 
+async function mutateWithCanonicalContract(
+    ctx: RpcContext,
+    common: { filePath: string; baseVersion: string; originId: string; commandId: string },
+    envelope: CanonicalMutationEnvelope,
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+    const services = await getCanonicalServices();
+    const result = await services.mutationExecutor.execute(envelope);
+    if (!result.ok) {
+        return toRpcLikeErrorFromCanonicalFailure(result);
+    }
+
+    ctx.notifyFileChanged?.({
+        filePath: common.filePath,
+        version: result.revision.after,
+        originId: common.originId,
+        commandId: common.commandId,
+    });
+
+    return {
+        success: true,
+        newVersion: result.revision.after,
+        commandId: common.commandId,
+        filePath: common.filePath,
+    };
+}
+
 async function handleFileSubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
     const filePath = ensureString(params.filePath, 'filePath');
     ctx.subscriptions.add(filePath);
@@ -248,6 +361,41 @@ async function handleNodeUpdate(
     }
 
     const commandType = inferUpdateCommandType(props, explicitCommandType);
+
+    if (isRevisionToken(common.baseVersion)) {
+        const { workspaceId, documentId } = ensureCanonicalScope(params);
+        const canonicalObjectId = ensureOptionalString(params.canonicalObjectId, 'canonicalObjectId');
+
+        if (commandType === 'node.content.update') {
+            if (typeof props.content !== 'string') {
+                throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'content must be a string' };
+            }
+            if (!canonicalObjectId) {
+                throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canonicalObjectId is required for revision-token content updates' };
+            }
+
+            const contentKind = ensureOptionalString(params.contentKind, 'contentKind');
+            const content = contentKind === 'markdown'
+                ? { kind: 'markdown' as const, source: props.content }
+                : { kind: 'text' as const, value: props.content };
+
+            return mutateWithCanonicalContract(ctx, common, {
+                workspaceId,
+                documentId,
+                baseRevision: common.baseVersion,
+                actor: {
+                    kind: 'user',
+                    id: common.originId,
+                },
+                requestId: common.commandId,
+                operations: [{
+                    op: 'object.update-content',
+                    objectId: canonicalObjectId,
+                    content,
+                }],
+            });
+        }
+    }
 
     try {
         return await mutateWithContract(ctx, common, async () => {
@@ -348,6 +496,40 @@ async function handleNodeCreate(
 
     node.placement = ensureCreatePlacement(node.placement);
 
+    if (isRevisionToken(common.baseVersion)) {
+        const { workspaceId, documentId } = ensureCanonicalScope(params);
+        const canonicalObjectId = ensureString((node as Record<string, unknown>).canonicalObjectId, 'node.canonicalObjectId');
+        const surfaceId = ensureOptionalString(params.surfaceId, 'surfaceId') ?? 'surface-1';
+
+        const layout = node.placement?.mode === 'canvas-absolute'
+            ? { x: node.placement.x, y: node.placement.y }
+            : {};
+
+        return mutateWithCanonicalContract(ctx, common, {
+            workspaceId,
+            documentId,
+            baseRevision: common.baseVersion,
+            actor: {
+                kind: 'user',
+                id: common.originId,
+            },
+            requestId: common.commandId,
+            operations: [{
+                op: 'canvas-node.create',
+                node: {
+                    id: node.id,
+                    documentId,
+                    surfaceId,
+                    nodeKind: 'native',
+                    nodeType: node.type,
+                    canonicalObjectId,
+                    layout,
+                    zIndex: ensureNumber((params.zIndex ?? 1), 'zIndex'),
+                },
+            }],
+        });
+    }
+
     try {
         return await mutateWithContract(ctx, common, async () => {
             const collisionIds = await getGlobalIdentifierCollisions(common.resolvedFilePath);
@@ -373,6 +555,25 @@ async function handleNodeDelete(
     const common = ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
 
+    if (isRevisionToken(common.baseVersion)) {
+        const { workspaceId, documentId } = ensureCanonicalScope(params);
+        return mutateWithCanonicalContract(ctx, common, {
+            workspaceId,
+            documentId,
+            baseRevision: common.baseVersion,
+            actor: {
+                kind: 'user',
+                id: common.originId,
+            },
+            requestId: common.commandId,
+            operations: [{
+                op: 'canvas-node.remove',
+                documentId,
+                nodeId,
+            }],
+        });
+    }
+
     try {
         return await mutateWithContract(ctx, common, async () => {
             await patchNodeDelete(common.resolvedFilePath, nodeId);
@@ -395,6 +596,26 @@ async function handleNodeReparent(
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const newParentId = ensureOptionalString(params.newParentId, 'newParentId');
 
+    if (isRevisionToken(common.baseVersion)) {
+        const { workspaceId, documentId } = ensureCanonicalScope(params);
+        return mutateWithCanonicalContract(ctx, common, {
+            workspaceId,
+            documentId,
+            baseRevision: common.baseVersion,
+            actor: {
+                kind: 'user',
+                id: common.originId,
+            },
+            requestId: common.commandId,
+            operations: [{
+                op: 'canvas-node.reparent',
+                documentId,
+                nodeId,
+                parentNodeId: newParentId ?? null,
+            }],
+        });
+    }
+
     try {
         return await mutateWithContract(ctx, common, async () => {
             await patchNodeReparent(common.resolvedFilePath, nodeId, newParentId || null);
@@ -410,6 +631,22 @@ async function handleNodeReparent(
     }
 }
 
+async function handleCanonicalQuery(
+    params: Record<string, unknown>,
+): Promise<CanonicalQueryResultEnvelope> {
+    const request = ensureRecord(params.request ?? params, 'request') as unknown as CanonicalQueryRequest;
+    const services = await getCanonicalServices();
+    return services.queryService.execute(request);
+}
+
+async function handleCanonicalMutation(
+    params: Record<string, unknown>,
+): Promise<CanonicalMutationResultEnvelope> {
+    const envelope = ensureRecord(params.envelope ?? params, 'envelope') as unknown as CanonicalMutationEnvelope;
+    const services = await getCanonicalServices();
+    return services.mutationExecutor.execute(envelope);
+}
+
 export const methods: Record<string, RpcHandler> = {
     'file.subscribe': handleFileSubscribe,
     'file.unsubscribe': handleFileUnsubscribe,
@@ -418,4 +655,6 @@ export const methods: Record<string, RpcHandler> = {
     'node.create': handleNodeCreate,
     'node.delete': handleNodeDelete,
     'node.reparent': handleNodeReparent,
+    'canonical.query': handleCanonicalQuery,
+    'canonical.mutate': handleCanonicalMutation,
 };

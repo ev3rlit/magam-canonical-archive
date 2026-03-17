@@ -9,6 +9,38 @@ type CanonicalObjectRecord = SharedCanonicalObjectRecord;
 export type ObjectRelationType = string;
 export type CanvasNodeKind = 'native' | 'plugin' | 'binding-proxy';
 export type CanvasBindingKind = 'object' | 'query' | 'relation-set' | 'field-map';
+export type CanonicalQueryInclude =
+  | 'objects'
+  | 'relations'
+  | 'canvasNodes'
+  | 'bindings'
+  | 'documentRevision';
+
+export interface CanonicalQueryFilters {
+  semanticRole?: string[];
+  primaryContentKind?: Array<string | null>;
+  hasCapability?: string[];
+  alias?: string[];
+}
+
+export interface CanonicalQueryBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+export interface FilteredObjectQueryInput {
+  workspaceId: string;
+  filters?: CanonicalQueryFilters;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface FilteredObjectQueryResult {
+  objects: CanonicalObjectRecord[];
+  cursor?: string;
+}
 
 export interface ObjectRelationRecord {
   id: string;
@@ -61,6 +93,31 @@ export interface DocumentRevisionRecord {
   createdAt?: Date;
 }
 
+export interface DocumentHeadRevisionRecord {
+  documentId: string;
+  revisionNo: number;
+  revisionId: string;
+  headRevision: string;
+  createdAt?: Date;
+}
+
+export interface SurfaceLoadInput {
+  workspaceId: string;
+  documentId: string;
+  surfaceId: string;
+  bounds?: CanonicalQueryBounds;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface SurfaceLoadResult {
+  canvasNodes: CanvasNodeRecord[];
+  bindings: CanvasBindingRecord[];
+  objects: CanonicalObjectRecord[];
+  documentRevision: DocumentHeadRevisionRecord;
+  cursor?: string;
+}
+
 export type CanonicalPersistenceFailureCode =
   | CanonicalValidationCode
   | 'RELATION_ENDPOINT_MISSING'
@@ -72,7 +129,16 @@ export type CanonicalPersistenceFailureCode =
   | 'TOMBSTONE_PLACEHOLDER_RESOLUTION_FAILED'
   | 'EDITABLE_CANONICAL_SHARE_REQUIRES_CLONE'
   | 'CANONICAL_RECORD_NOT_FOUND'
-  | 'CANONICAL_RECORD_TOMBSTONED';
+  | 'CANONICAL_RECORD_TOMBSTONED'
+  | 'INVALID_QUERY_INCLUDE'
+  | 'INVALID_QUERY_FILTER'
+  | 'INVALID_QUERY_CURSOR'
+  | 'INVALID_QUERY_BOUNDS'
+  | 'QUERY_SCOPE_NOT_FOUND'
+  | 'VERSION_BASE_REQUIRED'
+  | 'VERSION_CONFLICT'
+  | 'INVALID_REVISION_TOKEN'
+  | 'REVISION_APPEND_FAILED';
 
 export interface PersistenceSuccess<T> {
   ok: true;
