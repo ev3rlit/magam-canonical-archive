@@ -146,12 +146,18 @@ export interface CanonicalObject {
   alias?: CanonicalObjectAlias;
 }
 
-export interface ValidationResult {
-  ok: boolean;
+export interface ValidationSuccess {
+  ok: true;
+}
+
+export interface ValidationFailure {
+  ok: false;
   code?: CanonicalValidationCode;
   message?: string;
   path?: string;
 }
+
+export type ValidationResult = ValidationSuccess | ValidationFailure;
 
 const SEMANTIC_ROLES: readonly SemanticRole[] = [
   'topic',
@@ -172,7 +178,7 @@ export function isContentKind(value: unknown): value is ContentKind {
   return typeof value === 'string' && (CONTENT_KINDS as readonly string[]).includes(value);
 }
 
-export function okValidation(): ValidationResult {
+export function okValidation(): ValidationSuccess {
   return { ok: true };
 }
 
@@ -180,7 +186,7 @@ export function invalidValidation(
   code: CanonicalValidationCode,
   message: string,
   path?: string,
-): ValidationResult {
+): ValidationFailure {
   return { ok: false, code, message, path };
 }
 

@@ -99,7 +99,7 @@ describe('renderNodeContent', () => {
       <>
         {renderNodeContent({
           children: [
-            { type: 'graph-image', props: { src: 'https://example.com/media.png', alt: 'media' } },
+            { type: 'graph-image', src: 'https://example.com/media.png', alt: 'media' },
           ],
           fallbackLabel: 'Fallback text',
           iconClassName: 'icon-class',

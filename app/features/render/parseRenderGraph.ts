@@ -1,4 +1,5 @@
 import { extractNodeContent, extractStickerContent } from '@/utils/nodeContent';
+import type { RenderChildNode } from '@/utils/childComposition';
 import { normalizeStickerData } from '@/utils/stickerDefaults';
 import {
   normalizeStickyDefaults,
@@ -51,7 +52,7 @@ export interface RenderNode {
     color?: string;
     bg?: string;
     className?: string;
-    fontSize?: SizeValue;
+    fontSize?: SizeValue | string;
     labelColor?: string;
     labelFontSize?: number;
     labelBold?: boolean;
@@ -63,7 +64,7 @@ export interface RenderNode {
     labelBgColor?: string;
     edgeLabel?: string;
     edgeClassName?: string;
-    content?: unknown;
+    content?: string | Record<string, unknown>;
     variant?: string;
     src?: string;
     imageSrc?: string;
@@ -167,7 +168,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
       legacyChildren?: unknown[];
     },
   ): Record<string, unknown> => {
-    const dataWithSource = {
+    const dataWithSource: Record<string, unknown> = {
       ...nodeData,
       sourceMeta: nodeData.sourceMeta || {
         sourceId: nodeId,
@@ -175,7 +176,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
       },
     };
 
-    const enrichedData = {
+    const enrichedData: Record<string, unknown> = {
       ...dataWithSource,
       editMeta: deriveEditMeta({
         id: nodeId,
@@ -486,7 +487,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
     const mediaSrc = readStringProp(legacyProps.src);
 
     if (contentCapability) {
-      explicit.content = contentCapability as CapabilityBag['content'];
+      explicit.content = contentCapability as unknown as CapabilityBag['content'];
       return explicit;
     }
 
@@ -782,7 +783,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
 
         const rendererChildren = child.children || [];
         const { label: baseLabel, parsedChildren } = extractNodeContent(
-          rendererChildren,
+          rendererChildren as RenderChildNode[],
           child.props.children,
           { textJoiner: '\n' },
         );
@@ -916,7 +917,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
         const stickerFontFamily = normalizeFontFamily(child.props.fontFamily);
         const stickerRendererChildren = child.children || [];
         const { label: stickerLabel, parsedChildren: stickerChildren } = extractStickerContent(
-          stickerRendererChildren,
+          stickerRendererChildren as RenderChildNode[],
           child.props.children,
           { textJoiner: ' ' },
         );
@@ -979,7 +980,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
         );
         const washiRendererChildren = child.children || [];
         const { label: washiLabel, parsedChildren: washiChildren } = extractStickerContent(
-          washiRendererChildren,
+          washiRendererChildren as RenderChildNode[],
           child.props.children,
           { textJoiner: ' ' },
         );
@@ -1050,7 +1051,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
         const {
           label: parsedLabel,
           parsedChildren,
-        } = extractNodeContent(rendererChildren, child.props.children);
+        } = extractNodeContent(rendererChildren as RenderChildNode[], child.props.children);
 
         rendererChildren.forEach((grandChild: RenderNode) => {
           if (grandChild.type === 'graph-edge') {

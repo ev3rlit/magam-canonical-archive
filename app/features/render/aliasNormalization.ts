@@ -1,13 +1,16 @@
 import {
+  type CapabilityBag,
   type CanonicalCapabilityKey,
   type CanonicalObject,
   type CanonicalObjectAlias,
   type CanonicalValidationCode,
   type ContentCapability,
   type ContentKind,
+  type FrameCapability,
   type NormalizationSource,
   type ObjectCore,
   type SemanticRole,
+  type ValidationFailure,
   type ValidationResult,
   invalidValidation,
   isContentKind,
@@ -138,7 +141,7 @@ export interface CanonicalAliasNormalizationSuccess {
   canonical: CanonicalObject;
 }
 
-export type CanonicalAliasNormalizationResult = CanonicalAliasNormalizationSuccess | ValidationResult;
+export type CanonicalAliasNormalizationResult = CanonicalAliasNormalizationSuccess | ValidationFailure;
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -355,7 +358,7 @@ export function inferLegacyCapabilities(input: LegacyCapabilityInferenceInput): 
 
     case 'Shape': {
       const text = extractTextLike(legacyProps);
-      const frame: Record<string, unknown> = {};
+      const frame: Partial<FrameCapability> = {};
       const legacyShape = readString(legacyProps.type);
       const shapeValue = SHAPE_TYPES.has(legacyShape ?? '') ? legacyShape : undefined;
       const fill = readString(legacyProps.fill);
@@ -400,7 +403,7 @@ export function inferLegacyCapabilities(input: LegacyCapabilityInferenceInput): 
         sources.content = 'legacy-inferred';
       }
 
-      const frame: Record<string, unknown> = {};
+      const frame: Partial<FrameCapability> = {};
       const legacyShape = readString(legacyProps.shape);
       const shapeValue = SHAPE_TYPES.has(legacyShape ?? '') ? legacyShape : undefined;
       const fill = readString(legacyProps.fill);
@@ -505,7 +508,7 @@ export function inferLegacyCapabilities(input: LegacyCapabilityInferenceInput): 
           ? readString(legacyProps.shadow)
           : undefined;
 
-      const frame: Record<string, unknown> = {};
+      const frame: Partial<FrameCapability> = {};
       const legacyShape = readString(legacyProps.type);
       const shapeValue = SHAPE_TYPES.has(legacyShape ?? '') ? legacyShape : undefined;
       const fill = readString(legacyProps.fill);
@@ -588,7 +591,7 @@ export function inferLegacyCapabilities(input: LegacyCapabilityInferenceInput): 
 
 function validateExplicitCapabilities(
   capabilities: unknown,
-): ValidationResult | null {
+): ValidationFailure | null {
   if (capabilities === undefined) {
     return null;
   }
@@ -624,22 +627,53 @@ function applyCapabilityLayer(
   layer: Partial<CanonicalObject['capabilities']>,
   source: NormalizationSource,
 ) {
+  const typedTarget = target as CapabilityBag;
   for (const [rawKey, value] of Object.entries(layer)) {
     const key = rawKey as CanonicalCapabilityKey;
     if (value === undefined) {
       continue;
     }
-    const current = target[key];
-    target[key] = (
-      key !== 'content'
-      && isRecord(current)
-      && isRecord(value)
-    )
-      ? {
-          ...current,
-          ...value,
-        }
-      : value as CanonicalObject['capabilities'][typeof key];
+    switch (key) {
+      case 'frame': {
+        typedTarget.frame = isRecord(typedTarget.frame) && isRecord(value)
+          ? { ...typedTarget.frame, ...value }
+          : value as CapabilityBag['frame'];
+        break;
+      }
+      case 'material': {
+        typedTarget.material = isRecord(typedTarget.material) && isRecord(value)
+          ? { ...typedTarget.material, ...value }
+          : value as CapabilityBag['material'];
+        break;
+      }
+      case 'texture': {
+        typedTarget.texture = isRecord(typedTarget.texture) && isRecord(value)
+          ? { ...typedTarget.texture, ...value }
+          : value as CapabilityBag['texture'];
+        break;
+      }
+      case 'attach': {
+        typedTarget.attach = isRecord(typedTarget.attach) && isRecord(value)
+          ? { ...typedTarget.attach, ...value }
+          : value as CapabilityBag['attach'];
+        break;
+      }
+      case 'ports': {
+        typedTarget.ports = value as CapabilityBag['ports'];
+        break;
+      }
+      case 'bubble': {
+        typedTarget.bubble = value as CapabilityBag['bubble'];
+        break;
+      }
+      case 'content': {
+        typedTarget.content = value as CapabilityBag['content'];
+        break;
+      }
+      default: {
+        break;
+      }
+    }
     sources[key] = source;
   }
 }
@@ -767,7 +801,7 @@ export function normalizeAliasToCanonicalObject(
 
 const buildAliasNormalizationInput = (
   input: RawAliasNormalizationInput,
-): CanonicalAliasInput | ValidationResult => {
+): CanonicalAliasInput | ValidationFailure => {
   const legacyProps = input.legacyProps ?? {};
   if (!isRecord(legacyProps)) {
     return invalidValidation('INVALID_ALIAS_ROLE_BINDING', 'legacyProps must be an object.', 'legacyProps');
@@ -785,7 +819,7 @@ const buildAliasNormalizationInput = (
 
 export function createCanonicalFromLegacyAliasInput(input: RawAliasNormalizationInput): CanonicalAliasNormalizationResult {
   const normalized = buildAliasNormalizationInput(input);
-  if ('ok' in normalized && !normalized.ok) {
+  if ('ok' in normalized) {
     return normalized;
   }
 

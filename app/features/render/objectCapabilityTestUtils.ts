@@ -3,6 +3,7 @@ import type {
   CanonicalObject,
   CanonicalValidationCode,
   NormalizationSource,
+  ValidationFailure,
   ValidationResult,
 } from './canonicalObject';
 
@@ -14,8 +15,11 @@ export type CanonicalObjectExpectation = {
   forbidCapabilities?: readonly CanonicalCapabilityKey[];
 };
 
-export type CanonicalValidationExpectation = Pick<ValidationResult, 'code' | 'path' | 'message'> & {
+export type CanonicalValidationExpectation = {
   ok: false;
+  code?: ValidationFailure['code'];
+  path?: ValidationFailure['path'];
+  message?: ValidationFailure['message'];
 };
 
 export type CanonicalAssertionResult = {
@@ -67,7 +71,7 @@ export const collectCanonicalMismatches = (
     return ['actualCanonical must be an object'];
   }
 
-  const canonical = actual as CanonicalObject;
+  const canonical = actual as unknown as CanonicalObject;
   const mismatches: string[] = [];
 
   if (expected.semanticRole !== undefined && canonical.semanticRole !== expected.semanticRole) {
@@ -100,6 +104,10 @@ export const collectValidationMismatches = (
 ): string[] => {
   if (actual.ok !== expected.ok) {
     return [`ok expected ${expected.ok} but got ${actual.ok}`];
+  }
+
+  if (actual.ok) {
+    return ['expected validation failure but got success'];
   }
 
   if (actual.code !== expected.code) {

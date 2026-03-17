@@ -138,9 +138,10 @@ export function resolveMindMapReparentIntent(input: {
     return { kind: 'rejected', reason: 'NO_VALID_PARENT' };
   }
 
+  const resolvedCandidate = bestCandidate as { nodeId: string; distance: number };
   return {
     kind: 'reparent',
-    newParentNodeId: bestCandidate.nodeId,
+    newParentNodeId: resolvedCandidate.nodeId,
   };
 }
 

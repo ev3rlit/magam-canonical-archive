@@ -435,6 +435,9 @@ function GraphCanvasContent({
       if (!shouldHandlePaneCreate({ interactionMode, createMode }) || !onCreateNode) {
         return;
       }
+      if (createMode === null) {
+        return;
+      }
 
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       try {

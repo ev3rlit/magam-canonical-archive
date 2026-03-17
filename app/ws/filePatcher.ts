@@ -440,14 +440,16 @@ function toJsxChildren(type: CreateNodeInput['type'], props: Record<string, unkn
 }
 
 function buildNodeElement(input: CreateNodeInput): t.JSXElement {
-    const placementMode = input.placement?.mode;
-    const placementProps = placementMode === 'canvas-absolute'
-        ? { x: input.placement.x, y: input.placement.y }
-        : placementMode === 'mindmap-child'
-            ? { from: input.placement.parentId }
-            : placementMode === 'mindmap-sibling'
-                ? { ...(input.placement.parentId ? { from: input.placement.parentId } : {}) }
-                : {};
+    const placement = input.placement;
+    const placementMode = placement?.mode;
+    const placementProps =
+        placement && placementMode === 'canvas-absolute'
+            ? { x: placement.x, y: placement.y }
+            : placement && placementMode === 'mindmap-child'
+                ? { from: placement.parentId }
+                : placement && placementMode === 'mindmap-sibling'
+                    ? { ...(placement.parentId ? { from: placement.parentId } : {}) }
+                    : {};
     const tag = placementMode === 'mindmap-child' || placementMode === 'mindmap-sibling'
         ? 'Node'
         : input.type === 'mindmap'
@@ -735,10 +737,11 @@ export async function patchNodeCreate(filePath: string, input: CreateNodeInput):
         }
 
         const newElement = buildNodeElement(input);
-        const placementMode = input.placement?.mode;
+        const placement = input.placement;
+        const placementMode = placement?.mode;
 
-        if (placementMode === 'mindmap-child') {
-            const container = findOwningContainerForNodeId(ast, input.placement.parentId);
+        if (placement && placementMode === 'mindmap-child') {
+            const container = findOwningContainerForNodeId(ast, placement.parentId);
             if (!container) {
                 return false;
             }
@@ -746,8 +749,8 @@ export async function patchNodeCreate(filePath: string, input: CreateNodeInput):
             return true;
         }
 
-        if (placementMode === 'mindmap-sibling') {
-            const container = findOwningContainerForNodeId(ast, input.placement.siblingOf);
+        if (placement && placementMode === 'mindmap-sibling') {
+            const container = findOwningContainerForNodeId(ast, placement.siblingOf);
             if (!container) {
                 return false;
             }

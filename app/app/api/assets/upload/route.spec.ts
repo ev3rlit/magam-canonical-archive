@@ -20,7 +20,7 @@ const EXPECTED_HASH = createHash('sha256').update(PNG_BYTES).digest('hex').slice
 function createFormDataForLocalFile(fileName: string, content: Buffer, mime: string): FormData {
   const form = new FormData();
   form.set('source', '/tmp/source.png');
-  const file = new File([content], fileName, { type: mime });
+  const file = new File([Uint8Array.from(content)], fileName, { type: mime });
   form.set('file', file);
   return form;
 }
@@ -42,11 +42,11 @@ describe('assets/upload POST', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    writeFileMock = vi.mocked(fs.writeFile);
-    mkdirMock = vi.mocked(fs.mkdir);
-    statMock = vi.mocked(fs.stat);
-    renameMock = vi.mocked(fs.rename);
-    unlinkMock = vi.mocked(fs.unlink);
+    writeFileMock = fs.writeFile as unknown as ReturnType<typeof vi.fn>;
+    mkdirMock = fs.mkdir as unknown as ReturnType<typeof vi.fn>;
+    statMock = fs.stat as unknown as ReturnType<typeof vi.fn>;
+    renameMock = fs.rename as unknown as ReturnType<typeof vi.fn>;
+    unlinkMock = fs.unlink as unknown as ReturnType<typeof vi.fn>;
 
     mkdirMock.mockResolvedValue(undefined as never);
     writeFileMock.mockResolvedValue(undefined as never);

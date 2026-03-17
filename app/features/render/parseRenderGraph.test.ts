@@ -548,6 +548,8 @@ describe('parseRenderGraph canonical object normalization', () => {
         capabilities: {
           content: {
             kind: 'sequence',
+            participants: [],
+            messages: [],
           },
         },
       },

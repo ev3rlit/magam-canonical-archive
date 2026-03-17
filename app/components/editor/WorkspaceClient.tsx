@@ -702,7 +702,7 @@ export function WorkspaceClient() {
             renderedId: targetNode.id,
             editMeta: editContext.editMeta,
           },
-          carrier: typeof relativeUpdate.props.gap === 'number' ? 'gap' : 'at.offset',
+          carrier: relativeUpdate.kind === 'sticker-anchor' ? 'gap' : 'at.offset',
           previous: relativeUpdate.before,
           next: relativeUpdate.after,
         });
