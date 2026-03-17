@@ -924,6 +924,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             width: child.props.width,
             height: child.props.height,
             fit: child.props.fit,
+            className: child.props.className,
             groupId: mindmapId,
             sourceMeta: child.props.sourceMeta || {
               sourceId: imageId,
@@ -1050,6 +1051,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           },
           data: withEditMeta('washi-tape', washiId, {
             label: washiLabel || child.props.label || '',
+            className: child.props.className,
             pattern: child.props.pattern ?? normalizedWashi.pattern,
             edge: child.props.edge,
             texture: child.props.texture,

@@ -7,6 +7,8 @@ import {
   canCommitTextEdit,
   canRunNodeCommand,
   getAllowedNodeStylePatch,
+  extractWorkspaceStyleInput,
+  flattenWorkspaceStyleDiagnostics,
   mapEditRpcErrorToToast,
   resolveNodeEditContext,
   resolveNodeEditTarget,
@@ -254,6 +256,69 @@ describe('WorkspaceClient editability helpers', () => {
       },
       rejectedKeys: ['anchor'],
     });
+  });
+
+  it('extractWorkspaceStyleInput derives className input + revision from sourceMeta/current file', () => {
+    expect(extractWorkspaceStyleInput(makeNode({
+      id: 'shape-2',
+      type: 'shape',
+      data: {
+        className: 'w-32 shadow-md',
+        sourceMeta: {
+          filePath: 'examples/feature.tsx',
+        },
+      },
+    }), {
+      currentFile: 'examples/fallback.tsx',
+      sourceVersions: {
+        'examples/feature.tsx': 'rev-feature',
+      },
+      timestamp: 123,
+    })).toEqual({
+      objectId: 'shape-2',
+      className: 'w-32 shadow-md',
+      sourceRevision: 'rev-feature',
+      timestamp: 123,
+    });
+  });
+
+  it('extracts stable workspace style input across rerender-like repeated reads', () => {
+    const node = makeNode({
+      id: 'sticky-runtime',
+      type: 'sticky',
+      data: {
+        className: 'w-32 bg-amber-100 shadow-lg',
+        sourceMeta: {
+          filePath: 'examples/sticky.tsx',
+        },
+      },
+    });
+
+    const first = extractWorkspaceStyleInput(node, {
+      currentFile: 'examples/fallback.tsx',
+      sourceVersions: {
+        'examples/sticky.tsx': 'rev-1',
+      },
+      timestamp: 100,
+    });
+    const second = extractWorkspaceStyleInput(node, {
+      currentFile: 'examples/fallback.tsx',
+      sourceVersions: {
+        'examples/sticky.tsx': 'rev-1',
+      },
+      timestamp: 100,
+    });
+
+    expect(first).toEqual(second);
+  });
+
+  it('flattens diagnostics for overlay rendering and clears when empty', () => {
+    expect(flattenWorkspaceStyleDiagnostics({
+      a: [{ objectId: 'sticky-1', code: 'UNSUPPORTED_TOKEN', message: 'bad token' }],
+      b: [{ objectId: 'sticker-1', code: 'OUT_OF_SCOPE_OBJECT', message: 'out of scope' }],
+    }, 1)).toEqual(['[sticky-1] bad token']);
+
+    expect(flattenWorkspaceStyleDiagnostics({})).toEqual([]);
   });
 });
 

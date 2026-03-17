@@ -11,6 +11,7 @@ import {
   resolveEditHistoryShortcut,
   resolveMindMapDragFeedback,
   resolveMindMapReparentIntent,
+  shouldRetainSelectionOnStyleUpdate,
   shouldCommitDragStop,
   shouldHandlePaneCreate,
   shouldSuppressDragStopErrorToast,
@@ -408,6 +409,20 @@ describe('GraphCanvas capability-profile based reparent gating', () => {
       ],
       dropPosition: { x: 210, y: 110 },
     })).toBeNull();
+  });
+});
+
+describe('GraphCanvas style update context retention', () => {
+  it('retains selection for style-only updates on selected nodes', () => {
+    expect(shouldRetainSelectionOnStyleUpdate({
+      selectedNodeIds: ['sticky-1', 'shape-2'],
+      updatedNodeId: 'sticky-1',
+    })).toBe(true);
+
+    expect(shouldRetainSelectionOnStyleUpdate({
+      selectedNodeIds: ['shape-2'],
+      updatedNodeId: 'sticky-1',
+    })).toBe(false);
   });
 });
 

@@ -102,6 +102,7 @@ export interface WashiSourceMeta {
 
 export interface WashiTapeNodeData {
   label?: string;
+  className?: string;
   pattern?: PaperMaterial;
   edge?: WashiEdgeDef;
   texture?: WashiTextureDef;
@@ -110,6 +111,7 @@ export interface WashiTapeNodeData {
   resolvedGeometry: ResolvedGeometry;
   seed?: string | number;
   opacity?: number;
+  groupId?: string;
   children?: RenderableChild[];
   sourceMeta?: WashiSourceMeta;
 }

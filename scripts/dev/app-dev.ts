@@ -57,20 +57,36 @@ export function buildCliDevCommand(input: {
   return ['bun', '--watch', 'run', 'cli.ts', 'dev', ...forwardedArgs];
 }
 
+export function resolveWorkspaceStylingBootstrapPlan(
+  env: NodeJS.ProcessEnv = process.env,
+): {
+  runtimeStylingEnabled: boolean;
+  shouldGenerateSafelist: boolean;
+} {
+  return {
+    runtimeStylingEnabled: env.MAGAM_WORKSPACE_STYLING_RUNTIME === '1',
+    // During rollout, runtime styling must coexist with the existing safelist bootstrap path.
+    shouldGenerateSafelist: true,
+  };
+}
+
 async function run(): Promise<void> {
   const repoRoot = resolveRepoRoot();
   const targetDir = resolveDevTargetDir(repoRoot, process.env.MAGAM_TARGET_DIR);
+  const bootstrapPlan = resolveWorkspaceStylingBootstrapPlan(process.env);
 
-  const generateTailwindSafelist = spawn({
-    cmd: ['node', 'scripts/generate-tailwind-workspace-safelist.mjs', targetDir],
-    cwd: repoRoot,
-    env: process.env,
-    stdio: ['inherit', 'inherit', 'inherit'],
-  });
+  if (bootstrapPlan.shouldGenerateSafelist) {
+    const generateTailwindSafelist = spawn({
+      cmd: ['node', 'scripts/generate-tailwind-workspace-safelist.mjs', targetDir],
+      cwd: repoRoot,
+      env: process.env,
+      stdio: ['inherit', 'inherit', 'inherit'],
+    });
 
-  const safelistExitCode = await generateTailwindSafelist.exited;
-  if (safelistExitCode !== 0) {
-    process.exit(safelistExitCode);
+    const safelistExitCode = await generateTailwindSafelist.exited;
+    if (safelistExitCode !== 0) {
+      process.exit(safelistExitCode);
+    }
   }
 
   const buildCore = spawn({

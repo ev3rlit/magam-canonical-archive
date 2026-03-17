@@ -952,4 +952,38 @@ describe('parseRenderGraph standardized sizes', () => {
       createMode: 'mindmap-child',
     });
   });
+
+  it('preserves className surfaces for image and washi runtime styling targets', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-image',
+            props: {
+              id: 'image-1',
+              src: '/sample.png',
+              className: 'rounded-2xl shadow-xl group-hover:ring-2',
+            },
+            children: [],
+          },
+          {
+            type: 'graph-washi-tape',
+            props: {
+              id: 'washi-1',
+              at: { type: 'polar', x: 0, y: 0, length: 180, thickness: 36 },
+              className: 'bg-cyan-200 group-hover:bg-cyan-300',
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    const imageNode = parsed!.nodes.find((node) => node.id === 'image-1');
+    const washiNode = parsed!.nodes.find((node) => node.id === 'washi-1');
+
+    expect(imageNode?.data?.className).toBe('rounded-2xl shadow-xl group-hover:ring-2');
+    expect(washiNode?.data?.className).toBe('bg-cyan-200 group-hover:bg-cyan-300');
+  });
 });

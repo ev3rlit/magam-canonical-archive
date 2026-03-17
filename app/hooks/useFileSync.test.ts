@@ -12,7 +12,7 @@ import {
   shouldReloadForFileChange,
   VERSION_CONFLICT_METRIC_WINDOW_MS,
   VERSION_CONFLICT_RATE_THRESHOLD,
-} from './useFileSync';
+} from './useFileSync.shared';
 
 async function waitForAsyncTurn(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -496,6 +496,51 @@ describe('history replay helpers', () => {
       { nodeId: 'child', newParentId: 'root-a' },
       { nodeId: 'child', newParentId: 'root-b' },
     ]);
+  });
+
+  it('style update replay uses node.style.update without forcing reload semantics', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const mutators = {
+      moveNode: async () => undefined,
+      updateNode: async (nodeId: string, props: Record<string, unknown>, filePath?: string | null, options?: { commandType?: string }) => {
+        calls.push({ nodeId, props, filePath, commandType: options?.commandType });
+        return undefined;
+      },
+      createNode: async () => undefined,
+      deleteNode: async () => undefined,
+      reparentNode: async () => undefined,
+    };
+    const event = {
+      eventId: 'style-1',
+      type: 'STYLE_UPDATED' as const,
+      nodeId: 'sticky-1',
+      filePath: 'examples/sticky.tsx',
+      commandId: 'cmd-style-1',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: { className: 'shadow-sm' },
+      after: { className: 'shadow-lg ring-2' },
+      committedAt: Date.now(),
+    };
+
+    await applyEditCompletionSnapshot(event, 'before', mutators);
+    await applyEditCompletionSnapshot(event, 'after', mutators);
+
+    expect(calls).toEqual([
+      {
+        nodeId: 'sticky-1',
+        props: { className: 'shadow-sm' },
+        filePath: 'examples/sticky.tsx',
+        commandType: 'node.style.update',
+      },
+      {
+        nodeId: 'sticky-1',
+        props: { className: 'shadow-lg ring-2' },
+        filePath: 'examples/sticky.tsx',
+        commandType: 'node.style.update',
+      },
+    ]);
+    expect(shouldReloadAfterHistoryReplay(event)).toBe(false);
   });
 
   it('rename/create/reparent 이벤트만 graph reload를 요구한다', () => {
