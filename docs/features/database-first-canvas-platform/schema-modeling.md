@@ -8,6 +8,12 @@
 
 여기서 중요한 점은 “어떤 테이블을 만들지”보다 “어떤 레이어가 어떤 진실을 소유하는지”를 먼저 고정하는 것이다.
 
+구현 baseline은 다음을 전제한다.
+
+- ORM: `Drizzle ORM`
+- local/embedded PostgreSQL path: `PGlite`
+- production path: PostgreSQL/pgvector 호환 구성
+
 ## 2. 모델링 원칙
 
 1. workspace database가 최상위 저장 경계다.
@@ -15,6 +21,7 @@
 3. plugin source, plugin registry, plugin instance는 분리 저장한다.
 4. schema consumer는 모르는 plugin/extension payload를 손실 없이 보존해야 한다.
 5. query/search/embedding은 나중 확장이 아니라 초기 모델의 일부로 둔다.
+6. native object canonical schema는 `semantic role + content contract + capability bag + provenance` 축에 맞춰야 한다.
 
 ## 3. 레이어 모델
 
@@ -40,8 +47,9 @@ flowchart TD
 
 ### Canonical Object
 
-- 의미 데이터와 관계 데이터의 진실
-- 예: 아이디어 카드, 개념 노드, 일정 엔트리, 업무 항목
+- native object 의미 데이터와 관계 데이터의 진실
+- `semantic_role`, `content_kind`, capability payload, provenance를 가진다
+- public alias는 보존할 수 있지만 별도 base table을 만들 이유가 되지 않는다
 
 ### Canvas Document
 
@@ -120,24 +128,32 @@ flowchart TD
 
 용도:
 
-- 캔버스에 표현될 수 있는 의미 데이터의 canonical entity다.
-- 여러 문서가 같은 object를 서로 다른 방식으로 재사용할 수 있게 workspace 범위에서 관리한다.
+- 캔버스에 표현될 수 있는 native object 의미 데이터의 canonical entity다.
+- 여러 문서가 같은 object를 서로 다른 배치로 재사용할 수 있게 workspace 범위에서 관리한다.
 - 그래서 기본 모델에서는 `document_id`를 두지 않고 `workspace_id`만 둔다.
 
 중요한 해석:
 
-- `objects`는 "문서 안에 그려진 노드"가 아니라 "문서들이 참조할 수 있는 의미 객체"다.
+- `objects`는 "문서 안에 그려진 노드"가 아니라 "문서들이 참조할 수 있는 canonical native object"다.
+- `semantic_role`은 안정 canonical enum이고, `primary_content_kind`는 direct `capabilities.content.kind` 또는 `content_blocks`의 query/index 친화 projection이다.
+- `content_blocks`는 기존 선언형 `Node`/`Sticky`의 ordered body를 보존하는 canonical field이며, 장기적으로 custom structured block도 담을 수 있는 container다.
+- `public_alias`는 authoring provenance/compatibility 힌트이지 canonical truth가 아니다.
 - 특정 문서에서만 보이는 배치 정보는 `canvas_nodes`가 담당한다.
-- 표시용 레이블이 꼭 필요한 object kind만 `title`을 가질 수 있으므로, base field는 optional로 본다.
+- editable note-like object는 cross-document shared reference보다 clone-on-create가 기본이다.
+- current file-first `ObjectCore`의 placement-bearing 멤버는 database-first에서 `objects`, `object_relations`, `canvas_nodes`로 분해될 수 있다.
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | `id` | uuid | object 식별자 |
 | `workspace_id` | uuid fk | 소속 workspace |
-| `object_kind` | text | `concept`, `task`, `event`, `asset-ref` 등 |
-| `title` | text nullable | 선택적인 대표 레이블 |
+| `semantic_role` | text | `topic`, `shape`, `sticky-note`, `image`, `sticker`, `sequence` 등 |
+| `primary_content_kind` | text nullable | direct content 또는 `content_blocks` projection: `text`, `markdown`, `media`, `sequence` |
+| `public_alias` | text nullable | `Node`, `Shape`, `Sticky`, `Image` 등 provenance 힌트 |
+| `content_blocks` | jsonb nullable | ordered extensible note-like body blocks |
+| `source_meta` | jsonb | source provenance, alias provenance, edit routing 메타 |
+| `capabilities` | jsonb | capability bag, direct leaf content가 있으면 `content` payload 포함 |
+| `capability_sources` | jsonb nullable | explicit / legacy-inferred / alias-default provenance |
 | `canonical_text` | text | 검색/embedding용 정규화 텍스트 |
-| `metadata` | jsonb | 구조화 메타 |
 | `extensions` | jsonb | namespaced 확장 데이터 |
 | `created_at` | timestamptz | 생성 시각 |
 | `updated_at` | timestamptz | 수정 시각 |
@@ -206,6 +222,8 @@ flowchart TD
 - 화면에 배치되는 모든 시각 노드의 persisted 표현이다.
 - native node, plugin node, canonical object에 바인딩된 node를 공통 구조로 담는다.
 - 의미 자체보다 위치, 크기, 스타일, 컨테이너 소속 같은 배치 책임을 가진다.
+- native object의 semantic/content/capability payload를 다시 canonical truth로 저장하면 안 된다.
+- native object의 ordered note body `content_blocks`도 canvas에 복제 저장하면 안 된다.
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
@@ -213,11 +231,11 @@ flowchart TD
 | `document_id` | uuid fk | 소속 문서 |
 | `surface_id` | uuid fk | 소속 surface |
 | `node_kind` | text | `native`, `plugin`, `binding-proxy` |
-| `node_type` | text | `sticky`, `shape`, `text`, `mindmap-node`, `plugin-instance` 등 |
+| `node_type` | text nullable | renderer hint 또는 legacy fallback. semantic truth는 아님 |
 | `parent_node_id` | uuid nullable | 그룹/프레임/컨테이너 부모 |
 | `canonical_object_id` | uuid nullable | 연결된 canonical object |
 | `plugin_instance_id` | uuid nullable | 연결된 plugin instance |
-| `props` | jsonb | 노드 props |
+| `props` | jsonb | canvas-local display props 또는 plugin view props |
 | `layout` | jsonb | 좌표, 크기, 회전 |
 | `style` | jsonb | 시각 스타일 |
 | `persisted_state` | jsonb | 접힘, 잠금 등 저장 상태 |
@@ -360,7 +378,9 @@ flowchart TD
 ## 6. 권장 인덱스
 
 - `documents(workspace_id, updated_at desc)`
-- `objects(workspace_id, object_kind)`
+- `objects(workspace_id, semantic_role)`
+- `objects(workspace_id, primary_content_kind)`
+- `objects using gin(capabilities jsonb_path_ops)` if capability filter가 핵심 query라면 추가 검토
 - `object_relations(workspace_id, from_object_id, relation_type)`
 - `canvas_nodes(document_id, surface_id, z_index)`
 - `canvas_bindings(document_id, node_id)`
@@ -375,15 +395,18 @@ flowchart TD
 ### 명시 컬럼으로 둘 것
 
 - join/filter/sort에 자주 쓰는 식별자
-- version, status, kind, z-index 같은 제어 필드
+- version, status, role, content-kind, z-index 같은 제어 필드
 - workspace/document 소속 관계
 
 ### `jsonb`로 둘 것
 
+- object source provenance
+- object capability bag
+- capability provenance
 - plugin props
 - plugin capability 상세 값
 - 노드 style 확장 값
-- object 확장 메타데이터
+- object 확장 데이터
 - query spec과 binding mapping
 
 원칙은 단순하다.
