@@ -22,6 +22,10 @@ export type UpdateNodeCommandType =
 export interface RpcMutationResult {
   success?: boolean;
   newVersion?: string;
+  revision?: {
+    before?: string;
+    after?: string;
+  };
   commandId?: string;
   filePath?: string;
 }
