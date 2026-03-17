@@ -41,10 +41,19 @@ Skill usage:
   8. Use `speckit-analyze`
 - If the source brief is too weak for reliable downstream generation, improve the source document only when that is clearly helpful, or stop and report the gap clearly
 
+Branch discipline:
+- Treat `speckit-specify` as the mandatory branch-initialization stage for a new feature, not as optional document generation.
+- If the current branch is not already a valid speckit feature branch matching `^[0-9]{3}-`, you must run `speckit-specify` before any later stage.
+- `speckit-specify` is considered successful only if it both creates the feature artifacts and leaves the repository on the returned feature branch.
+- After `speckit-specify`, verify that `git rev-parse --abbrev-ref HEAD` matches the returned `BRANCH_NAME`.
+- If branch creation or checkout fails, stop immediately and report the failure. Do not continue by writing spec, plan, tasks, or analyze artifacts on the old branch.
+- Do not silently rely on non-git fallback behavior from lower-level scripts when the repository has git available.
+
 Resume behavior:
 - If feature artifacts already exist, inspect them before regenerating anything
 - Continue from the first incomplete, missing, or clearly invalid stage
 - Do not blindly rebuild all artifacts unless the source brief changed materially or the user explicitly asks for regeneration
+- Resume on an existing feature only when the active branch is already a valid speckit feature branch for that feature, or after successfully switching to it.
 
 Clarify policy:
 - Run `speckit-clarify` only when ambiguity would materially change scope, UX behavior, acceptance criteria, core data model assumptions, or task structure
@@ -58,9 +67,10 @@ Operating rules:
 - Prefer explicit artifact generation over long explanatory prose
 - Keep clarify optional; do not force it when the README is already specific enough
 - Do not hide ambiguity; either resolve it through clarify or report it explicitly
+- Never bypass feature-branch setup just because the source input is already a README path or a partially populated `specs/` directory
 
 Stage gates:
-- After specify: confirm the spec matches the source brief and is usable for planning
+- After specify: confirm the returned branch exists, is checked out, and the spec matches the source brief and is usable for planning
 - After plan: confirm planning artifacts are present and actionable
 - After tasks: confirm tasks are dependency-ordered and formatted for execution
 - After analyze: confirm whether any critical findings block implementation readiness

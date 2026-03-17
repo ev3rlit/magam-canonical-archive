@@ -291,6 +291,12 @@ async function handleNodeUpdate(
             const collisionId = typeof props.id === 'string' ? props.id : nodeId;
             throw { ...RPC_ERRORS.ID_COLLISION, data: { collisionIds: [collisionId] } };
         }
+        if (message === 'CONTENT_CONTRACT_VIOLATION') {
+            throw {
+                ...RPC_ERRORS.CONTENT_CONTRACT_VIOLATION,
+                data: { nodeId, path: 'capabilities.content' },
+            };
+        }
         throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
     }
 }

@@ -79,3 +79,10 @@ No task is done until the outcome is verified.
 - Review for correctness, boundary clarity, dependency direction, hidden coupling, contract stability, and verification quality.
 - Complexity carries the burden of proof.
 - Challenge speculative abstractions and architecture drift before they become normal practice.
+
+## Active Technologies
+- TypeScript 5.9.x, React 18, Bun 1.x + `@magam/core` component contracts, custom reconciler render graph, `app/features/render/parseRenderGraph.ts`, `app/features/editing/{editability,commands,createDefaults}.ts`, WS patch pipeline (`app/ws/methods.ts`, `app/ws/filePatcher.ts`) (007-object-capability-composition)
+- TSX source files (AST patch 기반) + render graph runtime metadata, 신규 DB 없음 (007-object-capability-composition)
+
+## Recent Changes
+- 007-object-capability-composition: Added TypeScript 5.9.x, React 18, Bun 1.x + `@magam/core` component contracts, custom reconciler render graph, `app/features/render/parseRenderGraph.ts`, `app/features/editing/{editability,commands,createDefaults}.ts`, WS patch pipeline (`app/ws/methods.ts`, `app/ws/filePatcher.ts`)

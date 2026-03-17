@@ -2,12 +2,22 @@ import React, { memo, useMemo } from 'react';
 import { NodeProps, Handle, Position } from 'reactflow';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { BaseNode } from './BaseNode';
+import {
+  BaseNode,
+  NoiseOverlay,
+  resolvePaperSurface,
+  resolveStickyLikeShapeStyle,
+} from './BaseNode';
 import { useGraphStore } from '@/store/graph';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import type { RenderableChild } from '@/utils/childComposition';
 import { renderNodeContent } from './renderableContent';
-import type { FontFamilyPreset, ObjectSizeInput } from '@magam/core';
+import type {
+  FontFamilyPreset,
+  ObjectSizeInput,
+  PaperMaterial,
+  PaperTextureParams,
+} from '@magam/core';
 import {
   hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
@@ -19,6 +29,7 @@ import {
   resolveShapeDefaultRatio,
 } from '@/utils/sizeResolver';
 import { emitSizeWarning } from '@/utils/sizeWarnings';
+import { DEFAULT_STICKY_PRESET_ID } from '@/utils/washiTapeDefaults';
 
 interface PortData {
   id: string;
@@ -28,13 +39,18 @@ interface PortData {
 }
 
 interface ShapeNodeData {
-  type: 'rectangle' | 'circle' | 'triangle';
+  type: 'rectangle' | 'circle' | 'triangle' | 'heart' | 'cloud' | 'speech';
   label?: string;
   /** Enable bubble overlay when zoomed out */
   bubble?: boolean;
   // Shape styling
   color?: string;
   size?: ObjectSizeInput;
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  pattern?: PaperMaterial;
+  texture?: PaperTextureParams | Record<string, unknown>;
   // Rich text styling
   labelColor?: string;
   labelFontSize?: number;
@@ -153,8 +169,18 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     }
     : undefined;
   const isContentDrivenAuto = resolvedObjectSize === null;
+  const materialSurface = useMemo(
+    () => resolvePaperSurface({
+      pattern: data.pattern,
+      texture: data.texture,
+      selected: !!selected,
+      fallbackPresetId: DEFAULT_STICKY_PRESET_ID,
+      applyFallbackSurface: false,
+    }),
+    [data.pattern, data.texture, selected],
+  );
   const shapeClasses = clsx(
-    'flex items-center justify-center transition-all duration-200',
+    'relative flex items-center justify-center overflow-hidden transition-all duration-200',
     {
       'rounded-md': data.type === 'rectangle',
       'rounded-full': data.type === 'circle',
@@ -167,7 +193,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
       resolvedObjectSize
         ? 'w-auto h-auto flex items-center justify-center p-4'
         : 'w-auto h-auto flex items-center justify-center px-3 py-2',
-      'bg-white border-2 border-node-border text-node-text transition-all duration-300',
+      'border-2 border-node-border text-node-text transition-all duration-300',
       'shadow-node rounded-lg',
       // Only apply hover effects if NOT selected
       !selected && 'hover:shadow-node-hover hover:-translate-y-1 hover:border-brand-100',
@@ -181,7 +207,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
   );
 
   const labelStyle = {
-    color: data.labelColor,
+    color: data.labelColor ?? materialSurface.textColor,
     fontSize: data.labelFontSize,
     fontWeight: (isZoomBold || data.labelBold) ? 'bold' : 'normal',
     fontFamily: resolvedFontFamily,
@@ -215,6 +241,18 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     backgroundPosition: 'center',
     backgroundSize: data.imageFit || 'cover',
   } : undefined;
+  const baseContainerStyle: React.CSSProperties = {
+    ...materialSurface.surfaceStyle,
+    ...(data.fill ? { backgroundColor: data.fill } : {}),
+    ...(data.stroke ? { borderColor: data.stroke } : {}),
+    ...(typeof data.strokeWidth === 'number' ? { borderWidth: data.strokeWidth } : {}),
+    ...(imageStyle ?? {}),
+  };
+  const stickyLikeShapeStyle = (
+    data.type === 'heart' || data.type === 'cloud' || data.type === 'speech'
+  )
+    ? resolveStickyLikeShapeStyle(data.type)
+    : undefined;
 
   if (data.type === 'triangle' && !isContentDrivenAuto) {
     return (
@@ -238,12 +276,9 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
           <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
             <polygon
               points="50,0 100,100 0,100"
-              className={twMerge(
-                clsx(
-                  'fill-white stroke-slate-200 stroke-2',
-                  data.color?.replace('bg-', 'fill-'),
-                ),
-              )}
+              fill={data.fill ?? '#ffffff'}
+              stroke={data.stroke ?? '#e2e8f0'}
+              strokeWidth={data.strokeWidth ?? 2}
             />
           </svg>
           <div className="absolute inset-0 flex items-center justify-center pt-8 pointer-events-none select-none">
@@ -269,12 +304,19 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
       className={containerClasses}
       bubble={data.bubble}
       label={data.label}
-      style={frameStyle ? { ...frameStyle, ...imageStyle } : imageStyle}
+      style={frameStyle}
     >
-      <div className={clsx(
-        'w-full flex justify-center text-left break-words pointer-events-none select-none',
-        isContentDrivenAuto ? 'items-center px-2 py-1.5' : 'items-start p-4',
-      )}>
+      <div
+        className={clsx(
+          'relative w-full flex justify-center text-left break-words pointer-events-none select-none',
+          isContentDrivenAuto ? 'items-center px-2 py-1.5' : 'items-start p-4',
+        )}
+        style={{
+          ...baseContainerStyle,
+          ...(stickyLikeShapeStyle ?? {}),
+        }}
+      >
+        <NoiseOverlay opacity={materialSurface.noiseOpacity} />
         <div className="flex items-center gap-2">
           {renderNodeContent({
             children: data.children,

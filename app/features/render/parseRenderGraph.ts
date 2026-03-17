@@ -1,4 +1,5 @@
 import { extractNodeContent, extractStickerContent } from '@/utils/nodeContent';
+import type { RenderChildNode } from '@/utils/childComposition';
 import { normalizeStickerData } from '@/utils/stickerDefaults';
 import {
   normalizeStickyDefaults,
@@ -27,6 +28,12 @@ import {
   type FromProp,
 } from '@/app/mindmapParser';
 import { deriveEditMeta } from '@/features/editing/editability';
+import { createCanonicalFromLegacyAliasInput } from '@/features/render/aliasNormalization';
+import type {
+  CapabilityBag,
+  CanonicalObjectAlias,
+  ObjectCore,
+} from '@/features/render/canonicalObject';
 
 const DEFAULT_MINDMAP_SPACING = 50;
 
@@ -45,7 +52,7 @@ export interface RenderNode {
     color?: string;
     bg?: string;
     className?: string;
-    fontSize?: SizeValue;
+    fontSize?: SizeValue | string;
     labelColor?: string;
     labelFontSize?: number;
     labelBold?: boolean;
@@ -57,16 +64,19 @@ export interface RenderNode {
     labelBgColor?: string;
     edgeLabel?: string;
     edgeClassName?: string;
-    content?: string;
+    content?: string | Record<string, unknown>;
     variant?: string;
     src?: string;
     imageSrc?: string;
     alt?: string;
     fit?: string;
+    frame?: Record<string, unknown>;
+    material?: Record<string, unknown>;
     imageFit?: 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
     pattern?: Record<string, unknown>;
     edge?: Record<string, unknown>;
     texture?: Record<string, unknown>;
+    attach?: Record<string, unknown>;
     at?: Record<string, unknown>;
     shape?: 'rectangle' | 'heart' | 'cloud' | 'speech';
     seed?: string | number;
@@ -152,8 +162,13 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
     nodeType: string,
     nodeId: string,
     nodeData: Record<string, unknown>,
+    canonicalInput?: {
+      alias: CanonicalObjectAlias;
+      legacyProps: Record<string, unknown>;
+      legacyChildren?: unknown[];
+    },
   ): Record<string, unknown> => {
-    const dataWithSource = {
+    const dataWithSource: Record<string, unknown> = {
       ...nodeData,
       sourceMeta: nodeData.sourceMeta || {
         sourceId: nodeId,
@@ -161,7 +176,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
       },
     };
 
-    return {
+    const enrichedData: Record<string, unknown> = {
       ...dataWithSource,
       editMeta: deriveEditMeta({
         id: nodeId,
@@ -169,6 +184,393 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
         data: dataWithSource,
       }),
     };
+
+    if (!canonicalInput) {
+      return enrichedData;
+    }
+
+    const sourceMeta = enrichedData.sourceMeta as ObjectCore['sourceMeta'];
+    const relations = {
+      ...(canonicalInput.legacyProps.from !== undefined
+        ? { from: canonicalInput.legacyProps.from }
+        : {}),
+      ...(canonicalInput.legacyProps.to !== undefined
+        ? { to: canonicalInput.legacyProps.to }
+        : {}),
+      ...(canonicalInput.legacyProps.anchor !== undefined
+        ? { anchor: canonicalInput.legacyProps.anchor }
+        : {}),
+    };
+
+    const core: ObjectCore = {
+      id: nodeId,
+      position: {
+        ...(typeof canonicalInput.legacyProps.x === 'number'
+          ? { x: canonicalInput.legacyProps.x }
+          : {}),
+        ...(typeof canonicalInput.legacyProps.y === 'number'
+          ? { y: canonicalInput.legacyProps.y }
+          : {}),
+      },
+      ...(Object.keys(relations).length > 0 ? { relations } : {}),
+      ...(Array.isArray(enrichedData.children)
+        ? { children: enrichedData.children }
+        : {}),
+      ...(typeof enrichedData.className === 'string'
+        ? { className: enrichedData.className }
+        : {}),
+      sourceMeta,
+    };
+
+    const canonicalResult = createCanonicalFromLegacyAliasInput({
+      alias: canonicalInput.alias,
+      core,
+      explicitCapabilities: deriveExplicitCapabilities(
+        canonicalInput.alias,
+        canonicalInput.legacyProps,
+        canonicalInput.legacyChildren,
+      ),
+      legacyProps: canonicalInput.legacyProps,
+      legacyChildren: canonicalInput.legacyChildren,
+    });
+
+    if (canonicalResult.ok) {
+      return {
+        ...enrichedData,
+        canonicalObject: canonicalResult.canonical,
+      };
+    }
+
+    return {
+      ...enrichedData,
+      canonicalValidation: canonicalResult,
+    };
+  };
+
+  const readStringProp = (value: unknown): string | undefined => (
+    typeof value === 'string' && value.trim().length > 0 ? value : undefined
+  );
+
+  const readNumberProp = (value: unknown): number | undefined => (
+    typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  );
+
+  const readBooleanProp = (value: unknown): boolean | undefined => (
+    typeof value === 'boolean' ? value : undefined
+  );
+
+  const isRecord = (value: unknown): value is Record<string, unknown> => (
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+  );
+
+  const readMarkdownSourceFromChildren = (children?: unknown[]): string | undefined => {
+    for (const child of children || []) {
+      if (!isRecord(child) || child.type !== 'graph-markdown') {
+        continue;
+      }
+      const props = isRecord(child.props) ? child.props : undefined;
+      const source = readStringProp(props?.content);
+      if (source !== undefined) {
+        return source;
+      }
+    }
+    return undefined;
+  };
+
+  const readTextContentFromChildren = (
+    children?: unknown[],
+    joiner = '',
+  ): string | undefined => {
+    const textParts: string[] = [];
+
+    const visit = (items?: unknown[]) => {
+      for (const child of items || []) {
+        if (!isRecord(child)) {
+          continue;
+        }
+
+        if (child.type === 'text') {
+          const props = isRecord(child.props) ? child.props : undefined;
+          const text = readStringProp(props?.text);
+          if (text !== undefined) {
+            textParts.push(text);
+          }
+          continue;
+        }
+
+        if (child.type === 'graph-text') {
+          const nestedChildren = Array.isArray(child.children) ? child.children : undefined;
+          visit(nestedChildren);
+        }
+      }
+    };
+
+    visit(children);
+    return textParts.length > 0 ? textParts.join(joiner) : undefined;
+  };
+
+  const getFrameCapabilityInput = (
+    legacyProps: Record<string, unknown>,
+  ): Record<string, unknown> | undefined => (
+    isRecord(legacyProps.frame) ? legacyProps.frame : undefined
+  );
+
+  const getMaterialCapabilityInput = (
+    legacyProps: Record<string, unknown>,
+  ): Record<string, unknown> | undefined => (
+    isRecord(legacyProps.material) ? legacyProps.material : undefined
+  );
+
+  const getTextureCapabilityInput = (
+    legacyProps: Record<string, unknown>,
+  ): Record<string, unknown> | undefined => (
+    isRecord(legacyProps.texture) ? legacyProps.texture : undefined
+  );
+
+  const getAttachCapabilityInput = (
+    legacyProps: Record<string, unknown>,
+  ): Record<string, unknown> | undefined => (
+    isRecord(legacyProps.attach) ? legacyProps.attach : undefined
+  );
+
+  const getBubbleCapabilityInput = (
+    legacyProps: Record<string, unknown>,
+  ): Record<string, unknown> | undefined => (
+    isRecord(legacyProps.bubble) ? legacyProps.bubble : undefined
+  );
+
+  const getContentCapabilityInput = (
+    legacyProps: Record<string, unknown>,
+  ): Record<string, unknown> | undefined => {
+    if (!isRecord(legacyProps.content)) {
+      return undefined;
+    }
+
+    return readStringProp(legacyProps.content.kind) ? legacyProps.content : undefined;
+  };
+
+  const resolveRenderablePattern = (
+    legacyProps: Record<string, unknown>,
+  ): Record<string, unknown> | undefined => {
+    const material = getMaterialCapabilityInput(legacyProps);
+    if (material) {
+      if (isRecord(material.pattern)) {
+        return material.pattern;
+      }
+
+      const preset = readStringProp(material.preset);
+      if (preset !== undefined) {
+        return {
+          type: 'preset',
+          id: preset,
+        };
+      }
+    }
+
+    return isRecord(legacyProps.pattern) ? legacyProps.pattern : undefined;
+  };
+
+  const resolveRenderableAt = (
+    legacyProps: Record<string, unknown>,
+  ): Record<string, unknown> | undefined => {
+    if (isRecord(legacyProps.at)) {
+      return legacyProps.at;
+    }
+
+    const attach = getAttachCapabilityInput(legacyProps);
+    if (!attach) {
+      return undefined;
+    }
+
+    const target = readStringProp(attach.target);
+    if (target === undefined) {
+      return undefined;
+    }
+
+    const placementRaw = readStringProp(attach.position);
+    const placement = placementRaw === 'top'
+      || placementRaw === 'bottom'
+      || placementRaw === 'left'
+      || placementRaw === 'right'
+      || placementRaw === 'center'
+        ? placementRaw
+        : 'center';
+
+    return {
+      type: 'attach',
+      target,
+      placement,
+      ...(readNumberProp(attach.offset) !== undefined ? { offset: readNumberProp(attach.offset) } : {}),
+    };
+  };
+
+  const resolveRenderablePorts = (
+    legacyProps: Record<string, unknown>,
+  ): unknown[] | undefined => {
+    if (Array.isArray(legacyProps.ports)) {
+      return legacyProps.ports;
+    }
+
+    const portsCapability = isRecord(legacyProps.ports)
+      ? legacyProps.ports
+      : undefined;
+    return Array.isArray(portsCapability?.ports) ? portsCapability.ports : undefined;
+  };
+
+  const resolveRenderableBubble = (
+    legacyProps: Record<string, unknown>,
+  ): boolean | undefined => {
+    const bubbleCapability = getBubbleCapabilityInput(legacyProps);
+    if (bubbleCapability) {
+      return readBooleanProp(bubbleCapability.bubble);
+    }
+
+    return readBooleanProp(legacyProps.bubble);
+  };
+
+  const deriveExplicitCapabilities = (
+    alias: CanonicalObjectAlias,
+    legacyProps: Record<string, unknown>,
+    legacyChildren?: unknown[],
+  ): Partial<CapabilityBag> => {
+    const explicit: Partial<CapabilityBag> = {};
+    const frameCapability = getFrameCapabilityInput(legacyProps);
+    const materialCapability = getMaterialCapabilityInput(legacyProps);
+    const textureCapability = getTextureCapabilityInput(legacyProps);
+    const attachCapability = getAttachCapabilityInput(legacyProps);
+    const bubbleCapability = getBubbleCapabilityInput(legacyProps);
+    const contentCapability = getContentCapabilityInput(legacyProps);
+
+    const frameShape =
+      readStringProp(frameCapability?.shape)
+      || readStringProp(legacyProps.shape)
+      || readStringProp(legacyProps.type);
+    const frameFill = readStringProp(frameCapability?.fill) || readStringProp(legacyProps.fill);
+    const frameStroke = readStringProp(frameCapability?.stroke) || readStringProp(legacyProps.stroke);
+    const frameStrokeWidth = readNumberProp(frameCapability?.strokeWidth) ?? readNumberProp(legacyProps.strokeWidth);
+    if (
+      frameShape !== undefined
+      || frameFill !== undefined
+      || frameStroke !== undefined
+      || frameStrokeWidth !== undefined
+    ) {
+      explicit.frame = {
+        ...(frameShape !== undefined ? { shape: frameShape } : {}),
+        ...(frameFill !== undefined ? { fill: frameFill } : {}),
+        ...(frameStroke !== undefined ? { stroke: frameStroke } : {}),
+        ...(frameStrokeWidth !== undefined ? { strokeWidth: frameStrokeWidth } : {}),
+      };
+    }
+
+    const materialPattern = materialCapability?.pattern ?? legacyProps.pattern;
+    const materialPreset = readStringProp(materialCapability?.preset);
+    if (materialPattern !== undefined || materialPreset !== undefined) {
+      explicit.material = {
+        ...(materialPreset !== undefined ? { preset: materialPreset } : {}),
+        ...(materialPattern !== undefined ? { pattern: materialPattern } : {}),
+      };
+    }
+
+    if (textureCapability !== undefined) {
+      const hasCanonicalTextureShape =
+        'texture' in textureCapability
+        || 'noiseOpacity' in textureCapability
+        || 'glossOpacity' in textureCapability
+        || 'gradientIntensity' in textureCapability
+        || 'insetShadowOpacity' in textureCapability
+        || 'shadowWarmth' in textureCapability;
+      explicit.texture = hasCanonicalTextureShape
+        ? textureCapability
+        : { texture: textureCapability };
+    }
+
+    const at = isRecord(legacyProps.at) ? legacyProps.at : undefined;
+    const attachTarget = readStringProp(attachCapability?.target) || readStringProp(at?.target) || readStringProp(legacyProps.anchor);
+    const attachPosition = readStringProp(attachCapability?.position) || readStringProp(at?.position) || readStringProp(legacyProps.position);
+    const attachOffset = readNumberProp(attachCapability?.offset) ?? readNumberProp(at?.offset) ?? readNumberProp(legacyProps.gap) ?? readNumberProp(legacyProps.offset);
+    if (attachTarget !== undefined || attachPosition !== undefined || attachOffset !== undefined) {
+      explicit.attach = {
+        ...(attachTarget !== undefined ? { target: attachTarget } : {}),
+        ...(attachPosition !== undefined ? { position: attachPosition } : {}),
+        ...(attachOffset !== undefined ? { offset: attachOffset } : {}),
+      };
+    }
+
+    const bubble = readBooleanProp(bubbleCapability?.bubble) ?? readBooleanProp(legacyProps.bubble);
+    if (bubble !== undefined) {
+      explicit.bubble = { bubble };
+    }
+
+    const portsCapability = isRecord(legacyProps.ports) ? legacyProps.ports : undefined;
+    if (Array.isArray(portsCapability?.ports)) {
+      explicit.ports = { ports: portsCapability.ports };
+    } else if (Array.isArray(legacyProps.ports)) {
+      explicit.ports = { ports: legacyProps.ports };
+    }
+
+    const textContent =
+      readStringProp(legacyProps.text)
+      || readStringProp(legacyProps.label)
+      || readStringProp(legacyProps.value)
+      || readTextContentFromChildren(
+        legacyChildren,
+        alias === 'Node' ? '\n' : alias === 'Sticker' ? ' ' : '',
+      );
+    const markdownSource =
+      readStringProp(legacyProps.content)
+      || readStringProp(legacyProps.source)
+      || readMarkdownSourceFromChildren(legacyChildren);
+    const mediaSrc = readStringProp(legacyProps.src);
+
+    if (contentCapability) {
+      explicit.content = contentCapability as unknown as CapabilityBag['content'];
+      return explicit;
+    }
+
+    if (alias === 'Node' || alias === 'Shape' || alias === 'Sticky' || alias === 'Sticker') {
+      if (alias === 'Node' && markdownSource !== undefined) {
+        explicit.content = { kind: 'markdown', source: markdownSource };
+      } else if (textContent !== undefined) {
+        explicit.content = {
+          kind: 'text',
+          value: textContent,
+          ...(legacyProps.fontSize !== undefined ? { fontSize: legacyProps.fontSize as number | string } : {}),
+        };
+      }
+    }
+
+    if (alias === 'Markdown' && markdownSource !== undefined) {
+      explicit.content = {
+        kind: 'markdown',
+        source: markdownSource,
+        ...(legacyProps.size !== undefined ? { size: legacyProps.size } : {}),
+      };
+    }
+
+    if (alias === 'Image' && mediaSrc !== undefined) {
+      explicit.content = {
+        kind: 'media',
+        src: mediaSrc,
+        ...(readStringProp(legacyProps.alt) !== undefined ? { alt: readStringProp(legacyProps.alt) } : {}),
+        ...(readStringProp(legacyProps.fit) !== undefined ? { fit: readStringProp(legacyProps.fit) as any } : {}),
+        ...(readNumberProp(legacyProps.width) !== undefined ? { width: readNumberProp(legacyProps.width) } : {}),
+        ...(readNumberProp(legacyProps.height) !== undefined ? { height: readNumberProp(legacyProps.height) } : {}),
+      };
+    }
+
+    if (alias === 'Sequence') {
+      const participants = Array.isArray(legacyProps.participants) ? legacyProps.participants : undefined;
+      const messages = Array.isArray(legacyProps.messages) ? legacyProps.messages : undefined;
+      if (participants !== undefined || messages !== undefined) {
+        explicit.content = {
+          kind: 'sequence',
+          participants: participants ?? [],
+          messages: messages ?? [],
+        };
+      }
+    }
+
+    return explicit;
   };
 
   const getEdgeType = (type?: string) => {
@@ -376,6 +778,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           }
         });
 
+        const sequenceRendererChildren = child.children || [];
         nodes.push({
           id: seqId,
           type: 'sequence-diagram',
@@ -396,6 +799,10 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
               kind: mindmapId ? 'mindmap' : 'canvas',
               scopeId: mindmapId,
             },
+          }, {
+            alias: 'Sequence',
+            legacyProps: child.props,
+            legacyChildren: sequenceRendererChildren,
           }),
         });
 
@@ -412,7 +819,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
 
         const rendererChildren = child.children || [];
         const { label: baseLabel, parsedChildren } = extractNodeContent(
-          rendererChildren,
+          rendererChildren as RenderChildNode[],
           child.props.children,
           { textJoiner: '\n' },
         );
@@ -490,6 +897,10 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             children: parsedChildren,
             bubble: nodeBubble,
             size: resolvedMarkdownSize,
+          }, {
+            alias: 'Node',
+            legacyProps: child.props,
+            legacyChildren: rendererChildren,
           }),
         });
 
@@ -520,6 +931,10 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
               kind: mindmapId ? 'mindmap' : 'canvas',
               scopeId: mindmapId,
             },
+          }, {
+            alias: 'Image',
+            legacyProps: child.props,
+            legacyChildren: child.children,
           }),
         });
 
@@ -539,7 +954,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
         const stickerFontFamily = normalizeFontFamily(child.props.fontFamily);
         const stickerRendererChildren = child.children || [];
         const { label: stickerLabel, parsedChildren: stickerChildren } = extractStickerContent(
-          stickerRendererChildren,
+          stickerRendererChildren as RenderChildNode[],
           child.props.children,
           { textJoiner: ' ' },
         );
@@ -583,6 +998,10 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
               kind: mindmapId ? 'mindmap' : 'canvas',
               scopeId: mindmapId,
             },
+          }, {
+            alias: 'Sticker',
+            legacyProps: child.props,
+            legacyChildren: stickerRendererChildren,
           }),
         });
 
@@ -598,7 +1017,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
         );
         const washiRendererChildren = child.children || [];
         const { label: washiLabel, parsedChildren: washiChildren } = extractStickerContent(
-          washiRendererChildren,
+          washiRendererChildren as RenderChildNode[],
           child.props.children,
           { textJoiner: ' ' },
         );
@@ -670,7 +1089,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
         const {
           label: parsedLabel,
           parsedChildren,
-        } = extractNodeContent(rendererChildren, child.props.children);
+        } = extractNodeContent(rendererChildren as RenderChildNode[], child.props.children);
 
         rendererChildren.forEach((grandChild: RenderNode) => {
           if (grandChild.type === 'graph-edge') {
@@ -769,6 +1188,18 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           })
           : null;
         const stickyAtInput = normalizedSticky?.at;
+        const renderFrame = getFrameCapabilityInput(child.props);
+        const renderPattern = resolveRenderablePattern(child.props);
+        const renderAt = resolveRenderableAt(child.props);
+        const renderPorts = resolveRenderablePorts(child.props);
+        const renderBubble = resolveRenderableBubble(child.props);
+
+        const canonicalAlias: CanonicalObjectAlias =
+          child.type === 'graph-sticky'
+            ? 'Sticky'
+            : child.type === 'graph-text'
+              ? 'Node'
+              : 'Shape';
 
         nodes.push({
           id: nodeId,
@@ -779,19 +1210,21 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           },
           data: withEditMeta(nodeType, nodeId, {
             label: safeLabel,
-            type: child.props.type || 'rectangle',
-            shape: nodeType === 'sticky' ? normalizedSticky?.shape : undefined,
+            type: readStringProp(renderFrame?.shape) || child.props.type || 'rectangle',
+            shape: nodeType === 'sticky'
+              ? normalizedSticky?.shape ?? readStringProp(renderFrame?.shape)
+              : undefined,
             color: child.props.color || child.props.bg,
             className: child.props.className,
             groupId: mindmapId,
             pattern:
               nodeType === 'sticky'
-                ? child.props.pattern ?? normalizedSticky?.pattern
-                : child.props.pattern,
+                ? renderPattern ?? normalizedSticky?.pattern
+                : renderPattern,
             at:
               nodeType === 'sticky'
-                ? child.props.at ?? stickyAtInput
-                : child.props.at,
+                ? renderAt ?? stickyAtInput
+                : renderAt,
             fontSize: child.props.fontSize,
             labelColor: child.props.labelColor || child.props.color,
             labelFontSize:
@@ -800,26 +1233,32 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
                 ? child.props.fontSize
                 : undefined),
             labelBold: child.props.labelBold || child.props.bold,
-            fill: child.props.fill,
-            stroke: child.props.stroke,
+            fill: readStringProp(renderFrame?.fill) || child.props.fill,
+            stroke: readStringProp(renderFrame?.stroke) || child.props.stroke,
+            strokeWidth: readNumberProp(renderFrame?.strokeWidth) ?? child.props.strokeWidth,
             fontFamily: nodeFontFamily,
             children: parsedChildren,
             size: objectSizeInput,
             imageSrc: child.props.imageSrc,
             imageFit: child.props.imageFit,
-            ports,
+            texture: child.props.texture,
+            ports: renderPorts ?? ports,
             anchor: child.props.anchor,
             position: child.props.position,
             gap: child.props.gap,
             align: child.props.align,
             width: isObjectSizedNode ? undefined : child.props.width,
             height: isObjectSizedNode ? undefined : child.props.height,
-            bubble: child.props.bubble,
+            bubble: renderBubble,
             sourceMeta: child.props.sourceMeta || {
               sourceId: nodeId,
               kind: mindmapId ? 'mindmap' : 'canvas',
               scopeId: mindmapId,
             },
+          }, {
+            alias: canonicalAlias,
+            legacyProps: child.props,
+            legacyChildren: rendererChildren,
           }),
         });
 

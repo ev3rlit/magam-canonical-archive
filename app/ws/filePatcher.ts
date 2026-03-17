@@ -8,6 +8,7 @@ import traverse, { NodePath } from '@babel/traverse';
 import generate from '@babel/generator';
 import * as t from '@babel/types';
 import { getJsxTagStyleEditableKeys } from '@/features/editing/editability';
+import { RPC_ERRORS } from './rpc';
 
 export interface NodeProps {
     id?: string;
@@ -36,6 +37,51 @@ export interface CreateNodeInput {
         | { mode: 'mindmap-child'; parentId: string }
         | { mode: 'mindmap-sibling'; siblingOf: string; parentId: string | null }
     );
+}
+
+function buildRpcLikeError(
+    template: { code: number; message: string },
+    data?: unknown,
+): Error & { code: number; data?: unknown } {
+    const error = new Error(template.message) as Error & { code: number; data?: unknown };
+    error.code = template.code;
+    if (data !== undefined) {
+        error.data = data;
+    }
+    return error;
+}
+
+function throwContentContractViolation(detail: string): never {
+    throw buildRpcLikeError(RPC_ERRORS.CONTENT_CONTRACT_VIOLATION, {
+        path: 'capabilities.content',
+        diagnostics: {
+            path: 'capabilities.content',
+            message: detail,
+        },
+    });
+}
+
+function assertContentContractPatchAllowed(
+    tagName: string | null,
+    patch: Record<string, unknown>,
+): void {
+    if ((tagName === 'Image' || tagName === 'Sequence') && 'content' in patch) {
+        throwContentContractViolation(
+            `${tagName} nodes do not accept string content patches; use their declared content contract.`,
+        );
+    }
+
+    if (tagName !== 'Image' && ('src' in patch || 'alt' in patch || 'fit' in patch)) {
+        throwContentContractViolation('media content fields are only valid for Image nodes.');
+    }
+
+    if (tagName !== 'Markdown' && 'source' in patch) {
+        throwContentContractViolation('markdown source fields are only valid for Markdown nodes.');
+    }
+
+    if (tagName !== 'Sequence' && ('participants' in patch || 'messages' in patch)) {
+        throwContentContractViolation('sequence content fields are only valid for Sequence nodes.');
+    }
 }
 
 function getJsxTagName(node: t.JSXOpeningElement): string | null {
@@ -394,14 +440,16 @@ function toJsxChildren(type: CreateNodeInput['type'], props: Record<string, unkn
 }
 
 function buildNodeElement(input: CreateNodeInput): t.JSXElement {
-    const placementMode = input.placement?.mode;
-    const placementProps = placementMode === 'canvas-absolute'
-        ? { x: input.placement.x, y: input.placement.y }
-        : placementMode === 'mindmap-child'
-            ? { from: input.placement.parentId }
-            : placementMode === 'mindmap-sibling'
-                ? { ...(input.placement.parentId ? { from: input.placement.parentId } : {}) }
-                : {};
+    const placement = input.placement;
+    const placementMode = placement?.mode;
+    const placementProps =
+        placement && placementMode === 'canvas-absolute'
+            ? { x: placement.x, y: placement.y }
+            : placement && placementMode === 'mindmap-child'
+                ? { from: placement.parentId }
+                : placement && placementMode === 'mindmap-sibling'
+                    ? { ...(placement.parentId ? { from: placement.parentId } : {}) }
+                    : {};
     const tag = placementMode === 'mindmap-child' || placementMode === 'mindmap-sibling'
         ? 'Node'
         : input.type === 'mindmap'
@@ -503,11 +551,13 @@ export async function patchFile(filePath: string, nodeId: string, props: NodePro
         const node = getNodeByIdOpeningElement(ast, nodeId);
         if (!node) return false;
 
+        const tagName = getJsxTagName(node.node);
         const nextId = typeof props.id === 'string' ? props.id : undefined;
         if (nextId && nextId !== nodeId && hasConflictingNodeId(ast, nextId, nodeId)) {
             throw new Error('ID_COLLISION');
         }
         const patchProps: Record<string, unknown> = { ...props };
+        assertContentContractPatchAllowed(tagName, patchProps);
         delete patchProps.content;
 
         Object.entries(patchProps).forEach(([propName, propValue]) => {
@@ -608,6 +658,8 @@ export async function patchNodeContent(filePath: string, nodeId: string, content
         if (!node) return false;
 
         ensureNoSpreadAttributes(node.node);
+        const tagName = getJsxTagName(node.node);
+        assertContentContractPatchAllowed(tagName, { content });
         const labelAttr = getAttrByName(node.node, 'label');
         if (labelAttr) {
             const currentLabel = getAttributeValue(labelAttr);
@@ -638,7 +690,9 @@ export async function patchNodeStyle(filePath: string, nodeId: string, patch: Re
         if (!node) return false;
 
         ensureNoSpreadAttributes(node.node);
-        const editableKeys = getJsxTagStyleEditableKeys(getJsxTagName(node.node) || undefined);
+        const tagName = getJsxTagName(node.node);
+        assertContentContractPatchAllowed(tagName, patch);
+        const editableKeys = getJsxTagStyleEditableKeys(tagName || undefined);
         if (editableKeys.length === 0) {
             throw new Error('EDIT_NOT_ALLOWED');
         }
@@ -683,10 +737,11 @@ export async function patchNodeCreate(filePath: string, input: CreateNodeInput):
         }
 
         const newElement = buildNodeElement(input);
-        const placementMode = input.placement?.mode;
+        const placement = input.placement;
+        const placementMode = placement?.mode;
 
-        if (placementMode === 'mindmap-child') {
-            const container = findOwningContainerForNodeId(ast, input.placement.parentId);
+        if (placement && placementMode === 'mindmap-child') {
+            const container = findOwningContainerForNodeId(ast, placement.parentId);
             if (!container) {
                 return false;
             }
@@ -694,8 +749,8 @@ export async function patchNodeCreate(filePath: string, input: CreateNodeInput):
             return true;
         }
 
-        if (placementMode === 'mindmap-sibling') {
-            const container = findOwningContainerForNodeId(ast, input.placement.siblingOf);
+        if (placement && placementMode === 'mindmap-sibling') {
+            const container = findOwningContainerForNodeId(ast, placement.siblingOf);
             if (!container) {
                 return false;
             }

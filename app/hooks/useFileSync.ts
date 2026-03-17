@@ -372,7 +372,9 @@ export function useFileSync(
         node: Record<string, unknown>,
         targetFilePath: string | null = filePath,
     ): Promise<RpcMutationResult> => {
-        if (!targetFilePath) return;
+        if (!targetFilePath) {
+            throw new Error('SOURCE_VERSION_NOT_READY');
+        }
         return mutationExecutor.enqueueMutation({
             method: 'node.create',
             filePath: targetFilePath,
