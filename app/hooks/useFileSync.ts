@@ -11,6 +11,7 @@ import {
     buildWatchedFilesSignature,
     createPerFileMutationExecutor,
     normalizeWatchedFiles,
+    pruneExpiredOwnCommands,
     rememberOwnCommand,
     resolveFileSyncWsUrl,
     RpcClientError,

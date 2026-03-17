@@ -1,11 +1,13 @@
 import * as ReactReconciler from 'react-reconciler';
-import * as React from 'react';
+import type { ReactNode } from 'react';
 import * as HostConfig from './reconciler/hostConfig';
 import { Container } from './reconciler/hostConfig';
 import { applyLayout } from './layout/elk';
 import { resolveMindMapEmbeds } from './reconciler/resolveMindMapEmbeds';
 import { resolveTreeAnchors } from './reconciler/resolveTreeAnchors';
 import { extractCanvasMeta } from './reconciler/extractCanvasMeta';
+import { ResultAsync, ok, err, fromPromise } from './result';
+import { RenderError, LayoutError } from './result';
 
 const Reconciler = (ReactReconciler as any).default || ReactReconciler;
 
@@ -14,11 +16,6 @@ let reconciler: any = null;
 
 function getReconciler() {
   if (!reconciler) {
-    console.log('[Renderer] Initializing Reconciler');
-    console.log('[Renderer] React avail:', !!React);
-    console.log('[Renderer] React keys:', Object.keys(React || {}));
-    // @ts-ignore
-    console.log('[Renderer] Internals:', (React as any).__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED);
     // @ts-ignore
     reconciler = Reconciler(HostConfig);
   }
@@ -27,12 +24,9 @@ function getReconciler() {
 
 const LEGACY_ROOT = 0;
 
-import { ResultAsync, ok, err, fromPromise, fromThrowable } from './result';
-import { RenderError, LayoutError } from './result';
-
 // ... (existing helper function code to be kept)
 
-export function renderToGraph(element: React.ReactNode): ResultAsync<Container, RenderError | LayoutError> {
+export function renderToGraph(element: ReactNode): ResultAsync<Container, RenderError | LayoutError> {
   const container: Container = { type: 'root', children: [] };
   let capturedError: Error | null = null;
 

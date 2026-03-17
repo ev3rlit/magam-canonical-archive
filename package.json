@@ -24,7 +24,9 @@
     "test:e2e": "playwright test",
     "chat:smoke": "bun run scripts/chat-smoke.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:generate:canonical": "drizzle-kit generate --config=drizzle.canonical.config.ts",
+    "db:migrate:canonical": "bun run libs/shared/src/lib/canonical-persistence/pglite-db.ts"
   },
   "private": true,
   "devDependencies": {
@@ -72,6 +74,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.3.8",
     "@babel/generator": "^7.29.0",
     "@babel/parser": "^7.29.0",
     "@babel/traverse": "^7.29.0",

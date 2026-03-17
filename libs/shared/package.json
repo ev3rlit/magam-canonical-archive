@@ -11,6 +11,9 @@
     "build": "tsup src/index.ts --format cjs,esm --dts"
   },
   "dependencies": {
-    "tslib": "^2.3.0"
+    "@electric-sql/pglite": "^0.3.8",
+    "drizzle-orm": "^0.44.5",
+    "tslib": "^2.3.0",
+    "zod": "^4.3.6"
   }
 }
