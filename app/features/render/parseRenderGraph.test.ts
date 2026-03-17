@@ -210,6 +210,51 @@ describe('parseRenderGraph canonical object normalization', () => {
       );
   });
 
+  it('infers text content from legacy renderer children when props are empty', () => {
+    const canonicalResult = createCanonicalFromLegacyAliasInput({
+      alias: 'Node',
+      core: {
+        id: 'legacy-children-text',
+        sourceMeta: {
+          sourceId: 'legacy-children-text',
+          kind: 'canvas',
+        },
+      },
+      legacyProps: {},
+      legacyChildren: [
+        {
+          type: 'text',
+          props: {
+            text: 'Standalone text',
+          },
+          children: [],
+        },
+      ],
+    });
+
+    expect(canonicalResult).toMatchObject({ ok: true });
+    if (!canonicalResult.ok) {
+      throw new Error('Expected canonical normalization success');
+    }
+
+    assertCanonicalMatch(
+      canonicalResult.canonical,
+      {
+        semanticRole: 'topic',
+        alias: 'Node',
+        capabilities: {
+          content: {
+            kind: 'text',
+            value: 'Standalone text',
+          },
+        },
+        capabilitySources: {
+          content: 'legacy-inferred',
+        },
+      },
+    );
+  });
+
   it('applies explicit capability overrides above inferred and alias defaults', () => {
     const canonicalResult = createCanonicalFromLegacyAliasInput({
       alias: 'Shape',
@@ -484,6 +529,49 @@ describe('parseRenderGraph canonical object normalization', () => {
             fit: 'cover',
             width: 180,
             height: 120,
+          },
+        },
+      },
+    );
+  });
+
+  it('preserves child-authored text as canonical content on graph-text nodes', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-text',
+            props: {
+              id: 'text-child-content',
+              x: 10,
+              y: 20,
+            },
+            children: [
+              {
+                type: 'text',
+                props: {
+                  text: 'Standalone text',
+                },
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    const textNode = parsed!.nodes.find((node) => node.id === 'text-child-content');
+    expect(textNode?.type).toBe('text');
+    assertCanonicalMatch(
+      (textNode?.data as Record<string, unknown>)?.canonicalObject,
+      {
+        semanticRole: 'topic',
+        alias: 'Node',
+        capabilities: {
+          content: {
+            kind: 'text',
+            value: 'Standalone text',
           },
         },
       },

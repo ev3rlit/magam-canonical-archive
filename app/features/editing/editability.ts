@@ -244,7 +244,7 @@ function deriveFamilyFromCapabilityProfile(
   canonical: CanonicalObject,
   profile: CapabilityProfile,
 ): EditFamily {
-  if (canonical.core.relations?.from !== undefined) {
+  if (canonical.core.sourceMeta.kind === 'mindmap') {
     return 'mindmap-member';
   }
   if (profile.relativeCarrier) {

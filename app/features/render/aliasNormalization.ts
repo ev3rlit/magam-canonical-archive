@@ -201,6 +201,32 @@ function extractMarkdownForSequenceAlias(legacyProps: UnknownRecord, children: r
   return readString(legacyProps.content) || readString(legacyProps.source) || extractMarkdownFromLegacyChildren(children);
 }
 
+function extractTextFromLegacyChildren(
+  children: readonly LegacyChild[],
+  joiner = '',
+): string | undefined {
+  const textParts: string[] = [];
+
+  const visit = (items: readonly LegacyChild[]) => {
+    for (const child of items) {
+      if (child.type === 'text') {
+        const text = readString(child.props?.text);
+        if (text !== undefined) {
+          textParts.push(text);
+        }
+        continue;
+      }
+
+      if (child.type === 'graph-text') {
+        visit(asLegacyChildren(Array.isArray(child.children) ? child.children : undefined));
+      }
+    }
+  };
+
+  visit(children);
+  return textParts.length > 0 ? textParts.join(joiner) : undefined;
+}
+
 function buildTextContent(value: string): ContentCapability {
   return {
     kind: 'text',
@@ -344,7 +370,7 @@ export function inferLegacyCapabilities(input: LegacyCapabilityInferenceInput): 
   switch (alias) {
     case 'Node': {
       const markdown = extractMarkdownFromLegacyChildren(legacyChildren);
-      const text = extractTextLike(legacyProps);
+      const text = extractTextLike(legacyProps) || extractTextFromLegacyChildren(legacyChildren, '\n');
       if (markdown !== undefined) {
         inferred.content = buildMarkdownContent(markdown);
         sources.content = 'legacy-inferred';
@@ -357,7 +383,7 @@ export function inferLegacyCapabilities(input: LegacyCapabilityInferenceInput): 
     }
 
     case 'Shape': {
-      const text = extractTextLike(legacyProps);
+      const text = extractTextLike(legacyProps) || extractTextFromLegacyChildren(legacyChildren);
       const frame: Partial<FrameCapability> = {};
       const legacyShape = readString(legacyProps.type);
       const shapeValue = SHAPE_TYPES.has(legacyShape ?? '') ? legacyShape : undefined;
@@ -397,7 +423,7 @@ export function inferLegacyCapabilities(input: LegacyCapabilityInferenceInput): 
     }
 
     case 'Sticky': {
-      const text = extractTextLike(legacyProps);
+      const text = extractTextLike(legacyProps) || extractTextFromLegacyChildren(legacyChildren);
       if (text !== undefined) {
         inferred.content = buildTextContent(text);
         sources.content = 'legacy-inferred';
@@ -492,7 +518,7 @@ export function inferLegacyCapabilities(input: LegacyCapabilityInferenceInput): 
     }
 
     case 'Sticker': {
-      const text = extractTextLike(legacyProps);
+      const text = extractTextLike(legacyProps) || extractTextFromLegacyChildren(legacyChildren, ' ');
       if (text !== undefined) {
         inferred.content = buildTextContent(text);
         sources.content = 'legacy-inferred';

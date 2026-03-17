@@ -37,6 +37,7 @@ function makeCapabilityProfileNodeFromCanonical(
       sourceMeta: {
         sourceId: input.id,
       },
+      canonicalObject: input.canonical,
       editMeta: {
         family: profile.contentCarrier ? 'rich-content' : 'canvas-absolute',
         contentCarrier: profile.contentCarrier,
@@ -305,5 +306,47 @@ describe('WorkspaceClient capability-profile editability parity', () => {
         unknown: 'x',
       }),
     );
+  });
+
+  it('canvas sourceMeta를 가진 linked node는 from 관계가 있어도 canvas 편집 규칙을 유지한다', () => {
+    const linkedCanvasNode = makeNode({
+      id: 'linked-canvas-node',
+      type: 'shape',
+      data: {
+        sourceMeta: {
+          sourceId: 'linked-canvas-node',
+          filePath: 'examples/profile.tsx',
+        },
+        canonicalObject: {
+          core: {
+            id: 'linked-canvas-node',
+            relations: {
+              from: 'root-node',
+            },
+            sourceMeta: {
+              sourceId: 'linked-canvas-node',
+              filePath: 'examples/profile.tsx',
+              kind: 'canvas',
+            },
+          },
+          semanticRole: 'topic',
+          alias: 'Node',
+          capabilities: {
+            content: {
+              kind: 'text',
+              value: 'Linked child',
+            },
+          },
+        } satisfies CanonicalObject,
+      },
+    });
+
+    expect(resolveNodeEditContext(linkedCanvasNode, 'examples/profile.tsx').editMeta).toMatchObject({
+      family: 'rich-content',
+      contentCarrier: 'text-child',
+      createMode: 'canvas',
+    });
+    expect(canRunNodeCommand(linkedCanvasNode, 'node.move.absolute')).toBe(true);
+    expect(canRunNodeCommand(linkedCanvasNode, 'node.reparent')).toBe(false);
   });
 });

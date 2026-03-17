@@ -135,7 +135,7 @@ export function deriveRelativeCarrier(input: CanonicalObject): EditRelativeCarri
 }
 
 function isMindmapMember(input: CanonicalObject): boolean {
-  return input.core.relations?.from !== undefined;
+  return input.core.sourceMeta.kind === 'mindmap';
 }
 
 function addUnique(target: string[], source: readonly string[]): void {

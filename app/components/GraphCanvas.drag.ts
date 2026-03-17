@@ -52,6 +52,9 @@ type DragNodeLike = {
         relations?: {
           from?: unknown;
         };
+        sourceMeta?: {
+          kind?: unknown;
+        };
       };
     };
   };
@@ -63,7 +66,7 @@ function resolveDragNodeFamily(node: DragNodeLike): unknown {
     return editMetaFamily;
   }
 
-  if (node.data?.canonicalObject?.core?.relations?.from !== undefined) {
+  if (node.data?.canonicalObject?.core?.sourceMeta?.kind === 'mindmap') {
     return 'mindmap-member';
   }
 

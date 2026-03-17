@@ -28,6 +28,7 @@ const profileMindMapNodeA: CanonicalObject = {
     sourceMeta: {
       sourceId: 'profile-map-a',
       filePath: 'examples/profile.tsx',
+      kind: 'mindmap',
     },
     relations: {
       from: 'map.root',
@@ -44,6 +45,7 @@ const profileMindMapNodeB: CanonicalObject = {
     sourceMeta: {
       sourceId: 'profile-map-b',
       filePath: 'examples/profile.tsx',
+      kind: 'mindmap',
     },
     relations: {
       from: 'map.root',
@@ -60,6 +62,7 @@ const profileCanvasNode: CanonicalObject = {
     sourceMeta: {
       sourceId: 'profile-canvas-text',
       filePath: 'examples/profile.tsx',
+      kind: 'canvas',
     },
   },
   semanticRole: 'topic',

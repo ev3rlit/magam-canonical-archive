@@ -277,6 +277,38 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
     return undefined;
   };
 
+  const readTextContentFromChildren = (
+    children?: unknown[],
+    joiner = '',
+  ): string | undefined => {
+    const textParts: string[] = [];
+
+    const visit = (items?: unknown[]) => {
+      for (const child of items || []) {
+        if (!isRecord(child)) {
+          continue;
+        }
+
+        if (child.type === 'text') {
+          const props = isRecord(child.props) ? child.props : undefined;
+          const text = readStringProp(props?.text);
+          if (text !== undefined) {
+            textParts.push(text);
+          }
+          continue;
+        }
+
+        if (child.type === 'graph-text') {
+          const nestedChildren = Array.isArray(child.children) ? child.children : undefined;
+          visit(nestedChildren);
+        }
+      }
+    };
+
+    visit(children);
+    return textParts.length > 0 ? textParts.join(joiner) : undefined;
+  };
+
   const getFrameCapabilityInput = (
     legacyProps: Record<string, unknown>,
   ): Record<string, unknown> | undefined => (
@@ -479,7 +511,11 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
     const textContent =
       readStringProp(legacyProps.text)
       || readStringProp(legacyProps.label)
-      || readStringProp(legacyProps.value);
+      || readStringProp(legacyProps.value)
+      || readTextContentFromChildren(
+        legacyChildren,
+        alias === 'Node' ? '\n' : alias === 'Sticker' ? ' ' : '',
+      );
     const markdownSource =
       readStringProp(legacyProps.content)
       || readStringProp(legacyProps.source)
