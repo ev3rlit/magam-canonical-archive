@@ -1,4 +1,9 @@
 import type { Node } from 'reactflow';
+import {
+  deriveCapabilityProfile,
+  type CapabilityProfile,
+} from '@/features/editing/capabilityProfile';
+import type { CanonicalObject } from '@/features/render/canonicalObject';
 
 export type EditCommandType =
   | 'node.move.absolute'
@@ -48,7 +53,22 @@ type ParsedNodeLike = {
 
 type NodeDataWithEditMeta = {
   editMeta?: EditMeta;
+  canonicalObject?: CanonicalObject;
 };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isCanonicalObject(value: unknown): value is CanonicalObject {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return isRecord(value.core)
+    && typeof value.semanticRole === 'string'
+    && isRecord(value.capabilities);
+}
 
 const SHAPE_STYLE_KEYS = [
   'color',
@@ -220,6 +240,36 @@ export function deriveEditMeta(input: ParsedNodeLike): EditMeta {
   };
 }
 
+function deriveFamilyFromCapabilityProfile(
+  canonical: CanonicalObject,
+  profile: CapabilityProfile,
+): EditFamily {
+  if (canonical.core.sourceMeta.kind === 'mindmap') {
+    return 'mindmap-member';
+  }
+  if (profile.relativeCarrier) {
+    return 'relative-attachment';
+  }
+  if (profile.contentCarrier) {
+    return 'rich-content';
+  }
+  return 'canvas-absolute';
+}
+
+function deriveEditMetaFromCanonical(canonical: CanonicalObject): EditMeta {
+  const profile = deriveCapabilityProfile(canonical);
+  const family = deriveFamilyFromCapabilityProfile(canonical, profile);
+
+  return {
+    family,
+    contentCarrier: profile.contentCarrier,
+    relativeCarrier: profile.relativeCarrier,
+    styleEditableKeys: profile.allowedUpdateKeys,
+    createMode: family === 'mindmap-member' ? 'mindmap-child' : 'canvas',
+    readOnlyReason: profile.readOnlyReason,
+  };
+}
+
 export function isCommandAllowed(editMeta: EditMeta | undefined, commandType: EditCommandType): boolean {
   if (!editMeta || editMeta.readOnlyReason) {
     return false;
@@ -286,5 +336,8 @@ export function pickStylePatch(
 
 export function getNodeEditMeta(node: Pick<Node, 'data'>): EditMeta | undefined {
   const data = (node.data || {}) as NodeDataWithEditMeta;
+  if (isCanonicalObject(data.canonicalObject)) {
+    return deriveEditMetaFromCanonical(data.canonicalObject);
+  }
   return data.editMeta;
 }

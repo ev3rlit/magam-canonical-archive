@@ -122,4 +122,38 @@ describe('StickyNode helpers', () => {
       tokenUsed: 'auto',
     });
   });
+
+  it('maps legacy anchor fields to attach data via normalizeStickyDefaults', () => {
+    const normalized = normalizeStickyDefaults({
+      id: 'sticky-attach-test',
+      anchor: 'reference-node',
+      position: 'top-right',
+      gap: 14,
+      align: 'start',
+    });
+
+    expect(normalized.at).toMatchObject({
+      type: 'anchor',
+      target: 'reference-node',
+      position: 'top-right',
+      gap: 14,
+      align: 'start',
+    });
+  });
+
+  it('resolves sticky material pattern with explicit image and keeps fallback off', () => {
+    const normalized = normalizeStickyDefaults({
+      pattern: { type: 'image', src: '/assets/sticky-texture.png', repeat: 'repeat-x', scale: 2 },
+    });
+    const resolvedPattern = resolveStickyPattern(normalized.pattern);
+
+    expect(resolvedPattern).toMatchObject({
+      kind: 'image',
+      presetId: 'postit',
+      backgroundImage: 'url("/assets/sticky-texture.png")',
+      backgroundRepeat: 'repeat-x',
+      backgroundSize: '128px auto',
+      fallbackApplied: false,
+    });
+  });
 });

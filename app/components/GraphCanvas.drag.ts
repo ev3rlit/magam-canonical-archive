@@ -47,8 +47,31 @@ type DragNodeLike = {
     editMeta?: {
       family?: unknown;
     };
+    canonicalObject?: {
+      core?: {
+        relations?: {
+          from?: unknown;
+        };
+        sourceMeta?: {
+          kind?: unknown;
+        };
+      };
+    };
   };
 };
+
+function resolveDragNodeFamily(node: DragNodeLike): unknown {
+  const editMetaFamily = node.data?.editMeta?.family;
+  if (typeof editMetaFamily === 'string') {
+    return editMetaFamily;
+  }
+
+  if (node.data?.canonicalObject?.core?.sourceMeta?.kind === 'mindmap') {
+    return 'mindmap-member';
+  }
+
+  return 'canvas-absolute';
+}
 
 export function shouldHandlePaneCreate(input: {
   interactionMode: 'pointer' | 'hand';
@@ -66,7 +89,7 @@ export function resolveMindMapReparentIntent(input: {
   const groupId = typeof input.draggedNode.data?.groupId === 'string'
     ? input.draggedNode.data.groupId
     : null;
-  const family = input.draggedNode.data?.editMeta?.family;
+  const family = resolveDragNodeFamily(input.draggedNode);
   if (!groupId || family !== 'mindmap-member') {
     return null;
   }
@@ -118,9 +141,10 @@ export function resolveMindMapReparentIntent(input: {
     return { kind: 'rejected', reason: 'NO_VALID_PARENT' };
   }
 
+  const resolvedCandidate = bestCandidate as { nodeId: string; distance: number };
   return {
     kind: 'reparent',
-    newParentNodeId: bestCandidate.nodeId,
+    newParentNodeId: resolvedCandidate.nodeId,
   };
 }
 

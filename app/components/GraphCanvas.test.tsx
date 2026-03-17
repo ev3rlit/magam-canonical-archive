@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
+import type { CanonicalObject } from '@/features/render/canonicalObject';
 import {
   AUTO_RELAYOUT_MAX_ATTEMPTS,
   getChangedMindMapGroupIds,
@@ -14,6 +16,66 @@ import {
   shouldHandlePaneCreate,
   shouldSuppressDragStopErrorToast,
 } from './GraphCanvas.drag';
+
+function resolveProfileFamily(canonical: CanonicalObject): 'mindmap-member' | 'canvas-absolute' {
+  return deriveCapabilityProfile(canonical).allowedCommands.includes('node.reparent')
+    ? 'mindmap-member'
+    : 'canvas-absolute';
+}
+
+const profileMindMapNodeA: CanonicalObject = {
+  core: {
+    id: 'profile-map-a',
+    sourceMeta: {
+      sourceId: 'profile-map-a',
+      filePath: 'examples/profile.tsx',
+      kind: 'mindmap',
+    },
+    relations: {
+      from: 'map.root',
+    },
+  },
+  semanticRole: 'topic',
+  alias: 'Node',
+  capabilities: {},
+};
+
+const profileMindMapNodeB: CanonicalObject = {
+  core: {
+    id: 'profile-map-b',
+    sourceMeta: {
+      sourceId: 'profile-map-b',
+      filePath: 'examples/profile.tsx',
+      kind: 'mindmap',
+    },
+    relations: {
+      from: 'map.root',
+    },
+  },
+  semanticRole: 'topic',
+  alias: 'Shape',
+  capabilities: {},
+};
+
+const profileCanvasNode: CanonicalObject = {
+  core: {
+    id: 'profile-canvas-text',
+    sourceMeta: {
+      sourceId: 'profile-canvas-text',
+      filePath: 'examples/profile.tsx',
+      kind: 'canvas',
+    },
+  },
+  semanticRole: 'topic',
+  alias: 'Node',
+  capabilities: {
+    content: {
+      kind: 'text',
+      value: 'Hello',
+      fontSize: 16,
+    },
+  },
+};
 
 describe('GraphCanvas auto relayout policy', () => {
   const baseInput = {
@@ -257,6 +319,96 @@ describe('GraphCanvas mindmap reparent intent', () => {
       kind: 'reparent-ready',
       newParentNodeId: 'parent',
     });
+  });
+});
+
+describe('GraphCanvas capability-profile based reparent gating', () => {
+  it('같은 capability profile을 가진 다른 alias는 mindmap 가족 판정에서 동일한 reparent intent를 낸다', () => {
+    const nodeFamily = resolveProfileFamily(profileMindMapNodeA);
+    const shapeFamily = resolveProfileFamily(profileMindMapNodeB);
+
+    expect(nodeFamily).toBe('mindmap-member');
+    expect(shapeFamily).toBe('mindmap-member');
+
+    expect(resolveMindMapReparentIntent({
+      draggedNode: {
+        width: 120,
+        height: 60,
+        id: 'dragged',
+        position: { x: 0, y: 0 },
+        data: {
+          groupId: 'map',
+          editMeta: {
+            family: nodeFamily,
+          },
+        },
+      },
+      allNodes: [
+        {
+          width: 120,
+          height: 60,
+          id: 'candidate-parent-a',
+          position: { x: 200, y: 100 },
+          data: {
+            groupId: 'map',
+            editMeta: {
+              family: shapeFamily,
+            },
+          },
+        },
+        {
+          width: 120,
+          height: 60,
+          id: 'dragged',
+          position: { x: 0, y: 0 },
+          data: {
+            groupId: 'map',
+            editMeta: {
+              family: nodeFamily,
+            },
+          },
+        },
+      ],
+      dropPosition: { x: 210, y: 110 },
+    })).toEqual({
+      kind: 'reparent',
+      newParentNodeId: 'candidate-parent-a',
+    });
+  });
+
+  it('capability 프로파일이 mindmap 멤버가 아니면 family gating으로 reparent를 허용하지 않는다', () => {
+    const canvasFamily = resolveProfileFamily(profileCanvasNode);
+    expect(canvasFamily).toBe('canvas-absolute');
+
+    expect(resolveMindMapReparentIntent({
+      draggedNode: {
+        width: 120,
+        height: 60,
+        id: 'canvas-child',
+        position: { x: 0, y: 0 },
+        data: {
+          groupId: 'map',
+          editMeta: {
+            family: canvasFamily,
+          },
+        },
+      },
+      allNodes: [
+        {
+          width: 120,
+          height: 60,
+          id: 'canvas-parent',
+          position: { x: 200, y: 100 },
+          data: {
+            groupId: 'map',
+            editMeta: {
+              family: canvasFamily,
+            },
+          },
+        },
+      ],
+      dropPosition: { x: 210, y: 110 },
+    })).toBeNull();
   });
 });
 

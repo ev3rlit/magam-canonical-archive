@@ -531,4 +531,82 @@ describe('filePatcher', () => {
     expectSameSnippetCount(patched, 'x={40}', 1);
     expectSameSnippetCount(patched, 'y={80}', 1);
   });
+
+  it('update: content-kind mismatch node에 대한 content patch는 CONTENT_CONTRACT_VIOLATION로 거부된다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <Image id="img-mismatch" src={"https://example.com/media.png"} alt={"media"}></Image>
+        </Canvas>;
+      }
+    `);
+
+    let error: unknown;
+    try {
+      await patchNodeContent(filePath, 'img-mismatch', '# mismatch');
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toBeDefined();
+    const errorPayload = error as { code?: number; message?: string; data?: unknown };
+    expect(errorPayload.message).toBe('CONTENT_CONTRACT_VIOLATION');
+    if (errorPayload.code !== undefined) {
+      expect(errorPayload.code).toBe(42208);
+    }
+    if (errorPayload.data && typeof errorPayload.data === 'object') {
+      const data = errorPayload.data as { path?: string; diagnostics?: { path?: string } };
+      expect(data.path ?? data.diagnostics?.path).toBe('capabilities.content');
+    }
+  });
+
+  it('patchNodeStyle: tag별 content-전용 필드(source)는 NON-media alias에서 CONTENT_CONTRACT_VIOLATION로 거부한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <Node id="shape-like" fill={"#f3f4f6"} />
+        </Canvas>;
+      }
+    `);
+
+    let error: unknown;
+    try {
+      await patchNodeStyle(filePath, 'shape-like', {
+        source: '# changed',
+      });
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toBeDefined();
+    const errorPayload = error as { code?: number; message?: string; data?: unknown };
+    expect(errorPayload.message).toBe('CONTENT_CONTRACT_VIOLATION');
+    if (errorPayload.code !== undefined) {
+      expect(errorPayload.code).toBe(42208);
+    }
+    if (errorPayload.data && typeof errorPayload.data === 'object') {
+      const data = errorPayload.data as { path?: string; diagnostics?: { path?: string } };
+      expect(data.path ?? data.diagnostics?.path).toBe('capabilities.content');
+    }
+  });
+
+  it('patchNodeStyle: Node alias와 Shape alias는 동일한 스타일 patch 동작을 가진다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <Node id="node-alias" />
+          <Shape id="shape-alias" />
+        </Canvas>;
+      }
+    `);
+
+    await patchNodeStyle(filePath, 'node-alias', { fill: '#22c55e' });
+    await patchNodeStyle(filePath, 'shape-alias', { fill: '#22c55e' });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id="node-alias"')).toBe(true);
+    expect(patched.includes('id="shape-alias"')).toBe(true);
+    const fillCount = (patched.match(/fill={"#22c55e"}/g) || []).length;
+    expect(fillCount).toBe(2);
+  });
 });

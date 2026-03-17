@@ -15,6 +15,10 @@ import {
   isFontFamilyPreset,
   persistGlobalFontFamily,
 } from '@/utils/fontHierarchy';
+import type {
+  CanonicalObject,
+  ValidationResult,
+} from '@/features/render/canonicalObject';
 import {
   applySessionUpdate,
   createStaleUpdateDiagnostic,
@@ -78,6 +82,11 @@ export interface AppError {
     lineText?: string;
   };
   details?: any;
+}
+
+export interface CanonicalNodeData {
+  canonicalObject?: CanonicalObject;
+  canonicalValidation?: ValidationResult;
 }
 
 export interface MindMapGroup {
@@ -236,6 +245,20 @@ export const getDefaultTabTitle = (pageId: string): string => {
   const parts = pageId.split('/').filter(Boolean);
   return parts.length > 0 ? parts[parts.length - 1] : pageId;
 };
+
+export function getNodeCanonicalObject(
+  node: Pick<Node, 'data'> | null | undefined,
+): CanonicalObject | undefined {
+  const data = node?.data as CanonicalNodeData | undefined;
+  return data?.canonicalObject;
+}
+
+export function getNodeCanonicalValidation(
+  node: Pick<Node, 'data'> | null | undefined,
+): ValidationResult | undefined {
+  const data = node?.data as CanonicalNodeData | undefined;
+  return data?.canonicalValidation;
+}
 
 const DEFAULT_MINDMAP_SPACING = 50;
 

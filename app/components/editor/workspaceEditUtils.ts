@@ -128,6 +128,12 @@ export function mapEditRpcErrorToToast(error: unknown): string | null {
     }
     return '이 오브젝트는 현재 웹 편집 범위에서 안전하게 수정할 수 없습니다.';
   }
+  if (rpc.code === 42208 || rpc.message === 'CONTENT_CONTRACT_VIOLATION') {
+    return '이 오브젝트의 content 계약과 맞지 않는 편집이라 반영되지 않았습니다.';
+  }
+  if (rpc.code === 42211 || rpc.message === 'PATCH_SURFACE_VIOLATION') {
+    return '허용되지 않은 편집 surface라서 변경을 적용할 수 없습니다.';
+  }
   if (rpc.code === 50001 || rpc.message === 'PATCH_FAILED') {
     return '편집 반영에 실패했습니다. 잠시 후 다시 시도해주세요.';
   }

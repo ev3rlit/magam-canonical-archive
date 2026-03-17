@@ -69,6 +69,7 @@ import {
   type GraphCanvasCreateMode,
 } from './GraphCanvas.drag';
 import type { CreatePayload } from '@/features/editing/commands';
+import { resolveNodeEditContext } from '@/components/editor/workspaceEditUtils';
 import type { CreatableNodeType } from '@/types/contextMenu';
 
 type GraphCanvasProps = {
@@ -404,7 +405,7 @@ function GraphCanvasContent({
         type: 'node',
         position: { x: event.clientX, y: event.clientY },
         nodeId: node.id,
-        nodeFamily: (node.data as { editMeta?: { family?: string } } | undefined)?.editMeta?.family,
+        nodeFamily: resolveNodeEditContext(node, useGraphStore.getState().currentFile).editMeta?.family,
         selectedNodeIds: nextSelectedIds,
         actions: contextMenuActions,
       });
@@ -432,6 +433,9 @@ function GraphCanvasContent({
   const onPaneClick = useCallback(
     async (event: React.MouseEvent) => {
       if (!shouldHandlePaneCreate({ interactionMode, createMode }) || !onCreateNode) {
+        return;
+      }
+      if (createMode === null) {
         return;
       }
 
