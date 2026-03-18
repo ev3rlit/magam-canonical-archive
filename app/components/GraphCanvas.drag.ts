@@ -8,27 +8,6 @@ export function shouldCommitDragStop(input: {
   return input.origin.x !== input.current.x || input.origin.y !== input.current.y;
 }
 
-export function resolveEditHistoryShortcut(input: {
-  key: string;
-  metaKey: boolean;
-  ctrlKey: boolean;
-  shiftKey: boolean;
-}): 'undo' | 'redo' | null {
-  const isModifierPressed = input.metaKey || input.ctrlKey;
-  if (!isModifierPressed) {
-    return null;
-  }
-
-  const key = input.key.toLowerCase();
-  const isUndo = !input.shiftKey && key === 'z';
-  if (isUndo) {
-    return 'undo';
-  }
-
-  const isRedo = key === 'y' || (input.shiftKey && key === 'z');
-  return isRedo ? 'redo' : null;
-}
-
 export type GraphCanvasCreateMode = CreatableNodeType | null;
 
 type RpcLikeError = {

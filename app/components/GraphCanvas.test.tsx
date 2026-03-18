@@ -19,7 +19,6 @@ import {
   buildGraphCanvasRenameIntent,
 } from './GraphCanvas';
 import {
-  resolveEditHistoryShortcut,
   resolveMindMapDragFeedback,
   resolveMindMapReparentIntent,
   shouldRetainSelectionOnStyleUpdate,
@@ -373,32 +372,6 @@ describe('GraphCanvas runtime surface integration', () => {
   });
 });
 
-describe('GraphCanvas history shortcuts', () => {
-  it('cmd/ctrl+z 를 undo 로 해석한다', () => {
-    expect(resolveEditHistoryShortcut({
-      key: 'z',
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: false,
-    })).toBe('undo');
-  });
-
-  it('cmd/ctrl+shift+z 와 cmd/ctrl+y 를 redo 로 해석한다', () => {
-    expect(resolveEditHistoryShortcut({
-      key: 'z',
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: true,
-    })).toBe('redo');
-    expect(resolveEditHistoryShortcut({
-      key: 'y',
-      metaKey: false,
-      ctrlKey: true,
-      shiftKey: false,
-    })).toBe('redo');
-  });
-});
-
 describe('GraphCanvas mindmap reparent intent', () => {
   const baseNode = {
     width: 120,
@@ -728,11 +701,19 @@ describe('GraphCanvas bridge adoption', () => {
     const bindingSource = await Bun.file(
       new URL('../processes/canvas-runtime/bindings/graphCanvasHost.ts', import.meta.url),
     ).text();
+    const keyboardBindingSource = await Bun.file(
+      new URL('../processes/canvas-runtime/bindings/keyboardHost.ts', import.meta.url),
+    ).text();
 
     expect(source).toContain('createGraphCanvasContextMenuActions({');
     expect(source).toContain('createGraphCanvasNodeContextMenu({');
     expect(source).toContain('createGraphCanvasPaneContextMenu({');
     expect(source).toContain('createGraphCanvasToolbarContribution({');
+    expect(source).toContain('createGraphCanvasKeyboardHost({');
+    expect(source).not.toContain('const isCopy =');
+    expect(source).not.toContain('const isPaste =');
+    expect(source).not.toContain('const isUndo =');
+    expect(source).not.toContain('const isRedo =');
     expect(source).not.toContain("createSlotContribution('toolbar'");
     expect(source).not.toContain('updateNode(');
     expect(source).not.toContain('createNode(');
@@ -740,5 +721,8 @@ describe('GraphCanvas bridge adoption', () => {
     expect(bindingSource).toContain("surface: 'pane-context-menu'");
     expect(bindingSource).toContain("surface: 'node-context-menu'");
     expect(bindingSource).toContain("positioning: 'hosted'");
+    expect(keyboardBindingSource).toContain('dispatchKeyCommand({');
+    expect(keyboardBindingSource).toContain('resolveCanvasKeyBinding({');
+    expect(keyboardBindingSource).toContain('resolveCanvasKeyboardFeedback(');
   });
 });

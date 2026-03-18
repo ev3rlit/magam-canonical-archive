@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'bun:test';
+import { createNormalizedKeyChord, normalizeKeyEvent } from './normalizeKeyEvent';
+import { DEFAULT_CANVAS_KEY_BINDINGS, resolveCanvasKeyBinding } from './keymap';
+import { CANVAS_KEYBOARD_COMMAND_IDS, type CanvasKeyBinding } from './types';
+
+describe('resolveCanvasKeyBinding', () => {
+  it('maps platform-safe history shortcuts to command ids', () => {
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'z', metaKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.HISTORY_UNDO);
+
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'z', ctrlKey: true, shiftKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.HISTORY_REDO);
+
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'y', ctrlKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.HISTORY_REDO);
+  });
+
+  it('maps clipboard and Washi navigation shortcuts through the default keymap', () => {
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'c', metaKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.CLIPBOARD_COPY_SELECTION);
+
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'v', ctrlKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.CLIPBOARD_PASTE_SELECTION);
+
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'f', metaKey: true, shiftKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_FOCUS_NEXT_WASHI);
+  });
+
+  it('returns null when no key binding matches the normalized chord', () => {
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'q', metaKey: true }),
+    })).toBeNull();
+  });
+
+  it('lets later bindings override earlier ones for future customization', () => {
+    const customBindings: readonly CanvasKeyBinding[] = [
+      ...DEFAULT_CANVAS_KEY_BINDINGS,
+      {
+        bindingId: 'custom.primary-z',
+        chord: createNormalizedKeyChord({ key: 'z', metaKey: true }),
+        commandId: 'custom.command',
+      },
+    ];
+
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'z', ctrlKey: true }),
+      bindings: customBindings,
+    })).toMatchObject({
+      commandId: 'custom.command',
+      binding: {
+        bindingId: 'custom.primary-z',
+      },
+    });
+  });
+});
