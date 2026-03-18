@@ -435,6 +435,7 @@ v1에서 이 메뉴는 아래 원칙을 따른다.
 - `docs/features/database-first-canvas-platform/canvas-ui-entrypoints/entrypoint-foundation/selection-context-resolver/README.md`
 - `docs/features/database-first-canvas-platform/canvas-ui-entrypoints/entrypoint-foundation/action-routing-bridge/README.md`
 - `docs/features/database-first-canvas-platform/canvas-ui-entrypoints/entrypoint-foundation/ui-runtime-state/README.md`
+- `docs/features/database-first-canvas-platform/canvas-ui-entrypoints/entrypoint-foundation/ui-runtime-state/implementation-plan.md`
 - `docs/features/database-first-canvas-platform/canvas-ui-entrypoints/canvas-toolbar/README.md`
 - `docs/features/database-first-canvas-platform/canvas-ui-entrypoints/selection-floating-menu/README.md`
 - `docs/features/database-first-canvas-platform/canvas-ui-entrypoints/pane-context-menu/README.md`
