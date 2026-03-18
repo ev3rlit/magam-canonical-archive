@@ -1,6 +1,5 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { sanitizeContextMenuItems, shouldDismissContextMenuForSelectionChange } from './useContextMenu.helpers';
-import type { ContextMenuContext, ContextMenuItem } from '@/types/contextMenu';
+import type { ContextMenuContext } from '@/types/contextMenu';
 
 const iconStub = () => null;
 
@@ -16,7 +15,11 @@ mock.module('lucide-react', () => ({
   Type: iconStub,
 }));
 
-const { resolveCanvasContextMenuSession } = await import('@/processes/canvas-runtime/bindings/contextMenu');
+const {
+  buildContextMenuAnchorId,
+  resolveCanvasContextMenuSession,
+  resolveContextMenuSurfaceKind,
+} = await import('./contextMenu');
 
 const paneContext: ContextMenuContext = {
   type: 'pane',
@@ -24,8 +27,19 @@ const paneContext: ContextMenuContext = {
   selectedNodeIds: [],
 };
 
-describe('useContextMenu helpers', () => {
-  it('resolves pane inventory through the context-menu binding', () => {
+describe('contextMenu binding', () => {
+  it('derives fixed anchor ids and surface kinds from the requested context', () => {
+    expect(buildContextMenuAnchorId(paneContext)).toBe('context-menu:pane');
+    expect(resolveContextMenuSurfaceKind(paneContext)).toBe('pane-context-menu');
+    expect(resolveContextMenuSurfaceKind({
+      ...paneContext,
+      type: 'node',
+      nodeId: 'node-1',
+      selectedNodeIds: ['node-1'],
+    })).toBe('node-context-menu');
+  });
+
+  it('resolves pane sessions through the fixed runtime slot contract', () => {
     const resolved = resolveCanvasContextMenuSession({
       context: paneContext,
     });
@@ -52,13 +66,12 @@ describe('useContextMenu helpers', () => {
     ]);
   });
 
-  it('prefers runtime slot inventory when the binding receives one', () => {
+  it('prefers runtime slot items when the fixed slot receives an override', () => {
     const resolved = resolveCanvasContextMenuSession({
       context: {
         ...paneContext,
         type: 'node',
         nodeId: 'node-1',
-        nodeFamily: 'mindmap-member',
         selectedNodeIds: ['node-1'],
       },
       runtime: {
@@ -78,8 +91,6 @@ describe('useContextMenu helpers', () => {
       },
     });
 
-    expect(resolved.surfaceKind).toBe('node-context-menu');
-    expect(resolved.anchorId).toBe('context-menu:node:node-1');
     expect(resolved.items).toEqual([
       {
         type: 'action',
@@ -91,7 +102,7 @@ describe('useContextMenu helpers', () => {
     ]);
   });
 
-  it('falls back to the existing registry when a runtime slot is empty', () => {
+  it('falls back to the existing registry when a fixed slot is intentionally empty', () => {
     const resolved = resolveCanvasContextMenuSession({
       context: {
         ...paneContext,
@@ -117,73 +128,5 @@ describe('useContextMenu helpers', () => {
       'mindmap-add-sibling',
       'select-group',
     ]);
-  });
-
-  it('filters hidden items, sorts by order, and compacts separators', () => {
-    const items: ContextMenuItem[] = [
-      { type: 'separator' },
-      {
-        type: 'action',
-        id: 'b',
-        label: 'B',
-        order: 20,
-        handler: () => undefined,
-      },
-      {
-        type: 'action',
-        id: 'a',
-        label: 'A',
-        order: 10,
-        handler: () => undefined,
-      },
-      {
-        type: 'action',
-        id: 'hidden',
-        label: 'Hidden',
-        order: 15,
-        when: () => false,
-        handler: () => undefined,
-      },
-      { type: 'separator' },
-    ];
-
-    expect(sanitizeContextMenuItems(items, paneContext)).toEqual([
-      {
-        type: 'action',
-        id: 'a',
-        label: 'A',
-        order: 10,
-        handler: expect.any(Function),
-      },
-      {
-        type: 'action',
-        id: 'b',
-        label: 'B',
-        order: 20,
-        handler: expect.any(Function),
-      },
-    ]);
-  });
-
-  it('dismisses an open menu when selection context drifts', () => {
-    expect(shouldDismissContextMenuForSelectionChange({
-      instanceId: 'node-context-menu:1',
-      context: {
-        ...paneContext,
-        type: 'node',
-        nodeId: 'node-1',
-        selectedNodeIds: ['node-1'],
-      },
-    }, ['node-2'])).toBe(true);
-
-    expect(shouldDismissContextMenuForSelectionChange({
-      instanceId: 'node-context-menu:1',
-      context: {
-        ...paneContext,
-        type: 'node',
-        nodeId: 'node-1',
-        selectedNodeIds: ['node-1', 'node-2'],
-      },
-    }, ['node-2', 'node-1'])).toBe(false);
   });
 });

@@ -725,12 +725,20 @@ describe('GraphCanvas drag error toast suppression', () => {
 describe('GraphCanvas bridge adoption', () => {
   it('toolbar and context menu create flows stamp surface metadata instead of calling mutations directly', async () => {
     const source = await Bun.file(new URL('./GraphCanvas.tsx', import.meta.url)).text();
+    const bindingSource = await Bun.file(
+      new URL('../processes/canvas-runtime/bindings/graphCanvasHost.ts', import.meta.url),
+    ).text();
 
-    expect(source).toContain("surface: 'pane-context-menu'");
-    expect(source).toContain("surface: 'node-context-menu'");
-    expect(source).toContain("surface: 'canvas-toolbar'");
+    expect(source).toContain('createGraphCanvasContextMenuActions({');
+    expect(source).toContain('createGraphCanvasNodeContextMenu({');
+    expect(source).toContain('createGraphCanvasPaneContextMenu({');
+    expect(source).toContain('createGraphCanvasToolbarContribution({');
+    expect(source).not.toContain("createSlotContribution('toolbar'");
     expect(source).not.toContain('updateNode(');
     expect(source).not.toContain('createNode(');
     expect(source).not.toContain('reparentNode(');
+    expect(bindingSource).toContain("surface: 'pane-context-menu'");
+    expect(bindingSource).toContain("surface: 'node-context-menu'");
+    expect(bindingSource).toContain("positioning: 'hosted'");
   });
 });

@@ -26,7 +26,6 @@ import { ZoomProvider, useZoom } from '@/contexts/ZoomContext';
 import { BubbleProvider } from '@/contexts/BubbleContext';
 import { BubbleOverlay } from './BubbleOverlay';
 import { Loader2, Check } from 'lucide-react';
-import { FloatingToolbar } from './FloatingToolbar';
 import { useExportImage } from '@/hooks/useExportImage';
 import { useContextMenu } from '@/hooks/useContextMenu';
 import { ExportDialog } from './ExportDialog';
@@ -78,10 +77,15 @@ import { resolveNodeEditContext } from '@/components/editor/workspaceEditUtils';
 import type { CreatableNodeType } from '@/types/contextMenu';
 import {
   OverlayHostProvider,
-  createSlotContribution,
-  resolveToolbarAnchor,
   useOverlayHost,
 } from '@/features/overlay-host';
+import { canvasRuntime } from '@/processes/canvas-runtime/createCanvasRuntime';
+import {
+  createGraphCanvasContextMenuActions,
+  createGraphCanvasNodeContextMenu,
+  createGraphCanvasPaneContextMenu,
+  createGraphCanvasToolbarContribution,
+} from '@/processes/canvas-runtime/bindings/graphCanvasHost';
 
 type GraphCanvasProps = {
   onNodeDragStop?: (payload: {
@@ -489,13 +493,10 @@ function GraphCanvasContent({
     showToast('그룹 노드가 선택되었습니다.');
   }, [setSelectedNodes, showToast]);
 
-  const contextMenuActions = useMemo(() => ({
-    fitView: () => {
-      handleFitView();
-    },
-    copyImageToClipboard: (ids?: string[]) => {
-      return copyImageToClipboard(ids);
-    },
+  const contextMenuActions = useMemo(() => createGraphCanvasContextMenuActions({
+    copyImageToClipboard,
+    handleFitView,
+    selectMindMapGroupByNodeId,
     openExportDialog: (scope: 'selection' | 'full', selectedNodeIds?: string[]) => {
       setExportDialog({
         isOpen: true,
@@ -503,85 +504,31 @@ function GraphCanvasContent({
         selectedNodeIds: scope === 'selection' ? selectedNodeIds : undefined,
       });
     },
-    selectMindMapGroupByNodeId,
-    renameNode: (nodeId: string) => onRenameNode?.(buildGraphCanvasRenameIntent(nodeId)),
-    createCanvasNode: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => {
-      if (!onCreateNode) {
-        return;
-      }
-      const position = screenToFlowPosition(screenPosition);
-      return onCreateNode(buildGraphCanvasCreateIntent({
-        surfaceId: 'pane-context-menu',
-        surface: 'pane-context-menu',
-        trigger: { source: 'menu' },
-        nodeType,
-        placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
-      }));
-    },
-    createMindMapChild: (renderedNodeId: string) => {
-      if (!onCreateNode) {
-        return;
-      }
-      const targetNode = useGraphStore.getState().nodes.find((item) => item.id === renderedNodeId);
-      const sourceMeta = (targetNode?.data as { sourceMeta?: Record<string, unknown> } | undefined)?.sourceMeta;
-      const parentId = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
-      return onCreateNode(buildGraphCanvasCreateIntent({
-        surfaceId: 'node-context-menu',
-        surface: 'node-context-menu',
-        trigger: { source: 'menu' },
-        nodeType: 'shape',
-        placement: { mode: 'mindmap-child', parentId },
-        targetRenderedNodeId: renderedNodeId,
-        filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
-        scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
-        frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
-      }));
-    },
-    createMindMapSibling: (renderedNodeId: string) => {
-      if (!onCreateNode) {
-        return;
-      }
+    screenToFlowPosition,
+    resolveNode: (nodeId: string) => useGraphStore.getState().nodes.find((item) => item.id === nodeId),
+    resolveParentNodeId: (nodeId: string) => {
       const runtime = useGraphStore.getState();
-      const targetNode = runtime.nodes.find((item) => item.id === renderedNodeId);
-      const sourceMeta = (targetNode?.data as { sourceMeta?: Record<string, unknown> } | undefined)?.sourceMeta;
-      const parentEdge = runtime.edges.find((edge) => edge.target === renderedNodeId);
-      const parentNode = parentEdge
-        ? runtime.nodes.find((item) => item.id === parentEdge.source)
-        : null;
-      const parentSourceMeta = (parentNode?.data as { sourceMeta?: Record<string, unknown> } | undefined)?.sourceMeta;
-      const parentId = parentSourceMeta && typeof parentSourceMeta.sourceId === 'string'
-        ? parentSourceMeta.sourceId
-        : null;
-      const siblingOf = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
-      return onCreateNode(buildGraphCanvasCreateIntent({
-        surfaceId: 'node-context-menu',
-        surface: 'node-context-menu',
-        trigger: { source: 'menu' },
-        nodeType: 'shape',
-        placement: { mode: 'mindmap-sibling', siblingOf, parentId },
-        targetRenderedNodeId: renderedNodeId,
-        filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
-        scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
-        frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
-      }));
+      return runtime.edges.find((edge) => edge.target === nodeId)?.source ?? null;
     },
+    onRenameNode,
+    onCreateNode,
+    buildRenameIntent: buildGraphCanvasRenameIntent,
+    buildCreateIntent: buildGraphCanvasCreateIntent,
   }), [copyImageToClipboard, handleFitView, onCreateNode, onRenameNode, screenToFlowPosition, selectMindMapGroupByNodeId]);
 
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: FlowNode) => {
       event.preventDefault();
-      const currentSelectedIds = useGraphStore.getState().selectedNodeIds;
-      const nextSelectedIds = currentSelectedIds.includes(node.id)
-        ? currentSelectedIds
-        : [node.id];
-      openMenu({
-        type: 'node',
-        position: { x: event.clientX, y: event.clientY },
-        nodeId: node.id,
-        nodeFamily: resolveNodeEditContext(node, useGraphStore.getState().currentFile).editMeta?.family,
-        selectedNodeIds: nextSelectedIds,
+      const runtime = useGraphStore.getState();
+      openMenu(createGraphCanvasNodeContextMenu({
+        eventPosition: { x: event.clientX, y: event.clientY },
+        node,
+        selectedNodeIds: runtime.selectedNodeIds,
+        resolveNodeFamily: (resolvedNode) => (
+          resolveNodeEditContext(resolvedNode, useGraphStore.getState().currentFile).editMeta?.family
+        ),
         actions: contextMenuActions,
-      }, {
+      }), {
         triggerElement: event.currentTarget as HTMLElement,
       });
     },
@@ -591,12 +538,10 @@ function GraphCanvasContent({
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
       event.preventDefault();
-      openMenu({
-        type: 'pane',
-        position: { x: event.clientX, y: event.clientY },
-        selectedNodeIds: [],
+      openMenu(createGraphCanvasPaneContextMenu({
+        eventPosition: { x: event.clientX, y: event.clientY },
         actions: contextMenuActions,
-      }, {
+      }), {
         triggerElement: event.currentTarget as HTMLElement,
       });
     },
@@ -1039,30 +984,21 @@ function GraphCanvasContent({
     [hasPendingUiActions, onWashiPresetChange, runPendingUiAction, selectedWashiNodeIds, showToast],
   );
 
-  const toolbarContribution = useMemo(() => createSlotContribution('toolbar', {
-    anchor: resolveToolbarAnchor(typeof window !== 'undefined'
-      ? { width: window.innerWidth, height: window.innerHeight }
-      : { width: 1024, height: 768 }),
-    focusPolicy: {
-      openTarget: 'none',
-      restoreTarget: 'none',
-    },
-    render: () => (
-      <FloatingToolbar
-        positioning="hosted"
-        interactionMode={interactionMode}
-        onInteractionModeChange={setEntrypointInteractionMode}
-        createMode={createMode}
-        onCreateModeChange={setEntrypointCreateMode}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onFitView={handleFitView}
-        washiPresets={washiPresets}
-        washiPresetEnabled={selectedWashiNodeIds.length > 0}
-        activeWashiPresetId={activeWashiPresetId}
-        onSelectWashiPreset={handleWashiPresetSelect}
-      />
-    ),
+  const toolbarContribution = useMemo(() => createGraphCanvasToolbarContribution({
+    runtime: canvasRuntime,
+    toolbarSlot: canvasRuntime.slots.canvasToolbar,
+    selectionFloatingMenuSlot: canvasRuntime.slots.selectionFloatingMenu,
+    interactionMode,
+    setEntrypointInteractionMode,
+    createMode,
+    setEntrypointCreateMode,
+    handleZoomIn,
+    handleZoomOut,
+    handleFitView,
+    washiPresets,
+    activeWashiPresetId,
+    selectedWashiNodeIds,
+    onSelectWashiPreset: handleWashiPresetSelect,
   }), [
     activeWashiPresetId,
     createMode,

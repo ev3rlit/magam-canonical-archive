@@ -2,15 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { OverlayDismissReason } from '@/features/overlay-host';
 import { useOverlayHost } from '@/features/overlay-host';
 import type { ContextMenuContext, ContextMenuItem } from '@/types/contextMenu';
-import { nodeMenuItems, paneMenuItems } from '@/config/contextMenuItems';
 import { createContextMenuOverlayContribution } from '@/components/ContextMenu';
 import {
-  createEntrypointAnchor,
-  createOpenSurfaceDescriptor,
-} from '@/features/canvas-ui-entrypoints/ui-runtime-state';
+  resolveCanvasContextMenuSession,
+  resolveContextMenuSurfaceKind,
+} from '@/processes/canvas-runtime/bindings/contextMenu';
+import { canvasRuntime } from '@/processes/canvas-runtime/createCanvasRuntime';
 import { useGraphStore } from '@/store/graph';
 import {
-  sanitizeContextMenuItems,
   shouldDismissContextMenuForSelectionChange,
 } from './useContextMenu.helpers';
 
@@ -20,14 +19,6 @@ export interface ContextMenuState {
   items: ContextMenuItem[];
   instanceId: string | null;
   lastDismissReason?: OverlayDismissReason;
-}
-
-function buildContextMenuAnchorId(ctx: ContextMenuContext): string {
-  if (ctx.type === 'node') {
-    return `context-menu:node:${ctx.nodeId ?? 'unknown'}`;
-  }
-
-  return 'context-menu:pane';
 }
 
 export function useContextMenu() {
@@ -83,51 +74,32 @@ export function useContextMenu() {
       selectionOwnerElement?: HTMLElement | null;
     },
   ) => {
-    const rawItems = ctx.type === 'node' ? nodeMenuItems : paneMenuItems;
-    const items = sanitizeContextMenuItems(rawItems, ctx);
-    const anchorId = ctx.anchorId ?? buildContextMenuAnchorId(ctx);
-    const surfaceKind: NonNullable<ContextMenuContext['surfaceKind']> = ctx.type === 'node'
-      ? 'node-context-menu'
-      : 'pane-context-menu';
-    const nextContext: ContextMenuContext = {
-      ...ctx,
-      anchorId,
-      surfaceKind,
-    };
+    const resolved = resolveCanvasContextMenuSession({
+      context: ctx,
+      runtime: canvasRuntime,
+    });
 
-    registerEntrypointAnchor(createEntrypointAnchor({
-      anchorId,
-      kind: 'pointer',
-      ownerId: ctx.nodeId,
-      nodeIds: ctx.selectedNodeIds,
-      screen: { x: ctx.position.x, y: ctx.position.y },
-    }));
-    openEntrypointSurface(createOpenSurfaceDescriptor({
-      kind: surfaceKind,
-      anchorId,
-      ownerId: ctx.nodeId,
-      dismissOnSelectionChange: ctx.type === 'node',
-      dismissOnViewportChange: true,
-    }));
+    registerEntrypointAnchor(resolved.anchor);
+    openEntrypointSurface(resolved.openSurface);
 
     const contribution = createContextMenuOverlayContribution({
-      slot: surfaceKind,
-      items,
-      context: nextContext,
+      slot: resolved.surfaceKind,
+      items: resolved.items,
+      context: resolved.context,
       triggerElement: options?.triggerElement ?? null,
       selectionOwnerElement: options?.selectionOwnerElement ?? null,
       onDismiss: (reason) => {
         const runtimeOpenSurface = useGraphStore.getState().entrypointRuntime.openSurface;
         if (
-          runtimeOpenSurface?.kind === surfaceKind
-          && runtimeOpenSurface.anchorId === anchorId
+          runtimeOpenSurface?.kind === resolved.surfaceKind
+          && runtimeOpenSurface.anchorId === resolved.anchorId
         ) {
-          clearEntrypointAnchor(anchorId);
+          clearEntrypointAnchor(resolved.anchorId);
           closeEntrypointSurface();
         }
 
         setState((prev) => (
-          prev.context?.anchorId === anchorId
+          prev.context?.anchorId === resolved.anchorId
             ? {
                 ...prev,
                 isOpen: false,
@@ -149,8 +121,8 @@ export function useContextMenu() {
 
     setState({
       isOpen: true,
-      context: nextContext,
-      items,
+      context: resolved.context,
+      items: resolved.items,
       instanceId: nextInstanceId,
       lastDismissReason: stateRef.current.lastDismissReason,
     });
@@ -178,9 +150,7 @@ export function useContextMenu() {
       return;
     }
 
-    const expectedSurfaceKind: NonNullable<ContextMenuContext['surfaceKind']> = currentContext.type === 'node'
-      ? 'node-context-menu'
-      : 'pane-context-menu';
+    const expectedSurfaceKind = resolveContextMenuSurfaceKind(currentContext);
     const openSurfaceMatches = openSurface?.kind === expectedSurfaceKind
       && openSurface.anchorId === currentContext.anchorId;
     const activeInstanceExists = stateRef.current.instanceId

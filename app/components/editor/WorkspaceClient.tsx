@@ -29,14 +29,11 @@ import {
   buildRelativeMoveCommand,
   toUpdateNodeProps,
 } from '@/features/editing/commands';
-import { routeIntent } from '@/features/editing/actionRoutingBridge/routeIntent';
 import {
-  type ActionRoutingError,
   type ActionRoutingHistoryEffect,
   type ActionRoutingSurfaceId,
   type MutationDispatchDescriptor,
   type RuntimeActionDescriptor,
-  type UIIntentEnvelope,
 } from '@/features/editing/actionRoutingBridge/types';
 import {
   getWashiPresetPatternCatalog,
@@ -46,12 +43,10 @@ import { editDebugLog } from '@/utils/editDebug';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { resolveMindMapReparentIntent } from '@/components/GraphCanvas.drag';
 import { RPC_ERRORS } from '@/ws/rpc';
-import type {
-  ActionRoutingIntent as LegacyActionRoutingIntent,
-  ActionRoutingResolvedContext as LegacyActionRoutingResolvedContext,
-  ActionRoutingTrigger as LegacyActionRoutingTrigger,
-  EntryPointSurface as LegacyEntryPointSurface,
-} from '@/features/editing/actionRoutingBridge.types';
+import {
+  createCanvasActionDispatchBinding,
+  resolveLegacyEntrypointSurface,
+} from '@/processes/canvas-runtime/bindings/actionDispatch';
 import {
   createPaneActionRoutingContext,
   canCommitTextEdit,
@@ -84,33 +79,9 @@ type MagamTestHooks = {
   openFile: (pageId: string) => boolean;
 };
 
-type CompatActionRoutingIntent = LegacyActionRoutingIntent | 'content-update';
-
-type CompatActionRoutingRequest = {
-  surface: LegacyEntryPointSurface;
-  intent: CompatActionRoutingIntent;
-  resolvedContext: LegacyActionRoutingResolvedContext;
-  uiPayload: Record<string, unknown>;
-  trigger: LegacyActionRoutingTrigger;
-};
-
 function getNodeLabel(node: { data?: unknown }): string {
   const data = (node.data || {}) as Record<string, unknown>;
   return typeof data.label === 'string' ? data.label : '';
-}
-
-const ACTION_ROUTING_RPC_ERRORS: Record<ActionRoutingError['code'], { code: number; message: string }> = {
-  INTENT_NOT_REGISTERED: RPC_ERRORS.INTENT_NOT_REGISTERED,
-  INTENT_SURFACE_NOT_ALLOWED: RPC_ERRORS.INTENT_SURFACE_NOT_ALLOWED,
-  INTENT_GATING_DENIED: RPC_ERRORS.INTENT_GATING_DENIED,
-  INTENT_PAYLOAD_INVALID: RPC_ERRORS.INTENT_PAYLOAD_INVALID,
-  DISPATCH_PLAN_INVALID: RPC_ERRORS.DISPATCH_PLAN_INVALID,
-  OPTIMISTIC_CONFLICT: RPC_ERRORS.OPTIMISTIC_CONFLICT,
-};
-
-function toActionRoutingRpcError(error: ActionRoutingError): RpcClientError {
-  const mapped = ACTION_ROUTING_RPC_ERRORS[error.code] ?? RPC_ERRORS.PATCH_FAILED;
-  return new RpcClientError(mapped.code, mapped.message, error.details);
 }
 declare global {
   interface Window {
@@ -336,32 +307,6 @@ export function WorkspaceClient() {
     }));
   }, []);
 
-  const normalizeActionRoutingSurfaceId = useCallback((input: {
-    surfaceId?: ActionRoutingSurfaceId;
-    surface?: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu' | 'selection-floating-menu';
-  }): ActionRoutingSurfaceId => {
-    if (input.surfaceId) {
-      return input.surfaceId;
-    }
-    if (input.surface === 'canvas-toolbar') {
-      return 'toolbar';
-    }
-    return input.surface ?? 'selection-floating-menu';
-  }, []);
-
-  const resolveEntryPointSurface = useCallback((input: {
-    surfaceId?: ActionRoutingSurfaceId;
-    surface?: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu' | 'selection-floating-menu';
-  }): LegacyEntryPointSurface => {
-    if (input.surface) {
-      return input.surface;
-    }
-    if (input.surfaceId === 'toolbar') {
-      return 'canvas-toolbar';
-    }
-    return input.surfaceId ?? 'selection-floating-menu';
-  }, []);
-
   const applyRuntimeAction = useCallback((descriptor: RuntimeActionDescriptor) => {
     if (descriptor.actionId === 'apply-node-data-patch') {
       useGraphStore.getState().updateNodeData(descriptor.payload.nodeId, descriptor.payload.patch);
@@ -428,114 +373,29 @@ export function WorkspaceClient() {
     });
   }, [createNode, reparentNode, updateNode]);
 
-  const rollbackDispatches = useCallback((descriptors: readonly RuntimeActionDescriptor[]) => {
-    descriptors.forEach((descriptor) => applyRuntimeAction(descriptor));
-  }, [applyRuntimeAction]);
-
-  const executeBridgeIntent = useCallback(async (envelope: UIIntentEnvelope) => {
-    const runtime = useGraphStore.getState();
-    const routed = routeIntent({
-      envelope,
-      context: {
+  const { dispatchActionRoutingIntentOrThrow } = useMemo(() => createCanvasActionDispatchBinding({
+    getRuntime: () => {
+      const runtime = useGraphStore.getState();
+      return {
         nodes: runtime.nodes,
         edges: runtime.edges,
         currentFile: runtime.currentFile,
         sourceVersions: runtime.sourceVersions,
-      },
-    });
-    if (!routed.ok) {
-      throw toActionRoutingRpcError(routed.error);
-    }
-
-    const registeredPendingKeys: string[] = [];
-
-    try {
-      for (const step of routed.value.steps) {
-        if (step.kind === 'runtime-only-action') {
-          applyRuntimeAction(step);
-          continue;
-        }
-
-        if (step.optimisticMeta) {
-          registerPendingActionRouting(step.optimisticMeta);
-          registeredPendingKeys.push(step.optimisticMeta.pendingKey);
-        }
-
-        const result = await executeMutationDescriptor(step);
-        if (step.historyEffect) {
-          commitHistoryEffect(step.historyEffect, result);
-        }
-
-        if (step.optimisticMeta) {
-          clearPendingActionRouting(step.optimisticMeta.pendingKey);
-        }
-      }
-    } catch (error) {
-      rollbackDispatches(
-        routed.value.rollbackSteps.filter((step): step is RuntimeActionDescriptor => step.kind === 'runtime-only-action'),
-      );
-      registeredPendingKeys.forEach((pendingKey) => clearPendingActionRouting(pendingKey));
-      throw error;
-    }
-  }, [
+        selectedNodeIds: runtime.selectedNodeIds,
+      };
+    },
+    applyRuntimeAction,
+    executeMutationDescriptor,
+    commitHistoryEffect,
+    registerPendingActionRouting,
+    clearPendingActionRouting,
+  }), [
     applyRuntimeAction,
     clearPendingActionRouting,
     commitHistoryEffect,
     executeMutationDescriptor,
     registerPendingActionRouting,
-    rollbackDispatches,
   ]);
-
-  const dispatchActionRoutingIntentOrThrow = useCallback(async (request: CompatActionRoutingRequest) => {
-    const runtime = useGraphStore.getState();
-    const uiPayloadTarget = request.uiPayload as {
-      filePath?: unknown;
-      scopeId?: unknown;
-      frameScope?: unknown;
-    };
-    const targetRef = request.resolvedContext.target || typeof uiPayloadTarget.filePath === 'string'
-      ? {
-        renderedNodeId: request.resolvedContext.target?.renderedNodeId,
-        filePath: request.resolvedContext.target?.filePath
-          ?? (typeof uiPayloadTarget.filePath === 'string' ? uiPayloadTarget.filePath : undefined),
-        scopeId: request.resolvedContext.target?.scopeId
-          ?? (typeof uiPayloadTarget.scopeId === 'string' ? uiPayloadTarget.scopeId : undefined),
-        frameScope: request.resolvedContext.target?.frameScope
-          ?? (typeof uiPayloadTarget.frameScope === 'string' ? uiPayloadTarget.frameScope : undefined),
-      }
-      : undefined;
-
-    let intentId: UIIntentEnvelope['intentId'];
-    let optimistic = false;
-
-    if (request.intent === 'style-update') {
-      intentId = 'selection.style.update';
-      optimistic = true;
-    } else if (request.intent === 'rename-node') {
-      intentId = 'node.rename';
-    } else if (
-      request.intent === 'create-node'
-      || request.intent === 'create-mindmap-child'
-      || request.intent === 'create-mindmap-sibling'
-    ) {
-      intentId = 'node.create';
-    } else {
-      intentId = 'selection.content.update';
-      optimistic = true;
-    }
-
-    await executeBridgeIntent({
-      surfaceId: normalizeActionRoutingSurfaceId({ surface: request.surface }),
-      intentId,
-      selectionRef: {
-        selectedNodeIds: request.resolvedContext.selection.nodeIds,
-        currentFile: runtime.currentFile,
-      },
-      targetRef,
-      rawPayload: request.uiPayload,
-      optimistic,
-    });
-  }, [executeBridgeIntent, normalizeActionRoutingSurfaceId]);
 
   const handleNodeStyleCommit = useCallback(async (payload: {
     nodeId: string;
@@ -552,7 +412,7 @@ export function WorkspaceClient() {
 
     try {
       await dispatchActionRoutingIntentOrThrow({
-        surface: resolveEntryPointSurface({
+        surface: resolveLegacyEntrypointSurface({
           surfaceId: payload.surfaceId,
           surface: payload.surface,
         }),
@@ -576,7 +436,7 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [dispatchActionRoutingIntentOrThrow, resolveEntryPointSurface, setGraphError]);
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
 
   const handleWashiPresetChange = useCallback(
     async (nodeIds: string[], presetId: string) => {
@@ -621,7 +481,7 @@ export function WorkspaceClient() {
 
     try {
       await dispatchActionRoutingIntentOrThrow({
-        surface: resolveEntryPointSurface({
+        surface: resolveLegacyEntrypointSurface({
           surfaceId: input.surfaceId,
           surface: input.surface,
         }),
@@ -645,7 +505,7 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [dispatchActionRoutingIntentOrThrow, resolveEntryPointSurface, setGraphError]);
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
 
   const handleCreateNodeCommit = useCallback(async (input: {
     surfaceId?: ActionRoutingSurfaceId;
@@ -690,7 +550,7 @@ export function WorkspaceClient() {
 
     try {
       await dispatchActionRoutingIntentOrThrow({
-        surface: resolveEntryPointSurface({
+        surface: resolveLegacyEntrypointSurface({
           surfaceId: input.surfaceId,
           surface: input.surface,
         }),
@@ -716,7 +576,7 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [dispatchActionRoutingIntentOrThrow, resolveEntryPointSurface, setGraphError]);
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
 
   const handleMindMapReparentCommit = useCallback(async (input: {
     draggedNodeId: string;
