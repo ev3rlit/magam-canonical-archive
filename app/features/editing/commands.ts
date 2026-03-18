@@ -65,6 +65,51 @@ export interface ReparentPayload {
   next: { parentId: string | null };
 }
 
+export type PluginInstanceCommandType =
+  | 'plugin-instance.create'
+  | 'plugin-instance.update-props'
+  | 'plugin-instance.update-binding'
+  | 'plugin-instance.remove';
+
+export interface PluginInstanceRef {
+  instanceId: string;
+  pluginExportId?: string;
+  pluginVersionId?: string;
+}
+
+export interface PluginInstanceCreatePayload {
+  instance: {
+    id: string;
+    pluginExportId: string;
+    pluginVersionId: string;
+    displayName?: string;
+    props?: Record<string, unknown>;
+    bindingConfig?: Record<string, unknown>;
+    persistedState?: Record<string, unknown>;
+  };
+}
+
+export interface PluginInstanceUpdatePropsPayload {
+  instanceId: string;
+  patch: Record<string, unknown>;
+}
+
+export interface PluginInstanceUpdateBindingPayload {
+  instanceId: string;
+  bindingConfig: Record<string, unknown>;
+}
+
+export interface PluginInstanceRemovePayload {
+  instanceId: string;
+}
+
+export interface PluginCommandEnvelope<TType extends PluginInstanceCommandType, TPayload> {
+  type: TType;
+  target: EditTarget;
+  plugin: PluginInstanceRef;
+  payload: TPayload;
+}
+
 export type AbsoluteMoveCommand = EditCommandEnvelope<'node.move.absolute', AbsoluteMovePayload>;
 export type RelativeMoveCommand = EditCommandEnvelope<'node.move.relative', RelativeMovePayload>;
 export type ContentUpdateCommand = EditCommandEnvelope<'node.content.update', ContentUpdatePayload>;
@@ -88,12 +133,29 @@ export type AnyEditCommand =
   | CreateCommand
   | ReparentCommand;
 
+export type AnyPluginCommand =
+  | PluginCommandEnvelope<'plugin-instance.create', PluginInstanceCreatePayload>
+  | PluginCommandEnvelope<'plugin-instance.update-props', PluginInstanceUpdatePropsPayload>
+  | PluginCommandEnvelope<'plugin-instance.update-binding', PluginInstanceUpdateBindingPayload>
+  | PluginCommandEnvelope<'plugin-instance.remove', PluginInstanceRemovePayload>;
+
 export function getPendingActionTypeForCommand(commandType: EditCommandType): string {
   return commandType;
 }
 
 export function createPendingRequestIdForCommand(commandType: EditCommandType, ownerId?: string): string {
   return createPendingUiRequestId(getPendingActionTypeForCommand(commandType), ownerId);
+}
+
+export function getPendingActionTypeForPluginCommand(commandType: PluginInstanceCommandType): string {
+  return commandType;
+}
+
+export function createPendingRequestIdForPluginCommand(
+  commandType: PluginInstanceCommandType,
+  ownerId?: string,
+): string {
+  return createPendingUiRequestId(getPendingActionTypeForPluginCommand(commandType), ownerId);
 }
 
 export function buildAbsoluteMoveCommand(input: {
@@ -232,6 +294,58 @@ export function buildReparentCommand(input: {
       previous: { parentId: input.previousParentId },
       next: { parentId: input.nextParentId },
     },
+  };
+}
+
+export function buildPluginInstanceCreateCommand(input: {
+  target: EditTarget;
+  plugin: PluginInstanceRef & { pluginExportId: string; pluginVersionId: string };
+  payload: PluginInstanceCreatePayload;
+}): PluginCommandEnvelope<'plugin-instance.create', PluginInstanceCreatePayload> {
+  return {
+    type: 'plugin-instance.create',
+    target: input.target,
+    plugin: input.plugin,
+    payload: input.payload,
+  };
+}
+
+export function buildPluginInstanceUpdatePropsCommand(input: {
+  target: EditTarget;
+  plugin: PluginInstanceRef;
+  payload: PluginInstanceUpdatePropsPayload;
+}): PluginCommandEnvelope<'plugin-instance.update-props', PluginInstanceUpdatePropsPayload> {
+  return {
+    type: 'plugin-instance.update-props',
+    target: input.target,
+    plugin: input.plugin,
+    payload: input.payload,
+  };
+}
+
+export function buildPluginInstanceUpdateBindingCommand(input: {
+  target: EditTarget;
+  plugin: PluginInstanceRef;
+  payload: PluginInstanceUpdateBindingPayload;
+}): PluginCommandEnvelope<'plugin-instance.update-binding', PluginInstanceUpdateBindingPayload> {
+  return {
+    type: 'plugin-instance.update-binding',
+    target: input.target,
+    plugin: input.plugin,
+    payload: input.payload,
+  };
+}
+
+export function buildPluginInstanceRemoveCommand(input: {
+  target: EditTarget;
+  plugin: PluginInstanceRef;
+  payload: PluginInstanceRemovePayload;
+}): PluginCommandEnvelope<'plugin-instance.remove', PluginInstanceRemovePayload> {
+  return {
+    type: 'plugin-instance.remove',
+    target: input.target,
+    plugin: input.plugin,
+    payload: input.payload,
   };
 }
 
