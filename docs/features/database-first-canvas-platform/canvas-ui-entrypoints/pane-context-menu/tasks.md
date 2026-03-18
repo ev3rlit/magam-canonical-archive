@@ -6,21 +6,21 @@
 
 ## Phase 1. Feature contribution
 
-- [ ] T001 Create `app/features/canvas-ui-entrypoints/pane-context-menu/types.ts` to define pane-specific context snapshots and action contracts.
-- [ ] T002 Create `app/features/canvas-ui-entrypoints/pane-context-menu/buildPaneMenuContext.ts` to build empty-surface context from runtime snapshots.
-- [ ] T003 [P] Create `app/features/canvas-ui-entrypoints/pane-context-menu/paneMenuItems.ts` to define pane-owned item inventory and ordering.
-- [ ] T004 Create `app/features/canvas-ui-entrypoints/pane-context-menu/contribution.ts` to export the fixed-slot pane contribution consumed by `canvas-runtime`.
-- [ ] T005 Create `app/features/canvas-ui-entrypoints/pane-context-menu/index.ts` to export the slice public surface.
+- [X] T001 Create `app/features/canvas-ui-entrypoints/pane-context-menu/types.ts` to define pane-specific context snapshots and action contracts.
+- [X] T002 Create `app/features/canvas-ui-entrypoints/pane-context-menu/buildPaneMenuContext.ts` to build empty-surface context from runtime snapshots.
+- [X] T003 [P] Create `app/features/canvas-ui-entrypoints/pane-context-menu/paneMenuItems.ts` to define pane-owned item inventory and ordering.
+- [X] T004 Create `app/features/canvas-ui-entrypoints/pane-context-menu/contribution.ts` to export the fixed-slot pane contribution consumed by `canvas-runtime`.
+- [X] T005 Create `app/features/canvas-ui-entrypoints/pane-context-menu/index.ts` to export the slice public surface.
 
 ## Phase 2. Action contract alignment
 
-- [ ] T006 Update `app/features/editing/actionRoutingBridge/registry.ts` and `app/features/editing/actionRoutingBridge/types.ts` only if pane menu adds new surface-level actions beyond `node.create` and runtime view callbacks.
-- [ ] T007 Update `app/types/contextMenu.ts` only if pane-specific context fields need shared type support after shell-boundary adoption.
+- [X] T006 Update `app/features/editing/actionRoutingBridge/registry.ts` and `app/features/editing/actionRoutingBridge/types.ts` only if pane menu adds new surface-level actions beyond `node.create` and runtime view callbacks.
+- [X] T007 Update `app/types/contextMenu.ts` only if pane-specific context fields need shared type support after shell-boundary adoption.
 
 ## Phase 3. Verification
 
-- [ ] T008 [P] Add `app/features/canvas-ui-entrypoints/pane-context-menu/paneMenuItems.test.ts` for pane-only item gating coverage.
-- [ ] T009 Add `app/features/canvas-ui-entrypoints/pane-context-menu/contribution.test.ts` to verify the fixed-slot contribution shape and empty-surface assumptions.
+- [X] T008 [P] Add `app/features/canvas-ui-entrypoints/pane-context-menu/paneMenuItems.test.ts` for pane-only item gating coverage.
+- [X] T009 Add `app/features/canvas-ui-entrypoints/pane-context-menu/contribution.test.ts` to verify the fixed-slot contribution shape and empty-surface assumptions.
 
 ## 의존성 메모
 

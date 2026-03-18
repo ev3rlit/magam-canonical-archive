@@ -18,6 +18,8 @@ import StickerNode from './nodes/StickerNode';
 import WashiTapeNode from './nodes/WashiTapeNode';
 import MarkdownNode from './nodes/MarkdownNode';
 import SequenceDiagramNode from './nodes/SequenceDiagramNode';
+import PluginNode from './nodes/PluginNode';
+import PluginFallbackNode from './nodes/PluginFallbackNode';
 import FloatingEdge from './edges/FloatingEdge';
 import { useLayout } from '../hooks/useLayout';
 import { resolveAnchors } from '@/utils/anchorResolver';
@@ -72,6 +74,7 @@ import {
   OverlayHostProvider,
   useOverlayHost,
 } from '@/features/overlay-host';
+import { PluginRuntimeProvider } from '@/features/plugin-runtime';
 import { canvasRuntime } from '@/processes/canvas-runtime/createCanvasRuntime';
 import {
   createGraphCanvasContextMenuActions,
@@ -259,6 +262,8 @@ function GraphCanvasContent({
       'washi-tape': WashiTapeNode,
       markdown: MarkdownNode,
       'sequence-diagram': SequenceDiagramNode,
+      plugin: PluginNode,
+      'plugin-fallback': PluginFallbackNode,
     }),
     [],
   );
@@ -559,8 +564,11 @@ function GraphCanvasContent({
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
       event.preventDefault();
+      const runtime = useGraphStore.getState();
       openMenu(createGraphCanvasPaneContextMenu({
         eventPosition: { x: event.clientX, y: event.clientY },
+        selectedNodeIds: runtime.selectedNodeIds,
+        canCreateNode: typeof runtime.currentFile === 'string' && runtime.currentFile.length > 0,
         actions: contextMenuActions,
       }), {
         triggerElement: event.currentTarget as HTMLElement,
@@ -1271,16 +1279,18 @@ export function GraphCanvas({
           <ZoomProvider>
             <BubbleProvider>
               <OverlayHostProvider>
-                <GraphCanvasContent
-                  onNodeDragStop={onNodeDragStop}
-                  onUndoEditStep={onUndoEditStep}
-                  onRedoEditStep={onRedoEditStep}
-                  mapEditErrorToToast={mapEditErrorToToast}
-                  onRenameNode={onRenameNode}
-                  onCreateNode={onCreateNode}
-                  onApplySelectionStyle={onApplySelectionStyle}
-                  onCommitSelectionContent={onCommitSelectionContent}
-                />
+                <PluginRuntimeProvider>
+                  <GraphCanvasContent
+                    onNodeDragStop={onNodeDragStop}
+                    onUndoEditStep={onUndoEditStep}
+                    onRedoEditStep={onRedoEditStep}
+                    mapEditErrorToToast={mapEditErrorToToast}
+                    onRenameNode={onRenameNode}
+                    onCreateNode={onCreateNode}
+                    onApplySelectionStyle={onApplySelectionStyle}
+                    onCommitSelectionContent={onCommitSelectionContent}
+                  />
+                </PluginRuntimeProvider>
               </OverlayHostProvider>
             </BubbleProvider>
           </ZoomProvider>

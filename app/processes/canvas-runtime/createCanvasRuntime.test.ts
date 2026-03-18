@@ -15,7 +15,8 @@ mock.module('lucide-react', () => ({
   Type: iconStub,
 }));
 
-const { nodeMenuItems, paneMenuItems } = await import('@/config/contextMenuItems');
+const { nodeMenuItems } = await import('@/config/contextMenuItems');
+const { paneMenuItems } = await import('@/features/canvas-ui-entrypoints/pane-context-menu/paneMenuItems');
 const {
   selectionFloatingMenuIntents,
   selectionFloatingMenuItems,

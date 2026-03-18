@@ -28,6 +28,7 @@ import {
   type OverlayInstanceState,
 } from '@/features/overlay-host';
 import type { ActionRoutingPendingRecord } from '@/features/editing/actionRoutingBridge/types';
+import { buildPaneMenuContext } from '@/features/canvas-ui-entrypoints/pane-context-menu';
 import type { ContextMenuActionsContext, ContextMenuContext } from '@/types/contextMenu';
 import type { CreatableNodeType } from '@/types/contextMenu';
 import type { MaterialPresetId } from '@/types/washiTape';
@@ -232,14 +233,16 @@ export function createGraphCanvasNodeContextMenu(input: {
 
 export function createGraphCanvasPaneContextMenu(input: {
   eventPosition: { x: number; y: number };
+  selectedNodeIds: string[];
+  canCreateNode: boolean;
   actions: ContextMenuActionsContext;
 }): ContextMenuContext {
-  return {
-    type: 'pane',
+  return buildPaneMenuContext({
     position: input.eventPosition,
-    selectedNodeIds: [],
+    selectedNodeIds: input.selectedNodeIds,
+    canCreateNode: input.canCreateNode,
     actions: input.actions,
-  };
+  });
 }
 
 export function createGraphCanvasSelectionFloatingMenuContribution(

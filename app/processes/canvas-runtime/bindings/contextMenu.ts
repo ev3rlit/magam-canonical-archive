@@ -1,4 +1,5 @@
-import { nodeMenuItems, paneMenuItems } from '@/config/contextMenuItems';
+import nodeContextMenuContribution from '@/features/canvas-ui-entrypoints/node-context-menu/contribution';
+import paneContextMenuContribution from '@/features/canvas-ui-entrypoints/pane-context-menu/contribution';
 import {
   createEntrypointAnchor,
   createOpenSurfaceDescriptor,
@@ -39,8 +40,8 @@ export interface ResolvedCanvasContextMenuSession {
 }
 
 const FALLBACK_REGISTRY: Record<CanvasContextMenuSurfaceKind, ReadonlyArray<ContextMenuItem>> = {
-  'pane-context-menu': paneMenuItems,
-  'node-context-menu': nodeMenuItems,
+  'pane-context-menu': paneContextMenuContribution.paneMenuItems ?? [],
+  'node-context-menu': nodeContextMenuContribution.nodeMenuItems ?? [],
 };
 
 function toContextMenuSlotKey(surfaceKind: CanvasContextMenuSurfaceKind): ContextMenuSlotKey {

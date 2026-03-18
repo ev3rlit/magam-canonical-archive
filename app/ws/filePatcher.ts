@@ -135,6 +135,46 @@ function throwPatchSurfaceViolation(input: {
     });
 }
 
+const PLUGIN_RUNTIME_ONLY_PATCH_KEYS = new Set([
+    'pluginInstanceId',
+    'pluginExportId',
+    'pluginVersionId',
+    'pluginProps',
+    'pluginState',
+    'persistedState',
+    'bindingConfig',
+    'binding',
+]);
+
+function throwPluginRuntimePatchViolation(input: {
+    rejectedKeys: string[];
+    failedAction: string;
+}): never {
+    throw buildRpcLikeError(RPC_ERRORS.PLUGIN_STATE_PATCH_REQUIRES_RUNTIME, {
+        rejectedKeys: input.rejectedKeys,
+        rollback: createIntentScopedDiagnostics({
+            failedAction: input.failedAction,
+            stage: 'file-patcher',
+            details: {
+                reason: 'PLUGIN_STATE_PATCH_REQUIRES_RUNTIME',
+            },
+        }),
+    });
+}
+
+function assertNoPluginRuntimeOnlyPatchKeys(
+    patch: Record<string, unknown>,
+    failedAction: string,
+): void {
+    const rejectedKeys = Object.keys(patch).filter((key) => PLUGIN_RUNTIME_ONLY_PATCH_KEYS.has(key));
+    if (rejectedKeys.length > 0) {
+        throwPluginRuntimePatchViolation({
+            rejectedKeys,
+            failedAction,
+        });
+    }
+}
+
 function getJsxTagName(node: t.JSXOpeningElement): string | null {
     return t.isJSXIdentifier(node.name) ? node.name.name : null;
 }
@@ -608,6 +648,7 @@ export async function patchFile(filePath: string, nodeId: string, props: NodePro
             throw new Error('ID_COLLISION');
         }
         const patchProps: Record<string, unknown> = { ...props };
+        assertNoPluginRuntimeOnlyPatchKeys(patchProps, 'node.update');
         assertContentContractPatchAllowed(tagName, patchProps, 'node.update');
         delete patchProps.content;
 
@@ -742,6 +783,7 @@ export async function patchNodeStyle(filePath: string, nodeId: string, patch: Re
 
         ensureNoSpreadAttributes(node.node);
         const tagName = getJsxTagName(node.node);
+        assertNoPluginRuntimeOnlyPatchKeys(patch, 'node.style.update');
         assertContentContractPatchAllowed(tagName, patch, 'node.style.update');
         const editableKeys = getJsxTagStyleEditableKeys(tagName || undefined);
         if (editableKeys.length === 0) {
@@ -792,6 +834,7 @@ export async function patchNodeRename(filePath: string, nodeId: string, nextId: 
 
 export async function patchNodeCreate(filePath: string, input: CreateNodeInput): Promise<void> {
     await patchWithMutator(filePath, (ast) => {
+        assertNoPluginRuntimeOnlyPatchKeys(input.props || {}, 'node.create');
         if (hasConflictingNodeId(ast, input.id, '')) {
             throw new Error('ID_COLLISION');
         }

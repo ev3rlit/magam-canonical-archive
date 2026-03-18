@@ -4,6 +4,11 @@ import type {
   DocumentRevisionRecord,
   ObjectRelationRecord,
   PersistenceResult,
+  PluginExportRecord,
+  PluginInstanceRecord,
+  PluginPackageRecord,
+  PluginPermissionRecord,
+  PluginVersionRecord,
 } from './records';
 import { errResult, okResult } from './records';
 import type {
@@ -26,6 +31,16 @@ import {
   deriveCanonicalText,
   derivePrimaryContentKind,
 } from './mappers';
+import {
+  isPluginCapabilitySet,
+  isPluginComponentKind,
+  isPluginExportName,
+  isPluginManifest,
+  isPluginOwnerKind,
+  isPluginPackageName,
+  isPluginPermissionKey,
+  isPluginVersionStatus,
+} from '../plugin-runtime-contract';
 
 const CANONICAL_PAYLOAD_PROP_KEYS = new Set([
   'semanticRole',
@@ -59,6 +74,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string';
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function isNumber(value: unknown): value is number {
@@ -373,6 +392,154 @@ export function validateDocumentRevisionRecord(record: DocumentRevisionRecord): 
   }
   if (!isRecord(record.mutationBatch)) {
     return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'mutationBatch must be an object.', { path: 'mutationBatch' });
+  }
+
+  return okResult(record);
+}
+
+export function validatePluginPackageRecord(record: PluginPackageRecord): PersistenceResult<PluginPackageRecord> {
+  if (!isNonEmptyString(record.id)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'id is required.', { path: 'id' });
+  }
+  if (record.workspaceId !== undefined && record.workspaceId !== null && !isNonEmptyString(record.workspaceId)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'workspaceId must be a non-empty string when provided.', {
+      path: 'workspaceId',
+    });
+  }
+  if (!isPluginPackageName(record.packageName)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'packageName must be a namespaced plugin package key.', {
+      path: 'packageName',
+    });
+  }
+  if (!isNonEmptyString(record.displayName)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'displayName is required.', { path: 'displayName' });
+  }
+  if (!isPluginOwnerKind(record.ownerKind)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'ownerKind must be workspace, user, or system.', {
+      path: 'ownerKind',
+    });
+  }
+  if (!isNonEmptyString(record.ownerId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'ownerId is required.', { path: 'ownerId' });
+  }
+
+  return okResult(record);
+}
+
+export function validatePluginVersionRecord(record: PluginVersionRecord): PersistenceResult<PluginVersionRecord> {
+  if (!isNonEmptyString(record.id)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'id is required.', { path: 'id' });
+  }
+  if (!isNonEmptyString(record.pluginPackageId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'pluginPackageId is required.', { path: 'pluginPackageId' });
+  }
+  if (!isNonEmptyString(record.version)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'version is required.', { path: 'version' });
+  }
+  if (!isPluginManifest(record.manifest)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'manifest must satisfy PluginManifest contract.', {
+      path: 'manifest',
+    });
+  }
+  if (!isNonEmptyString(record.bundleRef)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'bundleRef is required.', { path: 'bundleRef' });
+  }
+  if (!isNonEmptyString(record.integrityHash)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'integrityHash is required.', { path: 'integrityHash' });
+  }
+  if (!isPluginVersionStatus(record.status)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'status must be active, disabled, or deprecated.', {
+      path: 'status',
+    });
+  }
+
+  return okResult(record);
+}
+
+export function validatePluginExportRecord(record: PluginExportRecord): PersistenceResult<PluginExportRecord> {
+  if (!isNonEmptyString(record.id)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'id is required.', { path: 'id' });
+  }
+  if (!isNonEmptyString(record.pluginVersionId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'pluginVersionId is required.', { path: 'pluginVersionId' });
+  }
+  if (!isPluginExportName(record.exportName)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'exportName must be a namespaced key like chart.bar.', {
+      path: 'exportName',
+    });
+  }
+  if (!isPluginComponentKind(record.componentKind)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'componentKind must be widget, panel, or inspector.', {
+      path: 'componentKind',
+    });
+  }
+  if (!isRecord(record.propSchema)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'propSchema must be an object.', { path: 'propSchema' });
+  }
+  if (!isRecord(record.bindingSchema)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'bindingSchema must be an object.', { path: 'bindingSchema' });
+  }
+  if (!isPluginCapabilitySet(record.capabilities)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'capabilities must satisfy PluginCapabilitySet.', {
+      path: 'capabilities',
+    });
+  }
+
+  return okResult(record);
+}
+
+export function validatePluginPermissionRecord(record: PluginPermissionRecord): PersistenceResult<PluginPermissionRecord> {
+  if (!isNonEmptyString(record.id)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'id is required.', { path: 'id' });
+  }
+  if (!isNonEmptyString(record.pluginVersionId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'pluginVersionId is required.', { path: 'pluginVersionId' });
+  }
+  if (!isPluginPermissionKey(record.permissionKey)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'permissionKey must be a capability key like query:objects.', {
+      path: 'permissionKey',
+    });
+  }
+  if (!isRecord(record.permissionValue)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'permissionValue must be an object.', {
+      path: 'permissionValue',
+    });
+  }
+
+  return okResult(record);
+}
+
+export function validatePluginInstanceRecord(record: PluginInstanceRecord): PersistenceResult<PluginInstanceRecord> {
+  if (!isNonEmptyString(record.id)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'id is required.', { path: 'id' });
+  }
+  if (!isNonEmptyString(record.documentId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'documentId is required.', { path: 'documentId' });
+  }
+  if (!isNonEmptyString(record.surfaceId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'surfaceId is required.', { path: 'surfaceId' });
+  }
+  if (!isNonEmptyString(record.pluginExportId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'pluginExportId is required.', { path: 'pluginExportId' });
+  }
+  if (!isNonEmptyString(record.pluginVersionId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'pluginVersionId is required.', { path: 'pluginVersionId' });
+  }
+  if (!isNonEmptyString(record.displayName)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'displayName is required.', { path: 'displayName' });
+  }
+  if (record.props !== undefined && record.props !== null && !isRecord(record.props)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'props must be an object when provided.', { path: 'props' });
+  }
+  if (record.bindingConfig !== undefined && record.bindingConfig !== null && !isRecord(record.bindingConfig)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'bindingConfig must be an object when provided.', {
+      path: 'bindingConfig',
+    });
+  }
+  if (record.persistedState !== undefined && record.persistedState !== null && !isRecord(record.persistedState)) {
+    return errResult('PLUGIN_CONTRACT_VIOLATION', 'persistedState must be an object when provided.', {
+      path: 'persistedState',
+    });
   }
 
   return okResult(record);
