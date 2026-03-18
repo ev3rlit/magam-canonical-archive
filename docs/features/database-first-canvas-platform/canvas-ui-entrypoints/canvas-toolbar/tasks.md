@@ -7,22 +7,22 @@
 
 ## Phase 1. Feature contribution
 
-- [ ] T001 Create `app/features/canvas-ui-entrypoints/canvas-toolbar/types.ts` to define toolbar section ids, action kinds, and disabled-reason contracts.
-- [ ] T002 [P] Create `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarSections.ts` to define global toolbar section inventory and ordering.
-- [ ] T003 [P] Create `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarActions.ts` to normalize interaction, create, and viewport callbacks behind toolbar action contracts.
-- [ ] T004 Create `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarModel.ts` to derive renderable toolbar sections from runtime state and dispatch bindings.
-- [ ] T005 Create `app/features/canvas-ui-entrypoints/canvas-toolbar/contribution.ts` to export the toolbar fixed-slot contribution consumed by `processes/canvas-runtime`.
-- [ ] T006 Create `app/features/canvas-ui-entrypoints/canvas-toolbar/index.ts` to export the slice public surface.
+- [X] T001 Create `app/features/canvas-ui-entrypoints/canvas-toolbar/types.ts` to define toolbar section ids, action kinds, and disabled-reason contracts.
+- [X] T002 [P] Create `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarSections.ts` to define global toolbar section inventory and ordering.
+- [X] T003 [P] Create `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarActions.ts` to normalize interaction, create, and viewport callbacks behind toolbar action contracts.
+- [X] T004 Create `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarModel.ts` to derive renderable toolbar sections from runtime state and dispatch bindings.
+- [X] T005 Create `app/features/canvas-ui-entrypoints/canvas-toolbar/contribution.ts` to export the toolbar fixed-slot contribution consumed by `processes/canvas-runtime`.
+- [X] T006 Create `app/features/canvas-ui-entrypoints/canvas-toolbar/index.ts` to export the slice public surface.
 
 ## Phase 2. Intent alignment
 
-- [ ] T007 Update `app/features/editing/actionRoutingBridge/registry.ts` only if toolbar quick actions need additional runtime-only or mutation-backed intent coverage in the actual `routeIntent` path.
-- [ ] T008 Update `app/features/editing/actionRoutingBridge/types.ts` only if toolbar quick actions require new runtime-only action ids or payload contracts.
+- [X] T007 Update `app/features/editing/actionRoutingBridge/registry.ts` only if toolbar quick actions need additional runtime-only or mutation-backed intent coverage in the actual `routeIntent` path.
+- [X] T008 Update `app/features/editing/actionRoutingBridge/types.ts` only if toolbar quick actions require new runtime-only action ids or payload contracts.
 
 ## Phase 3. Verification
 
-- [ ] T009 [P] Add `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarModel.test.ts` for active-state, disabled-rule, and section-order coverage.
-- [ ] T010 Add `app/features/canvas-ui-entrypoints/canvas-toolbar/contribution.test.ts` to verify the fixed-slot contribution shape stays compatible with `canvas-runtime`.
+- [X] T009 [P] Add `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarModel.test.ts` for active-state, disabled-rule, and section-order coverage.
+- [X] T010 Add `app/features/canvas-ui-entrypoints/canvas-toolbar/contribution.test.ts` to verify the fixed-slot contribution shape stays compatible with `canvas-runtime`.
 
 ## 의존성 메모
 

@@ -17,6 +17,9 @@ mock.module('lucide-react', () => ({
 
 const { nodeMenuItems } = await import('@/config/contextMenuItems');
 const { paneMenuItems } = await import('@/features/canvas-ui-entrypoints/pane-context-menu/paneMenuItems');
+const { canvasToolbarSectionContributions } = await import(
+  '@/features/canvas-ui-entrypoints/canvas-toolbar/toolbarSections'
+);
 const { canvasRuntime, createCanvasRuntime } = await import('./createCanvasRuntime');
 
 describe('createCanvasRuntime', () => {
@@ -48,7 +51,9 @@ describe('createCanvasRuntime', () => {
   });
 
   it('preserves current pane/node menu inventories while leaving empty placeholders safe', () => {
-    expect(canvasRuntime.slots.canvasToolbar.items).toEqual([]);
+    expect(canvasRuntime.slots.canvasToolbar.items).toEqual(
+      canvasToolbarSectionContributions,
+    );
     expect(canvasRuntime.slots.selectionFloatingMenu.items).toEqual([]);
     expect(canvasRuntime.slots.paneContextMenu.items).toEqual(paneMenuItems);
     expect(canvasRuntime.slots.nodeContextMenu.items).toEqual(nodeMenuItems);
