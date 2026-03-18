@@ -89,13 +89,20 @@ type GraphCanvasProps = {
   onUndoEditStep?: () => Promise<boolean> | boolean;
   onRedoEditStep?: () => Promise<boolean> | boolean;
   mapEditErrorToToast?: (error: unknown) => string | null;
-  onRenameNode?: (nodeId: string) => Promise<void> | void;
+  onRenameNode?: (input: {
+    nodeId: string;
+    surface: 'node-context-menu';
+    trigger: { source: 'menu' };
+  }) => Promise<void> | void;
   onCreateNode?: (input: {
+    surface: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu';
+    trigger: { source: 'click' | 'menu' };
     nodeType: CreatableNodeType;
     placement: CreatePayload['placement'];
     filePath?: string;
     scopeId?: string;
     frameScope?: string;
+    targetNodeId?: string;
   }) => Promise<void> | void;
 };
 
@@ -354,13 +361,19 @@ function GraphCanvasContent({
       });
     },
     selectMindMapGroupByNodeId,
-    renameNode: (nodeId: string) => onRenameNode?.(nodeId),
+    renameNode: (nodeId: string) => onRenameNode?.({
+      nodeId,
+      surface: 'node-context-menu',
+      trigger: { source: 'menu' },
+    }),
     createCanvasNode: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => {
       if (!onCreateNode) {
         return;
       }
       const position = screenToFlowPosition(screenPosition);
       return onCreateNode({
+        surface: 'pane-context-menu',
+        trigger: { source: 'menu' },
         nodeType,
         placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
       });
@@ -373,11 +386,14 @@ function GraphCanvasContent({
       const sourceMeta = (targetNode?.data as { sourceMeta?: Record<string, unknown> } | undefined)?.sourceMeta;
       const parentId = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
       return onCreateNode({
+        surface: 'node-context-menu',
+        trigger: { source: 'menu' },
         nodeType: 'shape',
         placement: { mode: 'mindmap-child', parentId },
         filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
         scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
+        targetNodeId: renderedNodeId,
       });
     },
     createMindMapSibling: (renderedNodeId: string) => {
@@ -397,11 +413,14 @@ function GraphCanvasContent({
         : null;
       const siblingOf = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
       return onCreateNode({
+        surface: 'node-context-menu',
+        trigger: { source: 'menu' },
         nodeType: 'shape',
         placement: { mode: 'mindmap-sibling', siblingOf, parentId },
         filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
         scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
+        targetNodeId: renderedNodeId,
       });
     },
   }), [copyImageToClipboard, handleFitView, onCreateNode, onRenameNode, screenToFlowPosition, selectMindMapGroupByNodeId]);
@@ -508,6 +527,8 @@ function GraphCanvasContent({
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       try {
         await onCreateNode({
+          surface: 'canvas-toolbar',
+          trigger: { source: 'click' },
           nodeType: createMode,
           placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
         });

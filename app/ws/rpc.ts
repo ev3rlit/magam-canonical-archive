@@ -52,7 +52,12 @@ export const RPC_ERRORS = {
     INVALID_CONTENT_ROLE_BINDING: { code: 42209, message: 'INVALID_CONTENT_ROLE_BINDING' },
     RENDER_ROUTE_UNRESOLVED: { code: 42210, message: 'RENDER_ROUTE_UNRESOLVED' },
     PATCH_SURFACE_VIOLATION: { code: 42211, message: 'PATCH_SURFACE_VIOLATION' },
+    INVALID_INTENT: { code: 42212, message: 'INVALID_INTENT' },
+    NORMALIZATION_FAILED: { code: 42213, message: 'NORMALIZATION_FAILED' },
+    GATE_BLOCKED: { code: 42214, message: 'GATE_BLOCKED' },
     PATCH_FAILED: { code: 50001, message: 'PATCH_FAILED' },
+    EXECUTION_FAILED: { code: 50002, message: 'EXECUTION_FAILED' },
+    ADOPTION_VIOLATION: { code: 50003, message: 'ADOPTION_VIOLATION' },
 } as const;
 
 export function createResponse(id: number | string, result: unknown): JsonRpcResponse {

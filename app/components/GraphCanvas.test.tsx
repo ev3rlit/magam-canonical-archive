@@ -562,3 +562,16 @@ describe('GraphCanvas drag error toast suppression', () => {
     })).toBe(false);
   });
 });
+
+describe('GraphCanvas bridge adoption', () => {
+  it('toolbar and context menu create flows stamp surface metadata instead of calling mutations directly', async () => {
+    const source = await Bun.file(new URL('./GraphCanvas.tsx', import.meta.url)).text();
+
+    expect(source).toContain("surface: 'pane-context-menu'");
+    expect(source).toContain("surface: 'node-context-menu'");
+    expect(source).toContain("surface: 'canvas-toolbar'");
+    expect(source).not.toContain('updateNode(');
+    expect(source).not.toContain('createNode(');
+    expect(source).not.toContain('reparentNode(');
+  });
+});

@@ -433,3 +433,52 @@ describe('edit completion history', () => {
     expect(useGraphStore.getState().peekRedoEditEvent()?.eventId).toBe('event-reparent');
   });
 });
+
+describe('action routing optimistic lifecycle state', () => {
+  it('apply 이벤트는 pending token을 저장하고 commit/reject는 제거한다', () => {
+    useGraphStore.getState().applyActionRoutingLifecycleEvent({
+      phase: 'apply',
+      surface: 'pane-context-menu',
+      intent: 'create-node',
+      optimisticToken: 'opt-1',
+      rollbackToken: 'rb-1',
+    });
+
+    expect(useGraphStore.getState().actionRoutingPendingByToken).toEqual({
+      'opt-1': {
+        phase: 'apply',
+        surface: 'pane-context-menu',
+        intent: 'create-node',
+        optimisticToken: 'opt-1',
+        rollbackToken: 'rb-1',
+      },
+    });
+
+    useGraphStore.getState().applyActionRoutingLifecycleEvent({
+      phase: 'commit',
+      surface: 'pane-context-menu',
+      intent: 'create-node',
+      optimisticToken: 'opt-1',
+      rollbackToken: 'rb-1',
+    });
+    expect(useGraphStore.getState().actionRoutingPendingByToken).toEqual({});
+
+    useGraphStore.getState().applyActionRoutingLifecycleEvent({
+      phase: 'apply',
+      surface: 'selection-floating-menu',
+      intent: 'style-update',
+      optimisticToken: 'opt-2',
+      rollbackToken: 'rb-2',
+    });
+    useGraphStore.getState().applyActionRoutingLifecycleEvent({
+      phase: 'reject',
+      surface: 'selection-floating-menu',
+      intent: 'style-update',
+      optimisticToken: 'opt-2',
+      rollbackToken: 'rb-2',
+      reason: 'PATCH_SURFACE_VIOLATION',
+    });
+
+    expect(useGraphStore.getState().actionRoutingPendingByToken).toEqual({});
+  });
+});

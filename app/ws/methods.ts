@@ -40,6 +40,38 @@ type UpdateCommandType =
     | 'node.rename';
 const fileMutationLocks = new Map<string, Promise<void>>();
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function createIntentScopedDiagnostics(input: {
+    failedAction: string;
+    stage: string;
+    details?: Record<string, unknown>;
+}): Record<string, unknown> {
+    return {
+        failedAction: input.failedAction,
+        rollbackPolicy: 'intent-scoped',
+        stage: input.stage,
+        ...(input.details ?? {}),
+    };
+}
+
+function withDiagnostics(
+    data: unknown,
+    diagnostics: Record<string, unknown>,
+): Record<string, unknown> {
+    const base = isRecord(data) ? data : {};
+    const existingRollback = isRecord(base.rollback) ? base.rollback : {};
+    return {
+        ...base,
+        rollback: {
+            ...existingRollback,
+            ...diagnostics,
+        },
+    };
+}
+
 function ensureString(value: unknown, fieldName: string): string {
     if (!value || typeof value !== 'string') {
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} is required` };
@@ -283,21 +315,34 @@ async function handleNodeUpdate(
         });
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
-        if (typeof (e as any).code === 'number') throw e;
+        const failedAction = commandType ?? 'node.update';
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction,
+            stage: 'ws.node.update',
+            details: { nodeId },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
         const message = (e as Error).message;
-        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId } };
-        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: { nodeId, commandType } };
+        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId }, diagnostics) };
+        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: withDiagnostics({ nodeId, commandType }, diagnostics) };
         if (message === 'ID_COLLISION') {
             const collisionId = typeof props.id === 'string' ? props.id : nodeId;
-            throw { ...RPC_ERRORS.ID_COLLISION, data: { collisionIds: [collisionId] } };
+            throw { ...RPC_ERRORS.ID_COLLISION, data: withDiagnostics({ collisionIds: [collisionId] }, diagnostics) };
         }
         if (message === 'CONTENT_CONTRACT_VIOLATION') {
             throw {
                 ...RPC_ERRORS.CONTENT_CONTRACT_VIOLATION,
-                data: { nodeId, path: 'capabilities.content' },
+                data: withDiagnostics({ nodeId, path: 'capabilities.content' }, diagnostics),
             };
         }
-        throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
     }
 }
 
@@ -320,10 +365,22 @@ async function handleNodeMove(
         });
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
-        if (typeof (e as any).code === 'number') throw e;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'node.move',
+            stage: 'ws.node.move',
+            details: { nodeId },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
         const message = (e as Error).message;
-        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId } };
-        throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
+        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId }, diagnostics) };
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
     }
 }
 
@@ -358,11 +415,23 @@ async function handleNodeCreate(
         });
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
-        if (typeof (e as any).code === 'number') throw e;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'node.create',
+            stage: 'ws.node.create',
+            details: { nodeId: node.id },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
         const message = (e as Error).message;
-        if (message === 'ID_COLLISION') throw { ...RPC_ERRORS.ID_COLLISION, data: { collisionIds: [node.id] } };
-        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId: node.id } };
-        throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
+        if (message === 'ID_COLLISION') throw { ...RPC_ERRORS.ID_COLLISION, data: withDiagnostics({ collisionIds: [node.id] }, diagnostics) };
+        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId: node.id }, diagnostics) };
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
     }
 }
 
@@ -379,11 +448,23 @@ async function handleNodeDelete(
         });
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
-        if (typeof (e as any).code === 'number') throw e;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'node.delete',
+            stage: 'ws.node.delete',
+            details: { nodeId },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
         const message = (e as Error).message;
-        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId } };
-        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: { nodeId } };
-        throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
+        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId }, diagnostics) };
+        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: withDiagnostics({ nodeId }, diagnostics) };
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
     }
 }
 
@@ -401,12 +482,24 @@ async function handleNodeReparent(
         });
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
-        if (typeof (e as any).code === 'number') throw e;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'node.reparent',
+            stage: 'ws.node.reparent',
+            details: { nodeId, newParentId: newParentId ?? null },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
         const message = (e as Error).message;
-        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId } };
-        if (message === 'MINDMAP_CYCLE') throw { ...RPC_ERRORS.MINDMAP_CYCLE, data: { nodeId, newParentId } };
-        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: { nodeId, newParentId } };
-        throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
+        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId }, diagnostics) };
+        if (message === 'MINDMAP_CYCLE') throw { ...RPC_ERRORS.MINDMAP_CYCLE, data: withDiagnostics({ nodeId, newParentId }, diagnostics) };
+        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: withDiagnostics({ nodeId, newParentId }, diagnostics) };
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
     }
 }
 
