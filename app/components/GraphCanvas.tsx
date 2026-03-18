@@ -538,8 +538,11 @@ function GraphCanvasContent({
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
       event.preventDefault();
+      const runtime = useGraphStore.getState();
       openMenu(createGraphCanvasPaneContextMenu({
         eventPosition: { x: event.clientX, y: event.clientY },
+        selectedNodeIds: runtime.selectedNodeIds,
+        canCreateNode: typeof runtime.currentFile === 'string' && runtime.currentFile.length > 0,
         actions: contextMenuActions,
       }), {
         triggerElement: event.currentTarget as HTMLElement,
