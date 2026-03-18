@@ -45,6 +45,8 @@ interface FloatingToolbarProps {
   washiPresetEnabled?: boolean;
   activeWashiPresetId?: string | null;
   onSelectWashiPreset?: (presetId: string) => void;
+  positioning?: 'canvas' | 'hosted';
+  className?: string;
 }
 
 const TOOLBAR_CREATE_SURFACE_KIND = 'toolbar-create-menu';
@@ -88,6 +90,8 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   washiPresetEnabled = false,
   activeWashiPresetId = null,
   onSelectWashiPreset,
+  positioning = 'canvas',
+  className,
 }) => {
   const entrypointRuntime = useGraphStore((store) => store.entrypointRuntime);
   const setEntrypointInteractionMode = useGraphStore((store) => store.setEntrypointInteractionMode);
@@ -243,7 +247,13 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   };
 
   return (
-    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-full shadow-xl">
+    <div
+      className={cn(
+        'flex items-center gap-1 p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-full shadow-xl',
+        positioning === 'canvas' ? 'absolute bottom-8 left-1/2 -translate-x-1/2 z-50' : 'relative',
+        className,
+      )}
+    >
       <ToolbarButton
         active={resolvedInteractionMode === 'pointer'}
         onClick={() => {

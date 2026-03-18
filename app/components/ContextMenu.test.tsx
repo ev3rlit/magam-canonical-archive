@@ -1,10 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import React from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { ContextMenu, clampContextMenuPosition } from './ContextMenu';
+import {
+  ContextMenu,
+  clampContextMenuPosition,
+  createContextMenuOverlayContribution,
+} from './ContextMenu';
 import type { ContextMenuContext } from '@/types/contextMenu';
-import { useGraphStore } from '@/store/graph';
 
 type TestDom = {
   window: Window & typeof globalThis;
@@ -19,8 +22,6 @@ type TestEnvironment = {
   container: HTMLDivElement;
   root: Root;
 };
-
-const initialGraphState = useGraphStore.getState();
 
 function installDomGlobals(dom: TestDom) {
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
@@ -51,10 +52,6 @@ function installDomGlobals(dom: TestDom) {
     configurable: true,
     value: dom.window.MouseEvent,
   });
-  Object.defineProperty(globalThis, 'KeyboardEvent', {
-    configurable: true,
-    value: dom.window.KeyboardEvent,
-  });
 }
 
 function createEnvironment(): TestEnvironment {
@@ -70,13 +67,11 @@ function createEnvironment(): TestEnvironment {
 
 async function renderMenu(environment: TestEnvironment, input: {
   context: ContextMenuContext;
-  onClose?: () => void;
+  onClose?: (reason?: string) => void;
 }) {
   await act(async () => {
     environment.root.render(
       <ContextMenu
-        isOpen
-        position={{ x: 8, y: 8 }}
         items={[{
           type: 'action',
           id: 'rename',
@@ -95,7 +90,6 @@ describe('ContextMenu runtime-state integration', () => {
 
   beforeEach(() => {
     environment = createEnvironment();
-    useGraphStore.setState(initialGraphState);
   });
 
   afterEach(async () => {
@@ -103,40 +97,29 @@ describe('ContextMenu runtime-state integration', () => {
       environment.root.unmount();
     });
     environment.container.remove();
-    useGraphStore.setState(initialGraphState);
   });
 
-  it('prefers the shared runtime-state anchor position when available', async () => {
-    useGraphStore.setState((state) => ({
-      ...state,
-      entrypointRuntime: {
-        ...state.entrypointRuntime,
-        anchorsById: {
-          'menu-anchor': {
-            anchorId: 'menu-anchor',
-            kind: 'pointer',
-            screen: { x: 120, y: 96 },
-          },
-        },
-      },
-    }));
-
-    await renderMenu(environment, {
+  it('creates overlay contributions that preserve pointer anchor and slot ownership', () => {
+    const contribution = createContextMenuOverlayContribution({
+      slot: 'pane-context-menu',
+      items: [],
       context: {
         type: 'pane',
-        position: { x: 4, y: 4 },
-        anchorId: 'menu-anchor',
+        position: { x: 120, y: 96 },
         selectedNodeIds: [],
       },
     });
 
-    const menu = environment.dom.window.document.querySelector('[data-context-menu-root]') as HTMLDivElement | null;
-    expect(menu?.style.left).toBe('120px');
-    expect(menu?.style.top).toBe('96px');
+    expect(contribution.slot).toBe('pane-context-menu');
+    expect(contribution.anchor).toEqual({
+      type: 'pointer',
+      x: 120,
+      y: 96,
+    });
   });
 
-  it('closes on outside click while open', async () => {
-    let closed = false;
+  it('closes with programmatic-close after action click', async () => {
+    const onClose = mock((_reason?: string) => {});
 
     await renderMenu(environment, {
       context: {
@@ -144,13 +127,15 @@ describe('ContextMenu runtime-state integration', () => {
         position: { x: 20, y: 20 },
         selectedNodeIds: [],
       },
-      onClose: () => {
-        closed = true;
-      },
+      onClose,
     });
 
-    environment.dom.window.document.body.dispatchEvent(new environment.dom.window.MouseEvent('mousedown', { bubbles: true }));
-    expect(closed).toBe(true);
+    const button = environment.dom.window.document.querySelector('[data-context-menu-action]') as HTMLButtonElement | null;
+    await act(async () => {
+      button?.dispatchEvent(new environment.dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onClose).toHaveBeenCalledWith('programmatic-close');
   });
 
   it('clamps menu positions inside the viewport bounds', () => {
