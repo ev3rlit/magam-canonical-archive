@@ -51,37 +51,88 @@ function buildRpcLikeError(
     return error;
 }
 
-function throwContentContractViolation(detail: string): never {
+function createIntentScopedDiagnostics(input: {
+    failedAction: string;
+    stage: string;
+    details?: Record<string, unknown>;
+}): Record<string, unknown> {
+    return {
+        failedAction: input.failedAction,
+        rollbackPolicy: 'intent-scoped',
+        stage: input.stage,
+        ...(input.details ?? {}),
+    };
+}
+
+function throwContentContractViolation(input: {
+    detail: string;
+    failedAction: string;
+}): never {
     throw buildRpcLikeError(RPC_ERRORS.CONTENT_CONTRACT_VIOLATION, {
         path: 'capabilities.content',
         diagnostics: {
             path: 'capabilities.content',
-            message: detail,
+            message: input.detail,
         },
+        rollback: createIntentScopedDiagnostics({
+            failedAction: input.failedAction,
+            stage: 'file-patcher',
+            details: {
+                reason: 'CONTENT_CONTRACT_VIOLATION',
+            },
+        }),
     });
 }
 
 function assertContentContractPatchAllowed(
     tagName: string | null,
     patch: Record<string, unknown>,
+    failedAction: string,
 ): void {
     if ((tagName === 'Image' || tagName === 'Sequence') && 'content' in patch) {
-        throwContentContractViolation(
-            `${tagName} nodes do not accept string content patches; use their declared content contract.`,
-        );
+        throwContentContractViolation({
+            detail: `${tagName} nodes do not accept string content patches; use their declared content contract.`,
+            failedAction,
+        });
     }
 
     if (tagName !== 'Image' && ('src' in patch || 'alt' in patch || 'fit' in patch)) {
-        throwContentContractViolation('media content fields are only valid for Image nodes.');
+        throwContentContractViolation({
+            detail: 'media content fields are only valid for Image nodes.',
+            failedAction,
+        });
     }
 
     if (tagName !== 'Markdown' && 'source' in patch) {
-        throwContentContractViolation('markdown source fields are only valid for Markdown nodes.');
+        throwContentContractViolation({
+            detail: 'markdown source fields are only valid for Markdown nodes.',
+            failedAction,
+        });
     }
 
     if (tagName !== 'Sequence' && ('participants' in patch || 'messages' in patch)) {
-        throwContentContractViolation('sequence content fields are only valid for Sequence nodes.');
+        throwContentContractViolation({
+            detail: 'sequence content fields are only valid for Sequence nodes.',
+            failedAction,
+        });
     }
+}
+
+function throwPatchSurfaceViolation(input: {
+    rejectedKeys: string[];
+    editableKeys: string[];
+}): never {
+    throw buildRpcLikeError(RPC_ERRORS.PATCH_SURFACE_VIOLATION, {
+        rejectedKeys: input.rejectedKeys,
+        editableKeys: input.editableKeys,
+        rollback: createIntentScopedDiagnostics({
+            failedAction: 'node.style.update',
+            stage: 'file-patcher',
+            details: {
+                reason: 'PATCH_SURFACE_VIOLATION',
+            },
+        }),
+    });
 }
 
 function getJsxTagName(node: t.JSXOpeningElement): string | null {
@@ -557,7 +608,7 @@ export async function patchFile(filePath: string, nodeId: string, props: NodePro
             throw new Error('ID_COLLISION');
         }
         const patchProps: Record<string, unknown> = { ...props };
-        assertContentContractPatchAllowed(tagName, patchProps);
+        assertContentContractPatchAllowed(tagName, patchProps, 'node.update');
         delete patchProps.content;
 
         Object.entries(patchProps).forEach(([propName, propValue]) => {
@@ -659,7 +710,7 @@ export async function patchNodeContent(filePath: string, nodeId: string, content
 
         ensureNoSpreadAttributes(node.node);
         const tagName = getJsxTagName(node.node);
-        assertContentContractPatchAllowed(tagName, { content });
+        assertContentContractPatchAllowed(tagName, { content }, 'node.content.update');
         const labelAttr = getAttrByName(node.node, 'label');
         if (labelAttr) {
             const currentLabel = getAttributeValue(labelAttr);
@@ -691,21 +742,30 @@ export async function patchNodeStyle(filePath: string, nodeId: string, patch: Re
 
         ensureNoSpreadAttributes(node.node);
         const tagName = getJsxTagName(node.node);
-        assertContentContractPatchAllowed(tagName, patch);
+        assertContentContractPatchAllowed(tagName, patch, 'node.style.update');
         const editableKeys = getJsxTagStyleEditableKeys(tagName || undefined);
         if (editableKeys.length === 0) {
-            throw new Error('EDIT_NOT_ALLOWED');
+            throwPatchSurfaceViolation({
+                rejectedKeys: Object.keys(patch),
+                editableKeys,
+            });
         }
 
         const allowedKeySet = new Set(editableKeys);
         const patchEntries = Object.entries(patch);
         if (patchEntries.length === 0) {
-            throw new Error('EDIT_NOT_ALLOWED');
+            throwPatchSurfaceViolation({
+                rejectedKeys: [],
+                editableKeys,
+            });
         }
 
         for (const [key, value] of patchEntries) {
             if (!allowedKeySet.has(key)) {
-                throw new Error('EDIT_NOT_ALLOWED');
+                throwPatchSurfaceViolation({
+                    rejectedKeys: [key],
+                    editableKeys,
+                });
             }
             upsertJsxAttribute(node, key, value);
         }

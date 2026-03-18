@@ -1,6 +1,9 @@
 import type { Node } from 'reactflow';
+import type { CanonicalObject } from '@/features/render/canonicalObject';
+import type { ActionRoutingResolvedContext } from '@/features/editing/actionRoutingBridge.types';
 import type { WorkspaceStyleInput } from '@/features/workspace-styling';
 import {
+  EDIT_COMMAND_TYPES,
   getNodeEditMeta,
   isCommandAllowed,
   pickStylePatch,
@@ -27,6 +30,18 @@ export interface ResolvedNodeEditContext {
   };
   editMeta?: EditMeta;
   readOnlyReason?: string;
+}
+
+function getPrimaryContentKind(canonicalObject: CanonicalObject | undefined): string | undefined {
+  const content = canonicalObject?.capabilities?.content;
+  return content && typeof content.kind === 'string' ? content.kind : undefined;
+}
+
+function getCapabilityKeys(canonicalObject: CanonicalObject | undefined): string[] {
+  if (!canonicalObject?.capabilities || typeof canonicalObject.capabilities !== 'object') {
+    return [];
+  }
+  return Object.keys(canonicalObject.capabilities);
 }
 
 function deriveLocalSourceId(nodeId: string, frameScope: unknown): string {
@@ -66,6 +81,71 @@ export function resolveNodeEditContext(
     target,
     editMeta,
     readOnlyReason: editMeta?.readOnlyReason,
+  };
+}
+
+export function resolveNodeActionRoutingContext(
+  node: Pick<Node, 'id' | 'data'>,
+  currentFile: string | null,
+  selectedNodeIds: string[],
+): ActionRoutingResolvedContext {
+  const target = resolveNodeEditTarget(node, currentFile);
+  const editMeta = getNodeEditMeta(node);
+  const data = (node.data || {}) as Record<string, unknown>;
+  const sourceMeta = (data.sourceMeta || {}) as {
+    scopeId?: unknown;
+    frameScope?: unknown;
+  };
+  const canonicalObject = (data.canonicalObject || undefined) as CanonicalObject | undefined;
+
+  return {
+    surfaceId: currentFile ?? undefined,
+    selection: {
+      nodeIds: selectedNodeIds,
+      homogeneous: selectedNodeIds.length <= 1 || selectedNodeIds.every((nodeId) => nodeId === node.id),
+    },
+    target: {
+      renderedNodeId: node.id,
+      sourceId: target.nodeId,
+      filePath: target.filePath,
+      ...(typeof sourceMeta.scopeId === 'string' ? { scopeId: sourceMeta.scopeId } : {}),
+      ...(typeof sourceMeta.frameScope === 'string' ? { frameScope: sourceMeta.frameScope } : {}),
+    },
+    metadata: {
+      semanticRole: canonicalObject?.semanticRole,
+      primaryContentKind: getPrimaryContentKind(canonicalObject),
+      capabilities: getCapabilityKeys(canonicalObject),
+    },
+    editability: {
+      canMutate: !editMeta?.readOnlyReason,
+      allowedCommands: EDIT_COMMAND_TYPES.filter((commandType) => isCommandAllowed(editMeta, commandType)),
+      styleEditableKeys: editMeta?.styleEditableKeys ?? [],
+      reason: editMeta?.readOnlyReason,
+      editMeta,
+    },
+  };
+}
+
+export function createPaneActionRoutingContext(input: {
+  currentFile: string | null;
+  selectedNodeIds: string[];
+}): ActionRoutingResolvedContext {
+  const hasFile = typeof input.currentFile === 'string' && input.currentFile.length > 0;
+  return {
+    surfaceId: input.currentFile ?? undefined,
+    selection: {
+      nodeIds: input.selectedNodeIds,
+      homogeneous: input.selectedNodeIds.length <= 1,
+    },
+    metadata: {
+      capabilities: [],
+    },
+    editability: {
+      canMutate: hasFile,
+      allowedCommands: hasFile ? ['node.create'] : [],
+      styleEditableKeys: [],
+      ...(hasFile ? {} : { reason: 'SOURCE_VERSION_NOT_READY' }),
+    },
   };
 }
 
@@ -133,6 +213,21 @@ export function mapEditRpcErrorToToast(error: unknown): string | null {
   }
   if (rpc.code === 42211 || rpc.message === 'PATCH_SURFACE_VIOLATION') {
     return '허용되지 않은 편집 surface라서 변경을 적용할 수 없습니다.';
+  }
+  if (rpc.code === 42212 || rpc.message === 'INVALID_INTENT') {
+    return '이 UI 진입점에서는 지원되지 않는 액션입니다.';
+  }
+  if (rpc.code === 42213 || rpc.message === 'NORMALIZATION_FAILED') {
+    return '편집 대상을 canonical 기준으로 해석하지 못했습니다. 최신 상태를 확인해주세요.';
+  }
+  if (rpc.code === 42214 || rpc.message === 'GATE_BLOCKED') {
+    return '현재 selection/context에서는 이 액션을 실행할 수 없습니다.';
+  }
+  if (rpc.code === 50002 || rpc.message === 'EXECUTION_FAILED') {
+    return '공통 action bridge 실행에 실패했습니다. 잠시 후 다시 시도해주세요.';
+  }
+  if (rpc.code === 50003 || rpc.message === 'ADOPTION_VIOLATION') {
+    return '허용되지 않은 편집 경로가 감지되었습니다.';
   }
   if (rpc.code === 50001 || rpc.message === 'PATCH_FAILED') {
     return '편집 반영에 실패했습니다. 잠시 후 다시 시도해주세요.';
