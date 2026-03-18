@@ -71,8 +71,9 @@ import {
   shouldSuppressDragStopErrorToast,
   type GraphCanvasCreateMode,
 } from './GraphCanvas.drag';
-import type { CreatePayload } from '@/features/editing/commands';
+import type { ActionRoutingSurfaceId } from '@/features/editing/actionRoutingBridge/types';
 import { createPendingRequestIdForCommand } from '@/features/editing/commands';
+import type { CreatePayload } from '@/features/editing/commands';
 import { resolveNodeEditContext } from '@/components/editor/workspaceEditUtils';
 import type { CreatableNodeType } from '@/types/contextMenu';
 import {
@@ -94,22 +95,56 @@ type GraphCanvasProps = {
   onUndoEditStep?: () => Promise<boolean> | boolean;
   onRedoEditStep?: () => Promise<boolean> | boolean;
   mapEditErrorToToast?: (error: unknown) => string | null;
-  onRenameNode?: (input: {
-    nodeId: string;
-    surface: 'node-context-menu';
-    trigger: { source: 'menu' };
-  }) => Promise<void> | void;
-  onCreateNode?: (input: {
-    surface: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu';
-    trigger: { source: 'click' | 'menu' };
-    nodeType: CreatableNodeType;
-    placement: CreatePayload['placement'];
-    filePath?: string;
-    scopeId?: string;
-    frameScope?: string;
-    targetNodeId?: string;
-  }) => Promise<void> | void;
+  onRenameNode?: (input: GraphCanvasRenameIntentInput) => Promise<void> | void;
+  onCreateNode?: (input: GraphCanvasCreateIntentInput) => Promise<void> | void;
 };
+
+export interface GraphCanvasRenameIntentInput {
+  nodeId: string;
+  surfaceId: ActionRoutingSurfaceId;
+  surface?: 'node-context-menu';
+  trigger?: { source: 'menu' };
+}
+
+export interface GraphCanvasCreateIntentInput {
+  surfaceId: ActionRoutingSurfaceId;
+  surface?: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu';
+  trigger?: { source: 'click' | 'menu' };
+  nodeType: CreatableNodeType;
+  placement: CreatePayload['placement'];
+  targetRenderedNodeId?: string;
+  targetNodeId?: string;
+  filePath?: string;
+  scopeId?: string;
+  frameScope?: string;
+}
+
+export function buildGraphCanvasRenameIntent(nodeId: string): GraphCanvasRenameIntentInput {
+  return {
+    nodeId,
+    surfaceId: 'node-context-menu',
+    surface: 'node-context-menu',
+    trigger: { source: 'menu' },
+  };
+}
+
+export function buildGraphCanvasCreateIntent(
+  input: GraphCanvasCreateIntentInput,
+): GraphCanvasCreateIntentInput {
+  const surface = input.surface
+    ?? (input.surfaceId === 'toolbar'
+      ? 'canvas-toolbar'
+      : input.surfaceId);
+  const trigger = input.trigger
+    ?? { source: surface === 'canvas-toolbar' ? 'click' as const : 'menu' as const };
+
+  return {
+    ...input,
+    surface,
+    trigger,
+    targetNodeId: input.targetNodeId ?? input.targetRenderedNodeId,
+  };
+}
 
 type DragOriginState = {
   x: number;
@@ -469,22 +504,19 @@ function GraphCanvasContent({
       });
     },
     selectMindMapGroupByNodeId,
-    renameNode: (nodeId: string) => onRenameNode?.({
-      nodeId,
-      surface: 'node-context-menu',
-      trigger: { source: 'menu' },
-    }),
+    renameNode: (nodeId: string) => onRenameNode?.(buildGraphCanvasRenameIntent(nodeId)),
     createCanvasNode: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => {
       if (!onCreateNode) {
         return;
       }
       const position = screenToFlowPosition(screenPosition);
-      return onCreateNode({
+      return onCreateNode(buildGraphCanvasCreateIntent({
+        surfaceId: 'pane-context-menu',
         surface: 'pane-context-menu',
         trigger: { source: 'menu' },
         nodeType,
         placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
-      });
+      }));
     },
     createMindMapChild: (renderedNodeId: string) => {
       if (!onCreateNode) {
@@ -493,16 +525,17 @@ function GraphCanvasContent({
       const targetNode = useGraphStore.getState().nodes.find((item) => item.id === renderedNodeId);
       const sourceMeta = (targetNode?.data as { sourceMeta?: Record<string, unknown> } | undefined)?.sourceMeta;
       const parentId = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
-      return onCreateNode({
+      return onCreateNode(buildGraphCanvasCreateIntent({
+        surfaceId: 'node-context-menu',
         surface: 'node-context-menu',
         trigger: { source: 'menu' },
         nodeType: 'shape',
         placement: { mode: 'mindmap-child', parentId },
+        targetRenderedNodeId: renderedNodeId,
         filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
         scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
-        targetNodeId: renderedNodeId,
-      });
+      }));
     },
     createMindMapSibling: (renderedNodeId: string) => {
       if (!onCreateNode) {
@@ -520,16 +553,17 @@ function GraphCanvasContent({
         ? parentSourceMeta.sourceId
         : null;
       const siblingOf = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
-      return onCreateNode({
+      return onCreateNode(buildGraphCanvasCreateIntent({
+        surfaceId: 'node-context-menu',
         surface: 'node-context-menu',
         trigger: { source: 'menu' },
         nodeType: 'shape',
         placement: { mode: 'mindmap-sibling', siblingOf, parentId },
+        targetRenderedNodeId: renderedNodeId,
         filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
         scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
-        targetNodeId: renderedNodeId,
-      });
+      }));
     },
   }), [copyImageToClipboard, handleFitView, onCreateNode, onRenameNode, screenToFlowPosition, selectMindMapGroupByNodeId]);
 
@@ -583,12 +617,13 @@ function GraphCanvasContent({
         await runPendingUiAction({
           actionType: 'node.create',
           targetIds: [createMode],
-          execute: () => Promise.resolve(onCreateNode({
+          execute: () => Promise.resolve(onCreateNode(buildGraphCanvasCreateIntent({
+            surfaceId: 'toolbar',
             surface: 'canvas-toolbar',
             trigger: { source: 'click' },
             nodeType: createMode,
             placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
-          })),
+          }))),
         });
         setEntrypointCreateMode(null);
         showToast('새 오브젝트를 생성했습니다.');

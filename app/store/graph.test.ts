@@ -45,6 +45,29 @@ describe('graph metadata state', () => {
     expect(state.sourceVersions['examples/components/auth.tsx']).toBe('sha256:v3');
     expect(state.lastAppliedCommandId).toBe('cmd-1');
   });
+
+  it('pendingActionRoutingByKey는 register/clear lifecycle을 유지한다', () => {
+    useGraphStore.getState().registerPendingActionRouting({
+      pendingKey: 'selection-floating-menu:selection.style.update:shape-1:sha256:v1',
+      baseVersion: 'sha256:v1',
+      intentId: 'selection.style.update',
+      surfaceId: 'selection-floating-menu',
+      filePath: 'examples/main.tsx',
+      nodeId: 'shape-1',
+      rollbackSteps: [],
+      startedAt: 10,
+    });
+
+    expect(
+      useGraphStore.getState().pendingActionRoutingByKey['selection-floating-menu:selection.style.update:shape-1:sha256:v1'],
+    ).toBeDefined();
+
+    useGraphStore.getState().clearPendingActionRouting('selection-floating-menu:selection.style.update:shape-1:sha256:v1');
+
+    expect(
+      useGraphStore.getState().pendingActionRoutingByKey['selection-floating-menu:selection.style.update:shape-1:sha256:v1'],
+    ).toBeUndefined();
+  });
 });
 
 describe('font hierarchy state', () => {
