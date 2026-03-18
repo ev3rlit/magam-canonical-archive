@@ -151,4 +151,16 @@ describe('FloatingToolbar runtime-state integration', () => {
     expect(createToggle?.disabled).toBe(true);
     expect(presetToggle?.disabled).toBe(true);
   });
+
+  it('consumes the toolbar presenter binding instead of inline runtime-state wiring', async () => {
+    const source = await Bun.file(new URL('./FloatingToolbar.tsx', import.meta.url)).text();
+
+    expect(source).toContain('resolveToolbarPresenterState({');
+    expect(source).toContain('toggleToolbarCreateSurface({');
+    expect(source).toContain('toggleToolbarPresetSurface({');
+    expect(source).toContain('selectToolbarCreateMode({');
+    expect(source).toContain('selectToolbarPreset({');
+    expect(source).not.toContain('createOpenSurfaceDescriptor({');
+    expect(source).not.toContain('createEntrypointAnchor({');
+  });
 });

@@ -21,9 +21,20 @@
 ## 선행조건
 
 - `entrypoint-foundation`
+- `shell-adapter-boundary`
 - `canonical-mutation-query-core`
+
+## 통합 방식
+
+- 이 slice는 `app/features/canvas-ui-entrypoints/node-context-menu/contribution.ts`를 통해 `processes/canvas-runtime`의 node fixed slot에 연결된다.
+- menu 노출 기준은 renderer alias가 아니라 canonical metadata + relation context contribution에 담아야 한다.
 
 ## 완료 기준
 
 - 고빈도 스타일 편집은 floating menu에 남기고, 구조적 / 저빈도 action만 node context menu에 남는다.
 - 메뉴 노출은 renderer type이 아니라 canonical metadata와 relation context로 결정된다.
+
+## 관련 문서
+
+- `./implementation-plan.md`
+- `./tasks.md`
