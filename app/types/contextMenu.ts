@@ -1,9 +1,9 @@
 import { type ComponentType } from 'react';
-import type { CreatePayload } from '@/features/editing/commands';
+import type { CanvasEntrypointCreateNodeType } from '@/features/canvas-ui-entrypoints/contracts';
 import type { EntrypointSurfaceKind } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 
 export type ContextMenuTargetType = 'node' | 'pane';
-export type CreatableNodeType = Exclude<CreatePayload['nodeType'], 'image'>;
+export type CreatableNodeType = CanvasEntrypointCreateNodeType;
 
 export interface ContextMenuActionsContext {
     fitView?: () => void;

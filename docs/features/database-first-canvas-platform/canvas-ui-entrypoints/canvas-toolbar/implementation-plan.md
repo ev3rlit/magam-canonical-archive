@@ -79,8 +79,8 @@ toolbar lane의 기본 수정 경로:
 
 허용되는 shared 파일:
 
-- `app/features/editing/actionIntentCatalog.ts`
 - `app/features/editing/actionRoutingBridge/registry.ts`
+- `app/features/editing/actionRoutingBridge/types.ts`
 
 가능하면 피해야 하는 파일:
 
@@ -125,6 +125,7 @@ toolbar lane의 기본 수정 경로:
 
 1. create action은 `toolbar -> node.create` bridge를 유지한다.
 2. viewport quick control은 runtime callback으로만 연결한다.
+3. 실제 런타임 source of truth는 `routeIntent -> actionRoutingBridge/registry.ts`로 두고, legacy catalog는 기본 수정 경로로 두지 않는다.
 
 ## 8. 리스크와 대응
 

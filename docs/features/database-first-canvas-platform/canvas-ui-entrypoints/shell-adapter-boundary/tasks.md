@@ -7,7 +7,7 @@
 
 ## Phase 1. Runtime contract와 fixed slot
 
-- [X] T001 Create `app/processes/canvas-runtime/types.ts` to define `CanvasRuntimeContribution`, slot contracts, and binding contracts.
+- [X] T001 Create `app/features/canvas-ui-entrypoints/contracts.ts` and `app/processes/canvas-runtime/types.ts` to define stable entrypoint create/surface contracts plus `CanvasRuntimeContribution`, slot contracts, and binding contracts.
 - [X] T002 Create `app/processes/canvas-runtime/createCanvasRuntime.ts` to compose built-in surface contributions into one runtime object.
 - [X] T003 [P] Create `app/processes/canvas-runtime/builtin-slots/canvasToolbar.ts` as the fixed toolbar slot entry.
 - [X] T004 [P] Create `app/processes/canvas-runtime/builtin-slots/selectionFloatingMenu.ts` as the fixed selection-floating-menu slot entry.

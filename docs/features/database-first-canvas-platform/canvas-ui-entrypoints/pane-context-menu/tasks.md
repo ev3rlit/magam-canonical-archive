@@ -14,7 +14,7 @@
 
 ## Phase 2. Action contract alignment
 
-- [ ] T006 Update `app/features/editing/actionIntentCatalog.ts` and `app/features/editing/actionRoutingBridge/registry.ts` only if pane menu adds new surface-level actions beyond `node.create` and runtime view callbacks.
+- [ ] T006 Update `app/features/editing/actionRoutingBridge/registry.ts` and `app/features/editing/actionRoutingBridge/types.ts` only if pane menu adds new surface-level actions beyond `node.create` and runtime view callbacks.
 - [ ] T007 Update `app/types/contextMenu.ts` only if pane-specific context fields need shared type support after shell-boundary adoption.
 
 ## Phase 3. Verification

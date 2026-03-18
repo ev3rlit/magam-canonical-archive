@@ -75,8 +75,8 @@ node lane의 기본 수정 경로:
 허용되는 shared 파일:
 
 - `app/components/editor/workspaceEditUtils.ts`
-- `app/features/editing/actionIntentCatalog.ts`
 - `app/features/editing/actionRoutingBridge/registry.ts`
+- `app/features/editing/actionRoutingBridge/types.ts`
 - `app/types/contextMenu.ts`
 
 가능하면 피해야 하는 파일:
@@ -102,6 +102,7 @@ node lane의 기본 수정 경로:
 
 1. rename, child create, sibling create는 existing bridge를 재사용한다.
 2. duplicate/delete/lock/group action은 bridge intent 또는 explicit placeholder로 정리한다.
+3. 실제 런타임 source of truth는 `routeIntent -> actionRoutingBridge/registry.ts`로 둔다.
 
 ## 8. 리스크와 대응
 

@@ -16,8 +16,8 @@
 
 ## Phase 2. Intent alignment
 
-- [ ] T007 Update `app/features/editing/actionIntentCatalog.ts` to keep toolbar-owned actions explicitly listed and prevent pane/node/floating overlap.
-- [ ] T008 Update `app/features/editing/actionRoutingBridge/registry.ts` only if toolbar quick actions need additional runtime-only or mutation-backed intent coverage.
+- [ ] T007 Update `app/features/editing/actionRoutingBridge/registry.ts` only if toolbar quick actions need additional runtime-only or mutation-backed intent coverage in the actual `routeIntent` path.
+- [ ] T008 Update `app/features/editing/actionRoutingBridge/types.ts` only if toolbar quick actions require new runtime-only action ids or payload contracts.
 
 ## Phase 3. Verification
 

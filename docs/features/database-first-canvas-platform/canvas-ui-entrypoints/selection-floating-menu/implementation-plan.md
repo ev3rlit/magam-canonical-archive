@@ -73,8 +73,8 @@ selection-floating-menu lane의 기본 수정 경로:
 
 허용되는 shared 파일:
 
-- `app/features/editing/actionIntentCatalog.ts`
 - `app/features/editing/actionRoutingBridge/registry.ts`
+- `app/features/editing/actionRoutingBridge/types.ts`
 - `app/components/editor/workspaceEditUtils.ts`
 
 가능하면 피해야 하는 파일:
@@ -102,6 +102,7 @@ selection-floating-menu lane의 기본 수정 경로:
 1. style patch control은 existing bridge를 사용한다.
 2. content 계열 action은 content update bridge를 사용한다.
 3. object type change는 새 intent 또는 explicit placeholder로 처리한다.
+4. 실제 런타임 source of truth는 `routeIntent -> actionRoutingBridge/registry.ts`로 둔다.
 
 ## Phase 3. Toolbar ownership handoff
 

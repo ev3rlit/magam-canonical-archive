@@ -26,7 +26,13 @@
 4. `app/components/editor/WorkspaceClient.tsx`
 - surface-specific dispatch wiring이 한 파일에 집중돼 있다.
 
-즉 문제는 feature가 없어서가 아니라, feature가 shared shell 파일을 통해서만 앱에 연결된다는 점이다.
+5. shared entrypoint type coupling
+- `ui-runtime-state`, `GraphCanvas.drag.ts`, `contextMenu.ts`가 create/surface contract를 서로 간접 참조하고 있어 후속 lane이 shared type file에서 다시 만날 수 있다.
+
+6. runtime action routing source of truth
+- 실제 런타임 경로는 `WorkspaceClient -> routeIntent -> actionRoutingBridge/registry.ts`이며, surface lane 문서는 이 경로를 기본 기준으로 삼아야 한다.
+
+즉 문제는 feature가 없어서가 아니라, feature가 shared shell 파일과 shared type file을 통해서만 앱에 연결된다는 점이다.
 
 ## 3. 목표
 
@@ -111,6 +117,9 @@ feature는 이 레이어를 import하지 않고, runtime이 feature contribution
 - `app/features/canvas-ui-entrypoints/pane-context-menu/contribution.ts`
 - `app/features/canvas-ui-entrypoints/node-context-menu/contribution.ts`
 
+12. `app/features/canvas-ui-entrypoints/contracts.ts`
+- create mode, creatable node type, surface contract처럼 여러 surface가 함께 쓰는 낮은 안정 타입 정의
+
 ## 7. Phase 상세
 
 ## Phase 0. Contract와 slot ownership 고정
@@ -122,8 +131,9 @@ feature는 이 레이어를 import하지 않고, runtime이 feature contribution
 ### 작업
 
 1. runtime contribution 타입을 고정한다.
-2. fixed slot 이름과 feature export 경로를 고정한다.
-3. shared shell file이 앞으로 host/presenter/consumer 역할만 가진다는 점을 문서에 남긴다.
+2. shared entrypoint type을 `GraphCanvas`/context-menu 구현에서 분리한다.
+3. fixed slot 이름과 feature export 경로를 고정한다.
+4. shared shell file이 앞으로 host/presenter/consumer 역할만 가진다는 점을 문서에 남긴다.
 
 ### 완료 기준
 
@@ -137,7 +147,7 @@ feature는 이 레이어를 import하지 않고, runtime이 feature contribution
 
 ### 작업
 
-1. `types.ts`와 `createCanvasRuntime.ts`를 만든다.
+1. `contracts.ts`, `types.ts`, `createCanvasRuntime.ts`를 만든다.
 2. built-in slot 파일을 만든다.
 3. 각 feature의 placeholder `contribution.ts` export 경로를 예약한다.
 

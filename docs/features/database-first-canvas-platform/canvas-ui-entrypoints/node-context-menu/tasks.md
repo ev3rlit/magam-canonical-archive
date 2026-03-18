@@ -17,7 +17,7 @@
 ## Phase 2. Structural action alignment
 
 - [ ] T007 Update `app/components/editor/workspaceEditUtils.ts` to expose any additional canonical metadata and relation facts required by node-menu gating.
-- [ ] T008 Update `app/features/editing/actionIntentCatalog.ts` and `app/features/editing/actionRoutingBridge/registry.ts` to add or explicitly defer duplicate/delete/lock/group actions without local mutation fallbacks.
+- [ ] T008 Update `app/features/editing/actionRoutingBridge/registry.ts` and `app/features/editing/actionRoutingBridge/types.ts` to add or explicitly defer duplicate/delete/lock/group actions without local mutation fallbacks.
 - [ ] T009 Update `app/types/contextMenu.ts` only if richer node context fields are still needed after shell-boundary adoption.
 
 ## Phase 3. Verification

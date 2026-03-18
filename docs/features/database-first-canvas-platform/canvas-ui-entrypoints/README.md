@@ -370,7 +370,7 @@ v1에서 이 메뉴는 아래 원칙을 따른다.
 - interaction mode 전환
 - create tool 선택
 - viewport quick controls
-- selection-aware quick actions
+- canvas-global quick actions
 
 의존성:
 

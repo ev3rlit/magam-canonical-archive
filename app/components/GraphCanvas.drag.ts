@@ -1,4 +1,4 @@
-import type { CreatableNodeType } from '@/types/contextMenu';
+import type { CanvasEntrypointCreateMode } from '@/features/canvas-ui-entrypoints/contracts';
 
 export function shouldCommitDragStop(input: {
   origin?: { x: number; y: number };
@@ -8,7 +8,7 @@ export function shouldCommitDragStop(input: {
   return input.origin.x !== input.current.x || input.origin.y !== input.current.y;
 }
 
-export type GraphCanvasCreateMode = CreatableNodeType | null;
+export type GraphCanvasCreateMode = CanvasEntrypointCreateMode;
 
 type RpcLikeError = {
   code?: unknown;

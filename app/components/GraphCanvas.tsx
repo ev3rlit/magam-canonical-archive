@@ -56,6 +56,7 @@ import {
   createEntrypointAnchor,
   type EntrypointInteractionMode,
 } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
+import type { CanvasEntrypointSurface } from '@/features/canvas-ui-entrypoints/contracts';
 import {
   resolveMindMapDragFeedback,
   shouldCommitDragStop,
@@ -100,13 +101,13 @@ type GraphCanvasProps = {
 export interface GraphCanvasRenameIntentInput {
   nodeId: string;
   surfaceId: ActionRoutingSurfaceId;
-  surface?: 'node-context-menu';
+  surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
   trigger?: { source: 'menu' };
 }
 
 export interface GraphCanvasCreateIntentInput {
   surfaceId: ActionRoutingSurfaceId;
-  surface?: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu';
+  surface?: Exclude<CanvasEntrypointSurface, 'selection-floating-menu'>;
   trigger?: { source: 'click' | 'menu' };
   nodeType: CreatableNodeType;
   placement: CreatePayload['placement'];

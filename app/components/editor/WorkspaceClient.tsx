@@ -38,6 +38,7 @@ import {
 import {
   getWashiPresetPatternCatalog,
 } from '@/utils/washiTapeDefaults';
+import type { CanvasEntrypointSurface } from '@/features/canvas-ui-entrypoints/contracts';
 import { parseRenderGraph } from '@/features/render/parseRenderGraph';
 import { editDebugLog } from '@/utils/editDebug';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
@@ -306,7 +307,6 @@ export function WorkspaceClient() {
       )),
     }));
   }, []);
-
   const applyRuntimeAction = useCallback((descriptor: RuntimeActionDescriptor) => {
     if (descriptor.actionId === 'apply-node-data-patch') {
       useGraphStore.getState().updateNodeData(descriptor.payload.nodeId, descriptor.payload.patch);
@@ -401,7 +401,7 @@ export function WorkspaceClient() {
     nodeId: string;
     patch: Record<string, unknown>;
     surfaceId?: ActionRoutingSurfaceId;
-    surface?: 'selection-floating-menu';
+    surface?: Extract<CanvasEntrypointSurface, 'selection-floating-menu'>;
     trigger?: { source: 'click' | 'hotkey' | 'menu' | 'inspector' };
   }) => {
     const runtime = useGraphStore.getState();
@@ -453,7 +453,7 @@ export function WorkspaceClient() {
   const handleNodeRenameCommit = useCallback(async (input: {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
-    surface?: 'node-context-menu';
+    surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
     trigger?: { source: 'menu' };
   }) => {
     const runtime = useGraphStore.getState();
@@ -509,7 +509,7 @@ export function WorkspaceClient() {
 
   const handleCreateNodeCommit = useCallback(async (input: {
     surfaceId?: ActionRoutingSurfaceId;
-    surface?: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu';
+    surface?: Exclude<CanvasEntrypointSurface, 'selection-floating-menu'>;
     trigger?: { source: 'click' | 'menu' };
     nodeType: 'shape' | 'text' | 'markdown' | 'sticky' | 'sticker' | 'washi-tape';
     placement:

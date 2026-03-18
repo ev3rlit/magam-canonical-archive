@@ -15,7 +15,7 @@
 
 ## Phase 2. Action routing integration
 
-- [ ] T006 Update `app/features/editing/actionIntentCatalog.ts` and `app/features/editing/actionRoutingBridge/registry.ts` to cover all floating-menu-owned intents without local mutation fallbacks.
+- [ ] T006 Update `app/features/editing/actionRoutingBridge/registry.ts` and `app/features/editing/actionRoutingBridge/types.ts` to cover all floating-menu-owned intents without local mutation fallbacks.
 - [ ] T007 Update `app/components/editor/workspaceEditUtils.ts` only if additional selection metadata summary is required by floating-menu gating.
 
 ## Phase 3. Ownership handoff from toolbar

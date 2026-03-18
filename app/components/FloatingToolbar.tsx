@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { FontSelector } from './FontSelector';
-import type { GraphCanvasCreateMode } from './GraphCanvas.drag';
+import type { CanvasEntrypointCreateMode } from '@/features/canvas-ui-entrypoints/contracts';
 import { useGraphStore } from '@/store/graph';
 import type { EntrypointInteractionMode } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 import { canvasRuntime } from '@/processes/canvas-runtime/createCanvasRuntime';
@@ -41,8 +41,8 @@ type WashiPresetOption = ToolbarPresenterWashiPresetOption;
 interface FloatingToolbarProps {
   interactionMode: InteractionMode;
   onInteractionModeChange: (mode: InteractionMode) => void;
-  createMode: GraphCanvasCreateMode;
-  onCreateModeChange: (mode: GraphCanvasCreateMode) => void;
+  createMode: CanvasEntrypointCreateMode;
+  onCreateModeChange: (mode: CanvasEntrypointCreateMode) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitView: () => void;
