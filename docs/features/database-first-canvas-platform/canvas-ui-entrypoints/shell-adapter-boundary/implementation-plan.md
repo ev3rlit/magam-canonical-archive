@@ -172,6 +172,13 @@ feature는 이 레이어를 import하지 않고, runtime이 feature contribution
 
 - 이후 surface lane이 shared shell file을 직접 건드리지 않고도 작업을 이어갈 수 있다.
 
+### 세부 adoption 문서
+
+- `./graph-canvas-host-consumer/README.md`
+- `./floating-toolbar-presenter-consumer/README.md`
+- `./context-menu-binding-consumer/README.md`
+- `./workspace-client-dispatch-consumer/README.md`
+
 ## Phase 3. Slot 검증과 guardrail
 
 ### 목표

@@ -54,3 +54,10 @@
 
 - shared shell hot spot이 `processes/canvas-runtime`와 fixed slot 구조로 흡수된다.
 - 후속 surface task 문서가 `GraphCanvas.tsx`, `FloatingToolbar.tsx`, `useContextMenu.ts`, `WorkspaceClient.tsx`를 기본 수정 경로로 두지 않는다.
+
+## 세부 adoption 문서
+
+- `./graph-canvas-host-consumer/README.md`
+- `./floating-toolbar-presenter-consumer/README.md`
+- `./context-menu-binding-consumer/README.md`
+- `./workspace-client-dispatch-consumer/README.md`
