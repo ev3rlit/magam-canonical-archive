@@ -212,7 +212,13 @@ function requireNextId(rawPayload: Record<string, unknown>) {
   return ok(nextId);
 }
 
-function requireCreatePlacement(rawPayload: Record<string, unknown>) {
+function requireCreatePlacement(rawPayload: Record<string, unknown>): ReturnType<typeof ok<{
+  nodeType: CreatePayload['nodeType'];
+  placement: CreatePayload['placement'];
+}>> | ReturnType<typeof fail<{
+  nodeType: CreatePayload['nodeType'];
+  placement: CreatePayload['placement'];
+}>> {
   const nodeType = rawPayload.nodeType;
   const placement = rawPayload.placement;
 
@@ -238,10 +244,11 @@ function requireCreatePlacement(rawPayload: Record<string, unknown>) {
     }>('INTENT_PAYLOAD_INVALID', 'placement is invalid');
   }
 
+  const validNodeType: CreatePayload['nodeType'] = nodeType;
   const casted = placement as Record<string, unknown>;
   if (casted.mode === 'canvas-absolute' && typeof casted.x === 'number' && typeof casted.y === 'number') {
     return ok({
-      nodeType,
+      nodeType: validNodeType,
       placement: {
         mode: 'canvas-absolute',
         x: casted.x,
@@ -252,7 +259,7 @@ function requireCreatePlacement(rawPayload: Record<string, unknown>) {
 
   if (casted.mode === 'mindmap-child' && typeof casted.parentId === 'string') {
     return ok({
-      nodeType,
+      nodeType: validNodeType,
       placement: {
         mode: 'mindmap-child',
         parentId: casted.parentId,
@@ -262,7 +269,7 @@ function requireCreatePlacement(rawPayload: Record<string, unknown>) {
 
   if (casted.mode === 'mindmap-sibling' && typeof casted.siblingOf === 'string') {
     return ok({
-      nodeType,
+      nodeType: validNodeType,
       placement: {
         mode: 'mindmap-sibling',
         siblingOf: casted.siblingOf,

@@ -21,6 +21,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isEditMeta(value: unknown): value is EditMeta {
+  return isRecord(value)
+    && typeof value.family === 'string'
+    && Array.isArray(value.styleEditableKeys)
+    && value.styleEditableKeys.every((entry) => typeof entry === 'string');
+}
+
 function deriveLocalSourceId(nodeId: string, frameScope: unknown): string {
   if (typeof frameScope !== 'string' || frameScope.length === 0) {
     return nodeId;
@@ -47,7 +54,7 @@ function resolveSelectedNode(node: Node, currentFile: string | null): SelectionF
   const filePath = typeof sourceMeta.filePath === 'string' && sourceMeta.filePath.length > 0
     ? sourceMeta.filePath
     : currentFile;
-  const editMeta = isRecord(data.editMeta) ? data.editMeta as EditMeta : undefined;
+  const editMeta = isEditMeta(data.editMeta) ? data.editMeta : undefined;
   const canonicalObject = isRecord(data.canonicalObject) ? data.canonicalObject : undefined;
 
   return {

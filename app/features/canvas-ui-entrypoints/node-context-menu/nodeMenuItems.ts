@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import type { ContextMenuContext, ContextMenuItem } from '@/types/contextMenu';
 import { buildNodeContextMenuModel } from './buildNodeContextMenuModel';
-import type { NodeContextMenuActionId, NodeContextSnapshot } from './types';
+import type { NodeContextMenuActionId, NodeContextMenuActionState, NodeContextSnapshot } from './types';
 
 function getNodeContextSnapshot(ctx: ContextMenuContext): NodeContextSnapshot | null {
   if (ctx.type !== 'node' || typeof ctx.nodeId !== 'string') {
@@ -25,10 +25,10 @@ function getNodeContextSnapshot(ctx: ContextMenuContext): NodeContextSnapshot | 
   };
 }
 
-function resolveActionState(ctx: ContextMenuContext, actionId: NodeContextMenuActionId) {
+function resolveActionState(ctx: ContextMenuContext, actionId: NodeContextMenuActionId): NodeContextMenuActionState {
   const snapshot = getNodeContextSnapshot(ctx);
   if (!snapshot) {
-    return { visibility: 'hidden' } as const;
+    return { visibility: 'hidden' };
   }
   return buildNodeContextMenuModel(snapshot)[actionId];
 }

@@ -125,7 +125,7 @@ export interface GraphCanvasNodeMenuIntentInput {
 export type GraphCanvasRenameIntentInput = GraphCanvasNodeMenuIntentInput;
 
 export interface GraphCanvasCreateIntentInput {
-  surfaceId: ActionRoutingSurfaceId;
+  surfaceId: Exclude<ActionRoutingSurfaceId, 'selection-floating-menu'>;
   surface?: Exclude<CanvasEntrypointSurface, 'selection-floating-menu'>;
   trigger?: { source: 'click' | 'menu' };
   nodeType: CreatableNodeType;

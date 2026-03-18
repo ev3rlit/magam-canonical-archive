@@ -18,11 +18,11 @@ export interface ExamplePluginCatalogEntry {
 export const examplePluginCatalog: ExamplePluginCatalogEntry[] = [
   {
     manifest: chartExampleManifest,
-    defaults: chartExampleDefaults,
+    defaults: { ...chartExampleDefaults },
   },
   {
     manifest: tableExampleManifest,
-    defaults: tableExampleDefaults,
+    defaults: { ...tableExampleDefaults },
   },
 ];
 

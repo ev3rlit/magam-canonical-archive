@@ -52,6 +52,7 @@ export interface RenderNode {
     color?: string;
     bg?: string;
     className?: string;
+    locked?: boolean;
     fontSize?: SizeValue | string;
     labelColor?: string;
     labelFontSize?: number;

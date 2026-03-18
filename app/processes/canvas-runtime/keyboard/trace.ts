@@ -1,11 +1,8 @@
-import * as PinoPkg from 'pino';
-import type { Logger as PinoLogger } from 'pino';
+import pino, { type Logger as PinoLogger } from 'pino';
 import type {
   CanvasKeyboardTraceEvent,
   CanvasKeyboardTraceLevel,
 } from './types';
-
-const pino = (PinoPkg as { default?: typeof PinoPkg }).default ?? PinoPkg;
 
 export interface CanvasKeyboardLoggerLike {
   child(bindings: Record<string, unknown>): CanvasKeyboardLoggerLike;
@@ -21,14 +18,14 @@ export interface CanvasKeyboardTraceSink {
 
 const KEYBOARD_TRACE_SUBSYSTEM = 'canvas-keyboard';
 
-let rootLogger: PinoLogger | null = null;
+let rootLogger: PinoLogger | undefined;
 
 function getRootLogger(): PinoLogger {
   if (rootLogger) {
     return rootLogger;
   }
 
-  rootLogger = pino({
+  const logger = pino({
     name: 'magam-app',
     level: process.env.NODE_ENV === 'test'
       ? 'silent'
@@ -38,6 +35,7 @@ function getRootLogger(): PinoLogger {
     },
   });
 
+  rootLogger = logger;
   return rootLogger;
 }
 

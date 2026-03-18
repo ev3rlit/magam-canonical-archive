@@ -202,6 +202,13 @@ export function createCanvasActionDispatchBinding(
           registeredPendingKeys.push(step.optimisticMeta.pendingKey);
         }
 
+        if (step.kind === 'canonical-query') {
+          throw new RpcClientError(RPC_ERRORS.INVALID_PARAMS.code, RPC_ERRORS.INVALID_PARAMS.message, {
+            stage: 'CanvasActionDispatchBinding.executeBridgeIntent',
+            kind: step.kind,
+          });
+        }
+
         const result = await input.executeMutationDescriptor(step);
         if (step.historyEffect) {
           input.commitHistoryEffect(step.historyEffect, result);

@@ -1,6 +1,7 @@
 import type { Edge, Node } from 'reactflow';
 import type { CreatePayload } from '@/features/editing/commands';
-import type { EditCommandType, EditMeta } from '@/features/editing/editability';
+import type { EditMeta } from '@/features/editing/editability';
+import type { UpdateNodeCommandType } from '@/hooks/useFileSync.shared';
 
 export type ActionRoutingSurfaceId =
   | 'toolbar'
@@ -134,7 +135,7 @@ export interface MutationActionPayloadMap {
     nodeId: string;
     filePath: string;
     props: Record<string, unknown>;
-    commandType?: EditCommandType;
+    commandType?: UpdateNodeCommandType;
   };
   'node.create': {
     filePath: string;
@@ -162,17 +163,23 @@ interface DispatchDescriptorBase {
   optimisticMeta?: ActionRoutingOptimisticMeta;
 }
 
-export interface RuntimeActionDescriptor<TActionId extends RuntimeActionId = RuntimeActionId> extends DispatchDescriptorBase {
-  kind: 'runtime-only-action';
-  actionId: TActionId;
-  payload: RuntimeActionPayloadMap[TActionId];
-}
+export type RuntimeActionDescriptor<TActionId extends RuntimeActionId = RuntimeActionId> =
+  TActionId extends RuntimeActionId
+    ? DispatchDescriptorBase & {
+      kind: 'runtime-only-action';
+      actionId: TActionId;
+      payload: RuntimeActionPayloadMap[TActionId];
+    }
+    : never;
 
-export interface MutationDispatchDescriptor<TActionId extends MutationActionId = MutationActionId> extends DispatchDescriptorBase {
-  kind: 'canonical-mutation';
-  actionId: TActionId;
-  payload: MutationActionPayloadMap[TActionId];
-}
+export type MutationDispatchDescriptor<TActionId extends MutationActionId = MutationActionId> =
+  TActionId extends MutationActionId
+    ? DispatchDescriptorBase & {
+      kind: 'canonical-mutation';
+      actionId: TActionId;
+      payload: MutationActionPayloadMap[TActionId];
+    }
+    : never;
 
 export interface QueryDispatchDescriptor extends DispatchDescriptorBase {
   kind: 'canonical-query';
@@ -194,19 +201,19 @@ export interface OrderedDispatchPlan {
 export interface ActionRoutingRegistryEntry<TNormalized extends Record<string, unknown> = Record<string, unknown>> {
   intentId: string;
   supportedSurfaces: ActionRoutingSurfaceId[];
-  isEnabled: (input: {
+  isEnabled(input: {
     envelope: UIIntentEnvelope;
     context: ActionRoutingContext;
-  }) => ActionRoutingResult<true>;
-  normalizePayload: (input: {
+  }): ActionRoutingResult<true>;
+  normalizePayload(input: {
     envelope: UIIntentEnvelope;
     context: ActionRoutingContext;
-  }) => ActionRoutingResult<TNormalized>;
-  buildDispatch: (input: {
+  }): ActionRoutingResult<TNormalized>;
+  buildDispatch(input: {
     envelope: UIIntentEnvelope;
     context: ActionRoutingContext;
     normalized: TNormalized;
-  }) => ActionRoutingResult<OrderedDispatchPlan>;
+  }): ActionRoutingResult<OrderedDispatchPlan>;
 }
 
 export type DeferredNodeContextMenuIntentId =

@@ -106,7 +106,7 @@ export function resolveNodeEditContext(
 }
 
 export function resolveNodeActionRoutingContext(
-  node: Pick<Node, 'id' | 'data'>,
+  node: Pick<Node, 'id' | 'data' | 'type'>,
   currentFile: string | null,
   selectedNodeIds: string[],
 ): ActionRoutingResolvedContext {

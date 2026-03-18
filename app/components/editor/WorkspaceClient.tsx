@@ -386,7 +386,7 @@ export function WorkspaceClient() {
       );
     }
     throw new RpcClientError(RPC_ERRORS.INVALID_PARAMS.code, RPC_ERRORS.INVALID_PARAMS.message, {
-      actionId: descriptor.actionId,
+      stage: 'WorkspaceClient.executeMutationDescriptor',
     });
   }, [createNode, deleteNode, reparentNode, updateNode]);
 

@@ -144,19 +144,23 @@ export function isPluginManifest(value: unknown): value is PluginManifest {
     return false;
   }
 
-  if (!isPluginRuntimeKind(value.runtime)) {
+  if (!isPluginRuntimeKind(value['runtime'])) {
     return false;
   }
-  if (!isNonEmptyString(value.entry)) {
+  if (!isNonEmptyString(value['entry'])) {
     return false;
   }
-  if (!Array.isArray(value.exports) || value.exports.length === 0 || !value.exports.every(isPluginExportName)) {
+  if (
+    !Array.isArray(value['exports'])
+    || value['exports'].length === 0
+    || !value['exports'].every(isPluginExportName)
+  ) {
     return false;
   }
-  if (!isPluginCapabilitySet(value.capabilities)) {
+  if (!isPluginCapabilitySet(value['capabilities'])) {
     return false;
   }
-  if (value.apiVersion !== undefined && !isNonEmptyString(value.apiVersion)) {
+  if (value['apiVersion'] !== undefined && !isNonEmptyString(value['apiVersion'])) {
     return false;
   }
 
@@ -171,16 +175,16 @@ export function validatePluginManifest(input: unknown): {
   if (!isRecord(input)) {
     return { ok: false, message: 'plugin manifest must be an object.', path: 'manifest' };
   }
-  if (!isPluginRuntimeKind(input.runtime)) {
+  if (!isPluginRuntimeKind(input['runtime'])) {
     return { ok: false, message: 'plugin manifest runtime must be iframe.', path: 'manifest.runtime' };
   }
-  if (!isNonEmptyString(input.entry)) {
+  if (!isNonEmptyString(input['entry'])) {
     return { ok: false, message: 'plugin manifest entry is required.', path: 'manifest.entry' };
   }
-  if (!Array.isArray(input.exports) || input.exports.some((value) => !isPluginExportName(value))) {
+  if (!Array.isArray(input['exports']) || input['exports'].some((value) => !isPluginExportName(value))) {
     return { ok: false, message: 'plugin manifest exports must be namespaced export names.', path: 'manifest.exports' };
   }
-  if (!isPluginCapabilitySet(input.capabilities)) {
+  if (!isPluginCapabilitySet(input['capabilities'])) {
     return { ok: false, message: 'plugin manifest capabilities must be an object.', path: 'manifest.capabilities' };
   }
 

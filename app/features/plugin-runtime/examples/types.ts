@@ -12,7 +12,7 @@ export interface ExamplePluginManifest {
   bindingSchema: Record<string, unknown>;
 }
 
-export interface ExamplePluginModule<TProps extends Record<string, unknown>> {
+export interface ExamplePluginModule<TProps extends object> {
   manifest: ExamplePluginManifest;
   defaults: TProps;
 }

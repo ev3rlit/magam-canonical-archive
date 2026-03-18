@@ -1,5 +1,4 @@
 import React, { memo } from 'react';
-import { type NodeProps } from 'reactflow';
 import { twMerge } from 'tailwind-merge';
 import { BaseNode } from './BaseNode';
 import type { PluginNodeRuntimeState } from '@/features/plugin-runtime';
@@ -15,6 +14,11 @@ export interface PluginFallbackNodeData {
   };
 }
 
+interface PluginFallbackNodeProps {
+  data: PluginFallbackNodeData;
+  selected: boolean;
+}
+
 function resolveFallbackTitle(data: PluginFallbackNodeData): string {
   if (typeof data.label === 'string' && data.label.trim().length > 0) {
     return data.label;
@@ -28,7 +32,7 @@ function resolveFallbackTitle(data: PluginFallbackNodeData): string {
   return 'Plugin widget';
 }
 
-const PluginFallbackNode = ({ data, selected }: NodeProps<PluginFallbackNodeData>) => {
+const PluginFallbackNode = ({ data, selected }: PluginFallbackNodeProps) => {
   const title = resolveFallbackTitle(data);
   const diagnostic = data.pluginRuntime?.diagnostic;
   const packageRef = [
@@ -71,4 +75,3 @@ const PluginFallbackNode = ({ data, selected }: NodeProps<PluginFallbackNodeData
 };
 
 export default memo(PluginFallbackNode);
-

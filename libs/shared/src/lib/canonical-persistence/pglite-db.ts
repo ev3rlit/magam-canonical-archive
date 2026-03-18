@@ -49,7 +49,7 @@ async function hasPluginRuntimeSchema(client: PGlite): Promise<boolean> {
   `);
 
   for (const row of result.rows as Array<Record<string, unknown>>) {
-    const tablename = typeof row.tablename === 'string' ? row.tablename : null;
+    const tablename = typeof row['tablename'] === 'string' ? row['tablename'] : null;
     if (tablename) {
       requiredTables.delete(tablename);
     }

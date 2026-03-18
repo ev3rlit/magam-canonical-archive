@@ -1,8 +1,8 @@
 import { JSDOM } from 'jsdom';
 
-function defineGlobalProperty<TKey extends keyof typeof globalThis>(
-  key: TKey,
-  value: (typeof globalThis)[TKey],
+function defineGlobalProperty(
+  key: keyof typeof globalThis | 'IS_REACT_ACT_ENVIRONMENT',
+  value: unknown,
 ): void {
   Object.defineProperty(globalThis, key, {
     configurable: true,

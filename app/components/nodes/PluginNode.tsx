@@ -271,7 +271,6 @@ const PluginNode = ({ data, selected }: NodeProps<PluginNodeData>) => {
   if (!hydration.ok || !nodeId) {
     return (
       <PluginFallbackNode
-        id={nodeId ?? 'plugin-fallback'}
         data={fallbackData}
         selected={selected}
       />
@@ -290,4 +289,3 @@ const PluginNode = ({ data, selected }: NodeProps<PluginNodeData>) => {
 };
 
 export default memo(PluginNode);
-

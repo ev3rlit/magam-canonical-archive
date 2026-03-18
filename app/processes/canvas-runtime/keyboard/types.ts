@@ -108,6 +108,8 @@ export interface CanvasKeyboardContext {
   }) => CanvasKeyboardFeedback | null;
 }
 
+export type CanvasKeyboardCommandContext = CanvasKeyboardContext;
+
 export interface CanvasKeyboardCommand<
   TContext extends CanvasKeyboardContext = CanvasKeyboardContext,
 > {
