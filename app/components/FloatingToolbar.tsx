@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  FileText,
   MousePointer2,
   Hand,
   ZoomIn,
@@ -11,33 +10,39 @@ import {
   Bookmark,
   Check,
   Plus,
-  Square,
-  Sticker,
-  Ticket,
-  Type,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { FontSelector } from './FontSelector';
-import type { GraphCanvasCreateMode } from './GraphCanvas.drag';
-import {
-  createEntrypointAnchor,
-  createOpenSurfaceDescriptor,
-  type EntrypointInteractionMode,
-} from '@/features/canvas-ui-entrypoints/ui-runtime-state';
+import type { CanvasEntrypointCreateMode } from '@/features/canvas-ui-entrypoints/contracts';
 import { useGraphStore } from '@/store/graph';
+import type { EntrypointInteractionMode } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
+import { canvasRuntime } from '@/processes/canvas-runtime/createCanvasRuntime';
+import {
+  closeToolbarSurface,
+  resolveToolbarPresenterState,
+  selectToolbarCreateMode,
+  selectToolbarInteractionMode,
+  selectToolbarPreset,
+  shouldCloseToolbarSurface,
+  syncToolbarCreateMode,
+  syncToolbarInteractionMode,
+  toggleToolbarCreateSurface,
+  toggleToolbarPresetSurface,
+  TOOLBAR_CREATE_ANCHOR_ID,
+  TOOLBAR_CREATE_OPTIONS,
+  TOOLBAR_PRESET_ANCHOR_ID,
+  type ToolbarPresenterWashiPresetOption,
+} from '@/processes/canvas-runtime/bindings/toolbarPresenter';
 
 export type InteractionMode = EntrypointInteractionMode;
 
-interface WashiPresetOption {
-  id: string;
-  label: string;
-}
+type WashiPresetOption = ToolbarPresenterWashiPresetOption;
 
 interface FloatingToolbarProps {
   interactionMode: InteractionMode;
   onInteractionModeChange: (mode: InteractionMode) => void;
-  createMode: GraphCanvasCreateMode;
-  onCreateModeChange: (mode: GraphCanvasCreateMode) => void;
+  createMode: CanvasEntrypointCreateMode;
+  onCreateModeChange: (mode: CanvasEntrypointCreateMode) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitView: () => void;
@@ -47,35 +52,6 @@ interface FloatingToolbarProps {
   onSelectWashiPreset?: (presetId: string) => void;
   positioning?: 'canvas' | 'hosted';
   className?: string;
-}
-
-const TOOLBAR_CREATE_SURFACE_KIND = 'toolbar-create-menu';
-const TOOLBAR_PRESET_SURFACE_KIND = 'toolbar-preset-menu';
-const TOOLBAR_CREATE_ANCHOR_ID = 'toolbar:create-anchor';
-const TOOLBAR_PRESET_ANCHOR_ID = 'toolbar:preset-anchor';
-
-export function resolveToolbarAnchor(input: {
-  anchorId: string;
-  ownerId: string;
-  element: HTMLElement | null;
-}) {
-  const rect = input.element?.getBoundingClientRect();
-
-  return createEntrypointAnchor({
-    anchorId: input.anchorId,
-    kind: 'toolbar-trigger',
-    ownerId: input.ownerId,
-    ...(rect
-      ? {
-          screen: {
-            x: rect.left,
-            y: rect.top,
-            width: rect.width,
-            height: rect.height,
-          },
-        }
-      : {}),
-  });
 }
 
 export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
@@ -103,28 +79,46 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
 
   const presetMenuRef = useRef<HTMLDivElement>(null);
   const createMenuRef = useRef<HTMLDivElement>(null);
-
-  const hasPendingEntrypointActions = Object.keys(entrypointRuntime.pendingByRequestId).length > 0;
-  const resolvedInteractionMode = entrypointRuntime.activeTool.interactionMode ?? interactionMode;
-  const resolvedCreateMode = entrypointRuntime.activeTool.createMode ?? createMode;
-  const isCreateMenuOpen = entrypointRuntime.openSurface?.kind === TOOLBAR_CREATE_SURFACE_KIND;
-  const isWashiPresetMenuOpen = entrypointRuntime.openSurface?.kind === TOOLBAR_PRESET_SURFACE_KIND;
-  const canOpenWashiPreset = washiPresetEnabled && washiPresets.length > 0;
-  const activeWashiPresetLabel = useMemo(
-    () => washiPresets.find((preset) => preset.id === activeWashiPresetId)?.label ?? null,
-    [activeWashiPresetId, washiPresets],
-  );
+  const toolbarSurfaceApi = {
+    registerEntrypointAnchor,
+    clearEntrypointAnchor,
+    openEntrypointSurface,
+    closeEntrypointSurface,
+  };
+  const {
+    activeCreateLabel,
+    activeWashiPresetLabel,
+    canOpenWashiPreset,
+    hasPendingEntrypointActions,
+    isCreateMenuOpen,
+    isWashiPresetMenuOpen,
+    resolvedCreateMode,
+    resolvedInteractionMode,
+  } = resolveToolbarPresenterState({
+    runtime: canvasRuntime,
+    toolbarSlot: canvasRuntime.slots.canvasToolbar,
+    runtimeState: entrypointRuntime,
+    interactionMode,
+    createMode,
+    washiPresets,
+    washiPresetEnabled,
+    activeWashiPresetId,
+  });
 
   useEffect(() => {
-    if (entrypointRuntime.activeTool.interactionMode !== interactionMode) {
-      setEntrypointInteractionMode(interactionMode);
-    }
+    syncToolbarInteractionMode({
+      runtimeInteractionMode: entrypointRuntime.activeTool.interactionMode,
+      interactionMode,
+      setEntrypointInteractionMode,
+    });
   }, [entrypointRuntime.activeTool.interactionMode, interactionMode, setEntrypointInteractionMode]);
 
   useEffect(() => {
-    if (entrypointRuntime.activeTool.createMode !== createMode) {
-      setEntrypointCreateMode(createMode);
-    }
+    syncToolbarCreateMode({
+      runtimeCreateMode: entrypointRuntime.activeTool.createMode,
+      createMode,
+      setEntrypointCreateMode,
+    });
   }, [createMode, entrypointRuntime.activeTool.createMode, setEntrypointCreateMode]);
 
   useEffect(() => {
@@ -133,12 +127,14 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     }
 
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      if (!presetMenuRef.current || !event.target) {
-        return;
-      }
-      if (!presetMenuRef.current.contains(event.target as Node)) {
-        clearEntrypointAnchor(TOOLBAR_PRESET_ANCHOR_ID);
-        closeEntrypointSurface();
+      if (shouldCloseToolbarSurface({
+        menuElement: presetMenuRef.current,
+        target: event.target,
+      })) {
+        closeToolbarSurface({
+          anchorId: TOOLBAR_PRESET_ANCHOR_ID,
+          api: toolbarSurfaceApi,
+        });
       }
     };
 
@@ -148,7 +144,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('touchstart', handlePointerDown);
     };
-  }, [clearEntrypointAnchor, closeEntrypointSurface, isWashiPresetMenuOpen]);
+  }, [isWashiPresetMenuOpen, toolbarSurfaceApi]);
 
   useEffect(() => {
     if (!isCreateMenuOpen) {
@@ -156,12 +152,14 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     }
 
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      if (!createMenuRef.current || !event.target) {
-        return;
-      }
-      if (!createMenuRef.current.contains(event.target as Node)) {
-        clearEntrypointAnchor(TOOLBAR_CREATE_ANCHOR_ID);
-        closeEntrypointSurface();
+      if (shouldCloseToolbarSurface({
+        menuElement: createMenuRef.current,
+        target: event.target,
+      })) {
+        closeToolbarSurface({
+          anchorId: TOOLBAR_CREATE_ANCHOR_ID,
+          api: toolbarSurfaceApi,
+        });
       }
     };
 
@@ -171,80 +169,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('touchstart', handlePointerDown);
     };
-  }, [clearEntrypointAnchor, closeEntrypointSurface, isCreateMenuOpen]);
-
-  const createOptions: Array<{
-    id: Exclude<GraphCanvasCreateMode, null>;
-    label: string;
-    icon: React.ReactNode;
-  }> = [
-    { id: 'shape', label: 'Shape', icon: <Square className="w-4 h-4" /> },
-    { id: 'text', label: 'Text', icon: <Type className="w-4 h-4" /> },
-    { id: 'markdown', label: 'Markdown', icon: <FileText className="w-4 h-4" /> },
-    { id: 'sticker', label: 'Sticker', icon: <Sticker className="w-4 h-4" /> },
-    { id: 'washi-tape', label: 'Washi', icon: <Ticket className="w-4 h-4" /> },
-  ];
-  const activeCreateLabel = createOptions.find((option) => option.id === resolvedCreateMode)?.label ?? null;
-
-  const toggleCreateMenu = () => {
-    if (hasPendingEntrypointActions) {
-      return;
-    }
-
-    if (isCreateMenuOpen) {
-      clearEntrypointAnchor(TOOLBAR_CREATE_ANCHOR_ID);
-      closeEntrypointSurface();
-      return;
-    }
-
-    registerEntrypointAnchor(resolveToolbarAnchor({
-      anchorId: TOOLBAR_CREATE_ANCHOR_ID,
-      ownerId: TOOLBAR_CREATE_SURFACE_KIND,
-      element: createMenuRef.current,
-    }));
-    openEntrypointSurface(createOpenSurfaceDescriptor({
-      kind: TOOLBAR_CREATE_SURFACE_KIND,
-      anchorId: TOOLBAR_CREATE_ANCHOR_ID,
-      ownerId: TOOLBAR_CREATE_SURFACE_KIND,
-      dismissOnSelectionChange: false,
-      dismissOnViewportChange: false,
-    }));
-  };
-
-  const togglePresetMenu = () => {
-    if (!canOpenWashiPreset || hasPendingEntrypointActions) {
-      return;
-    }
-
-    if (isWashiPresetMenuOpen) {
-      clearEntrypointAnchor(TOOLBAR_PRESET_ANCHOR_ID);
-      closeEntrypointSurface();
-      return;
-    }
-
-    registerEntrypointAnchor(resolveToolbarAnchor({
-      anchorId: TOOLBAR_PRESET_ANCHOR_ID,
-      ownerId: TOOLBAR_PRESET_SURFACE_KIND,
-      element: presetMenuRef.current,
-    }));
-    openEntrypointSurface(createOpenSurfaceDescriptor({
-      kind: TOOLBAR_PRESET_SURFACE_KIND,
-      anchorId: TOOLBAR_PRESET_ANCHOR_ID,
-      ownerId: TOOLBAR_PRESET_SURFACE_KIND,
-      dismissOnSelectionChange: false,
-      dismissOnViewportChange: false,
-    }));
-  };
-
-  const closeCreateSurface = () => {
-    clearEntrypointAnchor(TOOLBAR_CREATE_ANCHOR_ID);
-    closeEntrypointSurface();
-  };
-
-  const closePresetSurface = () => {
-    clearEntrypointAnchor(TOOLBAR_PRESET_ANCHOR_ID);
-    closeEntrypointSurface();
-  };
+  }, [isCreateMenuOpen, toolbarSurfaceApi]);
 
   return (
     <div
@@ -256,19 +181,21 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     >
       <ToolbarButton
         active={resolvedInteractionMode === 'pointer'}
-        onClick={() => {
-          setEntrypointInteractionMode('pointer');
-          onInteractionModeChange('pointer');
-        }}
+        onClick={() => selectToolbarInteractionMode({
+          mode: 'pointer',
+          setEntrypointInteractionMode,
+          onInteractionModeChange,
+        })}
         title="Selection Mode (V)"
         icon={<MousePointer2 className="w-4 h-4" />}
       />
       <ToolbarButton
         active={resolvedInteractionMode === 'hand'}
-        onClick={() => {
-          setEntrypointInteractionMode('hand');
-          onInteractionModeChange('hand');
-        }}
+        onClick={() => selectToolbarInteractionMode({
+          mode: 'hand',
+          setEntrypointInteractionMode,
+          onInteractionModeChange,
+        })}
         title="Pan Mode (H)"
         icon={<Hand className="w-4 h-4" />}
       />
@@ -280,7 +207,12 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
           active={isCreateMenuOpen || resolvedCreateMode !== null}
           disabled={hasPendingEntrypointActions}
           data-floating-toolbar-create-toggle
-          onClick={toggleCreateMenu}
+          onClick={() => toggleToolbarCreateSurface({
+            isCreateMenuOpen,
+            hasPendingEntrypointActions,
+            createMenuElement: createMenuRef.current,
+            api: toolbarSurfaceApi,
+          })}
           title={activeCreateLabel ? `Create Mode: ${activeCreateLabel}` : 'Open Create Modes'}
           icon={<Plus className="w-4 h-4" />}
         />
@@ -291,7 +223,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
               Create on pane click
             </div>
             <div className="py-1">
-              {createOptions.map((option) => (
+              {TOOLBAR_CREATE_OPTIONS.map((option) => (
                 <button
                   key={option.id}
                   type="button"
@@ -303,9 +235,12 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                       : 'text-slate-700 dark:text-slate-200',
                   )}
                   onClick={() => {
-                    setEntrypointCreateMode(option.id);
-                    onCreateModeChange(option.id);
-                    closeCreateSurface();
+                    selectToolbarCreateMode({
+                      mode: option.id,
+                      setEntrypointCreateMode,
+                      onCreateModeChange,
+                      api: toolbarSurfaceApi,
+                    });
                   }}
                 >
                   <span className="flex items-center gap-2">
@@ -320,9 +255,12 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
               type="button"
               className="w-full border-t border-slate-200 dark:border-slate-700 px-3 py-2 text-left text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
               onClick={() => {
-                setEntrypointCreateMode(null);
-                onCreateModeChange(null);
-                closeCreateSurface();
+                selectToolbarCreateMode({
+                  mode: null,
+                  setEntrypointCreateMode,
+                  onCreateModeChange,
+                  api: toolbarSurfaceApi,
+                });
               }}
             >
               Create mode off
@@ -338,7 +276,13 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
           active={isWashiPresetMenuOpen}
           disabled={!canOpenWashiPreset || hasPendingEntrypointActions}
           data-floating-toolbar-preset-toggle
-          onClick={togglePresetMenu}
+          onClick={() => toggleToolbarPresetSurface({
+            canOpenWashiPreset,
+            hasPendingEntrypointActions,
+            isWashiPresetMenuOpen,
+            presetMenuElement: presetMenuRef.current,
+            api: toolbarSurfaceApi,
+          })}
           title={
             canOpenWashiPreset
               ? 'Washi Preset Catalog'
@@ -367,8 +311,11 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                   )}
                   data-washi-preset-id={preset.id}
                   onClick={() => {
-                    onSelectWashiPreset?.(preset.id);
-                    closePresetSurface();
+                    selectToolbarPreset({
+                      presetId: preset.id,
+                      onSelectWashiPreset,
+                      api: toolbarSurfaceApi,
+                    });
                   }}
                 >
                   <span className="truncate">

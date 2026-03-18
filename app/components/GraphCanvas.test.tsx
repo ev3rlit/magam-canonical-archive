@@ -15,7 +15,10 @@ import {
   shouldScheduleAutoRelayout,
 } from './GraphCanvas.relayout';
 import {
-  resolveEditHistoryShortcut,
+  buildGraphCanvasCreateIntent,
+  buildGraphCanvasRenameIntent,
+} from './GraphCanvas';
+import {
   resolveMindMapDragFeedback,
   resolveMindMapReparentIntent,
   shouldRetainSelectionOnStyleUpdate,
@@ -228,6 +231,41 @@ describe('GraphCanvas create mode helpers', () => {
     expect(shouldHandlePaneCreate({ interactionMode: 'pointer', createMode: null })).toBe(false);
   });
 
+  it('node context rename intent는 node-context-menu surface로 고정된다', () => {
+    expect(buildGraphCanvasRenameIntent('node-1')).toMatchObject({
+      nodeId: 'node-1',
+      surfaceId: 'node-context-menu',
+      surface: 'node-context-menu',
+    });
+  });
+
+  it('pane/toolbar/node create intent는 surface-specific payload를 그대로 유지한다', () => {
+    expect(buildGraphCanvasCreateIntent({
+      surfaceId: 'pane-context-menu',
+      nodeType: 'shape',
+      placement: { mode: 'canvas-absolute', x: 20, y: 30 },
+    })).toMatchObject({
+      surfaceId: 'pane-context-menu',
+      surface: 'pane-context-menu',
+      nodeType: 'shape',
+      placement: { mode: 'canvas-absolute', x: 20, y: 30 },
+    });
+
+    expect(buildGraphCanvasCreateIntent({
+      surfaceId: 'node-context-menu',
+      nodeType: 'shape',
+      placement: { mode: 'mindmap-child', parentId: 'root' },
+      targetRenderedNodeId: 'root.rendered',
+    })).toMatchObject({
+      surfaceId: 'node-context-menu',
+      surface: 'node-context-menu',
+      nodeType: 'shape',
+      placement: { mode: 'mindmap-child', parentId: 'root' },
+      targetRenderedNodeId: 'root.rendered',
+      targetNodeId: 'root.rendered',
+    });
+  });
+
   it('pending action이 있으면 pane click create를 차단한다', () => {
     expect(shouldHandleRuntimePaneCreate({
       interactionMode: 'pointer',
@@ -331,32 +369,6 @@ describe('GraphCanvas runtime surface integration', () => {
     expect(
       useGraphStore.getState().entrypointRuntime.anchorsById['selection-floating-menu:selection-bounds'],
     ).toBeUndefined();
-  });
-});
-
-describe('GraphCanvas history shortcuts', () => {
-  it('cmd/ctrl+z 를 undo 로 해석한다', () => {
-    expect(resolveEditHistoryShortcut({
-      key: 'z',
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: false,
-    })).toBe('undo');
-  });
-
-  it('cmd/ctrl+shift+z 와 cmd/ctrl+y 를 redo 로 해석한다', () => {
-    expect(resolveEditHistoryShortcut({
-      key: 'z',
-      metaKey: true,
-      ctrlKey: false,
-      shiftKey: true,
-    })).toBe('redo');
-    expect(resolveEditHistoryShortcut({
-      key: 'y',
-      metaKey: false,
-      ctrlKey: true,
-      shiftKey: false,
-    })).toBe('redo');
   });
 });
 
@@ -686,12 +698,31 @@ describe('GraphCanvas drag error toast suppression', () => {
 describe('GraphCanvas bridge adoption', () => {
   it('toolbar and context menu create flows stamp surface metadata instead of calling mutations directly', async () => {
     const source = await Bun.file(new URL('./GraphCanvas.tsx', import.meta.url)).text();
+    const bindingSource = await Bun.file(
+      new URL('../processes/canvas-runtime/bindings/graphCanvasHost.ts', import.meta.url),
+    ).text();
+    const keyboardBindingSource = await Bun.file(
+      new URL('../processes/canvas-runtime/bindings/keyboardHost.ts', import.meta.url),
+    ).text();
 
-    expect(source).toContain("surface: 'pane-context-menu'");
-    expect(source).toContain("surface: 'node-context-menu'");
-    expect(source).toContain("surface: 'canvas-toolbar'");
+    expect(source).toContain('createGraphCanvasContextMenuActions({');
+    expect(source).toContain('createGraphCanvasNodeContextMenu({');
+    expect(source).toContain('createGraphCanvasPaneContextMenu({');
+    expect(source).toContain('createGraphCanvasToolbarContribution({');
+    expect(source).toContain('createGraphCanvasKeyboardHost({');
+    expect(source).not.toContain('const isCopy =');
+    expect(source).not.toContain('const isPaste =');
+    expect(source).not.toContain('const isUndo =');
+    expect(source).not.toContain('const isRedo =');
+    expect(source).not.toContain("createSlotContribution('toolbar'");
     expect(source).not.toContain('updateNode(');
     expect(source).not.toContain('createNode(');
     expect(source).not.toContain('reparentNode(');
+    expect(bindingSource).toContain("surface: 'pane-context-menu'");
+    expect(bindingSource).toContain("surface: 'node-context-menu'");
+    expect(bindingSource).toContain("positioning: 'hosted'");
+    expect(keyboardBindingSource).toContain('dispatchKeyCommand({');
+    expect(keyboardBindingSource).toContain('resolveCanvasKeyBinding({');
+    expect(keyboardBindingSource).toContain('resolveCanvasKeyboardFeedback(');
   });
 });

@@ -288,3 +288,19 @@ export function getUpdateCommandAfterSnapshot(command: UpdateCommand): Record<st
       return {};
   }
 }
+
+export function buildContentDraftPatch(
+  nodeType: string | undefined,
+  draft: string,
+): Record<string, unknown> {
+  if (nodeType === 'markdown') {
+    return {
+      label: draft,
+      children: [{ type: 'graph-markdown', content: draft }],
+    };
+  }
+  return {
+    label: draft,
+    children: [{ type: 'text', text: draft }],
+  };
+}

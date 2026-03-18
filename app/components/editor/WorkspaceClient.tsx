@@ -25,31 +25,39 @@ import { useChatUiStore } from '@/store/chatUi';
 import { TabState, useGraphStore } from '@/store/graph';
 import {
   buildAbsoluteMoveCommand,
-  buildContentUpdateCommand,
   buildReparentCommand,
   buildRelativeMoveCommand,
   toUpdateNodeProps,
 } from '@/features/editing/commands';
 import {
+  type ActionRoutingHistoryEffect,
+  type ActionRoutingSurfaceId,
+  type MutationDispatchDescriptor,
+  type RuntimeActionDescriptor,
+} from '@/features/editing/actionRoutingBridge/types';
+import {
   getWashiPresetPatternCatalog,
 } from '@/utils/washiTapeDefaults';
+import type { CanvasEntrypointSurface } from '@/features/canvas-ui-entrypoints/contracts';
 import { parseRenderGraph } from '@/features/render/parseRenderGraph';
 import { editDebugLog } from '@/utils/editDebug';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { resolveMindMapReparentIntent } from '@/components/GraphCanvas.drag';
+import { RPC_ERRORS } from '@/ws/rpc';
 import {
-  buildTextDraftPatch,
+  createCanvasActionDispatchBinding,
+  resolveLegacyEntrypointSurface,
+} from '@/processes/canvas-runtime/bindings/actionDispatch';
+import {
+  createPaneActionRoutingContext,
   canCommitTextEdit,
   canRunNodeCommand,
-  createPaneActionRoutingContext,
   flattenWorkspaceStyleDiagnostics,
   mapEditRpcErrorToToast,
-  resolveNodeActionRoutingContext,
   resolveNodeEditContext,
   resolveNodeEditTarget,
+  resolveNodeActionRoutingContext,
 } from './workspaceEditUtils';
-import { dispatchActionRoutingIntentOrThrow } from '@/features/editing/actionRoutingBridge';
-import { subscribeActionOptimisticLifecycle } from '@/features/editing/actionOptimisticLifecycle';
 
 type PendingTabCloseRequest = {
   tabIds: string[];
@@ -76,7 +84,6 @@ function getNodeLabel(node: { data?: unknown }): string {
   const data = (node.data || {}) as Record<string, unknown>;
   return typeof data.label === 'string' ? data.label : '';
 }
-
 declare global {
   interface Window {
     __magamTest?: MagamTestHooks;
@@ -111,8 +118,9 @@ export function WorkspaceClient() {
     pendingTextEditAction,
     clearPendingTextEditAction,
     clearTextEditSession,
-    applyActionRoutingLifecycleEvent,
     pushEditCompletionEvent,
+    registerPendingActionRouting,
+    clearPendingActionRouting,
     refreshWorkspaceStyles,
     workspaceStyleDiagnosticsByNodeId,
   } = useGraphStore();
@@ -130,13 +138,6 @@ export function WorkspaceClient() {
     useState<TabContextMenuState | null>(null);
   const tabContextMenuRef = useRef<HTMLDivElement>(null);
   const pendingSelectionNodeIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = subscribeActionOptimisticLifecycle((event) => {
-      applyActionRoutingLifecycleEvent(event);
-    });
-    return unsubscribe;
-  }, [applyActionRoutingLifecycleEvent]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') {
@@ -306,34 +307,101 @@ export function WorkspaceClient() {
       )),
     }));
   }, []);
+  const applyRuntimeAction = useCallback((descriptor: RuntimeActionDescriptor) => {
+    if (descriptor.actionId === 'apply-node-data-patch') {
+      useGraphStore.getState().updateNodeData(descriptor.payload.nodeId, descriptor.payload.patch);
+      return;
+    }
+    if (descriptor.actionId === 'restore-node-data') {
+      restoreNodeData(descriptor.payload.nodeId, descriptor.payload.previousData);
+    }
+  }, [restoreNodeData]);
 
-  const buildActionRoutingDependencies = useCallback(() => {
-    const runtime = useGraphStore.getState();
-    return {
-      runtime: {
+  const commitHistoryEffect = useCallback((effect: ActionRoutingHistoryEffect, result: {
+    commandId?: string;
+    newVersion?: string;
+  }) => {
+    const nextVersion = result.newVersion
+      ?? useGraphStore.getState().sourceVersions[effect.filePath]
+      ?? effect.baseVersion;
+    const commandId = result.commandId ?? crypto.randomUUID();
+
+    pushEditCompletionEvent({
+      eventId: crypto.randomUUID(),
+      type: effect.eventType,
+      nodeId: effect.nodeId,
+      filePath: effect.filePath,
+      commandId,
+      baseVersion: effect.baseVersion,
+      nextVersion,
+      before: effect.before,
+      after: effect.after,
+      committedAt: Date.now(),
+    });
+
+    if (effect.pendingSelectionRenderedId) {
+      pendingSelectionNodeIdRef.current = effect.pendingSelectionRenderedId;
+    }
+    if (effect.reloadGraphOnSuccess) {
+      handleFileChange();
+    }
+  }, [handleFileChange, pushEditCompletionEvent]);
+
+  const executeMutationDescriptor = useCallback(async (descriptor: MutationDispatchDescriptor) => {
+    if (descriptor.actionId === 'node.update') {
+      return updateNode(
+        descriptor.payload.nodeId,
+        descriptor.payload.props,
+        descriptor.payload.filePath,
+        descriptor.payload.commandType
+          ? { commandType: descriptor.payload.commandType }
+          : undefined,
+      );
+    }
+    if (descriptor.actionId === 'node.create') {
+      return createNode(descriptor.payload.node, descriptor.payload.filePath);
+    }
+    if (descriptor.actionId === 'node.reparent') {
+      return reparentNode(
+        descriptor.payload.nodeId,
+        descriptor.payload.newParentId,
+        descriptor.payload.filePath,
+      );
+    }
+    throw new RpcClientError(RPC_ERRORS.INVALID_PARAMS.code, RPC_ERRORS.INVALID_PARAMS.message, {
+      actionId: descriptor.actionId,
+    });
+  }, [createNode, reparentNode, updateNode]);
+
+  const { dispatchActionRoutingIntentOrThrow } = useMemo(() => createCanvasActionDispatchBinding({
+    getRuntime: () => {
+      const runtime = useGraphStore.getState();
+      return {
+        nodes: runtime.nodes,
+        edges: runtime.edges,
         currentFile: runtime.currentFile,
         sourceVersions: runtime.sourceVersions,
-        nodes: runtime.nodes,
         selectedNodeIds: runtime.selectedNodeIds,
-      },
-      updateNode,
-      createNode,
-      updateNodeData: (nodeId: string, partialData: Record<string, unknown>) => {
-        useGraphStore.getState().updateNodeData(nodeId, partialData);
-      },
-      restoreNodeData,
-      pushEditCompletionEvent,
-      onFileChange: handleFileChange,
-      setPendingSelectionNodeId: (nodeId: string) => {
-        pendingSelectionNodeIdRef.current = nodeId;
-      },
-    };
-  }, [createNode, handleFileChange, pushEditCompletionEvent, restoreNodeData, updateNode]);
+      };
+    },
+    applyRuntimeAction,
+    executeMutationDescriptor,
+    commitHistoryEffect,
+    registerPendingActionRouting,
+    clearPendingActionRouting,
+  }), [
+    applyRuntimeAction,
+    clearPendingActionRouting,
+    commitHistoryEffect,
+    executeMutationDescriptor,
+    registerPendingActionRouting,
+  ]);
 
   const handleNodeStyleCommit = useCallback(async (payload: {
     nodeId: string;
     patch: Record<string, unknown>;
-    surface?: 'selection-floating-menu';
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: Extract<CanvasEntrypointSurface, 'selection-floating-menu'>;
     trigger?: { source: 'click' | 'hotkey' | 'menu' | 'inspector' };
   }) => {
     const runtime = useGraphStore.getState();
@@ -344,7 +412,10 @@ export function WorkspaceClient() {
 
     try {
       await dispatchActionRoutingIntentOrThrow({
-        surface: payload.surface ?? 'selection-floating-menu',
+        surface: resolveLegacyEntrypointSurface({
+          surfaceId: payload.surfaceId,
+          surface: payload.surface,
+        }),
         intent: 'style-update',
         resolvedContext: resolveNodeActionRoutingContext(
           targetNode,
@@ -355,7 +426,7 @@ export function WorkspaceClient() {
           patch: payload.patch,
         },
         trigger: payload.trigger ?? { source: 'inspector' },
-      }, buildActionRoutingDependencies());
+      });
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? '스타일 저장에 실패했습니다.';
       setGraphError({
@@ -365,7 +436,7 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [buildActionRoutingDependencies, setGraphError]);
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
 
   const handleWashiPresetChange = useCallback(
     async (nodeIds: string[], presetId: string) => {
@@ -381,8 +452,9 @@ export function WorkspaceClient() {
 
   const handleNodeRenameCommit = useCallback(async (input: {
     nodeId: string;
-    surface: 'node-context-menu';
-    trigger: { source: 'menu' };
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
+    trigger?: { source: 'menu' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -391,6 +463,15 @@ export function WorkspaceClient() {
     }
 
     const editContext = resolveNodeEditContext(targetNode, runtime.currentFile);
+    if (!editContext.target.filePath) {
+      throw new Error('SOURCE_VERSION_NOT_READY');
+    }
+    if (!canRunNodeCommand(targetNode, 'node.rename')) {
+      throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', {
+        nodeId: input.nodeId,
+        reason: editContext.readOnlyReason ?? 'RENAME_NOT_ALLOWED',
+      });
+    }
 
     const currentId = editContext.target.nodeId;
     const nextId = window.prompt('새 노드 ID', currentId)?.trim();
@@ -400,7 +481,10 @@ export function WorkspaceClient() {
 
     try {
       await dispatchActionRoutingIntentOrThrow({
-        surface: input.surface,
+        surface: resolveLegacyEntrypointSurface({
+          surfaceId: input.surfaceId,
+          surface: input.surface,
+        }),
         intent: 'rename-node',
         resolvedContext: resolveNodeActionRoutingContext(
           targetNode,
@@ -410,8 +494,8 @@ export function WorkspaceClient() {
         uiPayload: {
           nextId,
         },
-        trigger: input.trigger,
-      }, buildActionRoutingDependencies());
+        trigger: input.trigger ?? { source: 'menu' },
+      });
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? 'ID 변경에 실패했습니다.';
       setGraphError({
@@ -421,50 +505,68 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [buildActionRoutingDependencies, setGraphError]);
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
 
   const handleCreateNodeCommit = useCallback(async (input: {
-    surface: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu';
-    trigger: { source: 'click' | 'menu' };
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: Exclude<CanvasEntrypointSurface, 'selection-floating-menu'>;
+    trigger?: { source: 'click' | 'menu' };
     nodeType: 'shape' | 'text' | 'markdown' | 'sticky' | 'sticker' | 'washi-tape';
     placement:
       | { mode: 'canvas-absolute'; x: number; y: number }
       | { mode: 'mindmap-child'; parentId: string }
       | { mode: 'mindmap-sibling'; siblingOf: string; parentId: string | null };
+    targetRenderedNodeId?: string;
     filePath?: string;
     scopeId?: string;
     frameScope?: string;
     targetNodeId?: string;
   }) => {
     const runtime = useGraphStore.getState();
-    const targetNode = input.targetNodeId
-      ? runtime.nodes.find((node) => node.id === input.targetNodeId)
-      : null;
-    const resolvedContext = targetNode
-      ? resolveNodeActionRoutingContext(targetNode, runtime.currentFile, runtime.selectedNodeIds)
-      : createPaneActionRoutingContext({
-        currentFile: input.filePath ?? runtime.currentFile,
+    const intent = input.placement.mode === 'mindmap-child'
+      ? 'create-mindmap-child'
+      : input.placement.mode === 'mindmap-sibling'
+        ? 'create-mindmap-sibling'
+        : 'create-node';
+    const resolvedContext = input.placement.mode === 'canvas-absolute'
+      ? createPaneActionRoutingContext({
+        currentFile: runtime.currentFile,
         selectedNodeIds: runtime.selectedNodeIds,
-      });
+      })
+      : (() => {
+        const renderedNodeId = input.targetRenderedNodeId ?? input.targetNodeId;
+        const targetNode = renderedNodeId
+          ? runtime.nodes.find((node) => node.id === renderedNodeId)
+          : null;
+        if (!targetNode) {
+          throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: renderedNodeId });
+        }
+        return resolveNodeActionRoutingContext(
+          targetNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        );
+      })();
 
     try {
       await dispatchActionRoutingIntentOrThrow({
-        surface: input.surface,
-        intent: input.placement.mode === 'mindmap-child'
-          ? 'create-mindmap-child'
-          : input.placement.mode === 'mindmap-sibling'
-            ? 'create-mindmap-sibling'
-            : 'create-node',
+        surface: resolveLegacyEntrypointSurface({
+          surfaceId: input.surfaceId,
+          surface: input.surface,
+        }),
+        intent,
         resolvedContext,
         uiPayload: {
           nodeType: input.nodeType,
           placement: input.placement,
-          ...(input.filePath ? { filePath: input.filePath } : {}),
-          ...(input.scopeId ? { scopeId: input.scopeId } : {}),
-          ...(input.frameScope ? { frameScope: input.frameScope } : {}),
+          filePath: input.filePath,
+          scopeId: input.scopeId,
+          frameScope: input.frameScope,
         },
-        trigger: input.trigger,
-      }, buildActionRoutingDependencies());
+        trigger: input.trigger ?? {
+          source: input.placement.mode === 'canvas-absolute' ? 'click' : 'menu',
+        },
+      });
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? '오브젝트 생성에 실패했습니다.';
       setGraphError({
@@ -474,7 +576,7 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [buildActionRoutingDependencies, setGraphError]);
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
 
   const handleMindMapReparentCommit = useCallback(async (input: {
     draggedNodeId: string;
@@ -984,11 +1086,7 @@ export function WorkspaceClient() {
         return;
       }
       const editTarget = resolveNodeEditTarget(node, runtime.currentFile);
-      const editContext = resolveNodeEditContext(node, runtime.currentFile);
-      const baseVersion = editTarget.filePath
-        ? runtime.sourceVersions[editTarget.filePath] ?? null
-        : null;
-      if (!editTarget.filePath || !baseVersion) {
+      if (!editTarget.filePath) {
         clearTextEditSession();
         return;
       }
@@ -1004,48 +1102,19 @@ export function WorkspaceClient() {
         return;
       }
 
-      const previousData = (node.data || {}) as Record<string, unknown>;
-      useGraphStore.getState().updateNodeData(
-        node.id,
-        buildTextDraftPatch(node.type, nextContent),
-      );
-
       try {
-        const contentCarrier = editContext.editMeta?.contentCarrier
-          ?? (node.type === 'markdown' ? 'markdown-child' : 'text-child');
-        const contentCommand = buildContentUpdateCommand({
-          target: {
-            sourceId: editTarget.nodeId,
-            filePath: editTarget.filePath,
-            renderedId: node.id,
-            editMeta: editContext.editMeta,
+        await dispatchActionRoutingIntentOrThrow({
+          surface: 'selection-floating-menu',
+          intent: 'content-update',
+          resolvedContext: resolveNodeActionRoutingContext(
+            node,
+            runtime.currentFile,
+            runtime.selectedNodeIds,
+          ),
+          uiPayload: {
+            content: nextContent,
           },
-          carrier: contentCarrier,
-          previousContent: beforeContent,
-          nextContent,
-        });
-        const result = await updateNode(
-          contentCommand.target.sourceId,
-          toUpdateNodeProps(contentCommand),
-          contentCommand.target.filePath,
-          { commandType: contentCommand.type },
-        );
-        const nextVersion = result.newVersion
-          ?? useGraphStore.getState().sourceVersions[editTarget.filePath]
-          ?? baseVersion;
-        const commandId = result.commandId ?? crypto.randomUUID();
-
-        pushEditCompletionEvent({
-          eventId: crypto.randomUUID(),
-          type: 'CONTENT_UPDATED',
-          nodeId: editTarget.nodeId,
-          filePath: editTarget.filePath,
-          commandId,
-          baseVersion,
-          nextVersion,
-          before: contentCommand.payload.previous,
-          after: contentCommand.payload.next,
-          committedAt: Date.now(),
+          trigger: { source: 'inspector' },
         });
         clearTextEditSession();
       } catch (error) {
@@ -1055,7 +1124,6 @@ export function WorkspaceClient() {
           beforeContent,
           nextContent,
         });
-        restoreNodeData(node.id, previousData);
         const message = mapEditRpcErrorToToast(error) ?? '텍스트 저장에 실패했습니다.';
         setGraphError({
           message,
@@ -1070,13 +1138,11 @@ export function WorkspaceClient() {
     activeTextEditNodeId,
     clearPendingTextEditAction,
     clearTextEditSession,
+    dispatchActionRoutingIntentOrThrow,
     pendingTextEditAction,
-    pushEditCompletionEvent,
-    restoreNodeData,
     selectedNodeIds,
     setGraphError,
     textEditDraft,
-    updateNode,
   ]);
 
   useEffect(() => {

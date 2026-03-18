@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { resolveRestoreFocusTarget, restoreFocusForOverlay } from '@/features/overlay-host';
 import { installTestDom } from '@/features/overlay-host/testDom';
+import { createCanvasActionDispatchBinding } from '@/processes/canvas-runtime/bindings/actionDispatch';
 import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
@@ -211,6 +212,29 @@ describe('WorkspaceClient attach rejection guidance', () => {
         data: { reason: 'NO_VALID_PARENT' },
       }),
     ).toContain('부모를 바꿔야');
+  });
+
+  it('bridge intent 오류는 surface/registry 안내 메시지로 매핑된다', () => {
+    expect(
+      mapEditRpcErrorToToast({
+        code: 42212,
+        message: 'INTENT_NOT_REGISTERED',
+      }),
+    ).toContain('등록되지 않은 UI intent');
+
+    expect(
+      mapEditRpcErrorToToast({
+        code: 42214,
+        message: 'INTENT_GATING_DENIED',
+      }),
+    ).toContain('현재 선택 상태');
+
+    expect(
+      mapEditRpcErrorToToast({
+        code: 40904,
+        message: 'OPTIMISTIC_CONFLICT',
+      }),
+    ).toContain('optimistic');
   });
 });
 
@@ -519,16 +543,192 @@ describe('WorkspaceClient capability-profile editability parity', () => {
   });
 });
 
+describe('WorkspaceClient action-dispatch binding', () => {
+  it('maps compat requests into action-routing envelopes with surface and target fallbacks', async () => {
+    let capturedEnvelope: unknown = null;
+
+    const binding = createCanvasActionDispatchBinding({
+      getRuntime: () => ({
+        nodes: [],
+        edges: [],
+        currentFile: 'examples/current.tsx',
+        sourceVersions: {},
+        selectedNodeIds: ['node-1'],
+      }),
+      applyRuntimeAction: () => undefined,
+      executeMutationDescriptor: async () => ({}),
+      commitHistoryEffect: () => undefined,
+      registerPendingActionRouting: () => undefined,
+      clearPendingActionRouting: () => undefined,
+      routeIntentImpl: ({ envelope }) => {
+        capturedEnvelope = envelope;
+        return {
+          ok: true,
+          value: {
+            intentId: envelope.intentId,
+            steps: [],
+            rollbackSteps: [],
+          },
+        };
+      },
+    });
+
+    await binding.dispatchActionRoutingIntentOrThrow({
+      surface: 'canvas-toolbar',
+      intent: 'content-update',
+      resolvedContext: {
+        selection: {
+          nodeIds: ['node-1'],
+          homogeneous: true,
+        },
+        target: {
+          renderedNodeId: 'node-1',
+        },
+        metadata: {
+          capabilities: [],
+        },
+        editability: {
+          canMutate: true,
+          allowedCommands: [],
+          styleEditableKeys: [],
+        },
+      },
+      uiPayload: {
+        content: 'Updated label',
+        filePath: 'examples/override.tsx',
+        scopeId: 'scope-1',
+        frameScope: 'frame-1',
+      },
+      trigger: { source: 'inspector' },
+    });
+
+    expect(capturedEnvelope).toEqual({
+      surfaceId: 'toolbar',
+      intentId: 'selection.content.update',
+      selectionRef: {
+        selectedNodeIds: ['node-1'],
+        currentFile: 'examples/current.tsx',
+      },
+      targetRef: {
+        renderedNodeId: 'node-1',
+        filePath: 'examples/override.tsx',
+        scopeId: 'scope-1',
+        frameScope: 'frame-1',
+      },
+      rawPayload: {
+        content: 'Updated label',
+        filePath: 'examples/override.tsx',
+        scopeId: 'scope-1',
+        frameScope: 'frame-1',
+      },
+      optimistic: true,
+    });
+  });
+
+  it('replays runtime rollback steps and clears optimistic registrations when a mutation fails', async () => {
+    const appliedRuntimeActions: string[] = [];
+    const registeredPendingKeys: string[] = [];
+    const clearedPendingKeys: string[] = [];
+    let committedHistory = false;
+
+    const binding = createCanvasActionDispatchBinding({
+      getRuntime: () => ({
+        nodes: [],
+        edges: [],
+        currentFile: 'examples/current.tsx',
+        sourceVersions: {},
+        selectedNodeIds: [],
+      }),
+      applyRuntimeAction: (descriptor) => {
+        appliedRuntimeActions.push(descriptor.actionId);
+      },
+      executeMutationDescriptor: async () => {
+        throw new Error('mutation failed');
+      },
+      commitHistoryEffect: () => {
+        committedHistory = true;
+      },
+      registerPendingActionRouting: (record) => {
+        registeredPendingKeys.push(record.pendingKey);
+      },
+      clearPendingActionRouting: (pendingKey) => {
+        clearedPendingKeys.push(pendingKey);
+      },
+      routeIntentImpl: () => ({
+        ok: true,
+        value: {
+          intentId: 'node.create',
+          steps: [
+            {
+              kind: 'canonical-mutation',
+              actionId: 'node.create',
+              payload: {
+                filePath: 'examples/current.tsx',
+                node: {
+                  id: 'node-2',
+                  type: 'shape',
+                  props: {},
+                  placement: { mode: 'canvas-absolute', x: 10, y: 20 },
+                },
+              },
+              optimisticMeta: {
+                pendingKey: 'pending-1',
+                baseVersion: 'rev-1',
+                intentId: 'node.create',
+                surfaceId: 'toolbar',
+                filePath: 'examples/current.tsx',
+                rollbackSteps: [],
+                startedAt: 1,
+              },
+            },
+          ],
+          rollbackSteps: [
+            {
+              kind: 'runtime-only-action',
+              actionId: 'restore-node-data',
+              payload: {
+                nodeId: 'node-2',
+                previousData: {},
+              },
+            },
+          ],
+        },
+      }),
+    });
+
+    await expect(binding.executeBridgeIntent({
+      surfaceId: 'toolbar',
+      intentId: 'node.create',
+      selectionRef: {
+        selectedNodeIds: [],
+        currentFile: 'examples/current.tsx',
+      },
+      rawPayload: {},
+      optimistic: false,
+    })).rejects.toThrow('mutation failed');
+
+    expect(registeredPendingKeys).toEqual(['pending-1']);
+    expect(clearedPendingKeys).toEqual(['pending-1']);
+    expect(appliedRuntimeActions).toEqual(['restore-node-data']);
+    expect(committedHistory).toBe(false);
+  });
+});
+
 describe('WorkspaceClient bridge integration', () => {
-  it('create/rename/style entrypoints are routed through the action bridge', async () => {
+  it('consumes the action-dispatch binding instead of owning bridge orchestration inline', async () => {
     const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
 
+    expect(source).toContain("createCanvasActionDispatchBinding({");
+    expect(source).toContain("resolveLegacyEntrypointSurface({");
     expect(source).toContain("dispatchActionRoutingIntentOrThrow({");
     expect(source).toContain("intent: 'style-update'");
     expect(source).toContain("intent: 'rename-node'");
     expect(source).toContain("'create-node'");
     expect(source).toContain("'create-mindmap-child'");
     expect(source).toContain("'create-mindmap-sibling'");
+    expect(source).not.toContain('const executeBridgeIntent = useCallback');
+    expect(source).not.toContain('const dispatchActionRoutingIntentOrThrow = useCallback');
+    expect(source).not.toContain('routeIntent({');
     expect(source).not.toContain('buildCreateCommand(');
     expect(source).not.toContain('buildRenameCommand(');
     expect(source).not.toContain('buildStyleUpdateCommand(');
