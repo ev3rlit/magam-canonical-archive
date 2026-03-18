@@ -12,6 +12,8 @@ const DEFAULT_NODE_LABEL_BY_TYPE: Record<CreatePayload['nodeType'], string> = {
   image: 'https://placehold.co/640x360',
 };
 
+const DEFAULT_PLUGIN_INSTANCE_DISPLAY_NAME = 'New plugin widget';
+
 function slugify(input: string): string {
   return input
     .trim()
@@ -89,4 +91,28 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
         initialProps: {},
       };
   }
+}
+
+export function createSuggestedPluginInstanceId(pluginExportId: string, seed?: string): string {
+  const base = slugify(seed || pluginExportId) || 'plugin-widget';
+  return `plugin-${base}`;
+}
+
+export function getPluginInstanceCreateDefaults(input: {
+  pluginExportId: string;
+  displayName?: string;
+}): {
+  id: string;
+  displayName: string;
+  initialProps: Record<string, unknown>;
+  initialBindingConfig: Record<string, unknown>;
+  initialPersistedState: Record<string, unknown>;
+} {
+  return {
+    id: createSuggestedPluginInstanceId(input.pluginExportId, input.displayName),
+    displayName: input.displayName?.trim() || DEFAULT_PLUGIN_INSTANCE_DISPLAY_NAME,
+    initialProps: {},
+    initialBindingConfig: {},
+    initialPersistedState: {},
+  };
 }

@@ -3,6 +3,15 @@ import type {
   CanonicalObjectRecord as SharedCanonicalObjectRecord,
   CanonicalValidationCode,
 } from '../canonical-object-contract';
+import type {
+  PluginCapabilitySet,
+  PluginComponentKind,
+  PluginManifest,
+  PluginOwnerKind,
+  PluginPermissionValue,
+  PluginSchema,
+  PluginVersionStatus,
+} from '../plugin-runtime-contract';
 
 type CanonicalObjectRecord = SharedCanonicalObjectRecord;
 
@@ -61,6 +70,61 @@ export interface DocumentRevisionRecord {
   createdAt?: Date;
 }
 
+export interface PluginPackageRecord {
+  id: string;
+  workspaceId?: string | null;
+  packageName: string;
+  displayName: string;
+  ownerKind: PluginOwnerKind;
+  ownerId: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface PluginVersionRecord {
+  id: string;
+  pluginPackageId: string;
+  version: string;
+  manifest: PluginManifest;
+  bundleRef: string;
+  integrityHash: string;
+  status: PluginVersionStatus;
+  createdAt?: Date;
+}
+
+export interface PluginExportRecord {
+  id: string;
+  pluginVersionId: string;
+  exportName: string;
+  componentKind: PluginComponentKind;
+  propSchema: PluginSchema;
+  bindingSchema: PluginSchema;
+  capabilities: PluginCapabilitySet;
+  createdAt?: Date;
+}
+
+export interface PluginPermissionRecord {
+  id: string;
+  pluginVersionId: string;
+  permissionKey: string;
+  permissionValue: PluginPermissionValue;
+  createdAt?: Date;
+}
+
+export interface PluginInstanceRecord {
+  id: string;
+  documentId: string;
+  surfaceId: string;
+  pluginExportId: string;
+  pluginVersionId: string;
+  displayName: string;
+  props?: Record<string, unknown> | null;
+  bindingConfig?: Record<string, unknown> | null;
+  persistedState?: Record<string, unknown> | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
 export type CanonicalPersistenceFailureCode =
   | CanonicalValidationCode
   | 'RELATION_ENDPOINT_MISSING'
@@ -72,7 +136,14 @@ export type CanonicalPersistenceFailureCode =
   | 'TOMBSTONE_PLACEHOLDER_RESOLUTION_FAILED'
   | 'EDITABLE_CANONICAL_SHARE_REQUIRES_CLONE'
   | 'CANONICAL_RECORD_NOT_FOUND'
-  | 'CANONICAL_RECORD_TOMBSTONED';
+  | 'CANONICAL_RECORD_TOMBSTONED'
+  | 'PLUGIN_CONTRACT_VIOLATION'
+  | 'PLUGIN_REFERENCE_CONFLICT'
+  | 'PLUGIN_PACKAGE_NOT_FOUND'
+  | 'PLUGIN_VERSION_NOT_FOUND'
+  | 'PLUGIN_VERSION_DISABLED'
+  | 'PLUGIN_EXPORT_NOT_FOUND'
+  | 'PLUGIN_INSTANCE_NOT_FOUND';
 
 export interface PersistenceSuccess<T> {
   ok: true;

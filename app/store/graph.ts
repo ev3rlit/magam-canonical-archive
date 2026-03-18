@@ -19,6 +19,10 @@ import type {
   CanonicalObject,
   ValidationResult,
 } from '@/features/render/canonicalObject';
+import type {
+  PluginNodeRuntimeState,
+  PluginRuntimeDiagnostic,
+} from '@/features/plugin-runtime';
 import type { ActionRoutingPendingRecord } from '@/features/editing/actionRoutingBridge/types';
 import {
   applySessionUpdate,
@@ -113,6 +117,7 @@ export interface AppError {
 export interface CanonicalNodeData {
   canonicalObject?: CanonicalObject;
   canonicalValidation?: ValidationResult;
+  pluginRuntime?: PluginNodeRuntimeState;
 }
 
 export interface MindMapGroup {
@@ -303,6 +308,20 @@ export function getNodeCanonicalValidation(
 ): ValidationResult | undefined {
   const data = node?.data as CanonicalNodeData | undefined;
   return data?.canonicalValidation;
+}
+
+export function getNodePluginRuntimeState(
+  node: Pick<Node, 'data'> | null | undefined,
+): PluginNodeRuntimeState | undefined {
+  const data = node?.data as CanonicalNodeData | undefined;
+  return data?.pluginRuntime;
+}
+
+export function getNodePluginRuntimeDiagnostic(
+  node: Pick<Node, 'data'> | null | undefined,
+): PluginRuntimeDiagnostic | undefined {
+  const runtimeState = getNodePluginRuntimeState(node);
+  return runtimeState?.diagnostic;
 }
 
 const DEFAULT_MINDMAP_SPACING = 50;

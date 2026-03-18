@@ -120,6 +120,19 @@ export interface RenderNode {
     };
     __mindmapEmbedScope?: string;
     __magamScope?: string;
+    pluginInstanceId?: string;
+    pluginPackage?: string;
+    packageName?: string;
+    pluginVersion?: string;
+    pluginVersionId?: string;
+    version?: string;
+    pluginExport?: string;
+    exportName?: string;
+    pluginDisplayName?: string;
+    pluginProps?: Record<string, unknown>;
+    pluginBindingConfig?: Record<string, unknown>;
+    pluginPersistedState?: Record<string, unknown>;
+    pluginCapabilities?: string[];
     children?: any;
   };
   children?: RenderNode[];
@@ -262,6 +275,86 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
   const isRecord = (value: unknown): value is Record<string, unknown> => (
     typeof value === 'object' && value !== null && !Array.isArray(value)
   );
+
+  const readRecordProp = (value: unknown): Record<string, unknown> => (
+    isRecord(value) ? value : {}
+  );
+
+  const readStringArrayProp = (value: unknown): string[] => (
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  );
+
+  const normalizePluginCapabilities = (value: unknown): string[] => {
+    const allowedCapabilities = new Set([
+      'query:objects',
+      'object:get',
+      'selection:read',
+      'instance:update-props',
+      'action:emit',
+      'resize:request',
+    ]);
+    return readStringArrayProp(value).filter((capability) => allowedCapabilities.has(capability));
+  };
+
+  const toPluginNodeData = (input: {
+    child: RenderNode;
+    nodeId: string;
+    mindmapId?: string;
+  }): Record<string, unknown> => {
+    const instanceId = readStringProp(input.child.props.pluginInstanceId) || `${input.nodeId}.instance`;
+    const packageName = (
+      readStringProp(input.child.props.pluginPackage)
+      || readStringProp(input.child.props.packageName)
+      || 'local'
+    );
+    const version = (
+      readStringProp(input.child.props.pluginVersionId)
+      || readStringProp(input.child.props.pluginVersion)
+      || readStringProp(input.child.props.version)
+      || '0.0.0'
+    );
+    const exportName = (
+      readStringProp(input.child.props.pluginExport)
+      || readStringProp(input.child.props.exportName)
+      || 'widget.default'
+    );
+    const displayName = (
+      readStringProp(input.child.props.pluginDisplayName)
+      || readStringProp(input.child.props.label)
+      || exportName
+    );
+
+    const pluginProps = readRecordProp(input.child.props.pluginProps ?? input.child.props.content);
+    const pluginBindingConfig = readRecordProp(input.child.props.pluginBindingConfig);
+    const pluginPersistedState = readRecordProp(input.child.props.pluginPersistedState);
+    const pluginCapabilities = normalizePluginCapabilities(input.child.props.pluginCapabilities);
+
+    return {
+      label: displayName,
+      className: input.child.props.className,
+      groupId: input.mindmapId,
+      sourceMeta: input.child.props.sourceMeta || {
+        sourceId: input.nodeId,
+        kind: input.mindmapId ? 'mindmap' : 'canvas',
+        scopeId: input.mindmapId,
+      },
+      plugin: {
+        instanceId,
+        packageName,
+        version,
+        exportName,
+        displayName,
+        props: pluginProps,
+        bindingConfig: pluginBindingConfig,
+        persistedState: pluginPersistedState,
+        capabilities: pluginCapabilities,
+      },
+      pluginRuntime: {
+        status: 'loading',
+        updatedAt: Date.now(),
+      },
+    };
+  };
 
   const readMarkdownSourceFromChildren = (children?: unknown[]): string | undefined => {
     for (const child of children || []) {
@@ -732,6 +825,27 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
         if (child.children && child.children.length > 0) {
           processChildren(child.children, mmId);
         }
+      } else if (child.type === 'graph-plugin' || child.type === 'graph-widget') {
+        const rawPluginId = child.props.id || `plugin-${nodeIdCounter++}`;
+        const pluginNodeId = resolveNodeId(
+          rawPluginId,
+          mindmapId,
+          child.props.__mindmapEmbedScope,
+        );
+        nodes.push({
+          id: pluginNodeId,
+          type: 'plugin',
+          position: { x: child.props.x || 0, y: child.props.y || 0 },
+          data: withEditMeta('plugin', pluginNodeId, toPluginNodeData({
+            child,
+            nodeId: pluginNodeId,
+            mindmapId,
+          })),
+        });
+
+        if (mindmapId) {
+          createMindMapEdge(child, { nodeId: pluginNodeId, mindmapId });
+        }
       } else if (child.type === 'graph-sequence') {
         if (child.props.size !== undefined) {
           warnUnsupportedLegacySizeApi('SequenceDiagramNode', 'size');
@@ -1080,6 +1194,33 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           mindmapId,
           child.props.__mindmapEmbedScope,
         );
+        const hasPluginReference = (
+          child.props.pluginInstanceId !== undefined
+          || child.props.pluginPackage !== undefined
+          || child.props.packageName !== undefined
+          || child.props.pluginExport !== undefined
+          || child.props.exportName !== undefined
+        );
+        if (hasPluginReference) {
+          nodes.push({
+            id: nodeId,
+            type: 'plugin',
+            position: {
+              x: typeof child.props.x === 'number' ? child.props.x : 0,
+              y: typeof child.props.y === 'number' ? child.props.y : 0,
+            },
+            data: withEditMeta('plugin', nodeId, toPluginNodeData({
+              child,
+              nodeId,
+              mindmapId,
+            })),
+          });
+
+          if (mindmapId) {
+            createMindMapEdge(child, { nodeId, mindmapId });
+          }
+          return;
+        }
         const nodeFontFamily = normalizeFontFamily(child.props.fontFamily);
 
         const nestedEdges: RenderNode[] = [];
