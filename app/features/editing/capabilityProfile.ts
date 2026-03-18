@@ -1,4 +1,4 @@
-import { getNodeTypeStyleEditableKeys } from '@/features/editing/editability';
+import { getSemanticRoleStyleEditableKeys } from '@/features/editing/editability';
 import type {
   EditCommandType,
   EditContentCarrier,
@@ -52,54 +52,6 @@ export function deriveReadOnlyReason(input: CanonicalObject): string | undefined
   return undefined;
 }
 
-function toNodeTypeHintForStyle(input: CanonicalObject): string | undefined {
-  if (input.alias === 'Node' || input.alias === 'Shape') {
-    return 'shape';
-  }
-
-  if (input.alias === 'Sticky') {
-    return 'sticky';
-  }
-
-  if (input.alias === 'Sticker') {
-    return 'sticker';
-  }
-
-  if (input.alias === 'Image') {
-    return 'image';
-  }
-
-  if (input.alias === 'Markdown') {
-    return 'markdown';
-  }
-
-  if (input.alias === 'Sequence') {
-    return 'sequence-diagram';
-  }
-
-  if (input.semanticRole === 'image') {
-    return 'image';
-  }
-
-  if (input.semanticRole === 'sequence') {
-    return 'sequence-diagram';
-  }
-
-  if (input.semanticRole === 'sticky-note') {
-    return 'sticky';
-  }
-
-  if (input.semanticRole === 'topic' || input.semanticRole === 'shape') {
-    return 'shape';
-  }
-
-  if (input.capabilities?.content?.kind === 'markdown') {
-    return 'markdown';
-  }
-
-  return 'shape';
-}
-
 export function deriveContentCarrier(input: CanonicalObject): EditContentCarrier | undefined {
   const content = input.capabilities?.content;
   if (!content) {
@@ -147,9 +99,8 @@ function addUnique(target: string[], source: readonly string[]): void {
 }
 
 export function deriveAllowedUpdateKeys(input: CanonicalObject): string[] {
-  const styleType = toNodeTypeHintForStyle(input);
   const allowedUpdateKeys: string[] = [
-    ...getNodeTypeStyleEditableKeys(styleType),
+    ...getSemanticRoleStyleEditableKeys(input.semanticRole),
   ];
 
   const capabilities = input.capabilities;

@@ -26,15 +26,10 @@ import { TabState, useGraphStore } from '@/store/graph';
 import {
   buildAbsoluteMoveCommand,
   buildContentUpdateCommand,
-  buildCreateCommand,
-  buildRenameCommand,
   buildReparentCommand,
   buildRelativeMoveCommand,
-  buildStyleUpdateCommand,
-  toCreateNodeInput,
   toUpdateNodeProps,
 } from '@/features/editing/commands';
-import { createUniqueNodeId, getCreateDefaults } from '@/features/editing/createDefaults';
 import {
   getWashiPresetPatternCatalog,
 } from '@/utils/washiTapeDefaults';
@@ -46,12 +41,15 @@ import {
   buildTextDraftPatch,
   canCommitTextEdit,
   canRunNodeCommand,
+  createPaneActionRoutingContext,
   flattenWorkspaceStyleDiagnostics,
-  getAllowedNodeStylePatch,
   mapEditRpcErrorToToast,
+  resolveNodeActionRoutingContext,
   resolveNodeEditContext,
   resolveNodeEditTarget,
 } from './workspaceEditUtils';
+import { dispatchActionRoutingIntentOrThrow } from '@/features/editing/actionRoutingBridge';
+import { subscribeActionOptimisticLifecycle } from '@/features/editing/actionOptimisticLifecycle';
 
 type PendingTabCloseRequest = {
   tabIds: string[];
@@ -77,32 +75,6 @@ type MagamTestHooks = {
 function getNodeLabel(node: { data?: unknown }): string {
   const data = (node.data || {}) as Record<string, unknown>;
   return typeof data.label === 'string' ? data.label : '';
-}
-
-function pickNodeDataSnapshot(
-  data: Record<string, unknown>,
-  keys: readonly string[],
-): Record<string, unknown> {
-  return keys.reduce<Record<string, unknown>>((acc, key) => {
-    if (key in data) {
-      acc[key] = data[key];
-    }
-    return acc;
-  }, {});
-}
-
-function buildRenderedNodeId(input: {
-  sourceId: string;
-  scopeId?: string;
-  frameScope?: string;
-}): string {
-  const segments = [
-    input.scopeId,
-    input.frameScope,
-    input.sourceId,
-  ].filter((value): value is string => typeof value === 'string' && value.length > 0);
-
-  return segments.length > 0 ? segments.join('.') : input.sourceId;
 }
 
 declare global {
@@ -139,6 +111,7 @@ export function WorkspaceClient() {
     pendingTextEditAction,
     clearPendingTextEditAction,
     clearTextEditSession,
+    applyActionRoutingLifecycleEvent,
     pushEditCompletionEvent,
     refreshWorkspaceStyles,
     workspaceStyleDiagnosticsByNodeId,
@@ -157,6 +130,13 @@ export function WorkspaceClient() {
     useState<TabContextMenuState | null>(null);
   const tabContextMenuRef = useRef<HTMLDivElement>(null);
   const pendingSelectionNodeIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeActionOptimisticLifecycle((event) => {
+      applyActionRoutingLifecycleEvent(event);
+    });
+    return unsubscribe;
+  }, [applyActionRoutingLifecycleEvent]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') {
@@ -327,9 +307,34 @@ export function WorkspaceClient() {
     }));
   }, []);
 
+  const buildActionRoutingDependencies = useCallback(() => {
+    const runtime = useGraphStore.getState();
+    return {
+      runtime: {
+        currentFile: runtime.currentFile,
+        sourceVersions: runtime.sourceVersions,
+        nodes: runtime.nodes,
+        selectedNodeIds: runtime.selectedNodeIds,
+      },
+      updateNode,
+      createNode,
+      updateNodeData: (nodeId: string, partialData: Record<string, unknown>) => {
+        useGraphStore.getState().updateNodeData(nodeId, partialData);
+      },
+      restoreNodeData,
+      pushEditCompletionEvent,
+      onFileChange: handleFileChange,
+      setPendingSelectionNodeId: (nodeId: string) => {
+        pendingSelectionNodeIdRef.current = nodeId;
+      },
+    };
+  }, [createNode, handleFileChange, pushEditCompletionEvent, restoreNodeData, updateNode]);
+
   const handleNodeStyleCommit = useCallback(async (payload: {
     nodeId: string;
     patch: Record<string, unknown>;
+    surface?: 'selection-floating-menu';
+    trigger?: { source: 'click' | 'hotkey' | 'menu' | 'inspector' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === payload.nodeId);
@@ -337,71 +342,21 @@ export function WorkspaceClient() {
       throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: payload.nodeId });
     }
 
-    const editContext = resolveNodeEditContext(targetNode, runtime.currentFile);
-    if (!editContext.target.filePath) {
-      throw new Error('SOURCE_VERSION_NOT_READY');
-    }
-    if (!canRunNodeCommand(targetNode, 'node.style.update')) {
-      throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', {
-        nodeId: payload.nodeId,
-        reason: editContext.readOnlyReason ?? 'STYLE_NOT_ALLOWED',
-      });
-    }
-
-    const { patch, rejectedKeys } = getAllowedNodeStylePatch(targetNode, payload.patch);
-    if (Object.keys(patch).length === 0 || rejectedKeys.length > 0) {
-      throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', {
-        nodeId: payload.nodeId,
-        rejectedKeys,
-      });
-    }
-
-    const baseVersion = runtime.sourceVersions[editContext.target.filePath] ?? null;
-    if (!baseVersion) {
-      throw new Error('SOURCE_VERSION_NOT_READY');
-    }
-
-    const previousData = (targetNode.data || {}) as Record<string, unknown>;
-    const previous = pickNodeDataSnapshot(previousData, Object.keys(patch));
-    const command = buildStyleUpdateCommand({
-      target: {
-        sourceId: editContext.target.nodeId,
-        filePath: editContext.target.filePath,
-        renderedId: targetNode.id,
-        editMeta: editContext.editMeta,
-      },
-      previous,
-      patch,
-    });
-
-    useGraphStore.getState().updateNodeData(payload.nodeId, patch);
-
     try {
-      const result = await updateNode(
-        command.target.sourceId,
-        toUpdateNodeProps(command),
-        command.target.filePath,
-        { commandType: command.type },
-      );
-      const nextVersion = result.newVersion
-        ?? useGraphStore.getState().sourceVersions[command.target.filePath]
-        ?? baseVersion;
-      const commandId = result.commandId ?? crypto.randomUUID();
-
-      pushEditCompletionEvent({
-        eventId: crypto.randomUUID(),
-        type: 'STYLE_UPDATED',
-        nodeId: command.target.sourceId,
-        filePath: command.target.filePath,
-        commandId,
-        baseVersion,
-        nextVersion,
-        before: command.payload.previous,
-        after: command.payload.patch,
-        committedAt: Date.now(),
-      });
+      await dispatchActionRoutingIntentOrThrow({
+        surface: payload.surface ?? 'selection-floating-menu',
+        intent: 'style-update',
+        resolvedContext: resolveNodeActionRoutingContext(
+          targetNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {
+          patch: payload.patch,
+        },
+        trigger: payload.trigger ?? { source: 'inspector' },
+      }, buildActionRoutingDependencies());
     } catch (error) {
-      restoreNodeData(payload.nodeId, previousData);
       const message = mapEditRpcErrorToToast(error) ?? '스타일 저장에 실패했습니다.';
       setGraphError({
         message,
@@ -410,35 +365,32 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [pushEditCompletionEvent, restoreNodeData, setGraphError, updateNode]);
+  }, [buildActionRoutingDependencies, setGraphError]);
 
   const handleWashiPresetChange = useCallback(
     async (nodeIds: string[], presetId: string) => {
       await Promise.all(nodeIds.map((nodeId) => handleNodeStyleCommit({
         nodeId,
         patch: { pattern: { type: 'preset', id: presetId } },
+        surface: 'selection-floating-menu',
+        trigger: { source: 'hotkey' },
       })));
     },
     [handleNodeStyleCommit],
   );
 
-  const handleNodeRenameCommit = useCallback(async (nodeId: string) => {
+  const handleNodeRenameCommit = useCallback(async (input: {
+    nodeId: string;
+    surface: 'node-context-menu';
+    trigger: { source: 'menu' };
+  }) => {
     const runtime = useGraphStore.getState();
-    const targetNode = runtime.nodes.find((node) => node.id === nodeId);
+    const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
     if (!targetNode) {
-      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId });
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: input.nodeId });
     }
 
     const editContext = resolveNodeEditContext(targetNode, runtime.currentFile);
-    if (!editContext.target.filePath) {
-      throw new Error('SOURCE_VERSION_NOT_READY');
-    }
-    if (!canRunNodeCommand(targetNode, 'node.rename')) {
-      throw new RpcClientError(42201, 'EDIT_NOT_ALLOWED', {
-        nodeId,
-        reason: editContext.readOnlyReason ?? 'RENAME_NOT_ALLOWED',
-      });
-    }
 
     const currentId = editContext.target.nodeId;
     const nextId = window.prompt('새 노드 ID', currentId)?.trim();
@@ -446,47 +398,20 @@ export function WorkspaceClient() {
       return;
     }
 
-    const baseVersion = runtime.sourceVersions[editContext.target.filePath] ?? null;
-    if (!baseVersion) {
-      throw new Error('SOURCE_VERSION_NOT_READY');
-    }
-
-    const command = buildRenameCommand({
-      target: {
-        sourceId: currentId,
-        filePath: editContext.target.filePath,
-        renderedId: targetNode.id,
-        editMeta: editContext.editMeta,
-      },
-      previousId: currentId,
-      nextId,
-    });
-
     try {
-      const result = await updateNode(
-        command.target.sourceId,
-        toUpdateNodeProps(command),
-        command.target.filePath,
-        { commandType: command.type },
-      );
-      const nextVersion = result.newVersion
-        ?? useGraphStore.getState().sourceVersions[command.target.filePath]
-        ?? baseVersion;
-      const commandId = result.commandId ?? crypto.randomUUID();
-
-      pushEditCompletionEvent({
-        eventId: crypto.randomUUID(),
-        type: 'NODE_RENAMED',
-        nodeId: command.target.sourceId,
-        filePath: command.target.filePath,
-        commandId,
-        baseVersion,
-        nextVersion,
-        before: command.payload.previous,
-        after: command.payload.next,
-        committedAt: Date.now(),
-      });
-      handleFileChange();
+      await dispatchActionRoutingIntentOrThrow({
+        surface: input.surface,
+        intent: 'rename-node',
+        resolvedContext: resolveNodeActionRoutingContext(
+          targetNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {
+          nextId,
+        },
+        trigger: input.trigger,
+      }, buildActionRoutingDependencies());
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? 'ID 변경에 실패했습니다.';
       setGraphError({
@@ -496,9 +421,11 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [handleFileChange, pushEditCompletionEvent, setGraphError, updateNode]);
+  }, [buildActionRoutingDependencies, setGraphError]);
 
   const handleCreateNodeCommit = useCallback(async (input: {
+    surface: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu';
+    trigger: { source: 'click' | 'menu' };
     nodeType: 'shape' | 'text' | 'markdown' | 'sticky' | 'sticker' | 'washi-tape';
     placement:
       | { mode: 'canvas-absolute'; x: number; y: number }
@@ -507,74 +434,37 @@ export function WorkspaceClient() {
     filePath?: string;
     scopeId?: string;
     frameScope?: string;
+    targetNodeId?: string;
   }) => {
     const runtime = useGraphStore.getState();
-    const targetFile = input.filePath ?? runtime.currentFile;
-    if (!targetFile) {
-      throw new Error('SOURCE_VERSION_NOT_READY');
-    }
-
-    const baseVersion = runtime.sourceVersions[targetFile] ?? null;
-    if (!baseVersion) {
-      throw new Error('SOURCE_VERSION_NOT_READY');
-    }
-
-    const existingSourceIds = runtime.nodes
-      .map((node) => {
-        const sourceMeta = (node.data as { sourceMeta?: { sourceId?: unknown } } | undefined)?.sourceMeta;
-        return typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : node.id;
+    const targetNode = input.targetNodeId
+      ? runtime.nodes.find((node) => node.id === input.targetNodeId)
+      : null;
+    const resolvedContext = targetNode
+      ? resolveNodeActionRoutingContext(targetNode, runtime.currentFile, runtime.selectedNodeIds)
+      : createPaneActionRoutingContext({
+        currentFile: input.filePath ?? runtime.currentFile,
+        selectedNodeIds: runtime.selectedNodeIds,
       });
-    const nextId = createUniqueNodeId(input.nodeType, existingSourceIds);
-    const defaults = getCreateDefaults(input.nodeType);
-    const command = buildCreateCommand({
-      type: input.placement.mode === 'canvas-absolute'
-        ? 'node.create'
-        : input.placement.mode === 'mindmap-child'
-          ? 'mindmap.child.create'
-          : 'mindmap.sibling.create',
-      target: {
-        sourceId: nextId,
-        filePath: targetFile,
-        scopeId: input.scopeId,
-        frameScope: input.frameScope,
-      },
-      payload: {
-        nodeType: input.nodeType,
-        id: nextId,
-        initialProps: defaults.initialProps,
-        initialContent: defaults.initialContent,
-        placement: input.placement,
-      },
-    });
-
-    const createInput = toCreateNodeInput(command);
 
     try {
-      const result = await createNode(createInput, targetFile);
-      const nextVersion = result.newVersion
-        ?? useGraphStore.getState().sourceVersions[targetFile]
-        ?? baseVersion;
-      const commandId = result.commandId ?? crypto.randomUUID();
-      const renderedId = buildRenderedNodeId({
-        sourceId: nextId,
-        scopeId: input.scopeId,
-        frameScope: input.frameScope,
-      });
-
-      pendingSelectionNodeIdRef.current = renderedId;
-      pushEditCompletionEvent({
-        eventId: crypto.randomUUID(),
-        type: 'NODE_CREATED',
-        nodeId: nextId,
-        filePath: targetFile,
-        commandId,
-        baseVersion,
-        nextVersion,
-        before: { created: false },
-        after: { create: createInput, renderedId },
-        committedAt: Date.now(),
-      });
-      handleFileChange();
+      await dispatchActionRoutingIntentOrThrow({
+        surface: input.surface,
+        intent: input.placement.mode === 'mindmap-child'
+          ? 'create-mindmap-child'
+          : input.placement.mode === 'mindmap-sibling'
+            ? 'create-mindmap-sibling'
+            : 'create-node',
+        resolvedContext,
+        uiPayload: {
+          nodeType: input.nodeType,
+          placement: input.placement,
+          ...(input.filePath ? { filePath: input.filePath } : {}),
+          ...(input.scopeId ? { scopeId: input.scopeId } : {}),
+          ...(input.frameScope ? { frameScope: input.frameScope } : {}),
+        },
+        trigger: input.trigger,
+      }, buildActionRoutingDependencies());
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? '오브젝트 생성에 실패했습니다.';
       setGraphError({
@@ -584,7 +474,7 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [createNode, handleFileChange, pushEditCompletionEvent, setGraphError]);
+  }, [buildActionRoutingDependencies, setGraphError]);
 
   const handleMindMapReparentCommit = useCallback(async (input: {
     draggedNodeId: string;
