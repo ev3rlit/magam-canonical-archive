@@ -5,8 +5,6 @@ import {
   FileText,
   Plus,
   Square,
-  Sticker,
-  Ticket,
   Type,
 } from 'lucide-react';
 import type { GraphCanvasCreateMode } from '@/components/GraphCanvas.drag';
@@ -56,8 +54,8 @@ export const TOOLBAR_CREATE_OPTIONS: ToolbarCreateOption[] = [
   { id: 'shape', label: 'Shape', icon: React.createElement(Square, { className: 'w-4 h-4' }) },
   { id: 'text', label: 'Text', icon: React.createElement(Type, { className: 'w-4 h-4' }) },
   { id: 'markdown', label: 'Markdown', icon: React.createElement(FileText, { className: 'w-4 h-4' }) },
-  { id: 'sticker', label: 'Sticker', icon: React.createElement(Sticker, { className: 'w-4 h-4' }) },
-  { id: 'washi-tape', label: 'Washi', icon: React.createElement(Ticket, { className: 'w-4 h-4' }) },
+  { id: 'sticker', label: 'Sticker', icon: React.createElement(Plus, { className: 'w-4 h-4' }) },
+  { id: 'washi-tape', label: 'Washi', icon: React.createElement(Bookmark, { className: 'w-4 h-4' }) },
 ];
 
 export function resolveToolbarPresenterState(input: ToolbarPresenterStateInput) {

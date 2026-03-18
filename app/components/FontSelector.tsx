@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { PenLine, Type } from 'lucide-react';
+import { Pencil, Type } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { useGraphStore } from '@/store/graph';
 import type { FontFamilyPreset } from '@magam/core';
@@ -58,7 +58,7 @@ export const FontSelector: React.FC = () => {
             : 'text-slate-500 dark:text-slate-400',
         )}
       >
-        <PenLine className="w-4 h-4" />
+        <Pencil className="w-4 h-4" />
       </button>
 
       {isOpen && (

@@ -16,6 +16,10 @@ mock.module('lucide-react', () => ({
 }));
 
 const { nodeMenuItems, paneMenuItems } = await import('@/config/contextMenuItems');
+const {
+  selectionFloatingMenuIntents,
+  selectionFloatingMenuItems,
+} = await import('@/features/canvas-ui-entrypoints/selection-floating-menu/contribution');
 const { canvasRuntime, createCanvasRuntime } = await import('./createCanvasRuntime');
 
 describe('createCanvasRuntime', () => {
@@ -46,11 +50,12 @@ describe('createCanvasRuntime', () => {
     });
   });
 
-  it('preserves current pane/node menu inventories while leaving empty placeholders safe', () => {
+  it('preserves current fixed-slot inventories for selection and context menus', () => {
     expect(canvasRuntime.slots.canvasToolbar.items).toEqual([]);
-    expect(canvasRuntime.slots.selectionFloatingMenu.items).toEqual([]);
+    expect(canvasRuntime.slots.selectionFloatingMenu.items).toEqual(selectionFloatingMenuItems);
     expect(canvasRuntime.slots.paneContextMenu.items).toEqual(paneMenuItems);
     expect(canvasRuntime.slots.nodeContextMenu.items).toEqual(nodeMenuItems);
+    expect(canvasRuntime.intents).toEqual(selectionFloatingMenuIntents);
   });
 
   it('flattens slot-specific shortcuts and intents into one runtime object', () => {

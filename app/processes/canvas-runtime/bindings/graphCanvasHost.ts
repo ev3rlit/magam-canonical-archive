@@ -6,8 +6,28 @@ import type {
   GraphCanvasCreateIntentInput,
   GraphCanvasRenameIntentInput,
 } from '@/components/GraphCanvas';
-import { createSlotContribution, resolveToolbarAnchor } from '@/features/overlay-host';
-import type { EntrypointInteractionMode } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
+import { SelectionFloatingMenu } from '@/features/canvas-ui-entrypoints/selection-floating-menu/SelectionFloatingMenu';
+import { resolveSelectionFloatingMenuModel } from '@/features/canvas-ui-entrypoints/selection-floating-menu/selectionModel';
+import {
+  SELECTION_FLOATING_MENU_ANCHOR_ID,
+  type SelectionFloatingMenuPresetOption,
+  type SelectionFloatingMenuRenderModel,
+  type SelectionFloatingMenuStylePatchKey,
+} from '@/features/canvas-ui-entrypoints/selection-floating-menu/types';
+import {
+  createOpenSurfaceDescriptor,
+  type EntrypointInteractionMode,
+  type EntrypointRuntimeState,
+  type OpenSurfaceDescriptor,
+} from '@/features/canvas-ui-entrypoints/ui-runtime-state';
+import {
+  createSlotContribution,
+  resolveToolbarAnchor,
+  type OverlayContribution,
+  type OverlayDismissReason,
+  type OverlayInstanceState,
+} from '@/features/overlay-host';
+import type { ActionRoutingPendingRecord } from '@/features/editing/actionRoutingBridge/types';
 import type { ContextMenuActionsContext, ContextMenuContext } from '@/types/contextMenu';
 import type { CreatableNodeType } from '@/types/contextMenu';
 import type { MaterialPresetId } from '@/types/washiTape';
@@ -40,6 +60,79 @@ export interface GraphCanvasToolbarContributionInput extends GraphCanvasHostBind
   activeWashiPresetId: MaterialPresetId | null;
   selectedWashiNodeIds: string[];
   onSelectWashiPreset: (presetId: string) => void;
+}
+
+export interface GraphCanvasSelectionFloatingMenuContributionInput extends GraphCanvasHostBindingContract {
+  nodes: FlowNode[];
+  selectedNodeIds: string[];
+  currentFile: string | null;
+  runtimeState: EntrypointRuntimeState;
+  pendingActionRoutingByKey: Record<string, ActionRoutingPendingRecord>;
+  washiPresets: SelectionFloatingMenuPresetOption[];
+  onApplyStylePatch?: (input: {
+    nodeIds: string[];
+    patch: Record<string, unknown>;
+    patchKey: SelectionFloatingMenuStylePatchKey;
+  }) => Promise<void> | void;
+  onCommitContent?: (input: {
+    nodeId: string;
+    content: string;
+  }) => Promise<void> | void;
+}
+
+export interface GraphCanvasSelectionFloatingMenuSyncInput {
+  activeOverlayId: string | null;
+  contribution: OverlayContribution | null;
+  currentOpenSurfaceKind: OpenSurfaceDescriptor['kind'] | null;
+  getActiveOverlays: () => Array<Pick<OverlayInstanceState, 'instanceId'>>;
+  openOverlayHost: (contribution: OverlayContribution) => string;
+  replaceOverlayHost: (instanceId: string, contribution: OverlayContribution) => string;
+  closeOverlayHost: (instanceId: string, reason: OverlayDismissReason) => void;
+  openEntrypointSurface: (surface: OpenSurfaceDescriptor) => void;
+  closeEntrypointSurface: () => void;
+}
+
+function resolveSelectionFloatingMenuAnchor(
+  runtimeState: EntrypointRuntimeState,
+): { type: 'selection-bounds'; x: number; y: number; width: number; height: number } | null {
+  const anchor = runtimeState.anchorsById[SELECTION_FLOATING_MENU_ANCHOR_ID];
+  if (anchor?.kind !== 'selection-bounds' || !anchor.screen) {
+    return null;
+  }
+
+  return {
+    type: 'selection-bounds',
+    x: anchor.screen.x,
+    y: anchor.screen.y,
+    width: anchor.screen.width ?? 0,
+    height: anchor.screen.height ?? 0,
+  };
+}
+
+function filterSelectionFloatingMenuModelBySlotItems(
+  model: SelectionFloatingMenuRenderModel,
+  allowedItemIds: readonly string[],
+): SelectionFloatingMenuRenderModel {
+  const allowed = new Set(allowedItemIds);
+  const controls = model.controls.filter((control) => allowed.has(control.inventory.itemId));
+  const overflowControls = controls.filter(
+    (control) => control.inventory.group === 'overflow' && control.visible,
+  );
+  const primaryControls = controls.filter((control) => (
+    control.inventory.group === 'primary'
+    && control.visible
+    && (
+      control.inventory.controlId !== 'more'
+      || overflowControls.length > 0
+    )
+  ));
+
+  return {
+    ...model,
+    controls,
+    primaryControls,
+    overflowControls,
+  };
 }
 
 export function createGraphCanvasContextMenuActions(
@@ -147,6 +240,85 @@ export function createGraphCanvasPaneContextMenu(input: {
     selectedNodeIds: [],
     actions: input.actions,
   };
+}
+
+export function createGraphCanvasSelectionFloatingMenuContribution(
+  input: GraphCanvasSelectionFloatingMenuContributionInput,
+): OverlayContribution | null {
+  if (input.selectionFloatingMenuSlot.items.length === 0) {
+    return null;
+  }
+
+  const anchor = resolveSelectionFloatingMenuAnchor(input.runtimeState);
+  if (!anchor) {
+    return null;
+  }
+
+  const model = filterSelectionFloatingMenuModelBySlotItems(
+    resolveSelectionFloatingMenuModel({
+      nodes: input.nodes,
+      selectedNodeIds: input.selectedNodeIds,
+      currentFile: input.currentFile,
+      runtimeState: input.runtimeState,
+      pendingActionRoutingByKey: input.pendingActionRoutingByKey,
+    }),
+    input.selectionFloatingMenuSlot.items.map((item) => item.itemId),
+  );
+
+  if (!model.visible || (model.primaryControls.length === 0 && model.overflowControls.length === 0)) {
+    return null;
+  }
+
+  return createSlotContribution(input.selectionFloatingMenuSlot.overlaySlot, {
+    anchor,
+    focusPolicy: {
+      openTarget: 'none',
+      restoreTarget: 'none',
+    },
+    render: () => React.createElement(SelectionFloatingMenu, {
+      model,
+      washiPresets: input.washiPresets,
+      onApplyStylePatch: input.onApplyStylePatch,
+      onCommitContent: input.onCommitContent,
+    }),
+  });
+}
+
+export function syncGraphCanvasSelectionFloatingMenuOverlay(
+  input: GraphCanvasSelectionFloatingMenuSyncInput,
+): string | null {
+  const activeId = input.activeOverlayId;
+  const hasActiveOverlay = Boolean(
+    activeId && input.getActiveOverlays().some((overlay) => overlay.instanceId === activeId),
+  );
+
+  if (!input.contribution) {
+    if (hasActiveOverlay && activeId) {
+      input.closeOverlayHost(activeId, 'programmatic-close');
+    }
+    if (input.currentOpenSurfaceKind === 'selection-floating-menu') {
+      input.closeEntrypointSurface();
+    }
+    return null;
+  }
+
+  if (
+    input.currentOpenSurfaceKind === null
+    || input.currentOpenSurfaceKind === 'selection-floating-menu'
+  ) {
+    input.openEntrypointSurface(createOpenSurfaceDescriptor({
+      kind: 'selection-floating-menu',
+      anchorId: SELECTION_FLOATING_MENU_ANCHOR_ID,
+      dismissOnSelectionChange: true,
+      dismissOnViewportChange: false,
+    }));
+  }
+
+  if (hasActiveOverlay && activeId) {
+    return input.replaceOverlayHost(activeId, input.contribution);
+  }
+
+  return input.openOverlayHost(input.contribution);
 }
 
 export function createGraphCanvasToolbarContribution(input: GraphCanvasToolbarContributionInput) {

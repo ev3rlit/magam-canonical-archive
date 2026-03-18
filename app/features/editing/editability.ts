@@ -97,6 +97,7 @@ const SHAPE_STYLE_KEYS = [
 const TEXT_STYLE_KEYS = [
   'color',
   'fontSize',
+  'bold',
   'fontFamily',
   'className',
 ] as const;
