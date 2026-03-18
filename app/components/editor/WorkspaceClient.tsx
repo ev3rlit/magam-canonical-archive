@@ -1311,6 +1311,7 @@ export function WorkspaceClient() {
           />
         )}
 
+        {/* Workspace-level overlays stay outside the canvas overlay host boundary. */}
         {tabContextMenu && (
           <div
             ref={tabContextMenuRef}

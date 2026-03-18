@@ -1,76 +1,103 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { OverlayDismissReason } from '@/features/overlay-host';
+import { useOverlayHost } from '@/features/overlay-host';
 import type { ContextMenuContext, ContextMenuItem } from '@/types/contextMenu';
 import { nodeMenuItems, paneMenuItems } from '@/config/contextMenuItems';
+import { createContextMenuOverlayContribution } from '@/components/ContextMenu';
+import {
+    sanitizeContextMenuItems,
+    shouldDismissContextMenuForSelectionChange,
+} from './useContextMenu.helpers';
 
 export interface ContextMenuState {
     isOpen: boolean;
     context: ContextMenuContext | null;
     items: ContextMenuItem[];
+    instanceId: string | null;
+    lastDismissReason?: OverlayDismissReason;
 }
 
-const sanitizeItems = (items: ContextMenuItem[], ctx: ContextMenuContext) => {
-    const visible = items.filter((item) => {
-        if (item.type === 'separator') {
-            return true;
-        }
-        if (item.when) {
-            return item.when(ctx);
-        }
-        return true;
-    });
-
-    const ordered = visible.slice().sort((a, b) => {
-        const aOrder = a.type === 'action' || a.type === 'submenu' ? a.order ?? 0 : 0;
-        const bOrder = b.type === 'action' || b.type === 'submenu' ? b.order ?? 0 : 0;
-        return aOrder - bOrder;
-    });
-
-    const compacted: ContextMenuItem[] = [];
-    ordered.forEach((item) => {
-        if (item.type === 'separator') {
-            if (compacted.length === 0) {
-                return;
-            }
-            const prev = compacted[compacted.length - 1];
-            if (prev.type === 'separator') {
-                return;
-            }
-        }
-        compacted.push(item);
-    });
-
-    if (compacted.length > 0 && compacted[compacted.length - 1].type === 'separator') {
-        compacted.pop();
-    }
-
-    return compacted;
-};
-
 export function useContextMenu() {
+    const {
+        open: openOverlay,
+        replace: replaceOverlay,
+        close: closeOverlay,
+        getActive,
+    } = useOverlayHost();
     const [state, setState] = useState<ContextMenuState>({
         isOpen: false,
         context: null,
         items: [],
+        instanceId: null,
     });
+    const stateRef = useRef(state);
 
-    const openMenu = useCallback((ctx: ContextMenuContext) => {
+    useEffect(() => {
+        stateRef.current = state;
+    }, [state]);
+
+    const openMenu = useCallback((
+        ctx: ContextMenuContext,
+        options?: {
+            triggerElement?: HTMLElement | null;
+            selectionOwnerElement?: HTMLElement | null;
+        },
+    ) => {
         const rawItems = ctx.type === 'node' ? nodeMenuItems : paneMenuItems;
-        const items = sanitizeItems(rawItems, ctx);
-        setState({ isOpen: true, context: ctx, items });
-    }, []);
+        const items = sanitizeContextMenuItems(rawItems, ctx);
+        const contribution = createContextMenuOverlayContribution({
+            slot: ctx.type === 'node' ? 'node-context-menu' : 'pane-context-menu',
+            items,
+            context: ctx,
+            triggerElement: options?.triggerElement ?? null,
+            selectionOwnerElement: options?.selectionOwnerElement ?? null,
+            onDismiss: (reason) => {
+                setState({
+                    isOpen: false,
+                    context: null,
+                    items: [],
+                    instanceId: null,
+                    lastDismissReason: reason,
+                });
+            },
+        });
 
-    const closeMenu = useCallback(() => {
-        setState((prev) => ({
-            ...prev,
-            isOpen: false,
-            context: null,
-            items: [],
-        }));
-    }, []);
+        const activeInstanceId = stateRef.current.instanceId;
+        const nextInstanceId = activeInstanceId
+            && getActive().some((item) => item.instanceId === activeInstanceId)
+            ? replaceOverlay(activeInstanceId, contribution)
+            : openOverlay(contribution);
+
+        setState({
+            isOpen: true,
+            context: ctx,
+            items,
+            instanceId: nextInstanceId,
+            lastDismissReason: stateRef.current.lastDismissReason,
+        });
+    }, [getActive, openOverlay, replaceOverlay]);
+
+    const closeMenu = useCallback((reason: OverlayDismissReason = 'programmatic-close') => {
+        const activeInstanceId = stateRef.current.instanceId;
+        if (!activeInstanceId) {
+            return;
+        }
+
+        closeOverlay(activeInstanceId, reason);
+    }, [closeOverlay]);
+
+    const handleSelectionChange = useCallback((selectedNodeIds: string[]) => {
+        if (!shouldDismissContextMenuForSelectionChange(stateRef.current, selectedNodeIds)) {
+            return;
+        }
+
+        closeMenu('selection-change');
+    }, [closeMenu]);
 
     return {
         ...state,
         openMenu,
         closeMenu,
+        handleSelectionChange,
     };
 }

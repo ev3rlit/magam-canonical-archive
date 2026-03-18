@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { resolveRestoreFocusTarget, restoreFocusForOverlay } from '@/features/overlay-host';
+import { installTestDom } from '@/features/overlay-host/testDom';
 import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
@@ -319,6 +321,36 @@ describe('WorkspaceClient editability helpers', () => {
     }, 1)).toEqual(['[sticky-1] bad token']);
 
     expect(flattenWorkspaceStyleDiagnostics({})).toEqual([]);
+  });
+});
+
+describe('WorkspaceClient overlay boundary helpers', () => {
+  it('focus restore keeps using the trigger element for canvas-host dismissals', () => {
+    const cleanupDom = installTestDom();
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    document.body.appendChild(trigger);
+
+    expect(resolveRestoreFocusTarget({
+      focusPolicy: {
+        openTarget: 'none',
+        restoreTarget: 'trigger',
+      },
+      triggerElement: trigger,
+      selectionOwnerElement: null,
+    })).toBe(trigger);
+
+    expect(restoreFocusForOverlay({
+      focusPolicy: {
+        openTarget: 'none',
+        restoreTarget: 'trigger',
+      },
+      triggerElement: trigger,
+      selectionOwnerElement: null,
+    })).toEqual({ restored: true });
+
+    trigger.remove();
+    cleanupDom();
   });
 });
 
