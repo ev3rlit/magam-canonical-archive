@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import React from 'react';
 import { act } from 'react';
+import { JSDOM } from 'jsdom';
 import { createRoot, type Root } from 'react-dom/client';
 import {
   ContextMenu,
@@ -9,13 +10,7 @@ import {
 } from './ContextMenu';
 import type { ContextMenuContext } from '@/types/contextMenu';
 
-type TestDom = {
-  window: Window & typeof globalThis;
-};
-
-const { JSDOM }: {
-  JSDOM: new (html: string, options?: { url?: string }) => TestDom;
-} = require('jsdom');
+type TestDom = JSDOM;
 
 type TestEnvironment = {
   dom: TestDom;

@@ -1,5 +1,6 @@
 import React, { isValidElement, memo, useCallback, useMemo } from 'react';
 import { NodeProps, useNodeId } from 'reactflow';
+import type { Components } from 'react-markdown';
 import { twMerge } from 'tailwind-merge';
 import { BaseNode } from './BaseNode';
 import { CodeBlock } from '../ui/CodeBlock';
@@ -79,8 +80,8 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
         }
     }, [navigateToNode]);
 
-    const components = useMemo(() => ({
-        pre: ({ children }: any) => {
+    const components = useMemo<Components>(() => ({
+        pre: ({ children }) => {
             const codeChild = Array.isArray(children) ? children[0] : children;
             if (!isValidElement(codeChild)) {
                 return <>{children}</>;
@@ -99,8 +100,15 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
                 />
             );
         },
-        a: ({ node, href, children, ...props }: any) => {
-            const actualHref = href || (node as any)?.properties?.href || '';
+        a: ({ node, href, children, ...props }) => {
+            const nodeHref = node?.properties?.href;
+            const actualHref = typeof href === 'string'
+                ? href
+                : typeof nodeHref === 'string'
+                    ? nodeHref
+                    : Array.isArray(nodeHref) && typeof nodeHref[0] === 'string'
+                        ? nodeHref[0]
+                        : '';
             const isNodeLink = actualHref?.startsWith('node:');
             return (
                 <a
@@ -119,14 +127,16 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
                 </a>
             );
         },
-        code: ({ children, ...props }: any) => {
+        code: ({ node, children, ...props }) => {
+            void node;
             return (
                 <code className="bg-slate-100 rounded px-1.5 py-0.5 text-[0.9em] font-mono text-pink-600 border border-slate-200" {...props}>
                     {children}
                 </code>
             );
         },
-        img: ({ node, src, alt, ...props }: any) => {
+        img: ({ node, src, alt, ...props }) => {
+            void node;
             const currentFile = useGraphStore.getState().currentFile;
             const resolvedSrc = src ? toAssetApiUrl(currentFile, src) : '';
             return <img src={resolvedSrc} alt={alt || ''} {...props} />;

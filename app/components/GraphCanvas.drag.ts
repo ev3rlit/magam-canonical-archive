@@ -40,8 +40,8 @@ type RpcLikeError = {
 type DragNodeLike = {
   id: string;
   position: { x: number; y: number };
-  width?: number;
-  height?: number;
+  width?: number | null;
+  height?: number | null;
   data?: {
     groupId?: unknown;
     editMeta?: {

@@ -284,21 +284,22 @@ describe('GraphCanvas create mode helpers', () => {
 
 describe('GraphCanvas selection anchor helpers', () => {
   it('selection bounds anchor는 node ids와 serializable bounds만 보존한다', () => {
+    const selectedNodes: Parameters<typeof buildSelectionBoundsAnchor>[0]['selectedNodes'] = [
+      {
+        id: 'node-a',
+        position: { x: 10, y: 20 },
+        width: 100,
+        height: 40,
+      },
+      {
+        id: 'node-b',
+        position: { x: 140, y: 90 },
+        width: 60,
+        height: 30,
+      },
+    ];
     const anchor = buildSelectionBoundsAnchor({
-      selectedNodes: [
-        {
-          id: 'node-a',
-          position: { x: 10, y: 20 },
-          width: 100,
-          height: 40,
-        } as any,
-        {
-          id: 'node-b',
-          position: { x: 140, y: 90 },
-          width: 60,
-          height: 30,
-        } as any,
-      ],
+      selectedNodes,
       viewport: { x: 0, y: 0, zoom: 1 },
     });
 

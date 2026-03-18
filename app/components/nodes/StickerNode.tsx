@@ -410,7 +410,7 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
   const currentFile = useGraphStore((state) => state.currentFile);
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
-  const normalized = useMemo(() => normalizeStickerData(data as Record<string, any>), [data]);
+  const normalized = useMemo(() => normalizeStickerData(data as Record<string, unknown>), [data]);
   const children = useMemo(() => resolveRenderableChildren(data.children), [data.children]);
   const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
   const resolvedFontFamily = shouldApplyHierarchy

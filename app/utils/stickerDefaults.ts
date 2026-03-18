@@ -6,6 +6,12 @@ export interface StickerNormalized {
 }
 
 export type StickerCreateDefaults = StickerNormalized;
+type StickerNormalizationInput = {
+  outlineWidth?: unknown;
+  outlineColor?: unknown;
+  shadow?: unknown;
+  padding?: unknown;
+};
 
 const OUTLINE_WIDTH_MIN = 8;
 const OUTLINE_WIDTH_MAX = 14;
@@ -20,10 +26,10 @@ function clampPadding(value: unknown): number {
   return Math.max(0, Math.round(base));
 }
 
-export function normalizeStickerData(input: Record<string, any>): StickerNormalized {
+export function normalizeStickerData(input: StickerNormalizationInput): StickerNormalized {
   return {
     outlineWidth: clampOutlineWidth(input?.outlineWidth),
-    outlineColor: input?.outlineColor || '#ffffff',
+    outlineColor: typeof input?.outlineColor === 'string' ? input.outlineColor : '#ffffff',
     shadow: input?.shadow === 'none' || input?.shadow === 'sm' || input?.shadow === 'md' || input?.shadow === 'lg'
       ? input.shadow
       : 'md',

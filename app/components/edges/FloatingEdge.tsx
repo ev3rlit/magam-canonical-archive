@@ -10,6 +10,15 @@ interface FloatingEdgeData {
     targetType?: string;
 }
 
+function resolveNodeShapeType(nodeData: unknown): string | undefined {
+    if (!nodeData || typeof nodeData !== 'object') {
+        return undefined;
+    }
+
+    const { type } = nodeData as { type?: unknown };
+    return typeof type === 'string' ? type : undefined;
+}
+
 export default function FloatingEdge({
     id,
     source,
@@ -47,13 +56,13 @@ export default function FloatingEdge({
         const sourceIntersection = getNodeIntersection(
             sourceNode,
             targetCenter,
-            data?.sourceType || (sourceNode.data as any)?.type
+            data?.sourceType ?? resolveNodeShapeType(sourceNode.data)
         );
 
         const targetIntersection = getNodeIntersection(
             targetNode,
             sourceCenter,
-            data?.targetType || (targetNode.data as any)?.type
+            data?.targetType ?? resolveNodeShapeType(targetNode.data)
         );
 
         // Generate path

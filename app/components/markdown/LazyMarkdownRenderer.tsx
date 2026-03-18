@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import type { Components, UrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 type MarkdownComponentType = typeof import('react-markdown').default;
@@ -19,8 +20,8 @@ export interface LazyMarkdownRendererProps {
   content: string;
   className?: string;
   style?: React.CSSProperties;
-  components?: Record<string, any>;
-  urlTransform?: (url: string) => string;
+  components?: Components;
+  urlTransform?: UrlTransform;
 }
 
 export function LazyMarkdownRenderer({
