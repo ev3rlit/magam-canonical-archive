@@ -21,6 +21,9 @@ const {
   selectionFloatingMenuIntents,
   selectionFloatingMenuItems,
 } = await import('@/features/canvas-ui-entrypoints/selection-floating-menu/contribution');
+const { canvasToolbarSectionContributions } = await import(
+  '@/features/canvas-ui-entrypoints/canvas-toolbar/toolbarSections'
+);
 const { canvasRuntime, createCanvasRuntime } = await import('./createCanvasRuntime');
 
 describe('createCanvasRuntime', () => {
@@ -51,8 +54,10 @@ describe('createCanvasRuntime', () => {
     });
   });
 
-  it('preserves current fixed-slot inventories for selection and context menus', () => {
-    expect(canvasRuntime.slots.canvasToolbar.items).toEqual([]);
+  it('preserves current fixed-slot inventories for toolbar, selection, and context menus', () => {
+    expect(canvasRuntime.slots.canvasToolbar.items).toEqual(
+      canvasToolbarSectionContributions,
+    );
     expect(canvasRuntime.slots.selectionFloatingMenu.items).toEqual(selectionFloatingMenuItems);
     expect(canvasRuntime.slots.paneContextMenu.items).toEqual(paneMenuItems);
     expect(canvasRuntime.slots.nodeContextMenu.items).toEqual(nodeMenuItems);
