@@ -26,7 +26,7 @@
 
 ## Feature Slices
 
-아래 체크박스는 완료 여부가 아니라 현재 진행 중인 slice 표시다. 현재는 5번을 제외한 나머지 slice를 진행 중으로 둔다.
+아래 체크박스는 각 slice의 완료 상태를 나타낸다. 현재는 6개 slice가 모두 완료된 상태다.
 
 ### [x] 1. Canonical Object Persistence
 
@@ -52,7 +52,7 @@
 - 문서: `./ai-cli-headless-surface/README.md`
 - 목표: 앱 비실행 상태에서도 동작하는 headless AI CLI surface 구현
 
-### [ ] 5. App Attached Session Extension
+### [x] 5. App Attached Session Extension
 
 - 폴더: `./app-attached-session-extension/`
 - 문서: `./app-attached-session-extension/README.md`
