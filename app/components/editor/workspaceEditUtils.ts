@@ -194,8 +194,8 @@ export function extractWorkspaceStyleInput(
   };
 }
 
-export function flattenWorkspaceStyleDiagnostics(
-  diagnosticsByNodeId: Record<string, Array<{ objectId: string; message: string }>>,
+export function flattenWorkspaceStyleDiagnostics<T extends { objectId: string; message: string }>(
+  diagnosticsByNodeId: Record<string, T[]>,
   limit = 4,
 ): string[] {
   return Object.values(diagnosticsByNodeId)

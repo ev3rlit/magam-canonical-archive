@@ -335,6 +335,185 @@ describe('group hover registry', () => {
   });
 });
 
+describe('entrypoint runtime state', () => {
+  it('기본 runtime-only slice를 제공한다', () => {
+    const state = useGraphStore.getState();
+
+    expect(state.entrypointRuntime.activeTool).toEqual({
+      interactionMode: 'pointer',
+      createMode: null,
+    });
+    expect(state.entrypointRuntime.openSurface).toBeNull();
+    expect(state.entrypointRuntime.anchorsById).toEqual({});
+    expect(state.entrypointRuntime.hover).toEqual({
+      nodeIdsByGroupId: {},
+      targetNodeId: null,
+    });
+    expect(state.entrypointRuntime.pendingByRequestId).toEqual({});
+  });
+
+  it('active tool을 graph store 단일 owner로 업데이트한다', () => {
+    useGraphStore.getState().setEntrypointInteractionMode('hand');
+    useGraphStore.getState().setEntrypointCreateMode('shape');
+
+    expect(useGraphStore.getState().entrypointRuntime.activeTool).toEqual({
+      interactionMode: 'hand',
+      createMode: 'shape',
+    });
+  });
+
+  it('anchor가 없는 surface는 열지 않고 anchor 등록 후에는 연다', () => {
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'missing-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
+
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 10, y: 20 },
+    });
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+
+    expect(useGraphStore.getState().entrypointRuntime.openSurface?.kind).toBe('pane-context-menu');
+
+    useGraphStore.getState().closeEntrypointSurface();
+    expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
+  });
+
+  it('selection 변경 시 selection 의존 surface를 닫고 stale selection anchor를 정리한다', () => {
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'selection-floating-menu:selection-bounds',
+      kind: 'selection-bounds',
+      nodeIds: ['node-a'],
+      flow: { x: 0, y: 0 },
+    });
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'selection-floating-menu',
+      anchorId: 'selection-floating-menu:selection-bounds',
+      dismissOnSelectionChange: true,
+      dismissOnViewportChange: false,
+    });
+
+    useGraphStore.getState().setSelectedNodes(['node-b']);
+
+    expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
+    expect(
+      useGraphStore.getState().entrypointRuntime.anchorsById['selection-floating-menu:selection-bounds'],
+    ).toBeUndefined();
+  });
+
+  it('viewport change dismiss는 viewport-sensitive surface만 닫는다', () => {
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 8, y: 8 },
+    });
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+
+    useGraphStore.getState().dismissEntrypointSurfaceOnViewportChange();
+    expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
+  });
+
+  it('hover registry를 기존 hoveredNodeIdsByGroupId와 동기화한다', () => {
+    useGraphStore.getState().registerGroupHover('map-2', 'node-a');
+    useGraphStore.getState().registerGroupHover('map-2', 'node-b');
+
+    expect(useGraphStore.getState().entrypointRuntime.hover.nodeIdsByGroupId).toEqual({
+      'map-2': ['node-a', 'node-b'],
+    });
+
+    useGraphStore.getState().unregisterGroupHover('map-2', 'node-a');
+    useGraphStore.getState().unregisterGroupHover('map-2', 'node-b');
+    expect(useGraphStore.getState().entrypointRuntime.hover.nodeIdsByGroupId).toEqual({});
+  });
+
+  it('pending lifecycle을 request id 기준으로 기록하고 정리한다', () => {
+    useGraphStore.getState().beginPendingUiAction({
+      requestId: 'request-1',
+      actionType: 'node.create',
+      targetIds: ['shape'],
+      startedAt: 1,
+    });
+    expect(useGraphStore.getState().entrypointRuntime.pendingByRequestId['request-1']?.status).toBe('pending');
+
+    useGraphStore.getState().failPendingUiAction('request-1', 'boom');
+    expect(useGraphStore.getState().entrypointRuntime.pendingByRequestId['request-1']?.status).toBe('failed');
+
+    useGraphStore.getState().clearPendingUiAction('request-1');
+    expect(useGraphStore.getState().entrypointRuntime.pendingByRequestId['request-1']).toBeUndefined();
+  });
+
+  it('edit completion은 matching command id pending entry를 자동으로 정리한다', () => {
+    useGraphStore.getState().beginPendingUiAction({
+      requestId: 'cmd-1',
+      actionType: 'node.move.absolute',
+      targetIds: ['node-1'],
+      startedAt: 1,
+    });
+
+    useGraphStore.getState().pushEditCompletionEvent({
+      eventId: 'event-1',
+      type: 'ABSOLUTE_MOVE_COMMITTED',
+      nodeId: 'node-1',
+      filePath: 'examples/a.tsx',
+      commandId: 'cmd-1',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: { x: 0, y: 0 },
+      after: { x: 10, y: 20 },
+      committedAt: Date.now(),
+    });
+
+    expect(useGraphStore.getState().entrypointRuntime.pendingByRequestId['cmd-1']).toBeUndefined();
+  });
+
+  it('graph reload는 active tool만 유지하고 open surface/anchor/pending을 초기화한다', () => {
+    useGraphStore.getState().setEntrypointInteractionMode('hand');
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 20, y: 30 },
+    });
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    useGraphStore.getState().beginPendingUiAction({
+      requestId: 'request-2',
+      actionType: 'node.create',
+      targetIds: ['shape'],
+      startedAt: 2,
+    });
+
+    useGraphStore.getState().setGraph({
+      nodes: [],
+      edges: [],
+    });
+
+    const state = useGraphStore.getState().entrypointRuntime;
+    expect(state.activeTool.interactionMode).toBe('hand');
+    expect(state.openSurface).toBeNull();
+    expect(state.anchorsById).toEqual({});
+    expect(state.pendingByRequestId).toEqual({});
+  });
+});
+
 describe('text edit session state', () => {
   it('active node id 기반으로 draft를 관리하고 commit 요청을 생성한다', () => {
     useGraphStore.getState().startTextEditSession({
@@ -369,6 +548,18 @@ describe('text edit session state', () => {
 });
 
 describe('edit completion history', () => {
+  beforeEach(() => {
+    useGraphStore.setState((state) => ({
+      ...state,
+      editHistoryPast: [],
+      editHistoryFuture: [],
+      entrypointRuntime: {
+        ...state.entrypointRuntime,
+        pendingByRequestId: {},
+      },
+    }));
+  });
+
   it('undo/redo는 이벤트 1건 단위로 past/future를 이동한다', () => {
     const event = {
       eventId: 'event-1',

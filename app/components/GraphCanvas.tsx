@@ -26,7 +26,7 @@ import { ZoomProvider, useZoom } from '@/contexts/ZoomContext';
 import { BubbleProvider } from '@/contexts/BubbleContext';
 import { BubbleOverlay } from './BubbleOverlay';
 import { Loader2, Check } from 'lucide-react';
-import { FloatingToolbar, InteractionMode } from './FloatingToolbar';
+import { FloatingToolbar } from './FloatingToolbar';
 import { useExportImage } from '@/hooks/useExportImage';
 import { ContextMenu } from './ContextMenu';
 import { useContextMenu } from '@/hooks/useContextMenu';
@@ -61,6 +61,10 @@ import { editDebugLog } from '@/utils/editDebug';
 import { getWashiPresetPatternCatalog, resolvePresetPatternId } from '@/utils/washiTapeDefaults';
 import type { MaterialPresetId } from '@/types/washiTape';
 import {
+  createEntrypointAnchor,
+  type EntrypointInteractionMode,
+} from '@/features/canvas-ui-entrypoints/ui-runtime-state';
+import {
   resolveEditHistoryShortcut,
   resolveMindMapDragFeedback,
   shouldCommitDragStop,
@@ -69,6 +73,7 @@ import {
   type GraphCanvasCreateMode,
 } from './GraphCanvas.drag';
 import type { CreatePayload } from '@/features/editing/commands';
+import { createPendingRequestIdForCommand } from '@/features/editing/commands';
 import { resolveNodeEditContext } from '@/components/editor/workspaceEditUtils';
 import type { CreatableNodeType } from '@/types/contextMenu';
 
@@ -116,6 +121,66 @@ function getCanvasNodeLabel(node: Pick<FlowNode, 'id' | 'data'> | null | undefin
     : node.id;
 
   return label.length > 24 ? `${label.slice(0, 24)}...` : label;
+}
+
+type SelectionAnchorNode = Pick<FlowNode, 'id' | 'position' | 'width' | 'height'> & {
+  measured?: {
+    width?: number;
+    height?: number;
+  };
+};
+
+export function buildSelectionBoundsAnchor(input: {
+  selectedNodes: SelectionAnchorNode[];
+  viewport: { x: number; y: number; zoom: number };
+}) {
+  if (input.selectedNodes.length === 0) {
+    return null;
+  }
+
+  const bounds = input.selectedNodes.reduce((acc, node) => {
+    const width = node.width ?? node.measured?.width ?? 0;
+    const height = node.height ?? node.measured?.height ?? 0;
+    const minX = Math.min(acc.minX, node.position.x);
+    const minY = Math.min(acc.minY, node.position.y);
+    const maxX = Math.max(acc.maxX, node.position.x + width);
+    const maxY = Math.max(acc.maxY, node.position.y + height);
+    return { minX, minY, maxX, maxY };
+  }, {
+    minX: Number.POSITIVE_INFINITY,
+    minY: Number.POSITIVE_INFINITY,
+    maxX: Number.NEGATIVE_INFINITY,
+    maxY: Number.NEGATIVE_INFINITY,
+  });
+
+  return createEntrypointAnchor({
+    anchorId: 'selection-floating-menu:selection-bounds',
+    kind: 'selection-bounds',
+    nodeIds: input.selectedNodes.map((node) => node.id),
+    flow: { x: bounds.minX, y: bounds.minY },
+    screen: {
+      x: bounds.minX,
+      y: bounds.minY,
+      width: Math.max(bounds.maxX - bounds.minX, 0),
+      height: Math.max(bounds.maxY - bounds.minY, 0),
+    },
+    viewport: input.viewport,
+  });
+}
+
+export function shouldHandleRuntimePaneCreate(input: {
+  interactionMode: EntrypointInteractionMode;
+  createMode: GraphCanvasCreateMode;
+  hasPendingUiActions: boolean;
+}) {
+  if (input.hasPendingUiActions) {
+    return false;
+  }
+
+  return shouldHandlePaneCreate({
+    interactionMode: input.interactionMode,
+    createMode: input.createMode,
+  });
 }
 
 function GraphCanvasContent({
@@ -169,7 +234,21 @@ function GraphCanvasContent({
     activeTabId,
     openTabs,
     updateTabSnapshot,
+    entrypointRuntime,
+    setEntrypointInteractionMode,
+    setEntrypointCreateMode,
+    dismissEntrypointSurfaceOnViewportChange,
+    registerEntrypointAnchor,
+    clearEntrypointAnchor,
+    clearEntrypointAnchorsForNode,
+    beginPendingUiAction,
+    commitPendingUiAction,
+    failPendingUiAction,
+    clearPendingUiAction,
   } = useGraphStore();
+  const interactionMode = entrypointRuntime.activeTool.interactionMode;
+  const createMode = entrypointRuntime.activeTool.createMode;
+  const hasPendingUiActions = Object.keys(entrypointRuntime.pendingByRequestId).length > 0;
 
   const { isZoomBold } = useZoom();
 
@@ -193,8 +272,6 @@ function GraphCanvasContent({
   });
   const [isGraphVisible, setIsGraphVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [interactionMode, setInteractionMode] = useState<InteractionMode>('pointer');
-  const [createMode, setCreateMode] = useState<GraphCanvasCreateMode>(null);
   const [dragFeedback, setDragFeedback] = useState<DragFeedbackState>(null);
   const hasLayouted = useRef(false);
   const lastLayoutedGraphId = useRef<string | null>(null);
@@ -212,6 +289,7 @@ function GraphCanvasContent({
   const graphClipboardRef = useRef<{ payload: GraphClipboardPayload; text: string } | null>(null);
   const dragOriginPositions = useRef<Map<string, DragOriginState>>(new Map());
   const dragGenerationRef = useRef<Map<string, number>>(new Map());
+  const previousNodeIdsRef = useRef<Set<string>>(new Set());
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
   const selectedWashiNodeIds = useMemo(
     () => nodes
@@ -248,6 +326,36 @@ function GraphCanvasContent({
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 2000);
   };
+
+  const runPendingUiAction = useCallback(async <T,>(input: {
+    actionType: Parameters<typeof createPendingRequestIdForCommand>[0];
+    targetIds: string[];
+    execute: () => Promise<T>;
+  }): Promise<T> => {
+    const requestId = createPendingRequestIdForCommand(input.actionType, input.targetIds[0]);
+    beginPendingUiAction({
+      requestId,
+      actionType: input.actionType,
+      targetIds: input.targetIds,
+    });
+
+    try {
+      const result = await input.execute();
+      commitPendingUiAction(requestId);
+      clearPendingUiAction(requestId);
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      failPendingUiAction(requestId, errorMessage);
+      clearPendingUiAction(requestId);
+      throw error;
+    }
+  }, [
+    beginPendingUiAction,
+    clearPendingUiAction,
+    commitPendingUiAction,
+    failPendingUiAction,
+  ]);
 
   const clearPendingRelayout = useCallback(() => {
     if (relayoutTimerRef.current !== null) {
@@ -432,7 +540,7 @@ function GraphCanvasContent({
 
   const onPaneClick = useCallback(
     async (event: React.MouseEvent) => {
-      if (!shouldHandlePaneCreate({ interactionMode, createMode }) || !onCreateNode) {
+      if (!shouldHandleRuntimePaneCreate({ interactionMode, createMode, hasPendingUiActions }) || !onCreateNode) {
         return;
       }
       if (createMode === null) {
@@ -441,18 +549,31 @@ function GraphCanvasContent({
 
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       try {
-        await onCreateNode({
-          nodeType: createMode,
-          placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
+        await runPendingUiAction({
+          actionType: 'node.create',
+          targetIds: [createMode],
+          execute: () => Promise.resolve(onCreateNode({
+            nodeType: createMode,
+            placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
+          })),
         });
-        setCreateMode(null);
+        setEntrypointCreateMode(null);
         showToast('새 오브젝트를 생성했습니다.');
       } catch (error) {
         const mapped = mapEditErrorToToast?.(error);
         showToast(mapped ?? '오브젝트 생성에 실패했습니다.');
       }
     },
-    [createMode, interactionMode, mapEditErrorToToast, onCreateNode, screenToFlowPosition],
+    [
+      createMode,
+      hasPendingUiActions,
+      interactionMode,
+      mapEditErrorToToast,
+      onCreateNode,
+      runPendingUiAction,
+      screenToFlowPosition,
+      setEntrypointCreateMode,
+    ],
   );
 
 
@@ -645,9 +766,35 @@ function GraphCanvasContent({
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
       const selectedIds = selectedNodes.map((node) => node.id);
       setSelectedNodes(selectedIds);
+
+      if (selectedIds.length === 0) {
+        clearEntrypointAnchor('selection-floating-menu:selection-bounds');
+        return;
+      }
+
+      const selectionAnchor = buildSelectionBoundsAnchor({
+        selectedNodes: selectedNodes as SelectionAnchorNode[],
+        viewport: getViewport(),
+      });
+      if (selectionAnchor) {
+        registerEntrypointAnchor(selectionAnchor);
+      }
     },
-    [setSelectedNodes],
+    [clearEntrypointAnchor, getViewport, registerEntrypointAnchor, setSelectedNodes],
   );
+
+  useEffect(() => {
+    const previousNodeIds = previousNodeIdsRef.current;
+    const nextNodeIds = new Set(nodes.map((node) => node.id));
+
+    previousNodeIds.forEach((nodeId) => {
+      if (!nextNodeIds.has(nodeId)) {
+        clearEntrypointAnchorsForNode(nodeId);
+      }
+    });
+
+    previousNodeIdsRef.current = nextNodeIds;
+  }, [clearEntrypointAnchorsForNode, nodes]);
 
   const onHandleNodeDragStart = useCallback(
     (_event: React.MouseEvent, node: FlowNode) => {
@@ -696,7 +843,7 @@ function GraphCanvasContent({
 
   const onHandleNodeDragStop = useCallback(
     async (_event: React.MouseEvent, node: FlowNode) => {
-      if (!onNodeDragStop) return;
+      if (!onNodeDragStop || hasPendingUiActions) return;
 
       const original = dragOriginPositions.current.get(node.id);
       const generation = original?.generation ?? dragGenerationRef.current.get(node.id) ?? 0;
@@ -718,12 +865,16 @@ function GraphCanvasContent({
       }
 
       try {
-        await onNodeDragStop({
-          nodeId: node.id,
-          x: node.position.x,
-          y: node.position.y,
-          originX: original?.x ?? node.position.x,
-          originY: original?.y ?? node.position.y,
+        await runPendingUiAction({
+          actionType: 'node.move.absolute',
+          targetIds: [node.id],
+          execute: () => Promise.resolve(onNodeDragStop({
+            nodeId: node.id,
+            x: node.position.x,
+            y: node.position.y,
+            originX: original?.x ?? node.position.x,
+            originY: original?.y ?? node.position.y,
+          })),
         });
 
         if (!isLatestDragAttempt()) {
@@ -787,16 +938,22 @@ function GraphCanvasContent({
         }
       }
     },
-    [getNodes, mapEditErrorToToast, onNodeDragStop, setNodes],
+    [getNodes, hasPendingUiActions, mapEditErrorToToast, onNodeDragStop, runPendingUiAction, setNodes],
   );
 
   const handleWashiPresetSelect = useCallback(
     async (presetIdInput: string) => {
-      if (selectedWashiNodeIds.length === 0) return;
+      if (selectedWashiNodeIds.length === 0 || hasPendingUiActions) return;
       const presetId = resolvePresetPatternId(presetIdInput);
 
       try {
-        await onWashiPresetChange?.(selectedWashiNodeIds, presetId);
+        await runPendingUiAction({
+          actionType: 'node.style.update',
+          targetIds: selectedWashiNodeIds,
+          execute: async () => {
+            await Promise.resolve(onWashiPresetChange?.(selectedWashiNodeIds, presetId));
+          },
+        });
       } catch (error) {
         editDebugLog('washi-preset-change', error, {
           nodeIds: selectedWashiNodeIds,
@@ -811,7 +968,7 @@ function GraphCanvasContent({
         }
       }
     },
-    [onWashiPresetChange, selectedWashiNodeIds, showToast],
+    [hasPendingUiActions, onWashiPresetChange, runPendingUiAction, selectedWashiNodeIds, showToast],
   );
 
   useEffect(() => {
@@ -1024,6 +1181,7 @@ function GraphCanvasContent({
           onSelectionChange={onSelectionChange}
           onMoveEnd={(_event, viewport) => {
             persistActiveTabViewport(viewport);
+            dismissEntrypointSurfaceOnViewportChange();
           }}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -1058,9 +1216,9 @@ function GraphCanvasContent({
 
           <FloatingToolbar
             interactionMode={interactionMode}
-            onInteractionModeChange={setInteractionMode}
+            onInteractionModeChange={setEntrypointInteractionMode}
             createMode={createMode}
-            onCreateModeChange={setCreateMode}
+            onCreateModeChange={setEntrypointCreateMode}
             onZoomIn={handleZoomIn}
             onZoomOut={handleZoomOut}
             onFitView={handleFitView}

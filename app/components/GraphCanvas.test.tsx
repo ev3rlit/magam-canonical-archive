@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
+import { useGraphStore } from '@/store/graph';
 import {
   AUTO_RELAYOUT_MAX_ATTEMPTS,
   getChangedMindMapGroupIds,
@@ -16,6 +17,10 @@ import {
   shouldHandlePaneCreate,
   shouldSuppressDragStopErrorToast,
 } from './GraphCanvas.drag';
+import {
+  buildSelectionBoundsAnchor,
+  shouldHandleRuntimePaneCreate,
+} from './GraphCanvas';
 
 function resolveProfileFamily(canonical: CanonicalObject): 'mindmap-member' | 'canvas-absolute' {
   return deriveCapabilityProfile(canonical).allowedCommands.includes('node.reparent')
@@ -76,6 +81,16 @@ const profileCanvasNode: CanonicalObject = {
     },
   },
 };
+
+const initialGraphState = useGraphStore.getState();
+
+beforeEach(() => {
+  useGraphStore.setState(initialGraphState);
+});
+
+afterEach(() => {
+  useGraphStore.setState(initialGraphState);
+});
 
 describe('GraphCanvas auto relayout policy', () => {
   const baseInput = {
@@ -205,6 +220,110 @@ describe('GraphCanvas create mode helpers', () => {
     expect(shouldHandlePaneCreate({ interactionMode: 'pointer', createMode: 'shape' })).toBe(true);
     expect(shouldHandlePaneCreate({ interactionMode: 'hand', createMode: 'shape' })).toBe(false);
     expect(shouldHandlePaneCreate({ interactionMode: 'pointer', createMode: null })).toBe(false);
+  });
+
+  it('pending action이 있으면 pane click create를 차단한다', () => {
+    expect(shouldHandleRuntimePaneCreate({
+      interactionMode: 'pointer',
+      createMode: 'shape',
+      hasPendingUiActions: true,
+    })).toBe(false);
+
+    expect(shouldHandleRuntimePaneCreate({
+      interactionMode: 'pointer',
+      createMode: 'shape',
+      hasPendingUiActions: false,
+    })).toBe(true);
+  });
+});
+
+describe('GraphCanvas selection anchor helpers', () => {
+  it('selection bounds anchor는 node ids와 serializable bounds만 보존한다', () => {
+    const anchor = buildSelectionBoundsAnchor({
+      selectedNodes: [
+        {
+          id: 'node-a',
+          position: { x: 10, y: 20 },
+          width: 100,
+          height: 40,
+        } as any,
+        {
+          id: 'node-b',
+          position: { x: 140, y: 90 },
+          width: 60,
+          height: 30,
+        } as any,
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    });
+
+    expect(anchor).toMatchObject({
+      anchorId: 'selection-floating-menu:selection-bounds',
+      kind: 'selection-bounds',
+      nodeIds: ['node-a', 'node-b'],
+      flow: { x: 10, y: 20 },
+      screen: { x: 10, y: 20, width: 190, height: 100 },
+      viewport: { x: 0, y: 0, zoom: 1 },
+    });
+    expect(anchor && 'selection' in anchor).toBe(false);
+  });
+});
+
+describe('GraphCanvas runtime surface integration', () => {
+  it('새 primary surface가 열리면 이전 surface를 대체한다', () => {
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 10, y: 10 },
+    });
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'node-anchor',
+      kind: 'pointer',
+      ownerId: 'node-a',
+      nodeIds: ['node-a'],
+      screen: { x: 24, y: 32 },
+    });
+
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'node-context-menu',
+      anchorId: 'node-anchor',
+      ownerId: 'node-a',
+      dismissOnSelectionChange: true,
+      dismissOnViewportChange: true,
+    });
+
+    expect(useGraphStore.getState().entrypointRuntime.openSurface).toMatchObject({
+      kind: 'node-context-menu',
+      anchorId: 'node-anchor',
+    });
+  });
+
+  it('selection 변화 경로는 selection-dependent surface를 닫고 selection anchor를 정리한다', () => {
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'selection-floating-menu:selection-bounds',
+      kind: 'selection-bounds',
+      nodeIds: ['node-a'],
+      flow: { x: 0, y: 0 },
+    });
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'selection-floating-menu',
+      anchorId: 'selection-floating-menu:selection-bounds',
+      dismissOnSelectionChange: true,
+      dismissOnViewportChange: false,
+    });
+
+    useGraphStore.getState().setSelectedNodes(['node-b']);
+
+    expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
+    expect(
+      useGraphStore.getState().entrypointRuntime.anchorsById['selection-floating-menu:selection-bounds'],
+    ).toBeUndefined();
   });
 });
 

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/utils/cn';
 import type { ContextMenuItem, ContextMenuContext } from '@/types/contextMenu';
+import { useGraphStore } from '@/store/graph';
 
 interface ContextMenuProps {
     isOpen: boolean;
@@ -11,13 +12,36 @@ interface ContextMenuProps {
     onClose: () => void;
 }
 
+export function clampContextMenuPosition(input: {
+    position: { x: number; y: number };
+    menuSize: { width: number; height: number };
+    viewport: { width: number; height: number };
+}): { x: number; y: number } {
+    return {
+        x: Math.min(
+            Math.max(8, input.position.x),
+            Math.max(8, input.viewport.width - input.menuSize.width - 8),
+        ),
+        y: Math.min(
+            Math.max(8, input.position.y),
+            Math.max(8, input.viewport.height - input.menuSize.height - 8),
+        ),
+    };
+}
+
 export function ContextMenu({ isOpen, position, items, context, onClose }: ContextMenuProps) {
     const menuRef = useRef<HTMLDivElement>(null);
-    const [anchoredPosition, setAnchoredPosition] = useState(position);
+    const anchorSnapshot = useGraphStore((store) => (
+        context.anchorId ? store.entrypointRuntime.anchorsById[context.anchorId] ?? null : null
+    ));
+    const resolvedPosition = anchorSnapshot?.screen
+        ? { x: anchorSnapshot.screen.x, y: anchorSnapshot.screen.y }
+        : position;
+    const [anchoredPosition, setAnchoredPosition] = useState(resolvedPosition);
 
     useEffect(() => {
-        setAnchoredPosition(position);
-    }, [position]);
+        setAnchoredPosition(resolvedPosition);
+    }, [resolvedPosition]);
 
     useEffect(() => {
         if (!isOpen) {
@@ -52,19 +76,22 @@ export function ContextMenu({ isOpen, position, items, context, onClose }: Conte
             return;
         }
         const rect = menuRef.current.getBoundingClientRect();
-        const safeX = Math.min(
-            Math.max(8, position.x),
-            Math.max(8, window.innerWidth - rect.width - 8),
-        );
-        const safeY = Math.min(
-            Math.max(8, position.y),
-            Math.max(8, window.innerHeight - rect.height - 8),
-        );
+        const nextPosition = clampContextMenuPosition({
+            position: resolvedPosition,
+            menuSize: {
+                width: rect.width,
+                height: rect.height,
+            },
+            viewport: {
+                width: window.innerWidth,
+                height: window.innerHeight,
+            },
+        });
 
-        if (safeX !== anchoredPosition.x || safeY !== anchoredPosition.y) {
-            setAnchoredPosition({ x: safeX, y: safeY });
+        if (nextPosition.x !== anchoredPosition.x || nextPosition.y !== anchoredPosition.y) {
+            setAnchoredPosition(nextPosition);
         }
-    }, [isOpen, position, anchoredPosition]);
+    }, [anchoredPosition, isOpen, resolvedPosition]);
 
     useEffect(() => {
         if (!isOpen || !menuRef.current) {
@@ -83,6 +110,7 @@ export function ContextMenu({ isOpen, position, items, context, onClose }: Conte
         <div
             ref={menuRef}
             role="menu"
+            data-context-menu-root
             className={cn(
                 'fixed z-[200] min-w-[200px] py-1',
                 'bg-white dark:bg-slate-900',
@@ -130,7 +158,6 @@ export function ContextMenu({ isOpen, position, items, context, onClose }: Conte
                     );
                 }
 
-                // submenu support can be added in a follow-up step
                 return null;
             })}
         </div>,

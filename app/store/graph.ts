@@ -31,6 +31,30 @@ import {
   type WorkspaceStyleRuntimeContext,
   type WorkspaceStyleSessionState,
 } from '@/features/workspace-styling';
+import {
+  DEFAULT_ENTRYPOINT_RUNTIME_STATE,
+  beginPendingUiAction as beginPendingUiActionReducer,
+  clearEntrypointAnchor as clearEntrypointAnchorReducer,
+  clearEntrypointAnchorsForNode as clearEntrypointAnchorsForNodeReducer,
+  clearEntrypointAnchorsForSelection as clearEntrypointAnchorsForSelectionReducer,
+  clearPendingUiAction as clearPendingUiActionReducer,
+  closeEntrypointSurface as closeEntrypointSurfaceReducer,
+  commitPendingUiAction as commitPendingUiActionReducer,
+  createPendingUiAction,
+  dismissEntrypointSurfaceOnSelectionChange as dismissEntrypointSurfaceOnSelectionChangeReducer,
+  dismissEntrypointSurfaceOnViewportChange as dismissEntrypointSurfaceOnViewportChangeReducer,
+  failPendingUiAction as failPendingUiActionReducer,
+  mergeActiveTool,
+  openEntrypointSurface as openEntrypointSurfaceReducer,
+  registerEntrypointAnchor as registerEntrypointAnchorReducer,
+  rollbackPendingUiAction as rollbackPendingUiActionReducer,
+  setHoverTargetNodeId as setHoverTargetNodeIdReducer,
+  syncGroupHoverRegistry,
+  type EntrypointAnchorSnapshot,
+  type EntrypointInteractionMode,
+  type EntrypointRuntimeState,
+  type OpenSurfaceDescriptor,
+} from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 
 type SearchActionResult = {
   clearQuery?: boolean;
@@ -181,6 +205,7 @@ export interface GraphState {
   editHistoryPast: EditCompletionEvent[];
   editHistoryFuture: EditCompletionEvent[];
   editHistoryMaxSize: number;
+  entrypointRuntime: EntrypointRuntimeState;
   hoveredNodeIdsByGroupId: Record<string, string[]>;
   workspaceStyleSession: WorkspaceStyleSessionState;
   workspaceStyleByNodeId: Record<string, InterpretedStyleResult>;
@@ -231,6 +256,19 @@ export interface GraphState {
   requestTextEditCancel: (nodeId: string) => void;
   clearPendingTextEditAction: () => void;
   clearTextEditSession: () => void;
+  setEntrypointInteractionMode: (mode: EntrypointInteractionMode) => void;
+  setEntrypointCreateMode: (mode: EntrypointRuntimeState['activeTool']['createMode']) => void;
+  openEntrypointSurface: (surface: OpenSurfaceDescriptor) => void;
+  closeEntrypointSurface: () => void;
+  dismissEntrypointSurfaceOnViewportChange: () => void;
+  registerEntrypointAnchor: (anchor: EntrypointAnchorSnapshot) => void;
+  clearEntrypointAnchor: (anchorId: string) => void;
+  clearEntrypointAnchorsForNode: (nodeId: string) => void;
+  setEntrypointHoverTarget: (nodeId: string | null) => void;
+  beginPendingUiAction: (input: { requestId: string; actionType: string; targetIds: string[]; startedAt?: number }) => void;
+  commitPendingUiAction: (requestId: string) => void;
+  failPendingUiAction: (requestId: string, errorMessage?: string) => void;
+  clearPendingUiAction: (requestId: string) => void;
   registerGroupHover: (groupId: string, nodeId: string) => void;
   unregisterGroupHover: (groupId: string, nodeId: string) => void;
   pushEditCompletionEvent: (event: EditCompletionEvent) => void;
@@ -395,6 +433,68 @@ const selectLeastRecentlyUsedTab = (tabs: TabState[]): TabState | null => {
 
 const getNow = () => Date.now();
 
+function resetEntrypointRuntimeState(input: {
+  current: EntrypointRuntimeState;
+  preserveActiveTool?: boolean;
+}): EntrypointRuntimeState {
+  return {
+    ...DEFAULT_ENTRYPOINT_RUNTIME_STATE,
+    activeTool: input.preserveActiveTool
+      ? { ...input.current.activeTool }
+      : { ...DEFAULT_ENTRYPOINT_RUNTIME_STATE.activeTool },
+  };
+}
+
+function getPendingActionTypesForEvent(event: EditCompletionEvent): string[] {
+  switch (event.type) {
+    case 'ABSOLUTE_MOVE_COMMITTED':
+      return ['node.move.absolute'];
+    case 'ATTACH_RELATIVE_COMMITTED':
+    case 'RELATIVE_MOVE_COMMITTED':
+      return ['node.move.relative'];
+    case 'CONTENT_UPDATED':
+    case 'TEXT_EDIT_COMMITTED':
+      return ['node.content.update'];
+    case 'STYLE_UPDATED':
+      return ['node.style.update'];
+    case 'NODE_RENAMED':
+      return ['node.rename'];
+    case 'NODE_CREATED':
+      return ['node.create', 'mindmap.child.create', 'mindmap.sibling.create'];
+    case 'NODE_REPARENTED':
+      return ['node.reparent'];
+    default:
+      return [];
+  }
+}
+
+function reconcilePendingUiActionsAfterEdit(
+  state: EntrypointRuntimeState,
+  event: EditCompletionEvent,
+): EntrypointRuntimeState {
+  if (state.pendingByRequestId[event.commandId]) {
+    return clearPendingUiActionReducer(
+      commitPendingUiActionReducer(state, event.commandId),
+      event.commandId,
+    );
+  }
+
+  const eligibleActionTypes = getPendingActionTypesForEvent(event);
+  let nextState = state;
+  Object.entries(state.pendingByRequestId).forEach(([requestId, pending]) => {
+    if (
+      eligibleActionTypes.includes(pending.actionType)
+      && pending.targetIds.includes(event.nodeId)
+    ) {
+      nextState = clearPendingUiActionReducer(
+        commitPendingUiActionReducer(nextState, requestId),
+        requestId,
+      );
+    }
+  });
+  return nextState;
+}
+
 export const useGraphStore = create<GraphState>((set, get) => ({
   nodes: [],
   edges: [],
@@ -433,6 +533,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   editHistoryPast: [],
   editHistoryFuture: [],
   editHistoryMaxSize: 200,
+  entrypointRuntime: DEFAULT_ENTRYPOINT_RUNTIME_STATE,
   hoveredNodeIdsByGroupId: {},
   workspaceStyleSession: createWorkspaceStyleSessionState(),
   workspaceStyleByNodeId: {},
@@ -470,6 +571,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       ...(isFontFamilyPreset(canvasFontFamily) ? { canvasFontFamily } : { canvasFontFamily: undefined }),
       ...(sourceVersion !== undefined ? { sourceVersion } : {}),
       sourceVersions: nextSourceVersions,
+      entrypointRuntime: resetEntrypointRuntimeState({
+        current: state.entrypointRuntime,
+        preserveActiveTool: true,
+      }),
       hoveredNodeIdsByGroupId: {},
       ...workspaceStyleState,
     };
@@ -499,6 +604,14 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return {
       sourceVersions: nextSourceVersions,
       ...(state.currentFile === filePath ? { sourceVersion: version } : {}),
+      entrypointRuntime: {
+        ...state.entrypointRuntime,
+        hover: {
+          ...state.entrypointRuntime.hover,
+          nodeIdsByGroupId: {},
+          targetNodeId: null,
+        },
+      },
       hoveredNodeIdsByGroupId: {},
       ...workspaceStyleState,
     };
@@ -527,6 +640,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return {
       currentFile,
       sourceVersion: currentFile ? (state.sourceVersions[currentFile] ?? null) : null,
+      entrypointRuntime: resetEntrypointRuntimeState({
+        current: state.entrypointRuntime,
+        preserveActiveTool: true,
+      }),
       hoveredNodeIdsByGroupId: {},
       ...workspaceStyleState,
     };
@@ -545,8 +662,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const shouldClearTextEdit =
       Boolean(state.activeTextEditNodeId)
       && !selectedNodeIds.includes(state.activeTextEditNodeId as string);
+    const nextRuntime = clearEntrypointAnchorsForSelectionReducer(
+      dismissEntrypointSurfaceOnSelectionChangeReducer(state.entrypointRuntime),
+      selectedNodeIds,
+    );
     return {
       selectedNodeIds,
+      entrypointRuntime: nextRuntime,
       ...(shouldClearTextEdit
         ? {
             activeTextEditNodeId: null,
@@ -918,17 +1040,65 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     textEditDirty: false,
     pendingTextEditAction: null,
   }),
+  setEntrypointInteractionMode: (mode) => set((state) => ({
+    entrypointRuntime: mergeActiveTool(state.entrypointRuntime, {
+      interactionMode: mode,
+    }),
+  })),
+  setEntrypointCreateMode: (mode) => set((state) => ({
+    entrypointRuntime: mergeActiveTool(state.entrypointRuntime, {
+      createMode: mode,
+    }),
+  })),
+  openEntrypointSurface: (surface) => set((state) => ({
+    entrypointRuntime: openEntrypointSurfaceReducer(state.entrypointRuntime, surface),
+  })),
+  closeEntrypointSurface: () => set((state) => ({
+    entrypointRuntime: closeEntrypointSurfaceReducer(state.entrypointRuntime),
+  })),
+  dismissEntrypointSurfaceOnViewportChange: () => set((state) => ({
+    entrypointRuntime: dismissEntrypointSurfaceOnViewportChangeReducer(state.entrypointRuntime),
+  })),
+  registerEntrypointAnchor: (anchor) => set((state) => ({
+    entrypointRuntime: registerEntrypointAnchorReducer(state.entrypointRuntime, anchor),
+  })),
+  clearEntrypointAnchor: (anchorId) => set((state) => ({
+    entrypointRuntime: clearEntrypointAnchorReducer(state.entrypointRuntime, anchorId),
+  })),
+  clearEntrypointAnchorsForNode: (nodeId) => set((state) => ({
+    entrypointRuntime: clearEntrypointAnchorsForNodeReducer(state.entrypointRuntime, nodeId),
+  })),
+  setEntrypointHoverTarget: (nodeId) => set((state) => ({
+    entrypointRuntime: setHoverTargetNodeIdReducer(state.entrypointRuntime, nodeId),
+  })),
+  beginPendingUiAction: (input) => set((state) => ({
+    entrypointRuntime: beginPendingUiActionReducer(
+      state.entrypointRuntime,
+      createPendingUiAction(input),
+    ),
+  })),
+  commitPendingUiAction: (requestId) => set((state) => ({
+    entrypointRuntime: commitPendingUiActionReducer(state.entrypointRuntime, requestId),
+  })),
+  failPendingUiAction: (requestId, errorMessage) => set((state) => ({
+    entrypointRuntime: failPendingUiActionReducer(state.entrypointRuntime, requestId, errorMessage),
+  })),
+  clearPendingUiAction: (requestId) => set((state) => ({
+    entrypointRuntime: clearPendingUiActionReducer(state.entrypointRuntime, requestId),
+  })),
   registerGroupHover: (groupId, nodeId) => set((state) => {
     if (!groupId || !nodeId) return state;
     const current = state.hoveredNodeIdsByGroupId[groupId] ?? [];
     if (current.includes(nodeId)) {
       return state;
     }
+    const nextMap = {
+      ...state.hoveredNodeIdsByGroupId,
+      [groupId]: [...current, nodeId],
+    };
     return {
-      hoveredNodeIdsByGroupId: {
-        ...state.hoveredNodeIdsByGroupId,
-        [groupId]: [...current, nodeId],
-      },
+      hoveredNodeIdsByGroupId: nextMap,
+      entrypointRuntime: syncGroupHoverRegistry(state.entrypointRuntime, nextMap),
     };
   }),
   unregisterGroupHover: (groupId, nodeId) => set((state) => {
@@ -949,6 +1119,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     }
     return {
       hoveredNodeIdsByGroupId: nextMap,
+      entrypointRuntime: syncGroupHoverRegistry(state.entrypointRuntime, nextMap),
     };
   }),
   pushEditCompletionEvent: (event) => set((state) => {
@@ -959,6 +1130,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return {
       editHistoryPast: nextPast,
       editHistoryFuture: [],
+      entrypointRuntime: reconcilePendingUiActionsAfterEdit(state.entrypointRuntime, event),
     };
   }),
   peekUndoEditEvent: () => {
