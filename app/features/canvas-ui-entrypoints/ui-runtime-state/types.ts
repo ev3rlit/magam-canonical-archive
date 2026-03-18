@@ -1,4 +1,4 @@
-import type { GraphCanvasCreateMode } from '@/components/GraphCanvas.drag';
+import type { CanvasEntrypointCreateMode } from '@/features/canvas-ui-entrypoints/contracts';
 
 export type EntrypointInteractionMode = 'pointer' | 'hand';
 
@@ -23,7 +23,7 @@ export type PendingUiActionStatus =
 
 export interface ActiveToolState {
   interactionMode: EntrypointInteractionMode;
-  createMode: GraphCanvasCreateMode;
+  createMode: CanvasEntrypointCreateMode;
 }
 
 export interface OpenSurfaceDescriptor {
@@ -97,4 +97,3 @@ export const DEFAULT_ENTRYPOINT_RUNTIME_STATE: EntrypointRuntimeState = {
   },
   pendingByRequestId: {},
 };
-

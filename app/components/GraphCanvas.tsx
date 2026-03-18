@@ -28,7 +28,6 @@ import { ZoomProvider, useZoom } from '@/contexts/ZoomContext';
 import { BubbleProvider } from '@/contexts/BubbleContext';
 import { BubbleOverlay } from './BubbleOverlay';
 import { Loader2, Check } from 'lucide-react';
-import { FloatingToolbar } from './FloatingToolbar';
 import { useExportImage } from '@/hooks/useExportImage';
 import { useContextMenu } from '@/hooks/useContextMenu';
 import { ExportDialog } from './ExportDialog';
@@ -49,14 +48,8 @@ import {
   shouldScheduleAutoRelayout,
 } from './GraphCanvas.relayout';
 import {
-  applyGraphSnapshot,
-  createGraphClipboardPayload,
-  createPastedGraphState,
-  isGraphClipboardPayload,
-  serializeNodeIdsForClipboard,
-  type GraphClipboardPayload,
-  snapshotGraphState,
   type GraphSnapshot,
+  type GraphClipboardPayload,
 } from '@/utils/clipboardGraph';
 import { editDebugLog } from '@/utils/editDebug';
 import { getWashiPresetPatternCatalog, resolvePresetPatternId } from '@/utils/washiTapeDefaults';
@@ -65,25 +58,32 @@ import {
   createEntrypointAnchor,
   type EntrypointInteractionMode,
 } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
+import type { CanvasEntrypointSurface } from '@/features/canvas-ui-entrypoints/contracts';
 import {
-  resolveEditHistoryShortcut,
   resolveMindMapDragFeedback,
   shouldCommitDragStop,
   shouldHandlePaneCreate,
   shouldSuppressDragStopErrorToast,
   type GraphCanvasCreateMode,
 } from './GraphCanvas.drag';
-import type { CreatePayload } from '@/features/editing/commands';
+import type { ActionRoutingSurfaceId } from '@/features/editing/actionRoutingBridge/types';
 import { createPendingRequestIdForCommand } from '@/features/editing/commands';
+import type { CreatePayload } from '@/features/editing/commands';
 import { resolveNodeEditContext } from '@/components/editor/workspaceEditUtils';
 import type { CreatableNodeType } from '@/types/contextMenu';
 import {
   OverlayHostProvider,
-  createSlotContribution,
-  resolveToolbarAnchor,
   useOverlayHost,
 } from '@/features/overlay-host';
 import { PluginRuntimeProvider } from '@/features/plugin-runtime';
+import { canvasRuntime } from '@/processes/canvas-runtime/createCanvasRuntime';
+import {
+  createGraphCanvasContextMenuActions,
+  createGraphCanvasNodeContextMenu,
+  createGraphCanvasPaneContextMenu,
+  createGraphCanvasToolbarContribution,
+} from '@/processes/canvas-runtime/bindings/graphCanvasHost';
+import { createGraphCanvasKeyboardHost } from '@/processes/canvas-runtime/bindings/keyboardHost';
 
 type GraphCanvasProps = {
   onNodeDragStop?: (payload: {
@@ -97,22 +97,56 @@ type GraphCanvasProps = {
   onUndoEditStep?: () => Promise<boolean> | boolean;
   onRedoEditStep?: () => Promise<boolean> | boolean;
   mapEditErrorToToast?: (error: unknown) => string | null;
-  onRenameNode?: (input: {
-    nodeId: string;
-    surface: 'node-context-menu';
-    trigger: { source: 'menu' };
-  }) => Promise<void> | void;
-  onCreateNode?: (input: {
-    surface: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu';
-    trigger: { source: 'click' | 'menu' };
-    nodeType: CreatableNodeType;
-    placement: CreatePayload['placement'];
-    filePath?: string;
-    scopeId?: string;
-    frameScope?: string;
-    targetNodeId?: string;
-  }) => Promise<void> | void;
+  onRenameNode?: (input: GraphCanvasRenameIntentInput) => Promise<void> | void;
+  onCreateNode?: (input: GraphCanvasCreateIntentInput) => Promise<void> | void;
 };
+
+export interface GraphCanvasRenameIntentInput {
+  nodeId: string;
+  surfaceId: ActionRoutingSurfaceId;
+  surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
+  trigger?: { source: 'menu' };
+}
+
+export interface GraphCanvasCreateIntentInput {
+  surfaceId: ActionRoutingSurfaceId;
+  surface?: Exclude<CanvasEntrypointSurface, 'selection-floating-menu'>;
+  trigger?: { source: 'click' | 'menu' };
+  nodeType: CreatableNodeType;
+  placement: CreatePayload['placement'];
+  targetRenderedNodeId?: string;
+  targetNodeId?: string;
+  filePath?: string;
+  scopeId?: string;
+  frameScope?: string;
+}
+
+export function buildGraphCanvasRenameIntent(nodeId: string): GraphCanvasRenameIntentInput {
+  return {
+    nodeId,
+    surfaceId: 'node-context-menu',
+    surface: 'node-context-menu',
+    trigger: { source: 'menu' },
+  };
+}
+
+export function buildGraphCanvasCreateIntent(
+  input: GraphCanvasCreateIntentInput,
+): GraphCanvasCreateIntentInput {
+  const surface = input.surface
+    ?? (input.surfaceId === 'toolbar'
+      ? 'canvas-toolbar'
+      : input.surfaceId);
+  const trigger = input.trigger
+    ?? { source: surface === 'canvas-toolbar' ? 'click' as const : 'menu' as const };
+
+  return {
+    ...input,
+    surface,
+    trigger,
+    targetNodeId: input.targetNodeId ?? input.targetRenderedNodeId,
+  };
+}
 
 type DragOriginState = {
   x: number;
@@ -459,13 +493,10 @@ function GraphCanvasContent({
     showToast('그룹 노드가 선택되었습니다.');
   }, [setSelectedNodes, showToast]);
 
-  const contextMenuActions = useMemo(() => ({
-    fitView: () => {
-      handleFitView();
-    },
-    copyImageToClipboard: (ids?: string[]) => {
-      return copyImageToClipboard(ids);
-    },
+  const contextMenuActions = useMemo(() => createGraphCanvasContextMenuActions({
+    copyImageToClipboard,
+    handleFitView,
+    selectMindMapGroupByNodeId,
     openExportDialog: (scope: 'selection' | 'full', selectedNodeIds?: string[]) => {
       setExportDialog({
         isOpen: true,
@@ -473,86 +504,31 @@ function GraphCanvasContent({
         selectedNodeIds: scope === 'selection' ? selectedNodeIds : undefined,
       });
     },
-    selectMindMapGroupByNodeId,
-    renameNode: (nodeId: string) => onRenameNode?.({
-      nodeId,
-      surface: 'node-context-menu',
-      trigger: { source: 'menu' },
-    }),
-    createCanvasNode: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => {
-      if (!onCreateNode) {
-        return;
-      }
-      const position = screenToFlowPosition(screenPosition);
-      return onCreateNode({
-        surface: 'pane-context-menu',
-        trigger: { source: 'menu' },
-        nodeType,
-        placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
-      });
-    },
-    createMindMapChild: (renderedNodeId: string) => {
-      if (!onCreateNode) {
-        return;
-      }
-      const targetNode = useGraphStore.getState().nodes.find((item) => item.id === renderedNodeId);
-      const sourceMeta = (targetNode?.data as { sourceMeta?: Record<string, unknown> } | undefined)?.sourceMeta;
-      const parentId = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
-      return onCreateNode({
-        surface: 'node-context-menu',
-        trigger: { source: 'menu' },
-        nodeType: 'shape',
-        placement: { mode: 'mindmap-child', parentId },
-        filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
-        scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
-        frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
-        targetNodeId: renderedNodeId,
-      });
-    },
-    createMindMapSibling: (renderedNodeId: string) => {
-      if (!onCreateNode) {
-        return;
-      }
+    screenToFlowPosition,
+    resolveNode: (nodeId: string) => useGraphStore.getState().nodes.find((item) => item.id === nodeId),
+    resolveParentNodeId: (nodeId: string) => {
       const runtime = useGraphStore.getState();
-      const targetNode = runtime.nodes.find((item) => item.id === renderedNodeId);
-      const sourceMeta = (targetNode?.data as { sourceMeta?: Record<string, unknown> } | undefined)?.sourceMeta;
-      const parentEdge = runtime.edges.find((edge) => edge.target === renderedNodeId);
-      const parentNode = parentEdge
-        ? runtime.nodes.find((item) => item.id === parentEdge.source)
-        : null;
-      const parentSourceMeta = (parentNode?.data as { sourceMeta?: Record<string, unknown> } | undefined)?.sourceMeta;
-      const parentId = parentSourceMeta && typeof parentSourceMeta.sourceId === 'string'
-        ? parentSourceMeta.sourceId
-        : null;
-      const siblingOf = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
-      return onCreateNode({
-        surface: 'node-context-menu',
-        trigger: { source: 'menu' },
-        nodeType: 'shape',
-        placement: { mode: 'mindmap-sibling', siblingOf, parentId },
-        filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
-        scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
-        frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
-        targetNodeId: renderedNodeId,
-      });
+      return runtime.edges.find((edge) => edge.target === nodeId)?.source ?? null;
     },
+    onRenameNode,
+    onCreateNode,
+    buildRenameIntent: buildGraphCanvasRenameIntent,
+    buildCreateIntent: buildGraphCanvasCreateIntent,
   }), [copyImageToClipboard, handleFitView, onCreateNode, onRenameNode, screenToFlowPosition, selectMindMapGroupByNodeId]);
 
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: FlowNode) => {
       event.preventDefault();
-      const currentSelectedIds = useGraphStore.getState().selectedNodeIds;
-      const nextSelectedIds = currentSelectedIds.includes(node.id)
-        ? currentSelectedIds
-        : [node.id];
-      openMenu({
-        type: 'node',
-        position: { x: event.clientX, y: event.clientY },
-        nodeId: node.id,
-        nodeFamily: resolveNodeEditContext(node, useGraphStore.getState().currentFile).editMeta?.family,
-        selectedNodeIds: nextSelectedIds,
+      const runtime = useGraphStore.getState();
+      openMenu(createGraphCanvasNodeContextMenu({
+        eventPosition: { x: event.clientX, y: event.clientY },
+        node,
+        selectedNodeIds: runtime.selectedNodeIds,
+        resolveNodeFamily: (resolvedNode) => (
+          resolveNodeEditContext(resolvedNode, useGraphStore.getState().currentFile).editMeta?.family
+        ),
         actions: contextMenuActions,
-      }, {
+      }), {
         triggerElement: event.currentTarget as HTMLElement,
       });
     },
@@ -562,12 +538,10 @@ function GraphCanvasContent({
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
       event.preventDefault();
-      openMenu({
-        type: 'pane',
-        position: { x: event.clientX, y: event.clientY },
-        selectedNodeIds: [],
+      openMenu(createGraphCanvasPaneContextMenu({
+        eventPosition: { x: event.clientX, y: event.clientY },
         actions: contextMenuActions,
-      }, {
+      }), {
         triggerElement: event.currentTarget as HTMLElement,
       });
     },
@@ -588,12 +562,13 @@ function GraphCanvasContent({
         await runPendingUiAction({
           actionType: 'node.create',
           targetIds: [createMode],
-          execute: () => Promise.resolve(onCreateNode({
+          execute: () => Promise.resolve(onCreateNode(buildGraphCanvasCreateIntent({
+            surfaceId: 'toolbar',
             surface: 'canvas-toolbar',
             trigger: { source: 'click' },
             nodeType: createMode,
             placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
-          })),
+          }))),
         });
         setEntrypointCreateMode(null);
         showToast('새 오브젝트를 생성했습니다.');
@@ -1009,30 +984,21 @@ function GraphCanvasContent({
     [hasPendingUiActions, onWashiPresetChange, runPendingUiAction, selectedWashiNodeIds, showToast],
   );
 
-  const toolbarContribution = useMemo(() => createSlotContribution('toolbar', {
-    anchor: resolveToolbarAnchor(typeof window !== 'undefined'
-      ? { width: window.innerWidth, height: window.innerHeight }
-      : { width: 1024, height: 768 }),
-    focusPolicy: {
-      openTarget: 'none',
-      restoreTarget: 'none',
-    },
-    render: () => (
-      <FloatingToolbar
-        positioning="hosted"
-        interactionMode={interactionMode}
-        onInteractionModeChange={setEntrypointInteractionMode}
-        createMode={createMode}
-        onCreateModeChange={setEntrypointCreateMode}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onFitView={handleFitView}
-        washiPresets={washiPresets}
-        washiPresetEnabled={selectedWashiNodeIds.length > 0}
-        activeWashiPresetId={activeWashiPresetId}
-        onSelectWashiPreset={handleWashiPresetSelect}
-      />
-    ),
+  const toolbarContribution = useMemo(() => createGraphCanvasToolbarContribution({
+    runtime: canvasRuntime,
+    toolbarSlot: canvasRuntime.slots.canvasToolbar,
+    selectionFloatingMenuSlot: canvasRuntime.slots.selectionFloatingMenu,
+    interactionMode,
+    setEntrypointInteractionMode,
+    createMode,
+    setEntrypointCreateMode,
+    handleZoomIn,
+    handleZoomOut,
+    handleFitView,
+    washiPresets,
+    activeWashiPresetId,
+    selectedWashiNodeIds,
+    onSelectWashiPreset: handleWashiPresetSelect,
   }), [
     activeWashiPresetId,
     createMode,
@@ -1066,177 +1032,42 @@ function GraphCanvasContent({
   }, [closeOverlayHost, getActiveOverlays]);
 
   useEffect(() => {
-    const isTextInputFocused = () => (
-      document.activeElement instanceof HTMLInputElement
-      || document.activeElement instanceof HTMLTextAreaElement
-      || (document.activeElement as HTMLElement)?.isContentEditable
-    );
-
-    const pushHistory = (snapshot: GraphSnapshot) => {
-      const history = clipboardHistory.current;
-      history.past.push(snapshot);
-      if (history.past.length > 50) {
-        history.past.shift();
-      }
-      history.future = [];
-    };
-
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      if (isTextInputFocused()) return;
-
-      const isCopy = (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'c';
-      const isPaste = (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'v';
-      const historyShortcut = resolveEditHistoryShortcut({
-        key: e.key,
-        metaKey: e.metaKey,
-        ctrlKey: e.ctrlKey,
-        shiftKey: e.shiftKey,
-      });
-      const isUndo = historyShortcut === 'undo';
-      const isRedo = historyShortcut === 'redo';
-      const isFocusNextWashi = (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'f';
-      const isSelectAllWashi = (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'g';
-
-      if (isFocusNextWashi) {
-        e.preventDefault();
-        const nextId = focusNextNodeByType('washi-tape');
-        showToast(nextId ? 'Washi 포커스를 이동했습니다.' : 'Washi 노드가 없습니다.');
-        return;
-      }
-
-      if (isSelectAllWashi) {
-        e.preventDefault();
-        const ids = selectNodesByType('washi-tape');
-        showToast(ids.length > 0 ? `Washi ${ids.length}개 선택됨` : 'Washi 노드가 없습니다.');
-        return;
-      }
-
-      if (isCopy) {
-        e.preventDefault();
-
-        const { nodes, edges, selectedNodeIds } = useGraphStore.getState();
-        const dataToCopy = createGraphClipboardPayload(nodes, edges, selectedNodeIds);
-        const clipboardText = serializeNodeIdsForClipboard(dataToCopy);
-        graphClipboardRef.current = {
-          payload: dataToCopy,
-          text: clipboardText,
+    const keyboardHost = createGraphCanvasKeyboardHost({
+      clipboardHistoryRef: clipboardHistory,
+      graphClipboardRef,
+      focusNextNodeByType,
+      selectNodesByType,
+      showToast,
+      getGraphState: () => {
+        const state = useGraphStore.getState();
+        return {
+          nodes: state.nodes,
+          edges: state.edges,
+          selectedNodeIds: state.selectedNodeIds,
         };
+      },
+      setGraphState: (next) => {
+        useGraphStore.setState({
+          nodes: next.nodes,
+          edges: next.edges,
+          selectedNodeIds: next.selectedNodeIds,
+        });
+      },
+      mapEditErrorToToast,
+      onUndoEditStep,
+      onRedoEditStep,
+      getClipboard: () => (
+        typeof navigator !== 'undefined' ? navigator.clipboard : null
+      ),
+    });
 
-        navigator.clipboard
-          .writeText(clipboardText)
-          .then(() => {
-            console.log('Copied node ids to clipboard:', clipboardText);
-          })
-          .catch((err) => {
-            console.error('Failed to copy:', err);
-          });
-        return;
-      }
-
-      if (isPaste) {
-        e.preventDefault();
-
-        try {
-          const clipboardText = typeof navigator.clipboard?.readText === 'function'
-            ? await navigator.clipboard.readText()
-            : null;
-          const copiedGraph = graphClipboardRef.current;
-          let parsedPayload: GraphClipboardPayload | null = null;
-
-          if (copiedGraph && (clipboardText === null || clipboardText === copiedGraph.text)) {
-            parsedPayload = copiedGraph.payload;
-          } else if (clipboardText) {
-            const parsed = JSON.parse(clipboardText);
-            if (!isGraphClipboardPayload(parsed)) return;
-            parsedPayload = parsed;
-          }
-
-          if (!parsedPayload) return;
-
-          const { nodes, edges } = useGraphStore.getState();
-          pushHistory(snapshotGraphState(nodes, edges));
-
-          const next = createPastedGraphState(parsedPayload, nodes, edges);
-          useGraphStore.setState({
-            nodes: next.nodes,
-            edges: next.edges,
-            selectedNodeIds: next.selectedNodeIds,
-          });
-        } catch (error) {
-          console.debug('Paste skipped: invalid clipboard graph payload', error);
-        }
-        return;
-      }
-
-      if (isUndo) {
-        if (onUndoEditStep) {
-          e.preventDefault();
-          try {
-            const handled = await onUndoEditStep();
-            if (handled) {
-              showToast('편집 1단계 실행 취소');
-              return;
-            }
-          } catch (error) {
-            editDebugLog('edit-undo-step', error);
-            const mapped = mapEditErrorToToast?.(error);
-            if (mapped) {
-              showToast(mapped);
-            } else {
-              showToast('실행 취소에 실패했습니다.');
-            }
-            return;
-          }
-        }
-
-        const history = clipboardHistory.current;
-        const previous = history.past.pop();
-        if (!previous) return;
-
-        e.preventDefault();
-        const { nodes, edges } = useGraphStore.getState();
-        history.future.push(snapshotGraphState(nodes, edges));
-        const restored = applyGraphSnapshot(previous);
-        useGraphStore.setState(restored);
-        return;
-      }
-
-      if (isRedo) {
-        if (onRedoEditStep) {
-          e.preventDefault();
-          try {
-            const handled = await onRedoEditStep();
-            if (handled) {
-              showToast('편집 1단계 다시 실행');
-              return;
-            }
-          } catch (error) {
-            editDebugLog('edit-redo-step', error);
-            const mapped = mapEditErrorToToast?.(error);
-            if (mapped) {
-              showToast(mapped);
-            } else {
-              showToast('다시 실행에 실패했습니다.');
-            }
-            return;
-          }
-        }
-
-        const history = clipboardHistory.current;
-        const nextSnapshot = history.future.pop();
-        if (!nextSnapshot) return;
-
-        e.preventDefault();
-        const { nodes, edges } = useGraphStore.getState();
-        history.past.push(snapshotGraphState(nodes, edges));
-        const restored = applyGraphSnapshot(nextSnapshot);
-        useGraphStore.setState(restored);
-      }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      void keyboardHost.handleKeyDown(event);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusNextNodeByType, mapEditErrorToToast, onRedoEditStep, onUndoEditStep, selectNodesByType]);
+  }, [focusNextNodeByType, mapEditErrorToToast, onRedoEditStep, onUndoEditStep, selectNodesByType, showToast]);
 
   return (
     <>
