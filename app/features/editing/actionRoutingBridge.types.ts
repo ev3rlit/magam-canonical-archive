@@ -45,6 +45,7 @@ export interface ActionRoutingTargetSnapshot {
   renderedNodeId?: string;
   sourceId?: string;
   filePath?: string | null;
+  nodeType?: string;
   scopeId?: string;
   frameScope?: string;
 }
@@ -53,6 +54,17 @@ export interface ActionRoutingMetadataSnapshot {
   semanticRole?: string;
   primaryContentKind?: string;
   capabilities: string[];
+}
+
+export interface ActionRoutingRelationSnapshot {
+  sourceKind?: 'canvas' | 'mindmap';
+  parentSourceId?: string;
+  groupId?: string;
+  frameScope?: string;
+  hasParentRelation: boolean;
+  isGroupMember: boolean;
+  isMindmapMember: boolean;
+  isFrameScoped: boolean;
 }
 
 export interface ActionRoutingEditabilitySnapshot {
@@ -68,6 +80,7 @@ export interface ActionRoutingResolvedContext {
   selection: ActionRoutingSelectionSnapshot;
   target?: ActionRoutingTargetSnapshot;
   metadata: ActionRoutingMetadataSnapshot;
+  relations?: ActionRoutingRelationSnapshot;
   editability: ActionRoutingEditabilitySnapshot;
 }
 

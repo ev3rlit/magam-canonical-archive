@@ -37,7 +37,13 @@ const ACTION_ROUTING_RPC_ERRORS: Record<ActionRoutingError['code'], { code: numb
   OPTIMISTIC_CONFLICT: RPC_ERRORS.OPTIMISTIC_CONFLICT,
 };
 
-export type CanvasActionDispatchCompatIntent = LegacyActionRoutingIntent | 'content-update';
+export type CanvasActionDispatchCompatIntent =
+  | LegacyActionRoutingIntent
+  | 'content-update'
+  | 'duplicate-node'
+  | 'delete-node'
+  | 'toggle-node-lock'
+  | 'select-node-group';
 
 export interface CanvasActionDispatchRequest {
   surface: LegacyEntryPointSurface;
@@ -112,6 +118,30 @@ function resolveIntentEnvelopeMeta(
   if (intent === 'rename-node') {
     return {
       intentId: 'node.rename',
+      optimistic: false,
+    };
+  }
+  if (intent === 'duplicate-node') {
+    return {
+      intentId: 'node.duplicate',
+      optimistic: false,
+    };
+  }
+  if (intent === 'delete-node') {
+    return {
+      intentId: 'node.delete',
+      optimistic: false,
+    };
+  }
+  if (intent === 'toggle-node-lock') {
+    return {
+      intentId: 'node.lock.toggle',
+      optimistic: false,
+    };
+  }
+  if (intent === 'select-node-group') {
+    return {
+      intentId: 'node.group.select',
       optimistic: false,
     };
   }

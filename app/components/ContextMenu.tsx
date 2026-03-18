@@ -52,20 +52,37 @@ export function ContextMenu({ items, context, onClose }: ContextMenuProps) {
         }
 
         if (item.type === 'action') {
+          const disabled = typeof item.disabled === 'function'
+            ? item.disabled(context)
+            : Boolean(item.disabled);
+          const disabledReason = typeof item.disabledReason === 'function'
+            ? item.disabledReason(context)
+            : item.disabledReason;
+
           return (
             <button
               key={item.id}
               type="button"
               role="menuitem"
-              data-overlay-actionable="true"
-              data-context-menu-action
+              data-overlay-actionable={disabled ? undefined : 'true'}
+              data-context-menu-action={disabled ? undefined : 'true'}
               className={cn(
                 'w-full px-3 py-2 text-left text-sm flex items-center gap-2',
-                'hover:bg-slate-100 dark:hover:bg-slate-800',
                 'text-slate-700 dark:text-slate-300',
-                'focus-visible:outline-none focus-visible:bg-slate-100 dark:focus-visible:bg-slate-800',
+                disabled
+                  ? 'cursor-not-allowed opacity-50'
+                  : 'hover:bg-slate-100 dark:hover:bg-slate-800',
+                disabled
+                  ? ''
+                  : 'focus-visible:outline-none focus-visible:bg-slate-100 dark:focus-visible:bg-slate-800',
               )}
+              disabled={disabled}
+              aria-disabled={disabled}
+              title={disabled ? disabledReason ?? item.label : undefined}
               onClick={async () => {
+                if (disabled) {
+                  return;
+                }
                 await item.handler(context);
                 onClose('programmatic-close');
               }}

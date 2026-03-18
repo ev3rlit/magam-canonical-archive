@@ -193,6 +193,7 @@ export function WorkspaceClient() {
     updateNode,
     moveNode,
     createNode,
+    deleteNode,
     reparentNode,
     undoLastEdit,
     redoLastEdit,
@@ -314,6 +315,18 @@ export function WorkspaceClient() {
     }
     if (descriptor.actionId === 'restore-node-data') {
       restoreNodeData(descriptor.payload.nodeId, descriptor.payload.previousData);
+      return;
+    }
+    if (descriptor.actionId === 'select-node-group') {
+      const runtime = useGraphStore.getState();
+      const groupNodeIds = runtime.nodes
+        .filter((node) => node.data?.groupId === descriptor.payload.groupId)
+        .map((node) => node.id);
+      runtime.setSelectedNodes(
+        groupNodeIds.length > 0
+          ? groupNodeIds
+          : (descriptor.payload.anchorNodeId ? [descriptor.payload.anchorNodeId] : []),
+      );
     }
   }, [restoreNodeData]);
 
@@ -361,6 +374,9 @@ export function WorkspaceClient() {
     if (descriptor.actionId === 'node.create') {
       return createNode(descriptor.payload.node, descriptor.payload.filePath);
     }
+    if (descriptor.actionId === 'node.delete') {
+      return deleteNode(descriptor.payload.nodeId, descriptor.payload.filePath);
+    }
     if (descriptor.actionId === 'node.reparent') {
       return reparentNode(
         descriptor.payload.nodeId,
@@ -371,7 +387,7 @@ export function WorkspaceClient() {
     throw new RpcClientError(RPC_ERRORS.INVALID_PARAMS.code, RPC_ERRORS.INVALID_PARAMS.message, {
       actionId: descriptor.actionId,
     });
-  }, [createNode, reparentNode, updateNode]);
+  }, [createNode, deleteNode, reparentNode, updateNode]);
 
   const { dispatchActionRoutingIntentOrThrow } = useMemo(() => createCanvasActionDispatchBinding({
     getRuntime: () => {
@@ -498,6 +514,158 @@ export function WorkspaceClient() {
       });
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? 'ID 변경에 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
+
+  const handleNodeDuplicateCommit = useCallback(async (input: {
+    nodeId: string;
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
+    trigger?: { source: 'menu' };
+  }) => {
+    const runtime = useGraphStore.getState();
+    const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
+    if (!targetNode) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: input.nodeId });
+    }
+
+    try {
+      await dispatchActionRoutingIntentOrThrow({
+        surface: resolveLegacyEntrypointSurface({
+          surfaceId: input.surfaceId,
+          surface: input.surface,
+        }),
+        intent: 'duplicate-node',
+        resolvedContext: resolveNodeActionRoutingContext(
+          targetNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {},
+        trigger: input.trigger ?? { source: 'menu' },
+      });
+    } catch (error) {
+      const message = mapEditRpcErrorToToast(error) ?? '노드 복제에 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
+
+  const handleNodeDeleteCommit = useCallback(async (input: {
+    nodeId: string;
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
+    trigger?: { source: 'menu' };
+  }) => {
+    const runtime = useGraphStore.getState();
+    const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
+    if (!targetNode) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: input.nodeId });
+    }
+
+    try {
+      await dispatchActionRoutingIntentOrThrow({
+        surface: resolveLegacyEntrypointSurface({
+          surfaceId: input.surfaceId,
+          surface: input.surface,
+        }),
+        intent: 'delete-node',
+        resolvedContext: resolveNodeActionRoutingContext(
+          targetNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {},
+        trigger: input.trigger ?? { source: 'menu' },
+      });
+    } catch (error) {
+      const message = mapEditRpcErrorToToast(error) ?? '노드 삭제에 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
+
+  const handleNodeLockToggleCommit = useCallback(async (input: {
+    nodeId: string;
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
+    trigger?: { source: 'menu' };
+  }) => {
+    const runtime = useGraphStore.getState();
+    const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
+    if (!targetNode) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: input.nodeId });
+    }
+
+    try {
+      await dispatchActionRoutingIntentOrThrow({
+        surface: resolveLegacyEntrypointSurface({
+          surfaceId: input.surfaceId,
+          surface: input.surface,
+        }),
+        intent: 'toggle-node-lock',
+        resolvedContext: resolveNodeActionRoutingContext(
+          targetNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {},
+        trigger: input.trigger ?? { source: 'menu' },
+      });
+    } catch (error) {
+      const message = mapEditRpcErrorToToast(error) ?? '노드 잠금 전환에 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
+
+  const handleNodeGroupSelectCommit = useCallback(async (input: {
+    nodeId: string;
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
+    trigger?: { source: 'menu' };
+  }) => {
+    const runtime = useGraphStore.getState();
+    const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
+    if (!targetNode) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: input.nodeId });
+    }
+
+    try {
+      await dispatchActionRoutingIntentOrThrow({
+        surface: resolveLegacyEntrypointSurface({
+          surfaceId: input.surfaceId,
+          surface: input.surface,
+        }),
+        intent: 'select-node-group',
+        resolvedContext: resolveNodeActionRoutingContext(
+          targetNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {},
+        trigger: input.trigger ?? { source: 'menu' },
+      });
+    } catch (error) {
+      const message = mapEditRpcErrorToToast(error) ?? '그룹 선택에 실패했습니다.';
       setGraphError({
         message,
         type: 'EDIT_REJECTED',
@@ -1237,6 +1405,10 @@ export function WorkspaceClient() {
             onRedoEditStep={redoLastEdit}
             mapEditErrorToToast={mapEditRpcErrorToToast}
             onRenameNode={handleNodeRenameCommit}
+            onDuplicateNode={handleNodeDuplicateCommit}
+            onDeleteNode={handleNodeDeleteCommit}
+            onToggleNodeLock={handleNodeLockToggleCommit}
+            onSelectNodeGroup={handleNodeGroupSelectCommit}
             onCreateNode={handleCreateNodeCommit}
           />
           <LazyStickerInspector onApplyStylePatch={handleNodeStyleCommit} />

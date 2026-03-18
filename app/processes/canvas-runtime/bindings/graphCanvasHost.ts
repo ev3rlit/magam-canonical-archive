@@ -4,6 +4,7 @@ import { FloatingToolbar } from '@/components/FloatingToolbar';
 import type { GraphCanvasCreateMode } from '@/components/GraphCanvas.drag';
 import type {
   GraphCanvasCreateIntentInput,
+  GraphCanvasNodeMenuIntentInput,
   GraphCanvasRenameIntentInput,
 } from '@/components/GraphCanvas';
 import { createSlotContribution, resolveToolbarAnchor } from '@/features/overlay-host';
@@ -11,20 +12,25 @@ import type { EntrypointInteractionMode } from '@/features/canvas-ui-entrypoints
 import type { ContextMenuActionsContext, ContextMenuContext } from '@/types/contextMenu';
 import type { CreatableNodeType } from '@/types/contextMenu';
 import type { MaterialPresetId } from '@/types/washiTape';
+import { resolveNodeActionRoutingContext } from '@/components/editor/workspaceEditUtils';
 import type { ToolbarPresenterWashiPresetOption } from './toolbarPresenter';
 import type { GraphCanvasHostBindingContract } from '../types';
 
 export interface GraphCanvasHostContextMenuActionsInput {
   copyImageToClipboard: (nodeIds?: string[]) => Promise<void> | void;
   handleFitView: () => void;
-  selectMindMapGroupByNodeId: (nodeId: string) => void;
   openExportDialog: (scope: 'selection' | 'full', selectedNodeIds?: string[]) => void;
   screenToFlowPosition: (position: { x: number; y: number }) => { x: number; y: number };
   resolveNode: (nodeId: string) => FlowNode | undefined;
   resolveParentNodeId: (nodeId: string) => string | null;
   onRenameNode?: (input: GraphCanvasRenameIntentInput) => Promise<void> | void;
+  onDuplicateNode?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
+  onDeleteNode?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
+  onToggleNodeLock?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
+  onSelectNodeGroup?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
   onCreateNode?: (input: GraphCanvasCreateIntentInput) => Promise<void> | void;
   buildRenameIntent: (nodeId: string) => GraphCanvasRenameIntentInput;
+  buildNodeMenuIntent: (nodeId: string) => GraphCanvasNodeMenuIntentInput;
   buildCreateIntent: (input: GraphCanvasCreateIntentInput) => GraphCanvasCreateIntentInput;
 }
 
@@ -53,8 +59,11 @@ export function createGraphCanvasContextMenuActions(
     openExportDialog: (scope: 'selection' | 'full', selectedNodeIds?: string[]) => {
       input.openExportDialog(scope, selectedNodeIds);
     },
-    selectMindMapGroupByNodeId: input.selectMindMapGroupByNodeId,
     renameNode: (nodeId: string) => input.onRenameNode?.(input.buildRenameIntent(nodeId)),
+    duplicateNode: (nodeId: string) => input.onDuplicateNode?.(input.buildNodeMenuIntent(nodeId)),
+    deleteNode: (nodeId: string) => input.onDeleteNode?.(input.buildNodeMenuIntent(nodeId)),
+    toggleNodeLock: (nodeId: string) => input.onToggleNodeLock?.(input.buildNodeMenuIntent(nodeId)),
+    selectNodeGroup: (nodeId: string) => input.onSelectNodeGroup?.(input.buildNodeMenuIntent(nodeId)),
     createCanvasNode: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => {
       if (!input.onCreateNode) {
         return;
@@ -125,14 +134,17 @@ export function createGraphCanvasNodeContextMenu(input: {
   resolveNodeFamily: (node: FlowNode) => string | undefined;
   actions: ContextMenuActionsContext;
 }): ContextMenuContext {
+  const selectedNodeIds = input.selectedNodeIds.includes(input.node.id)
+    ? input.selectedNodeIds
+    : [input.node.id];
+
   return {
     type: 'node',
     position: input.eventPosition,
     nodeId: input.node.id,
     nodeFamily: input.resolveNodeFamily(input.node),
-    selectedNodeIds: input.selectedNodeIds.includes(input.node.id)
-      ? input.selectedNodeIds
-      : [input.node.id],
+    nodeContext: resolveNodeActionRoutingContext(input.node, null, selectedNodeIds),
+    selectedNodeIds,
     actions: input.actions,
   };
 }

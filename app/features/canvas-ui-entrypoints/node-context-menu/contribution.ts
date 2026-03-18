@@ -1,4 +1,4 @@
-import { nodeMenuItems } from '@/config/contextMenuItems';
+import { nodeMenuItems } from './nodeMenuItems';
 
 const nodeContextMenuContribution = {
   nodeMenuItems,

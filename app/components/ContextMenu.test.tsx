@@ -62,6 +62,8 @@ function createEnvironment(): TestEnvironment {
 
 async function renderMenu(environment: TestEnvironment, input: {
   context: ContextMenuContext;
+  disabled?: boolean;
+  disabledReason?: string;
   onClose?: (reason?: string) => void;
 }) {
   await act(async () => {
@@ -71,6 +73,8 @@ async function renderMenu(environment: TestEnvironment, input: {
           type: 'action',
           id: 'rename',
           label: 'Rename',
+          disabled: input.disabled,
+          disabledReason: input.disabledReason,
           handler: () => {},
         }]}
         context={input.context}
@@ -131,6 +135,30 @@ describe('ContextMenu runtime-state integration', () => {
     });
 
     expect(onClose).toHaveBeenCalledWith('programmatic-close');
+  });
+
+  it('renders disabled actions without closing the overlay', async () => {
+    const onClose = mock((_reason?: string) => {});
+
+    await renderMenu(environment, {
+      context: {
+        type: 'pane',
+        position: { x: 20, y: 20 },
+        selectedNodeIds: [],
+      },
+      disabled: true,
+      disabledReason: 'deferred',
+      onClose,
+    });
+
+    const button = environment.dom.window.document.querySelector('button[role="menuitem"]') as HTMLButtonElement | null;
+    expect(button?.disabled).toBe(true);
+    expect(button?.title).toBe('deferred');
+    await act(async () => {
+      button?.dispatchEvent(new environment.dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('clamps menu positions inside the viewport bounds', () => {
