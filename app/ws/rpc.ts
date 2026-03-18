@@ -38,9 +38,11 @@ export const RPC_ERRORS = {
     // Bidirectional-edit contract errors
     FILE_NOT_FOUND: { code: 40401, message: 'FILE_NOT_FOUND' },
     NODE_NOT_FOUND: { code: 40401, message: 'NODE_NOT_FOUND' },
+    PLUGIN_INSTANCE_NOT_FOUND: { code: 40402, message: 'PLUGIN_INSTANCE_NOT_FOUND' },
     VERSION_CONFLICT: { code: 40901, message: 'VERSION_CONFLICT' },
     MINDMAP_CYCLE: { code: 40902, message: 'MINDMAP_CYCLE' },
     ID_COLLISION: { code: 40903, message: 'ID_COLLISION' },
+    PLUGIN_INSTANCE_ID_CONFLICT: { code: 40904, message: 'PLUGIN_INSTANCE_ID_CONFLICT' },
     EDIT_NOT_ALLOWED: { code: 42201, message: 'EDIT_NOT_ALLOWED' },
     INVALID_OBJECT_CORE: { code: 42202, message: 'INVALID_OBJECT_CORE' },
     INVALID_CAPABILITY: { code: 42203, message: 'INVALID_CAPABILITY' },
@@ -61,9 +63,12 @@ export const RPC_ERRORS = {
     INVALID_INTENT: { code: 42212, message: 'INVALID_INTENT' },
     NORMALIZATION_FAILED: { code: 42213, message: 'NORMALIZATION_FAILED' },
     GATE_BLOCKED: { code: 42214, message: 'GATE_BLOCKED' },
+    PLUGIN_STATE_PATCH_REQUIRES_RUNTIME: { code: 42215, message: 'PLUGIN_STATE_PATCH_REQUIRES_RUNTIME' },
+    INVALID_PLUGIN_INSTANCE: { code: 42216, message: 'INVALID_PLUGIN_INSTANCE' },
     PATCH_FAILED: { code: 50001, message: 'PATCH_FAILED' },
     EXECUTION_FAILED: { code: 50002, message: 'EXECUTION_FAILED' },
     ADOPTION_VIOLATION: { code: 50003, message: 'ADOPTION_VIOLATION' },
+    PLUGIN_RUNTIME_UNAVAILABLE: { code: 50004, message: 'PLUGIN_RUNTIME_UNAVAILABLE' },
 } as const;
 
 export function createResponse(id: number | string, result: unknown): JsonRpcResponse {

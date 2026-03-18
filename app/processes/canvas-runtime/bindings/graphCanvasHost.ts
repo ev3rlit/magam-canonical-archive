@@ -7,6 +7,7 @@ import type {
   GraphCanvasNodeMenuIntentInput,
   GraphCanvasRenameIntentInput,
 } from '@/components/GraphCanvas';
+import { buildPaneMenuContext } from '@/features/canvas-ui-entrypoints/pane-context-menu';
 import { createSlotContribution, resolveToolbarAnchor } from '@/features/overlay-host';
 import type { EntrypointInteractionMode } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 import type { ContextMenuActionsContext, ContextMenuContext } from '@/types/contextMenu';
@@ -151,14 +152,16 @@ export function createGraphCanvasNodeContextMenu(input: {
 
 export function createGraphCanvasPaneContextMenu(input: {
   eventPosition: { x: number; y: number };
+  selectedNodeIds: string[];
+  canCreateNode: boolean;
   actions: ContextMenuActionsContext;
 }): ContextMenuContext {
-  return {
-    type: 'pane',
+  return buildPaneMenuContext({
     position: input.eventPosition,
-    selectedNodeIds: [],
+    selectedNodeIds: input.selectedNodeIds,
+    canCreateNode: input.canCreateNode,
     actions: input.actions,
-  };
+  });
 }
 
 export function createGraphCanvasToolbarContribution(input: GraphCanvasToolbarContributionInput) {

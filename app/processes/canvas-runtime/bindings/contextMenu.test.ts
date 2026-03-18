@@ -27,6 +27,11 @@ const paneContext: ContextMenuContext = {
   type: 'pane',
   position: { x: 40, y: 80 },
   selectedNodeIds: [],
+  actions: {
+    createCanvasNode: () => undefined,
+    openExportDialog: () => undefined,
+    fitView: () => undefined,
+  },
 };
 
 describe('contextMenu binding', () => {
