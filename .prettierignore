@@ -1,9 +1,15 @@
-# Add files here to ignore them from prettier formatting
-/dist
-/build
-/coverage
-/.next
-/node_modules
-/.nx/cache
-/.nx/workspace-data
+node_modules/
+dist/
+build/
+coverage/
+.next/
+out-tsc/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 bun.lock
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+.env*

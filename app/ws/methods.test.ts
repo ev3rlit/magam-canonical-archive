@@ -238,24 +238,41 @@ describe('RPC editing methods', () => {
     expect(patched.includes('y={2}')).toBe(true);
   });
 
-  it('node.update: commandType=style.update 에서 비허용 필드는 EDIT_NOT_ALLOWED 로 거부한다', async () => {
+  it('node.update: commandType=style.update 에서 비허용 필드는 PATCH_SURFACE_VIOLATION + rollback diagnostics로 거부한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample(){ return <Canvas><Sticker id="st-1" outlineColor={"#fff"}>Hi</Sticker></Canvas>; }
     `);
     const original = await readFile(filePath, 'utf-8');
 
-    await expect(methods['node.update']({
-      filePath,
-      nodeId: 'st-1',
-      props: { anchor: 'other' },
-      commandType: 'node.style.update',
-      baseVersion: sha(original),
-      originId: 'client-1',
-      commandId: 'cmd-update-style-invalid',
-    }, { ws: {}, subscriptions: new Set() })).rejects.toMatchObject({
-      code: 42201,
-      message: 'EDIT_NOT_ALLOWED',
-    });
+    let error: unknown;
+    try {
+      await methods['node.update']({
+        filePath,
+        nodeId: 'st-1',
+        props: { anchor: 'other' },
+        commandType: 'node.style.update',
+        baseVersion: sha(original),
+        originId: 'client-1',
+        commandId: 'cmd-update-style-invalid',
+      }, { ws: {}, subscriptions: new Set() });
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toBeDefined();
+    const rejection = error as { code?: number; message?: string; data?: unknown };
+    expect(rejection.code).toBe(42211);
+    expect(rejection.message).toBe('PATCH_SURFACE_VIOLATION');
+    if (rejection.data && typeof rejection.data === 'object') {
+      const data = rejection.data as {
+        rejectedKeys?: string[];
+        rollback?: { failedAction?: string; rollbackPolicy?: string; stage?: string };
+      };
+      expect(data.rejectedKeys).toEqual(['anchor']);
+      expect(data.rollback?.failedAction).toBe('node.style.update');
+      expect(data.rollback?.rollbackPolicy).toBe('intent-scoped');
+      expect(data.rollback?.stage).toBe('ws.node.update');
+    }
   });
 
   it('node.create: sticker 타입을 허용하고 Sticker로 생성한다', async () => {
@@ -446,8 +463,15 @@ describe('RPC editing methods', () => {
     expect(rejection.code).toBe(42208);
     expect(rejection.message).toBe('CONTENT_CONTRACT_VIOLATION');
     if (rejection.data && typeof rejection.data === 'object') {
-      const data = rejection.data as { path?: string; diagnostics?: { path?: string } };
+      const data = rejection.data as {
+        path?: string;
+        diagnostics?: { path?: string };
+        rollback?: { failedAction?: string; rollbackPolicy?: string; stage?: string };
+      };
       expect(data.path ?? data.diagnostics?.path).toBe('capabilities.content');
+      expect(data.rollback?.failedAction).toBe('node.content.update');
+      expect(data.rollback?.rollbackPolicy).toBe('intent-scoped');
+      expect(data.rollback?.stage).toBe('ws.node.update');
     }
   });
 
@@ -525,8 +549,57 @@ describe('RPC editing methods', () => {
     expect(rejection.code).toBe(42208);
     expect(rejection.message).toBe('CONTENT_CONTRACT_VIOLATION');
     if (rejection.data && typeof rejection.data === 'object') {
-      const data = rejection.data as { path?: string; diagnostics?: { path?: string } };
+      const data = rejection.data as {
+        path?: string;
+        diagnostics?: { path?: string };
+        rollback?: { failedAction?: string; rollbackPolicy?: string; stage?: string };
+      };
       expect(data.path ?? data.diagnostics?.path).toBe('capabilities.content');
+      expect(data.rollback?.failedAction).toBe('node.style.update');
+      expect(data.rollback?.rollbackPolicy).toBe('intent-scoped');
+      expect(data.rollback?.stage).toBe('ws.node.update');
+    }
+  });
+
+  it('node.create: missing mindmap parent exposes intent-scoped rollback diagnostics for composite entrypoint failure', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample(){
+        return <Canvas><MindMap id="map"><Node id="root">Root</Node></MindMap></Canvas>;
+      }
+    `);
+    const original = await readFile(filePath, 'utf-8');
+
+    let error: unknown;
+    try {
+      await methods['node.create']({
+        filePath,
+        node: {
+          id: 'child-missing-parent',
+          type: 'shape',
+          props: { content: 'Child' },
+          placement: { mode: 'mindmap-child', parentId: 'missing-parent' },
+        },
+        baseVersion: sha(original),
+        originId: 'client-1',
+        commandId: 'cmd-create-missing-parent',
+      }, { ws: {}, subscriptions: new Set() });
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toBeDefined();
+    const rejection = error as { code?: number; message?: string; data?: unknown };
+    expect(rejection.code).toBe(40401);
+    expect(rejection.message).toBe('NODE_NOT_FOUND');
+    if (rejection.data && typeof rejection.data === 'object') {
+      const data = rejection.data as {
+        nodeId?: string;
+        rollback?: { failedAction?: string; rollbackPolicy?: string; stage?: string };
+      };
+      expect(data.nodeId).toBe('child-missing-parent');
+      expect(data.rollback?.failedAction).toBe('node.create');
+      expect(data.rollback?.rollbackPolicy).toBe('intent-scoped');
+      expect(data.rollback?.stage).toBe('ws.node.create');
     }
   });
 

@@ -28,7 +28,6 @@ import { BubbleOverlay } from './BubbleOverlay';
 import { Loader2, Check } from 'lucide-react';
 import { FloatingToolbar, InteractionMode } from './FloatingToolbar';
 import { useExportImage } from '@/hooks/useExportImage';
-import { ContextMenu } from './ContextMenu';
 import { useContextMenu } from '@/hooks/useContextMenu';
 import { ExportDialog } from './ExportDialog';
 import { CustomBackground } from './CustomBackground';
@@ -72,6 +71,12 @@ import type { CreatePayload } from '@/features/editing/commands';
 import type { ActionRoutingSurfaceId } from '@/features/editing/actionRoutingBridge/types';
 import { resolveNodeEditContext } from '@/components/editor/workspaceEditUtils';
 import type { CreatableNodeType } from '@/types/contextMenu';
+import {
+  OverlayHostProvider,
+  createSlotContribution,
+  resolveToolbarAnchor,
+  useOverlayHost,
+} from '@/features/overlay-host';
 
 type GraphCanvasProps = {
   onNodeDragStop?: (payload: {
@@ -92,13 +97,18 @@ type GraphCanvasProps = {
 export interface GraphCanvasRenameIntentInput {
   nodeId: string;
   surfaceId: ActionRoutingSurfaceId;
+  surface?: 'node-context-menu';
+  trigger?: { source: 'menu' };
 }
 
 export interface GraphCanvasCreateIntentInput {
   surfaceId: ActionRoutingSurfaceId;
+  surface?: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu';
+  trigger?: { source: 'click' | 'menu' };
   nodeType: CreatableNodeType;
   placement: CreatePayload['placement'];
   targetRenderedNodeId?: string;
+  targetNodeId?: string;
   filePath?: string;
   scopeId?: string;
   frameScope?: string;
@@ -108,13 +118,27 @@ export function buildGraphCanvasRenameIntent(nodeId: string): GraphCanvasRenameI
   return {
     nodeId,
     surfaceId: 'node-context-menu',
+    surface: 'node-context-menu',
+    trigger: { source: 'menu' },
   };
 }
 
 export function buildGraphCanvasCreateIntent(
   input: GraphCanvasCreateIntentInput,
 ): GraphCanvasCreateIntentInput {
-  return input;
+  const surface = input.surface
+    ?? (input.surfaceId === 'toolbar'
+      ? 'canvas-toolbar'
+      : input.surfaceId);
+  const trigger = input.trigger
+    ?? { source: surface === 'canvas-toolbar' ? 'click' as const : 'menu' as const };
+
+  return {
+    ...input,
+    surface,
+    trigger,
+    targetNodeId: input.targetNodeId ?? input.targetRenderedNodeId,
+  };
 }
 
 type DragOriginState = {
@@ -204,7 +228,13 @@ function GraphCanvasContent({
   const { calculateLayout, isLayouting } = useLayout();
   const nodesInitialized = useNodesInitialized();
   const { zoomIn, zoomOut, fitView, getZoom, setNodes, getNodes, getViewport, setViewport, screenToFlowPosition } = useReactFlow();
-  const { isOpen: isContextMenuOpen, context: contextMenuContext, items: contextMenuItems, openMenu, closeMenu } = useContextMenu();
+  const {
+    open: openOverlayHost,
+    replace: replaceOverlayHost,
+    close: closeOverlayHost,
+    getActive: getActiveOverlays,
+  } = useOverlayHost();
+  const { openMenu, handleSelectionChange } = useContextMenu();
   const { copyImageToClipboard } = useExportImage();
   const [exportDialog, setExportDialog] = useState<{
     isOpen: boolean;
@@ -235,6 +265,7 @@ function GraphCanvasContent({
   const graphClipboardRef = useRef<{ payload: GraphClipboardPayload; text: string } | null>(null);
   const dragOriginPositions = useRef<Map<string, DragOriginState>>(new Map());
   const dragGenerationRef = useRef<Map<string, number>>(new Map());
+  const toolbarOverlayIdRef = useRef<string | null>(null);
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
   const selectedWashiNodeIds = useMemo(
     () => nodes
@@ -373,6 +404,8 @@ function GraphCanvasContent({
       const position = screenToFlowPosition(screenPosition);
       return onCreateNode(buildGraphCanvasCreateIntent({
         surfaceId: 'pane-context-menu',
+        surface: 'pane-context-menu',
+        trigger: { source: 'menu' },
         nodeType,
         placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
       }));
@@ -386,6 +419,8 @@ function GraphCanvasContent({
       const parentId = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
       return onCreateNode(buildGraphCanvasCreateIntent({
         surfaceId: 'node-context-menu',
+        surface: 'node-context-menu',
+        trigger: { source: 'menu' },
         nodeType: 'shape',
         placement: { mode: 'mindmap-child', parentId },
         targetRenderedNodeId: renderedNodeId,
@@ -412,6 +447,8 @@ function GraphCanvasContent({
       const siblingOf = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
       return onCreateNode(buildGraphCanvasCreateIntent({
         surfaceId: 'node-context-menu',
+        surface: 'node-context-menu',
+        trigger: { source: 'menu' },
         nodeType: 'shape',
         placement: { mode: 'mindmap-sibling', siblingOf, parentId },
         targetRenderedNodeId: renderedNodeId,
@@ -436,6 +473,8 @@ function GraphCanvasContent({
         nodeFamily: resolveNodeEditContext(node, useGraphStore.getState().currentFile).editMeta?.family,
         selectedNodeIds: nextSelectedIds,
         actions: contextMenuActions,
+      }, {
+        triggerElement: event.currentTarget as HTMLElement,
       });
     },
     [openMenu, contextMenuActions],
@@ -449,14 +488,66 @@ function GraphCanvasContent({
         position: { x: event.clientX, y: event.clientY },
         selectedNodeIds: [],
         actions: contextMenuActions,
+      }, {
+        triggerElement: event.currentTarget as HTMLElement,
       });
     },
     [contextMenuActions, openMenu],
   );
 
-  const onCloseContextMenu = useCallback(() => {
-    closeMenu();
-  }, [closeMenu]);
+  const toolbarContribution = useMemo(() => createSlotContribution('toolbar', {
+    anchor: resolveToolbarAnchor(typeof window !== 'undefined'
+      ? { width: window.innerWidth, height: window.innerHeight }
+      : { width: 1024, height: 768 }),
+    focusPolicy: {
+      openTarget: 'none',
+      restoreTarget: 'none',
+    },
+    render: () => (
+      <FloatingToolbar
+        positioning="hosted"
+        interactionMode={interactionMode}
+        onInteractionModeChange={setInteractionMode}
+        createMode={createMode}
+        onCreateModeChange={setCreateMode}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onFitView={handleFitView}
+        washiPresets={washiPresets}
+        washiPresetEnabled={selectedWashiNodeIds.length > 0}
+        activeWashiPresetId={activeWashiPresetId}
+        onSelectWashiPreset={handleWashiPresetSelect}
+      />
+    ),
+  }), [
+    activeWashiPresetId,
+    createMode,
+    handleFitView,
+    handleWashiPresetSelect,
+    interactionMode,
+    selectedWashiNodeIds.length,
+    washiPresets,
+  ]);
+
+  useEffect(() => {
+    const activeId = toolbarOverlayIdRef.current;
+    const nextId = activeId
+      && getActiveOverlays().some((item) => item.instanceId === activeId)
+      ? replaceOverlayHost(activeId, toolbarContribution)
+      : openOverlayHost(toolbarContribution);
+    toolbarOverlayIdRef.current = nextId;
+  }, [getActiveOverlays, openOverlayHost, replaceOverlayHost, toolbarContribution]);
+
+  useEffect(() => () => {
+    const activeId = toolbarOverlayIdRef.current;
+    if (!activeId) {
+      return;
+    }
+
+    if (getActiveOverlays().some((item) => item.instanceId === activeId)) {
+      closeOverlayHost(activeId, 'viewport-teardown');
+    }
+  }, [closeOverlayHost, getActiveOverlays]);
 
   const onPaneClick = useCallback(
     async (event: React.MouseEvent) => {
@@ -471,6 +562,8 @@ function GraphCanvasContent({
       try {
         await onCreateNode(buildGraphCanvasCreateIntent({
           surfaceId: 'toolbar',
+          surface: 'canvas-toolbar',
+          trigger: { source: 'click' },
           nodeType: createMode,
           placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
         }));
@@ -674,8 +767,9 @@ function GraphCanvasContent({
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
       const selectedIds = selectedNodes.map((node) => node.id);
       setSelectedNodes(selectedIds);
+      handleSelectionChange(selectedIds);
     },
-    [setSelectedNodes],
+    [handleSelectionChange, setSelectedNodes],
   );
 
   const onHandleNodeDragStart = useCallback(
@@ -1084,31 +1178,7 @@ function GraphCanvasContent({
           {typeof canvasBackground === 'object' && canvasBackground.type === 'custom' && (
             <CustomBackground svg={canvasBackground.svg} gap={canvasBackground.gap} />
           )}
-
-          <FloatingToolbar
-            interactionMode={interactionMode}
-            onInteractionModeChange={setInteractionMode}
-            createMode={createMode}
-            onCreateModeChange={setCreateMode}
-            onZoomIn={handleZoomIn}
-            onZoomOut={handleZoomOut}
-            onFitView={handleFitView}
-            washiPresets={washiPresets}
-            washiPresetEnabled={selectedWashiNodeIds.length > 0}
-            activeWashiPresetId={activeWashiPresetId}
-            onSelectWashiPreset={handleWashiPresetSelect}
-          />
         </ReactFlow>
-
-        {isContextMenuOpen && contextMenuContext && contextMenuItems.length > 0 && (
-          <ContextMenu
-            isOpen={isContextMenuOpen}
-            position={contextMenuContext.position}
-            items={contextMenuItems}
-            context={contextMenuContext}
-            onClose={onCloseContextMenu}
-          />
-        )}
 
         <ExportDialog
           isOpen={exportDialog.isOpen}
@@ -1164,15 +1234,17 @@ export function GraphCanvas({
         <NavigationProvider>
           <ZoomProvider>
             <BubbleProvider>
-              <GraphCanvasContent
-                onNodeDragStop={onNodeDragStop}
-                onWashiPresetChange={onWashiPresetChange}
-                onUndoEditStep={onUndoEditStep}
-                onRedoEditStep={onRedoEditStep}
-                mapEditErrorToToast={mapEditErrorToToast}
-                onRenameNode={onRenameNode}
-                onCreateNode={onCreateNode}
-              />
+              <OverlayHostProvider>
+                <GraphCanvasContent
+                  onNodeDragStop={onNodeDragStop}
+                  onWashiPresetChange={onWashiPresetChange}
+                  onUndoEditStep={onUndoEditStep}
+                  onRedoEditStep={onRedoEditStep}
+                  mapEditErrorToToast={mapEditErrorToToast}
+                  onRenameNode={onRenameNode}
+                  onCreateNode={onCreateNode}
+                />
+              </OverlayHostProvider>
             </BubbleProvider>
           </ZoomProvider>
         </NavigationProvider>

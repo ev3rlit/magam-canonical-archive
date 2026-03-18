@@ -58,7 +58,12 @@ export const RPC_ERRORS = {
     INTENT_PAYLOAD_INVALID: { code: 42215, message: 'INTENT_PAYLOAD_INVALID' },
     DISPATCH_PLAN_INVALID: { code: 42216, message: 'DISPATCH_PLAN_INVALID' },
     OPTIMISTIC_CONFLICT: { code: 40904, message: 'OPTIMISTIC_CONFLICT' },
+    INVALID_INTENT: { code: 42212, message: 'INVALID_INTENT' },
+    NORMALIZATION_FAILED: { code: 42213, message: 'NORMALIZATION_FAILED' },
+    GATE_BLOCKED: { code: 42214, message: 'GATE_BLOCKED' },
     PATCH_FAILED: { code: 50001, message: 'PATCH_FAILED' },
+    EXECUTION_FAILED: { code: 50002, message: 'EXECUTION_FAILED' },
+    ADOPTION_VIOLATION: { code: 50003, message: 'ADOPTION_VIOLATION' },
 } as const;
 
 export function createResponse(id: number | string, result: unknown): JsonRpcResponse {

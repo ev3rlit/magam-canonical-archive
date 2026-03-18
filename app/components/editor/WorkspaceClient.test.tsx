@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { resolveRestoreFocusTarget, restoreFocusForOverlay } from '@/features/overlay-host';
+import { installTestDom } from '@/features/overlay-host/testDom';
 import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
@@ -6,10 +8,12 @@ import type { CanonicalObject } from '@/features/render/canonicalObject';
 import {
   canCommitTextEdit,
   canRunNodeCommand,
+  createPaneActionRoutingContext,
   getAllowedNodeStylePatch,
   extractWorkspaceStyleInput,
   flattenWorkspaceStyleDiagnostics,
   mapEditRpcErrorToToast,
+  resolveNodeActionRoutingContext,
   resolveNodeEditContext,
   resolveNodeEditTarget,
 } from './workspaceEditUtils';
@@ -262,6 +266,48 @@ describe('WorkspaceClient editability helpers', () => {
     });
   });
 
+  it('resolveNodeActionRoutingContext exposes metadata and allowed commands for the bridge', () => {
+    expect(resolveNodeActionRoutingContext(
+      makeCapabilityProfileNodeFromCanonical({
+        id: 'profile-node-1',
+        type: 'shape',
+        canonical: canonicalProfileNode,
+      }),
+      'examples/fallback.tsx',
+      ['profile-node-1'],
+    )).toEqual({
+      surfaceId: 'examples/fallback.tsx',
+      selection: {
+        nodeIds: ['profile-node-1'],
+        homogeneous: true,
+      },
+      target: {
+        renderedNodeId: 'profile-node-1',
+        sourceId: 'profile-node-1',
+        filePath: 'examples/fallback.tsx',
+      },
+      metadata: {
+        semanticRole: 'topic',
+        primaryContentKind: 'text',
+        capabilities: ['frame', 'content'],
+      },
+      editability: {
+        canMutate: true,
+        allowedCommands: ['node.move.absolute', 'node.content.update', 'node.style.update', 'node.rename', 'node.create'],
+        styleEditableKeys: canonicalProfileNode.capabilities.content
+          ? expect.any(Array)
+          : [],
+        reason: undefined,
+        editMeta: {
+          family: 'rich-content',
+          contentCarrier: 'text-child',
+          styleEditableKeys: expect.any(Array),
+          createMode: 'canvas',
+        },
+      },
+    });
+  });
+
   it('canRunNodeCommand respects editMeta gating', () => {
     expect(canRunNodeCommand(editableNode, 'node.style.update')).toBe(true);
     expect(canRunNodeCommand(editableNode, 'node.reparent')).toBe(false);
@@ -335,6 +381,18 @@ describe('WorkspaceClient editability helpers', () => {
     expect(first).toEqual(second);
   });
 
+  it('createPaneActionRoutingContext exposes node.create permission only when file is ready', () => {
+    expect(createPaneActionRoutingContext({
+      currentFile: 'examples/fallback.tsx',
+      selectedNodeIds: [],
+    }).editability.allowedCommands).toEqual(['node.create']);
+
+    expect(createPaneActionRoutingContext({
+      currentFile: null,
+      selectedNodeIds: [],
+    }).editability.canMutate).toBe(false);
+  });
+
   it('flattens diagnostics for overlay rendering and clears when empty', () => {
     expect(flattenWorkspaceStyleDiagnostics({
       a: [{ objectId: 'sticky-1', code: 'UNSUPPORTED_TOKEN', message: 'bad token' }],
@@ -342,6 +400,51 @@ describe('WorkspaceClient editability helpers', () => {
     }, 1)).toEqual(['[sticky-1] bad token']);
 
     expect(flattenWorkspaceStyleDiagnostics({})).toEqual([]);
+  });
+
+  it('bridge-specific error codes are mapped to actionable toast messages', () => {
+    expect(mapEditRpcErrorToToast({
+      code: 42212,
+      message: 'INVALID_INTENT',
+    })).toContain('지원되지 않는');
+    expect(mapEditRpcErrorToToast({
+      code: 42213,
+      message: 'NORMALIZATION_FAILED',
+    })).toContain('canonical');
+    expect(mapEditRpcErrorToToast({
+      code: 42214,
+      message: 'GATE_BLOCKED',
+    })).toContain('selection/context');
+  });
+});
+
+describe('WorkspaceClient overlay boundary helpers', () => {
+  it('focus restore keeps using the trigger element for canvas-host dismissals', () => {
+    const cleanupDom = installTestDom();
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    document.body.appendChild(trigger);
+
+    expect(resolveRestoreFocusTarget({
+      focusPolicy: {
+        openTarget: 'none',
+        restoreTarget: 'trigger',
+      },
+      triggerElement: trigger,
+      selectionOwnerElement: null,
+    })).toBe(trigger);
+
+    expect(restoreFocusForOverlay({
+      focusPolicy: {
+        openTarget: 'none',
+        restoreTarget: 'trigger',
+      },
+      triggerElement: trigger,
+      selectionOwnerElement: null,
+    })).toEqual({ restored: true });
+
+    trigger.remove();
+    cleanupDom();
   });
 });
 
@@ -436,5 +539,21 @@ describe('WorkspaceClient capability-profile editability parity', () => {
     });
     expect(canRunNodeCommand(linkedCanvasNode, 'node.move.absolute')).toBe(true);
     expect(canRunNodeCommand(linkedCanvasNode, 'node.reparent')).toBe(false);
+  });
+});
+
+describe('WorkspaceClient bridge integration', () => {
+  it('create/rename/style entrypoints are routed through the action bridge', async () => {
+    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+
+    expect(source).toContain("dispatchActionRoutingIntentOrThrow({");
+    expect(source).toContain("intent: 'style-update'");
+    expect(source).toContain("intent: 'rename-node'");
+    expect(source).toContain("'create-node'");
+    expect(source).toContain("'create-mindmap-child'");
+    expect(source).toContain("'create-mindmap-sibling'");
+    expect(source).not.toContain('buildCreateCommand(');
+    expect(source).not.toContain('buildRenameCommand(');
+    expect(source).not.toContain('buildStyleUpdateCommand(');
   });
 });

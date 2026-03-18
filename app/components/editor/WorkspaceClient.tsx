@@ -46,13 +46,21 @@ import { editDebugLog } from '@/utils/editDebug';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { resolveMindMapReparentIntent } from '@/components/GraphCanvas.drag';
 import { RPC_ERRORS } from '@/ws/rpc';
+import type {
+  ActionRoutingIntent as LegacyActionRoutingIntent,
+  ActionRoutingResolvedContext as LegacyActionRoutingResolvedContext,
+  ActionRoutingTrigger as LegacyActionRoutingTrigger,
+  EntryPointSurface as LegacyEntryPointSurface,
+} from '@/features/editing/actionRoutingBridge.types';
 import {
+  createPaneActionRoutingContext,
   canCommitTextEdit,
   canRunNodeCommand,
   flattenWorkspaceStyleDiagnostics,
   mapEditRpcErrorToToast,
   resolveNodeEditContext,
   resolveNodeEditTarget,
+  resolveNodeActionRoutingContext,
 } from './workspaceEditUtils';
 
 type PendingTabCloseRequest = {
@@ -76,6 +84,16 @@ type MagamTestHooks = {
   openFile: (pageId: string) => boolean;
 };
 
+type CompatActionRoutingIntent = LegacyActionRoutingIntent | 'content-update';
+
+type CompatActionRoutingRequest = {
+  surface: LegacyEntryPointSurface;
+  intent: CompatActionRoutingIntent;
+  resolvedContext: LegacyActionRoutingResolvedContext;
+  uiPayload: Record<string, unknown>;
+  trigger: LegacyActionRoutingTrigger;
+};
+
 function getNodeLabel(node: { data?: unknown }): string {
   const data = (node.data || {}) as Record<string, unknown>;
   return typeof data.label === 'string' ? data.label : '';
@@ -94,7 +112,6 @@ function toActionRoutingRpcError(error: ActionRoutingError): RpcClientError {
   const mapped = ACTION_ROUTING_RPC_ERRORS[error.code] ?? RPC_ERRORS.PATCH_FAILED;
   return new RpcClientError(mapped.code, mapped.message, error.details);
 }
-
 declare global {
   interface Window {
     __magamTest?: MagamTestHooks;
@@ -319,6 +336,32 @@ export function WorkspaceClient() {
     }));
   }, []);
 
+  const normalizeActionRoutingSurfaceId = useCallback((input: {
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu' | 'selection-floating-menu';
+  }): ActionRoutingSurfaceId => {
+    if (input.surfaceId) {
+      return input.surfaceId;
+    }
+    if (input.surface === 'canvas-toolbar') {
+      return 'toolbar';
+    }
+    return input.surface ?? 'selection-floating-menu';
+  }, []);
+
+  const resolveEntryPointSurface = useCallback((input: {
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu' | 'selection-floating-menu';
+  }): LegacyEntryPointSurface => {
+    if (input.surface) {
+      return input.surface;
+    }
+    if (input.surfaceId === 'toolbar') {
+      return 'canvas-toolbar';
+    }
+    return input.surfaceId ?? 'selection-floating-menu';
+  }, []);
+
   const applyRuntimeAction = useCallback((descriptor: RuntimeActionDescriptor) => {
     if (descriptor.actionId === 'apply-node-data-patch') {
       useGraphStore.getState().updateNodeData(descriptor.payload.nodeId, descriptor.payload.patch);
@@ -326,7 +369,6 @@ export function WorkspaceClient() {
     }
     if (descriptor.actionId === 'restore-node-data') {
       restoreNodeData(descriptor.payload.nodeId, descriptor.payload.previousData);
-      return;
     }
   }, [restoreNodeData]);
 
@@ -387,9 +429,7 @@ export function WorkspaceClient() {
   }, [createNode, reparentNode, updateNode]);
 
   const rollbackDispatches = useCallback((descriptors: readonly RuntimeActionDescriptor[]) => {
-    for (const descriptor of descriptors) {
-      applyRuntimeAction(descriptor);
-    }
+    descriptors.forEach((descriptor) => applyRuntimeAction(descriptor));
   }, [applyRuntimeAction]);
 
   const executeBridgeIntent = useCallback(async (envelope: UIIntentEnvelope) => {
@@ -446,26 +486,86 @@ export function WorkspaceClient() {
     rollbackDispatches,
   ]);
 
+  const dispatchActionRoutingIntentOrThrow = useCallback(async (request: CompatActionRoutingRequest) => {
+    const runtime = useGraphStore.getState();
+    const uiPayloadTarget = request.uiPayload as {
+      filePath?: unknown;
+      scopeId?: unknown;
+      frameScope?: unknown;
+    };
+    const targetRef = request.resolvedContext.target || typeof uiPayloadTarget.filePath === 'string'
+      ? {
+        renderedNodeId: request.resolvedContext.target?.renderedNodeId,
+        filePath: request.resolvedContext.target?.filePath
+          ?? (typeof uiPayloadTarget.filePath === 'string' ? uiPayloadTarget.filePath : undefined),
+        scopeId: request.resolvedContext.target?.scopeId
+          ?? (typeof uiPayloadTarget.scopeId === 'string' ? uiPayloadTarget.scopeId : undefined),
+        frameScope: request.resolvedContext.target?.frameScope
+          ?? (typeof uiPayloadTarget.frameScope === 'string' ? uiPayloadTarget.frameScope : undefined),
+      }
+      : undefined;
+
+    let intentId: UIIntentEnvelope['intentId'];
+    let optimistic = false;
+
+    if (request.intent === 'style-update') {
+      intentId = 'selection.style.update';
+      optimistic = true;
+    } else if (request.intent === 'rename-node') {
+      intentId = 'node.rename';
+    } else if (
+      request.intent === 'create-node'
+      || request.intent === 'create-mindmap-child'
+      || request.intent === 'create-mindmap-sibling'
+    ) {
+      intentId = 'node.create';
+    } else {
+      intentId = 'selection.content.update';
+      optimistic = true;
+    }
+
+    await executeBridgeIntent({
+      surfaceId: normalizeActionRoutingSurfaceId({ surface: request.surface }),
+      intentId,
+      selectionRef: {
+        selectedNodeIds: request.resolvedContext.selection.nodeIds,
+        currentFile: runtime.currentFile,
+      },
+      targetRef,
+      rawPayload: request.uiPayload,
+      optimistic,
+    });
+  }, [executeBridgeIntent, normalizeActionRoutingSurfaceId]);
+
   const handleNodeStyleCommit = useCallback(async (payload: {
     nodeId: string;
     patch: Record<string, unknown>;
     surfaceId?: ActionRoutingSurfaceId;
+    surface?: 'selection-floating-menu';
+    trigger?: { source: 'click' | 'hotkey' | 'menu' | 'inspector' };
   }) => {
+    const runtime = useGraphStore.getState();
+    const targetNode = runtime.nodes.find((node) => node.id === payload.nodeId);
+    if (!targetNode) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: payload.nodeId });
+    }
+
     try {
-      await executeBridgeIntent({
-        surfaceId: payload.surfaceId ?? 'selection-floating-menu',
-        intentId: 'selection.style.update',
-        selectionRef: {
-          selectedNodeIds: useGraphStore.getState().selectedNodeIds,
-          currentFile: useGraphStore.getState().currentFile,
-        },
-        targetRef: {
-          renderedNodeId: payload.nodeId,
-        },
-        rawPayload: {
+      await dispatchActionRoutingIntentOrThrow({
+        surface: resolveEntryPointSurface({
+          surfaceId: payload.surfaceId,
+          surface: payload.surface,
+        }),
+        intent: 'style-update',
+        resolvedContext: resolveNodeActionRoutingContext(
+          targetNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {
           patch: payload.patch,
         },
-        optimistic: true,
+        trigger: payload.trigger ?? { source: 'inspector' },
       });
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? '스타일 저장에 실패했습니다.';
@@ -476,13 +576,15 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [executeBridgeIntent, setGraphError]);
+  }, [dispatchActionRoutingIntentOrThrow, resolveEntryPointSurface, setGraphError]);
 
   const handleWashiPresetChange = useCallback(
     async (nodeIds: string[], presetId: string) => {
       await Promise.all(nodeIds.map((nodeId) => handleNodeStyleCommit({
         nodeId,
         patch: { pattern: { type: 'preset', id: presetId } },
+        surface: 'selection-floating-menu',
+        trigger: { source: 'hotkey' },
       })));
     },
     [handleNodeStyleCommit],
@@ -490,7 +592,9 @@ export function WorkspaceClient() {
 
   const handleNodeRenameCommit = useCallback(async (input: {
     nodeId: string;
-    surfaceId: ActionRoutingSurfaceId;
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: 'node-context-menu';
+    trigger?: { source: 'menu' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -516,20 +620,21 @@ export function WorkspaceClient() {
     }
 
     try {
-      await executeBridgeIntent({
-        surfaceId: input.surfaceId,
-        intentId: 'node.rename',
-        selectionRef: {
-          selectedNodeIds: useGraphStore.getState().selectedNodeIds,
-          currentFile: useGraphStore.getState().currentFile,
-        },
-        targetRef: {
-          renderedNodeId: input.nodeId,
-        },
-        rawPayload: {
+      await dispatchActionRoutingIntentOrThrow({
+        surface: resolveEntryPointSurface({
+          surfaceId: input.surfaceId,
+          surface: input.surface,
+        }),
+        intent: 'rename-node',
+        resolvedContext: resolveNodeActionRoutingContext(
+          targetNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {
           nextId,
         },
-        optimistic: false,
+        trigger: input.trigger ?? { source: 'menu' },
       });
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? 'ID 변경에 실패했습니다.';
@@ -540,10 +645,12 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [executeBridgeIntent, setGraphError]);
+  }, [dispatchActionRoutingIntentOrThrow, resolveEntryPointSurface, setGraphError]);
 
   const handleCreateNodeCommit = useCallback(async (input: {
-    surfaceId: ActionRoutingSurfaceId;
+    surfaceId?: ActionRoutingSurfaceId;
+    surface?: 'canvas-toolbar' | 'pane-context-menu' | 'node-context-menu';
+    trigger?: { source: 'click' | 'menu' };
     nodeType: 'shape' | 'text' | 'markdown' | 'sticky' | 'sticker' | 'washi-tape';
     placement:
       | { mode: 'canvas-absolute'; x: number; y: number }
@@ -553,26 +660,52 @@ export function WorkspaceClient() {
     filePath?: string;
     scopeId?: string;
     frameScope?: string;
+    targetNodeId?: string;
   }) => {
+    const runtime = useGraphStore.getState();
+    const intent = input.placement.mode === 'mindmap-child'
+      ? 'create-mindmap-child'
+      : input.placement.mode === 'mindmap-sibling'
+        ? 'create-mindmap-sibling'
+        : 'create-node';
+    const resolvedContext = input.placement.mode === 'canvas-absolute'
+      ? createPaneActionRoutingContext({
+        currentFile: runtime.currentFile,
+        selectedNodeIds: runtime.selectedNodeIds,
+      })
+      : (() => {
+        const renderedNodeId = input.targetRenderedNodeId ?? input.targetNodeId;
+        const targetNode = renderedNodeId
+          ? runtime.nodes.find((node) => node.id === renderedNodeId)
+          : null;
+        if (!targetNode) {
+          throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: renderedNodeId });
+        }
+        return resolveNodeActionRoutingContext(
+          targetNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        );
+      })();
+
     try {
-      await executeBridgeIntent({
-        surfaceId: input.surfaceId,
-        intentId: 'node.create',
-        selectionRef: {
-          selectedNodeIds: useGraphStore.getState().selectedNodeIds,
-          currentFile: useGraphStore.getState().currentFile,
-        },
-        targetRef: {
-          renderedNodeId: input.targetRenderedNodeId,
+      await dispatchActionRoutingIntentOrThrow({
+        surface: resolveEntryPointSurface({
+          surfaceId: input.surfaceId,
+          surface: input.surface,
+        }),
+        intent,
+        resolvedContext,
+        uiPayload: {
+          nodeType: input.nodeType,
+          placement: input.placement,
           filePath: input.filePath,
           scopeId: input.scopeId,
           frameScope: input.frameScope,
         },
-        rawPayload: {
-          nodeType: input.nodeType,
-          placement: input.placement,
+        trigger: input.trigger ?? {
+          source: input.placement.mode === 'canvas-absolute' ? 'click' : 'menu',
         },
-        optimistic: false,
       });
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? '오브젝트 생성에 실패했습니다.';
@@ -583,7 +716,7 @@ export function WorkspaceClient() {
       });
       throw error;
     }
-  }, [executeBridgeIntent, setGraphError]);
+  }, [dispatchActionRoutingIntentOrThrow, resolveEntryPointSurface, setGraphError]);
 
   const handleMindMapReparentCommit = useCallback(async (input: {
     draggedNodeId: string;
@@ -1110,20 +1243,18 @@ export function WorkspaceClient() {
       }
 
       try {
-        await executeBridgeIntent({
-          surfaceId: 'selection-floating-menu',
-          intentId: 'selection.content.update',
-          selectionRef: {
-            selectedNodeIds: useGraphStore.getState().selectedNodeIds,
-            currentFile: useGraphStore.getState().currentFile,
-          },
-          targetRef: {
-            renderedNodeId: node.id,
-          },
-          rawPayload: {
+        await dispatchActionRoutingIntentOrThrow({
+          surface: 'selection-floating-menu',
+          intent: 'content-update',
+          resolvedContext: resolveNodeActionRoutingContext(
+            node,
+            runtime.currentFile,
+            runtime.selectedNodeIds,
+          ),
+          uiPayload: {
             content: nextContent,
           },
-          optimistic: true,
+          trigger: { source: 'inspector' },
         });
         clearTextEditSession();
       } catch (error) {
@@ -1147,7 +1278,7 @@ export function WorkspaceClient() {
     activeTextEditNodeId,
     clearPendingTextEditAction,
     clearTextEditSession,
-    executeBridgeIntent,
+    dispatchActionRoutingIntentOrThrow,
     pendingTextEditAction,
     selectedNodeIds,
     setGraphError,
@@ -1276,6 +1407,7 @@ export function WorkspaceClient() {
           />
         )}
 
+        {/* Workspace-level overlays stay outside the canvas overlay host boundary. */}
         {tabContextMenu && (
           <div
             ref={tabContextMenuRef}

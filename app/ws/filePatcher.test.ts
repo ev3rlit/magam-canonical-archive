@@ -356,9 +356,28 @@ describe('filePatcher', () => {
       }
     `);
 
-    await expect(patchNodeStyle(filePath, 'sticker-1', {
-      anchor: 'shape-1',
-    })).rejects.toThrow('EDIT_NOT_ALLOWED');
+    let error: unknown;
+    try {
+      await patchNodeStyle(filePath, 'sticker-1', {
+        anchor: 'shape-1',
+      });
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toBeDefined();
+    const rejection = error as { code?: number; message?: string; data?: unknown };
+    expect(rejection.code).toBe(42211);
+    expect(rejection.message).toBe('PATCH_SURFACE_VIOLATION');
+    if (rejection.data && typeof rejection.data === 'object') {
+      const data = rejection.data as {
+        rejectedKeys?: string[];
+        rollback?: { failedAction?: string; rollbackPolicy?: string };
+      };
+      expect(data.rejectedKeys).toEqual(['anchor']);
+      expect(data.rollback?.failedAction).toBe('node.style.update');
+      expect(data.rollback?.rollbackPolicy).toBe('intent-scoped');
+    }
   });
 
   it('reparent: 부모 변경 성공', async () => {

@@ -32,6 +32,7 @@ import {
   type WorkspaceStyleRuntimeContext,
   type WorkspaceStyleSessionState,
 } from '@/features/workspace-styling';
+import type { ActionOptimisticLifecycleEvent } from '@/features/editing/actionRoutingBridge.types';
 
 type SearchActionResult = {
   clearQuery?: boolean;
@@ -187,6 +188,7 @@ export interface GraphState {
   workspaceStyleByNodeId: Record<string, InterpretedStyleResult>;
   workspaceStyleDiagnosticsByNodeId: Record<string, StylingDiagnostic[]>;
   pendingActionRoutingByKey: Record<string, ActionRoutingPendingRecord>;
+  actionRoutingPendingByToken: Record<string, ActionOptimisticLifecycleEvent>;
   setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null; sourceVersions?: Record<string, string> }) => void;
   setSourceVersion: (version: string | null) => void;
   setSourceVersionForFile: (filePath: string, version: string | null) => void;
@@ -235,6 +237,7 @@ export interface GraphState {
   clearTextEditSession: () => void;
   registerGroupHover: (groupId: string, nodeId: string) => void;
   unregisterGroupHover: (groupId: string, nodeId: string) => void;
+  applyActionRoutingLifecycleEvent: (event: ActionOptimisticLifecycleEvent) => void;
   pushEditCompletionEvent: (event: EditCompletionEvent) => void;
   peekUndoEditEvent: () => EditCompletionEvent | null;
   peekRedoEditEvent: () => EditCompletionEvent | null;
@@ -442,6 +445,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   workspaceStyleByNodeId: {},
   workspaceStyleDiagnosticsByNodeId: {},
   pendingActionRoutingByKey: {},
+  actionRoutingPendingByToken: {},
   setGraph: ({
     nodes,
     edges,
@@ -954,6 +958,26 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     }
     return {
       hoveredNodeIdsByGroupId: nextMap,
+    };
+  }),
+  applyActionRoutingLifecycleEvent: (event) => set((state) => {
+    if (event.phase === 'apply') {
+      return {
+        actionRoutingPendingByToken: {
+          ...state.actionRoutingPendingByToken,
+          [event.optimisticToken]: event,
+        },
+      };
+    }
+
+    if (!(event.optimisticToken in state.actionRoutingPendingByToken)) {
+      return state;
+    }
+
+    const nextPending = { ...state.actionRoutingPendingByToken };
+    delete nextPending[event.optimisticToken];
+    return {
+      actionRoutingPendingByToken: nextPending,
     };
   }),
   pushEditCompletionEvent: (event) => set((state) => {

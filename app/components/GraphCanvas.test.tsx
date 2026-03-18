@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
+import { openOverlay } from '@/features/overlay-host/commands';
+import { canDismissOverlay } from '@/features/overlay-host/lifecycle';
+import { initialOverlayHostState } from '@/features/overlay-host/state';
+import { createSlotContribution, resolveToolbarAnchor, updateSelectionFloatingAnchor } from '@/features/overlay-host/slots';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
+import { shouldDismissContextMenuForSelectionChange } from '@/hooks/useContextMenu.helpers';
+import { createContextMenuOverlayContribution } from './ContextMenu';
 import {
   AUTO_RELAYOUT_MAX_ATTEMPTS,
   getChangedMindMapGroupIds,
@@ -212,9 +218,10 @@ describe('GraphCanvas create mode helpers', () => {
   });
 
   it('node context rename intent는 node-context-menu surface로 고정된다', () => {
-    expect(buildGraphCanvasRenameIntent('node-1')).toEqual({
+    expect(buildGraphCanvasRenameIntent('node-1')).toMatchObject({
       nodeId: 'node-1',
       surfaceId: 'node-context-menu',
+      surface: 'node-context-menu',
     });
   });
 
@@ -223,8 +230,9 @@ describe('GraphCanvas create mode helpers', () => {
       surfaceId: 'pane-context-menu',
       nodeType: 'shape',
       placement: { mode: 'canvas-absolute', x: 20, y: 30 },
-    })).toEqual({
+    })).toMatchObject({
       surfaceId: 'pane-context-menu',
+      surface: 'pane-context-menu',
       nodeType: 'shape',
       placement: { mode: 'canvas-absolute', x: 20, y: 30 },
     });
@@ -234,11 +242,13 @@ describe('GraphCanvas create mode helpers', () => {
       nodeType: 'shape',
       placement: { mode: 'mindmap-child', parentId: 'root' },
       targetRenderedNodeId: 'root.rendered',
-    })).toEqual({
+    })).toMatchObject({
       surfaceId: 'node-context-menu',
+      surface: 'node-context-menu',
       nodeType: 'shape',
       placement: { mode: 'mindmap-child', parentId: 'root' },
       targetRenderedNodeId: 'root.rendered',
+      targetNodeId: 'root.rendered',
     });
   });
 });
@@ -353,6 +363,121 @@ describe('GraphCanvas mindmap reparent intent', () => {
     })).toEqual({
       kind: 'reparent-ready',
       newParentNodeId: 'parent',
+    });
+  });
+});
+
+describe('GraphCanvas overlay host wiring helpers', () => {
+  it('resolves the toolbar anchor to viewport bottom-center', () => {
+    expect(resolveToolbarAnchor({ width: 1440, height: 900 })).toEqual({
+      type: 'viewport-fixed',
+      x: 720,
+      y: 868,
+    });
+  });
+
+  it('builds toolbar contributions with the shared toolbar slot defaults', () => {
+    const contribution = createSlotContribution('toolbar', {
+      anchor: resolveToolbarAnchor({ width: 1280, height: 720 }),
+      focusPolicy: {
+        openTarget: 'none',
+        restoreTarget: 'none',
+      },
+      render: () => null,
+    });
+
+    expect(contribution.slot).toBe('toolbar');
+    expect(contribution.priority).toBe(10);
+    expect(contribution.dismissible).toBe(false);
+  });
+
+  it('treats selection drift as a close signal for open context menus', () => {
+    expect(shouldDismissContextMenuForSelectionChange({
+      instanceId: 'node-context-menu:4',
+      context: {
+        type: 'node',
+        position: { x: 200, y: 120 },
+        nodeId: 'shape-1',
+        selectedNodeIds: ['shape-1'],
+      },
+    }, ['shape-2'])).toBe(true);
+  });
+
+  it('keeps node and pane menu defaults dismissible for pointer/escape parity', () => {
+    expect(canDismissOverlay(createSlotContribution('pane-context-menu', {
+      anchor: { type: 'pointer', x: 120, y: 180 },
+      render: () => null,
+    }), 'outside-pointer')).toBe(true);
+    expect(canDismissOverlay(createSlotContribution('node-context-menu', {
+      anchor: { type: 'pointer', x: 120, y: 180 },
+      render: () => null,
+    }), 'escape-key')).toBe(true);
+  });
+
+  it('keeps higher-priority node menus above toolbar overlays in host ordering', () => {
+    const toolbar = openOverlay({
+      state: initialOverlayHostState,
+      contribution: createSlotContribution('toolbar', {
+        anchor: resolveToolbarAnchor({ width: 1280, height: 720 }),
+        focusPolicy: { openTarget: 'none', restoreTarget: 'none' },
+        render: () => null,
+      }),
+      viewport: { width: 1280, height: 720 },
+      now: 1,
+    });
+
+    const nodeMenu = openOverlay({
+      state: toolbar.state,
+      contribution: createSlotContribution('node-context-menu', {
+        anchor: { type: 'pointer', x: 400, y: 280 },
+        render: () => null,
+      }),
+      viewport: { width: 1280, height: 720 },
+      now: 2,
+    });
+
+    expect(nodeMenu.state.active.at(-1)?.slot).toBe('node-context-menu');
+  });
+
+  it('preserves legacy menu anchor and focus parity when adapting to host contributions', () => {
+    const contribution = createContextMenuOverlayContribution({
+      slot: 'node-context-menu',
+      items: [],
+      context: {
+        type: 'node',
+        position: { x: 320, y: 240 },
+        nodeId: 'shape-1',
+        selectedNodeIds: ['shape-1'],
+      },
+    });
+
+    expect(contribution.anchor).toEqual({ type: 'pointer', x: 320, y: 240 });
+    expect(contribution.focusPolicy).toEqual({
+      openTarget: 'first-actionable',
+      restoreTarget: 'trigger',
+    });
+  });
+
+  it('updates selection floating anchors without changing the owning slot', () => {
+    const base = createSlotContribution('selection-floating-menu', {
+      anchor: { type: 'selection-bounds', x: 20, y: 40, width: 80, height: 24 },
+      render: () => null,
+    });
+    const moved = updateSelectionFloatingAnchor(base, {
+      type: 'selection-bounds',
+      x: 100,
+      y: 120,
+      width: 90,
+      height: 32,
+    });
+
+    expect(moved.slot).toBe('selection-floating-menu');
+    expect(moved.anchor).toEqual({
+      type: 'selection-bounds',
+      x: 100,
+      y: 120,
+      width: 90,
+      height: 32,
     });
   });
 });
@@ -474,5 +599,18 @@ describe('GraphCanvas drag error toast suppression', () => {
     expect(shouldSuppressDragStopErrorToast({
       message: 'Request timeout: node.move',
     })).toBe(false);
+  });
+});
+
+describe('GraphCanvas bridge adoption', () => {
+  it('toolbar and context menu create flows stamp surface metadata instead of calling mutations directly', async () => {
+    const source = await Bun.file(new URL('./GraphCanvas.tsx', import.meta.url)).text();
+
+    expect(source).toContain("surface: 'pane-context-menu'");
+    expect(source).toContain("surface: 'node-context-menu'");
+    expect(source).toContain("surface: 'canvas-toolbar'");
+    expect(source).not.toContain('updateNode(');
+    expect(source).not.toContain('createNode(');
+    expect(source).not.toContain('reparentNode(');
   });
 });

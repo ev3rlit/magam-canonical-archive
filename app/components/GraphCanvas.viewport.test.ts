@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { resolveToolbarAnchor } from '@/features/overlay-host/slots';
+import { resolveOverlayPosition } from '@/features/overlay-host/positioning';
 import {
   resolveViewportToRestore,
   toTabViewportState,
@@ -47,5 +49,16 @@ describe('GraphCanvas viewport helpers', () => {
       y: 20,
       zoom: 0.75,
     });
+  });
+
+  it('keeps toolbar anchors and viewport-fixed overlays inside the viewport budget', () => {
+    const anchor = resolveToolbarAnchor({ width: 320, height: 200 });
+
+    expect(resolveOverlayPosition({
+      anchor,
+      overlaySize: { width: 180, height: 48 },
+      placement: 'bottom-center',
+      viewport: { width: 320, height: 200 },
+    })).toEqual({ x: 70, y: 120 });
   });
 });

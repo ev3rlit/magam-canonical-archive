@@ -16,6 +16,18 @@ export type EditCommandType =
   | 'mindmap.sibling.create'
   | 'node.reparent';
 
+export const EDIT_COMMAND_TYPES: EditCommandType[] = [
+  'node.move.absolute',
+  'node.move.relative',
+  'node.content.update',
+  'node.style.update',
+  'node.rename',
+  'node.create',
+  'mindmap.child.create',
+  'mindmap.sibling.create',
+  'node.reparent',
+];
+
 export type EditFamily =
   | 'canvas-absolute'
   | 'relative-attachment'
@@ -124,6 +136,15 @@ const WASHI_STYLE_KEYS = [
 const IMAGE_STYLE_KEYS = ['width', 'height', 'fit'] as const;
 const SEQUENCE_STYLE_KEYS = ['fontFamily', 'className'] as const;
 
+const SEMANTIC_ROLE_STYLE_KEYS: Record<string, readonly string[]> = {
+  topic: SHAPE_STYLE_KEYS,
+  shape: SHAPE_STYLE_KEYS,
+  'sticky-note': STICKY_STYLE_KEYS,
+  sticker: STICKER_STYLE_KEYS,
+  image: IMAGE_STYLE_KEYS,
+  sequence: SEQUENCE_STYLE_KEYS,
+};
+
 const NODE_TYPE_STYLE_KEYS: Record<string, readonly string[]> = {
   shape: SHAPE_STYLE_KEYS,
   text: TEXT_STYLE_KEYS,
@@ -214,6 +235,13 @@ export function getJsxTagStyleEditableKeys(tagName: string | undefined): string[
     return [];
   }
   return [...(JSX_TAG_STYLE_KEYS[tagName] ?? [])];
+}
+
+export function getSemanticRoleStyleEditableKeys(semanticRole: string | undefined): string[] {
+  if (!semanticRole) {
+    return [];
+  }
+  return [...(SEMANTIC_ROLE_STYLE_KEYS[semanticRole] ?? [])];
 }
 
 export function deriveEditMeta(input: ParsedNodeLike): EditMeta {
