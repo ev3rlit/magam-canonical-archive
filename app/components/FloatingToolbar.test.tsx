@@ -1,17 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import React from 'react';
 import { act } from 'react';
+import { JSDOM } from 'jsdom';
 import { createRoot, type Root } from 'react-dom/client';
 import { FloatingToolbar } from './FloatingToolbar';
 import { useGraphStore } from '@/store/graph';
 
-type TestDom = {
-  window: Window & typeof globalThis;
-};
-
-const { JSDOM }: {
-  JSDOM: new (html: string, options?: { url?: string }) => TestDom;
-} = require('jsdom');
+type TestDom = JSDOM;
 
 type TestEnvironment = {
   dom: TestDom;

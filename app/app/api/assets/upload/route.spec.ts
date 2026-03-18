@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { Stats } from 'node:fs';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import { POST } from './route';
 
@@ -118,9 +119,10 @@ describe('assets/upload POST', () => {
   });
 
   it('reuses existing file when same asset already exists', async () => {
-    statMock.mockResolvedValue({
+    const existingFileStat = {
       isFile: () => true,
-    } as any);
+    } satisfies Pick<Stats, 'isFile'>;
+    statMock.mockResolvedValue(existingFileStat as Stats);
 
     const form = createFormDataForLocalFile('logo.png', PNG_BYTES, 'image/png');
     const response = await POST(toRequest(form));

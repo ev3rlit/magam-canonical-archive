@@ -71,8 +71,12 @@ describe('MarkdownNode WYSIWYG parity', () => {
   });
 
   it('markdown size object with unsupported ratio is normalized into object2d mode', () => {
+    const invalidSizeInput = {
+      token: 'm',
+      ratio: 'diagonal',
+    } as unknown as Parameters<typeof resolveMarkdownSize>[0];
     const resolved = resolveMarkdownSize(
-      { token: 'm', ratio: 'diagonal' as any },
+      invalidSizeInput,
       {
         component: 'MarkdownNode',
         inputPath: 'size',

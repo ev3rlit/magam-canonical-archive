@@ -31,7 +31,14 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
     return null;
   }
 
-  const data = (selectedSticker.data || {}) as Record<string, any>;
+  const data = (selectedSticker.data || {}) as Record<string, unknown>;
+  const outlineColor = typeof data.outlineColor === 'string' ? data.outlineColor : '#ffffff';
+  const outlineWidth = typeof data.outlineWidth === 'number' ? data.outlineWidth : 4;
+  const padding = typeof data.padding === 'number' ? data.padding : 8;
+  const rotation = typeof data.rotation === 'number' ? data.rotation : 0;
+  const shadow = data.shadow === 'none' || data.shadow === 'sm' || data.shadow === 'md' || data.shadow === 'lg'
+    ? data.shadow
+    : 'md';
   const applyStylePatch = (patch: Record<string, unknown>) => {
     Promise.resolve(onApplyStylePatch?.({
       nodeId: selectedSticker.id,
@@ -45,7 +52,7 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
       outlineWidth: 10,
       shadow: 'lg',
       padding: 10,
-      rotation: data.rotation ?? 0,
+      rotation,
     });
   };
 
@@ -66,7 +73,7 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
           <span className="text-slate-500">outlineColor</span>
           <input
             className="mt-1 w-full rounded border px-2 py-1"
-            value={data.outlineColor || '#ffffff'}
+            value={outlineColor}
             onChange={(e) => applyStylePatch({ outlineColor: e.target.value })}
           />
         </label>
@@ -77,12 +84,12 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
             <input
               type="number"
               className="mt-1 w-full rounded border px-2 py-1"
-              value={data.outlineWidth ?? 4}
+              value={outlineWidth}
               min={1}
               max={14}
               onChange={(e) =>
                 applyStylePatch({
-                  outlineWidth: coerceOutlineWidth(e.target.value, data.outlineWidth ?? 4),
+                  outlineWidth: coerceOutlineWidth(e.target.value, outlineWidth),
                 })
               }
             />
@@ -93,11 +100,11 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
             <input
               type="number"
               className="mt-1 w-full rounded border px-2 py-1"
-              value={data.padding ?? 8}
+              value={padding}
               min={0}
               onChange={(e) =>
                 applyStylePatch({
-                  padding: Math.max(0, coerceNumber(e.target.value, data.padding ?? 8)),
+                  padding: Math.max(0, coerceNumber(e.target.value, padding)),
                 })
               }
             />
@@ -108,10 +115,10 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
             <input
               type="number"
               className="mt-1 w-full rounded border px-2 py-1"
-              value={data.rotation ?? 0}
+              value={rotation}
               onChange={(e) =>
                 applyStylePatch({
-                  rotation: coerceNumber(e.target.value, data.rotation ?? 0),
+                  rotation: coerceNumber(e.target.value, rotation),
                 })
               }
             />
@@ -121,7 +128,7 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
             <span className="text-slate-500">shadow</span>
             <select
               className="mt-1 w-full rounded border px-2 py-1"
-              value={data.shadow || 'md'}
+              value={shadow}
               onChange={(e) =>
                 applyStylePatch({ shadow: e.target.value })
               }

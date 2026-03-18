@@ -597,8 +597,8 @@ export function WorkspaceClient() {
     }
 
     const mindMapReparentIntent = resolveMindMapReparentIntent({
-      draggedNode: targetNode as any,
-      allNodes: runtime.nodes as any,
+      draggedNode: targetNode,
+      allNodes: runtime.nodes,
       dropPosition: { x: payload.x, y: payload.y },
     });
     if (mindMapReparentIntent) {
