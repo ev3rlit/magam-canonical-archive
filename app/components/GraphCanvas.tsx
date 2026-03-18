@@ -52,8 +52,7 @@ import {
   type GraphClipboardPayload,
 } from '@/utils/clipboardGraph';
 import { editDebugLog } from '@/utils/editDebug';
-import { getWashiPresetPatternCatalog, resolvePresetPatternId } from '@/utils/washiTapeDefaults';
-import type { MaterialPresetId } from '@/types/washiTape';
+import { getWashiPresetPatternCatalog } from '@/utils/washiTapeDefaults';
 import {
   createEntrypointAnchor,
   type EntrypointInteractionMode,
@@ -81,9 +80,12 @@ import {
   createGraphCanvasContextMenuActions,
   createGraphCanvasNodeContextMenu,
   createGraphCanvasPaneContextMenu,
+  createGraphCanvasSelectionFloatingMenuContribution,
   createGraphCanvasToolbarContribution,
+  syncGraphCanvasSelectionFloatingMenuOverlay,
 } from '@/processes/canvas-runtime/bindings/graphCanvasHost';
 import { createGraphCanvasKeyboardHost } from '@/processes/canvas-runtime/bindings/keyboardHost';
+import type { SelectionFloatingMenuStylePatchKey } from '@/features/canvas-ui-entrypoints/selection-floating-menu/types';
 
 type GraphCanvasProps = {
   onNodeDragStop?: (payload: {
@@ -93,7 +95,6 @@ type GraphCanvasProps = {
     originX: number;
     originY: number;
   }) => Promise<void> | void;
-  onWashiPresetChange?: (nodeIds: string[], presetId: MaterialPresetId) => Promise<void> | void;
   onUndoEditStep?: () => Promise<boolean> | boolean;
   onRedoEditStep?: () => Promise<boolean> | boolean;
   mapEditErrorToToast?: (error: unknown) => string | null;
@@ -103,6 +104,15 @@ type GraphCanvasProps = {
   onToggleNodeLock?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
   onSelectNodeGroup?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
   onCreateNode?: (input: GraphCanvasCreateIntentInput) => Promise<void> | void;
+  onApplySelectionStyle?: (input: {
+    nodeIds: string[];
+    patch: Record<string, unknown>;
+    patchKey: SelectionFloatingMenuStylePatchKey;
+  }) => Promise<void> | void;
+  onCommitSelectionContent?: (input: {
+    nodeId: string;
+    content: string;
+  }) => Promise<void> | void;
 };
 
 export interface GraphCanvasNodeMenuIntentInput {
@@ -244,7 +254,6 @@ export function shouldHandleRuntimePaneCreate(input: {
 
 function GraphCanvasContent({
   onNodeDragStop,
-  onWashiPresetChange,
   onUndoEditStep,
   onRedoEditStep,
   mapEditErrorToToast,
@@ -254,6 +263,8 @@ function GraphCanvasContent({
   onToggleNodeLock,
   onSelectNodeGroup,
   onCreateNode,
+  onApplySelectionStyle,
+  onCommitSelectionContent,
 }: GraphCanvasProps) {
   const nodeTypes = useMemo(
     () => ({
@@ -302,6 +313,8 @@ function GraphCanvasContent({
     entrypointRuntime,
     setEntrypointInteractionMode,
     setEntrypointCreateMode,
+    openEntrypointSurface,
+    closeEntrypointSurface,
     dismissEntrypointSurfaceOnViewportChange,
     registerEntrypointAnchor,
     clearEntrypointAnchor,
@@ -310,6 +323,7 @@ function GraphCanvasContent({
     commitPendingUiAction,
     failPendingUiAction,
     clearPendingUiAction,
+    pendingActionRoutingByKey,
   } = useGraphStore();
   const interactionMode = entrypointRuntime.activeTool.interactionMode;
   const createMode = entrypointRuntime.activeTool.createMode;
@@ -362,32 +376,8 @@ function GraphCanvasContent({
   const dragGenerationRef = useRef<Map<string, number>>(new Map());
   const previousNodeIdsRef = useRef<Set<string>>(new Set());
   const toolbarOverlayIdRef = useRef<string | null>(null);
+  const selectionFloatingMenuOverlayIdRef = useRef<string | null>(null);
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
-  const selectedWashiNodeIds = useMemo(
-    () => nodes
-      .filter((node) => selectedNodeIds.includes(node.id) && node.type === 'washi-tape')
-      .map((node) => node.id),
-    [nodes, selectedNodeIds],
-  );
-
-  const activeWashiPresetId = useMemo<MaterialPresetId | null>(() => {
-    if (selectedWashiNodeIds.length === 0) return null;
-
-    const selectedNodes = nodes.filter((node) => selectedWashiNodeIds.includes(node.id));
-    const presetIds = selectedNodes
-      .map((node) => {
-        const pattern = (node.data as Record<string, unknown>)?.pattern;
-        if (!pattern || typeof pattern !== 'object') return null;
-        if ((pattern as { type?: unknown }).type !== 'preset') return null;
-        return resolvePresetPatternId(pattern);
-      })
-      .filter((presetId): presetId is MaterialPresetId => Boolean(presetId));
-
-    if (presetIds.length === 0) return null;
-    const first = presetIds[0];
-    const allSame = presetIds.every((presetId) => presetId === first);
-    return allSame ? first : null;
-  }, [nodes, selectedWashiNodeIds]);
 
   const activeTab = useMemo(
     () => openTabs.find((tab) => tab.tabId === activeTabId) ?? null,
@@ -398,6 +388,42 @@ function GraphCanvasContent({
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 2000);
   };
+
+  const handleSelectionStylePatch = useCallback(async (input: {
+    nodeIds: string[];
+    patch: Record<string, unknown>;
+    patchKey: SelectionFloatingMenuStylePatchKey;
+  }) => {
+    if (!onApplySelectionStyle) {
+      return;
+    }
+
+    try {
+      await Promise.resolve(onApplySelectionStyle(input));
+    } catch (error) {
+      const mapped = mapEditErrorToToast?.(error);
+      showToast(mapped ?? '스타일 저장에 실패했습니다.');
+      throw error;
+    }
+  }, [mapEditErrorToToast, onApplySelectionStyle, showToast]);
+
+  const handleSelectionContentCommit = useCallback(async (input: {
+    nodeId: string;
+    content: string;
+  }) => {
+    if (!onCommitSelectionContent) {
+      return;
+    }
+
+    try {
+      await Promise.resolve(onCommitSelectionContent(input));
+      showToast('텍스트를 업데이트했습니다.');
+    } catch (error) {
+      const mapped = mapEditErrorToToast?.(error);
+      showToast(mapped ?? '텍스트 저장에 실패했습니다.');
+      throw error;
+    }
+  }, [mapEditErrorToToast, onCommitSelectionContent, showToast]);
 
   const runPendingUiAction = useCallback(async <T,>(input: {
     actionType: Parameters<typeof createPendingRequestIdForCommand>[0];
@@ -812,6 +838,27 @@ function GraphCanvasContent({
   );
 
   useEffect(() => {
+    if (selectedNodeIds.length === 0) {
+      clearEntrypointAnchor('selection-floating-menu:selection-bounds');
+      return;
+    }
+
+    const anchoredNodes = nodes.filter((node) => selectedNodeIds.includes(node.id));
+    if (anchoredNodes.length === 0) {
+      clearEntrypointAnchor('selection-floating-menu:selection-bounds');
+      return;
+    }
+
+    const selectionAnchor = buildSelectionBoundsAnchor({
+      selectedNodes: anchoredNodes as SelectionAnchorNode[],
+      viewport: getViewport(),
+    });
+    if (selectionAnchor) {
+      registerEntrypointAnchor(selectionAnchor);
+    }
+  }, [clearEntrypointAnchor, getViewport, nodes, registerEntrypointAnchor, selectedNodeIds]);
+
+  useEffect(() => {
     const previousNodeIds = previousNodeIdsRef.current;
     const nextNodeIds = new Set(nodes.map((node) => node.id));
 
@@ -969,35 +1016,28 @@ function GraphCanvasContent({
     [getNodes, hasPendingUiActions, mapEditErrorToToast, onNodeDragStop, runPendingUiAction, setNodes],
   );
 
-  const handleWashiPresetSelect = useCallback(
-    async (presetIdInput: string) => {
-      if (selectedWashiNodeIds.length === 0 || hasPendingUiActions) return;
-      const presetId = resolvePresetPatternId(presetIdInput);
-
-      try {
-        await runPendingUiAction({
-          actionType: 'node.style.update',
-          targetIds: selectedWashiNodeIds,
-          execute: async () => {
-            await Promise.resolve(onWashiPresetChange?.(selectedWashiNodeIds, presetId));
-          },
-        });
-      } catch (error) {
-        editDebugLog('washi-preset-change', error, {
-          nodeIds: selectedWashiNodeIds,
-          presetId,
-        });
-
-        const code = (error as { code?: number })?.code;
-        if (code === 40901) {
-          showToast('외부 수정 감지: 최신 상태로 다시 동기화합니다.');
-        } else {
-          showToast('와시 프리셋 변경 실패: 이전 상태로 롤백되었습니다.');
-        }
-      }
-    },
-    [hasPendingUiActions, onWashiPresetChange, runPendingUiAction, selectedWashiNodeIds, showToast],
-  );
+  const selectionFloatingMenuContribution = useMemo(() => createGraphCanvasSelectionFloatingMenuContribution({
+    runtime: canvasRuntime,
+    toolbarSlot: canvasRuntime.slots.canvasToolbar,
+    selectionFloatingMenuSlot: canvasRuntime.slots.selectionFloatingMenu,
+    nodes,
+    selectedNodeIds,
+    currentFile,
+    runtimeState: entrypointRuntime,
+    pendingActionRoutingByKey,
+    washiPresets,
+    onApplyStylePatch: handleSelectionStylePatch,
+    onCommitContent: handleSelectionContentCommit,
+  }), [
+    currentFile,
+    entrypointRuntime,
+    handleSelectionContentCommit,
+    handleSelectionStylePatch,
+    nodes,
+    pendingActionRoutingByKey,
+    selectedNodeIds,
+    washiPresets,
+  ]);
 
   const toolbarContribution = useMemo(() => createGraphCanvasToolbarContribution({
     runtime: canvasRuntime,
@@ -1010,20 +1050,16 @@ function GraphCanvasContent({
     handleZoomIn,
     handleZoomOut,
     handleFitView,
-    washiPresets,
-    activeWashiPresetId,
-    selectedWashiNodeIds,
-    onSelectWashiPreset: handleWashiPresetSelect,
+    washiPresets: [],
+    activeWashiPresetId: null,
+    selectedWashiNodeIds: [],
+    onSelectWashiPreset: () => {},
   }), [
-    activeWashiPresetId,
     createMode,
     handleFitView,
-    handleWashiPresetSelect,
     interactionMode,
-    selectedWashiNodeIds.length,
     setEntrypointCreateMode,
     setEntrypointInteractionMode,
-    washiPresets,
   ]);
 
   useEffect(() => {
@@ -1037,6 +1073,40 @@ function GraphCanvasContent({
 
   useEffect(() => () => {
     const activeId = toolbarOverlayIdRef.current;
+    if (!activeId) {
+      return;
+    }
+
+    if (getActiveOverlays().some((item) => item.instanceId === activeId)) {
+      closeOverlayHost(activeId, 'viewport-teardown');
+    }
+  }, [closeOverlayHost, getActiveOverlays]);
+
+  useEffect(() => {
+    selectionFloatingMenuOverlayIdRef.current = syncGraphCanvasSelectionFloatingMenuOverlay({
+      activeOverlayId: selectionFloatingMenuOverlayIdRef.current,
+      contribution: selectionFloatingMenuContribution,
+      currentOpenSurfaceKind: entrypointRuntime.openSurface?.kind ?? null,
+      getActiveOverlays,
+      openOverlayHost,
+      replaceOverlayHost,
+      closeOverlayHost,
+      openEntrypointSurface,
+      closeEntrypointSurface,
+    });
+  }, [
+    closeEntrypointSurface,
+    closeOverlayHost,
+    entrypointRuntime.openSurface?.kind,
+    getActiveOverlays,
+    openEntrypointSurface,
+    openOverlayHost,
+    replaceOverlayHost,
+    selectionFloatingMenuContribution,
+  ]);
+
+  useEffect(() => () => {
+    const activeId = selectionFloatingMenuOverlayIdRef.current;
     if (!activeId) {
       return;
     }
@@ -1121,6 +1191,16 @@ function GraphCanvasContent({
           onSelectionChange={onSelectionChange}
           onMoveEnd={(_event, viewport) => {
             persistActiveTabViewport(viewport);
+            if (selectedNodeIds.length > 0) {
+              const anchoredNodes = getNodes().filter((node) => selectedNodeIds.includes(node.id));
+              const selectionAnchor = buildSelectionBoundsAnchor({
+                selectedNodes: anchoredNodes as SelectionAnchorNode[],
+                viewport,
+              });
+              if (selectionAnchor) {
+                registerEntrypointAnchor(selectionAnchor);
+              }
+            }
             dismissEntrypointSurfaceOnViewportChange();
           }}
           nodeTypes={nodeTypes}
@@ -1196,7 +1276,6 @@ function GraphCanvasContent({
 
 export function GraphCanvas({
   onNodeDragStop,
-  onWashiPresetChange,
   onUndoEditStep,
   onRedoEditStep,
   mapEditErrorToToast,
@@ -1206,6 +1285,8 @@ export function GraphCanvas({
   onToggleNodeLock,
   onSelectNodeGroup,
   onCreateNode,
+  onApplySelectionStyle,
+  onCommitSelectionContent,
 }: GraphCanvasProps) {
   return (
     <div className="w-full h-full min-h-[500px] flex-1 relative">
@@ -1217,7 +1298,6 @@ export function GraphCanvas({
                 <PluginRuntimeProvider>
                   <GraphCanvasContent
                     onNodeDragStop={onNodeDragStop}
-                    onWashiPresetChange={onWashiPresetChange}
                     onUndoEditStep={onUndoEditStep}
                     onRedoEditStep={onRedoEditStep}
                     mapEditErrorToToast={mapEditErrorToToast}
@@ -1227,6 +1307,8 @@ export function GraphCanvas({
                     onToggleNodeLock={onToggleNodeLock}
                     onSelectNodeGroup={onSelectNodeGroup}
                     onCreateNode={onCreateNode}
+                    onApplySelectionStyle={onApplySelectionStyle}
+                    onCommitSelectionContent={onCommitSelectionContent}
                   />
                 </PluginRuntimeProvider>
               </OverlayHostProvider>

@@ -48,6 +48,7 @@ import {
   createCanvasActionDispatchBinding,
   resolveLegacyEntrypointSurface,
 } from '@/processes/canvas-runtime/bindings/actionDispatch';
+import { canvasRuntime } from '@/processes/canvas-runtime/createCanvasRuntime';
 import {
   createPaneActionRoutingContext,
   canCommitTextEdit,
@@ -405,6 +406,7 @@ export function WorkspaceClient() {
     commitHistoryEffect,
     registerPendingActionRouting,
     clearPendingActionRouting,
+    registryEntries: canvasRuntime.intents,
   }), [
     applyRuntimeAction,
     clearPendingActionRouting,
@@ -465,6 +467,54 @@ export function WorkspaceClient() {
     },
     [handleNodeStyleCommit],
   );
+
+  const handleSelectionStyleCommit = useCallback(async (input: {
+    nodeIds: string[];
+    patch: Record<string, unknown>;
+  }) => {
+    await Promise.all(input.nodeIds.map((nodeId) => handleNodeStyleCommit({
+      nodeId,
+      patch: input.patch,
+      surface: 'selection-floating-menu',
+      trigger: { source: 'click' },
+    })));
+  }, [handleNodeStyleCommit]);
+
+  const handleSelectionContentCommit = useCallback(async (input: {
+    nodeId: string;
+    content: string;
+    trigger?: { source: 'click' | 'inspector' };
+  }) => {
+    const runtime = useGraphStore.getState();
+    const node = runtime.nodes.find((item) => item.id === input.nodeId);
+    if (!node) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: input.nodeId });
+    }
+
+    try {
+      await dispatchActionRoutingIntentOrThrow({
+        surface: 'selection-floating-menu',
+        intent: 'content-update',
+        resolvedContext: resolveNodeActionRoutingContext(
+          node,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {
+          content: input.content,
+        },
+        trigger: input.trigger ?? { source: 'click' },
+      });
+    } catch (error) {
+      const message = mapEditRpcErrorToToast(error) ?? '텍스트 저장에 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
 
   const handleNodeRenameCommit = useCallback(async (input: {
     nodeId: string;
@@ -1271,17 +1321,9 @@ export function WorkspaceClient() {
       }
 
       try {
-        await dispatchActionRoutingIntentOrThrow({
-          surface: 'selection-floating-menu',
-          intent: 'content-update',
-          resolvedContext: resolveNodeActionRoutingContext(
-            node,
-            runtime.currentFile,
-            runtime.selectedNodeIds,
-          ),
-          uiPayload: {
-            content: nextContent,
-          },
+        await handleSelectionContentCommit({
+          nodeId: pendingTextEditAction.nodeId,
+          content: nextContent,
           trigger: { source: 'inspector' },
         });
         clearTextEditSession();
@@ -1306,7 +1348,7 @@ export function WorkspaceClient() {
     activeTextEditNodeId,
     clearPendingTextEditAction,
     clearTextEditSession,
-    dispatchActionRoutingIntentOrThrow,
+    handleSelectionContentCommit,
     pendingTextEditAction,
     selectedNodeIds,
     setGraphError,
@@ -1400,7 +1442,6 @@ export function WorkspaceClient() {
           {isSearchOpen && <LazySearchOverlay />}
           <GraphCanvas
             onNodeDragStop={handleNodeDragCommit}
-            onWashiPresetChange={handleWashiPresetChange}
             onUndoEditStep={undoLastEdit}
             onRedoEditStep={redoLastEdit}
             mapEditErrorToToast={mapEditRpcErrorToToast}
@@ -1410,6 +1451,8 @@ export function WorkspaceClient() {
             onToggleNodeLock={handleNodeLockToggleCommit}
             onSelectNodeGroup={handleNodeGroupSelectCommit}
             onCreateNode={handleCreateNodeCommit}
+            onApplySelectionStyle={handleSelectionStyleCommit}
+            onCommitSelectionContent={handleSelectionContentCommit}
           />
           <LazyStickerInspector onApplyStylePatch={handleNodeStyleCommit} />
           {process.env.NODE_ENV !== 'production' && workspaceStyleDiagnostics.length > 0 ? (

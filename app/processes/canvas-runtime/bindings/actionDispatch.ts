@@ -1,5 +1,6 @@
 import { RpcClientError } from '@/hooks/useFileSync';
 import type { RpcMutationResult } from '@/hooks/useFileSync.shared';
+import { createActionRoutingRegistry } from '@/features/editing/actionRoutingBridge/registry';
 import { routeIntent } from '@/features/editing/actionRoutingBridge/routeIntent';
 import type {
   ActionRoutingIntent as LegacyActionRoutingIntent,
@@ -67,6 +68,7 @@ export interface CanvasActionDispatchBindingInput {
   ) => void;
   registerPendingActionRouting: (record: ActionRoutingPendingRecord) => void;
   clearPendingActionRouting: (pendingKey: string) => void;
+  registryEntries?: readonly ActionRoutingRegistryEntry[];
   routeIntentImpl?: RouteIntentFunction;
 }
 
@@ -165,6 +167,10 @@ export function createCanvasActionDispatchBinding(
   input: CanvasActionDispatchBindingInput,
 ): CanvasActionDispatchBinding {
   const routeBridgeIntent = input.routeIntentImpl ?? routeIntent;
+  const registry = {
+    ...createActionRoutingRegistry(),
+    ...Object.fromEntries((input.registryEntries ?? []).map((entry) => [entry.intentId, entry])),
+  };
 
   const executeBridgeIntent = async (envelope: UIIntentEnvelope) => {
     const runtime = input.getRuntime();
@@ -176,6 +182,7 @@ export function createCanvasActionDispatchBinding(
         currentFile: runtime.currentFile,
         sourceVersions: runtime.sourceVersions,
       },
+      registry,
     });
     if (!routed.ok) {
       throw toActionRoutingRpcError(routed.error);

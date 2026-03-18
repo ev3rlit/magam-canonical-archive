@@ -104,6 +104,11 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     washiPresetEnabled,
     activeWashiPresetId,
   });
+  const shouldRenderWashiPresetToggle = (
+    washiPresets.length > 0
+    || washiPresetEnabled
+    || activeWashiPresetId !== null
+  );
 
   useEffect(() => {
     syncToolbarInteractionMode({
@@ -269,73 +274,77 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
         )}
       </div>
 
-      <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+      {shouldRenderWashiPresetToggle ? (
+        <>
+          <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
 
-      <div className="relative" ref={presetMenuRef}>
-        <ToolbarButton
-          active={isWashiPresetMenuOpen}
-          disabled={!canOpenWashiPreset || hasPendingEntrypointActions}
-          data-floating-toolbar-preset-toggle
-          onClick={() => toggleToolbarPresetSurface({
-            canOpenWashiPreset,
-            hasPendingEntrypointActions,
-            isWashiPresetMenuOpen,
-            presetMenuElement: presetMenuRef.current,
-            api: toolbarSurfaceApi,
-          })}
-          title={
-            canOpenWashiPreset
-              ? 'Washi Preset Catalog'
-              : 'Select a Washi Tape node to open preset catalog'
-          }
-          icon={<Bookmark className="w-4 h-4" />}
-          className={!canOpenWashiPreset ? 'opacity-40 cursor-not-allowed' : undefined}
-        />
+          <div className="relative" ref={presetMenuRef}>
+            <ToolbarButton
+              active={isWashiPresetMenuOpen}
+              disabled={!canOpenWashiPreset || hasPendingEntrypointActions}
+              data-floating-toolbar-preset-toggle
+              onClick={() => toggleToolbarPresetSurface({
+                canOpenWashiPreset,
+                hasPendingEntrypointActions,
+                isWashiPresetMenuOpen,
+                presetMenuElement: presetMenuRef.current,
+                api: toolbarSurfaceApi,
+              })}
+              title={
+                canOpenWashiPreset
+                  ? 'Washi Preset Catalog'
+                  : 'Select a Washi Tape node to open preset catalog'
+              }
+              icon={<Bookmark className="w-4 h-4" />}
+              className={!canOpenWashiPreset ? 'opacity-40 cursor-not-allowed' : undefined}
+            />
 
-        {isWashiPresetMenuOpen && (
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-12 w-60 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
-            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
-              PresetPattern Catalog
-            </div>
-            <div className="max-h-56 overflow-y-auto py-1">
-              {washiPresets.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={cn(
-                    'w-full px-3 py-2 text-left text-sm flex items-center justify-between',
-                    'hover:bg-slate-100 dark:hover:bg-slate-800/80',
-                    preset.id === activeWashiPresetId
-                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                      : 'text-slate-700 dark:text-slate-200',
-                  )}
-                  data-washi-preset-id={preset.id}
-                  onClick={() => {
-                    selectToolbarPreset({
-                      presetId: preset.id,
-                      onSelectWashiPreset,
-                      api: toolbarSurfaceApi,
-                    });
-                  }}
-                >
-                  <span className="truncate">
-                    {preset.label}
-                    <span className="ml-1 text-xs text-slate-500">({preset.id})</span>
-                  </span>
-                  {preset.id === activeWashiPresetId && (
-                    <Check className="w-3.5 h-3.5 shrink-0" />
-                  )}
-                </button>
-              ))}
-            </div>
-            {activeWashiPresetLabel && (
-              <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 truncate">
-                Active: {activeWashiPresetLabel}
+            {isWashiPresetMenuOpen && (
+              <div className="absolute left-1/2 -translate-x-1/2 bottom-12 w-60 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
+                <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+                  PresetPattern Catalog
+                </div>
+                <div className="max-h-56 overflow-y-auto py-1">
+                  {washiPresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={cn(
+                        'w-full px-3 py-2 text-left text-sm flex items-center justify-between',
+                        'hover:bg-slate-100 dark:hover:bg-slate-800/80',
+                        preset.id === activeWashiPresetId
+                          ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                          : 'text-slate-700 dark:text-slate-200',
+                      )}
+                      data-washi-preset-id={preset.id}
+                      onClick={() => {
+                        selectToolbarPreset({
+                          presetId: preset.id,
+                          onSelectWashiPreset,
+                          api: toolbarSurfaceApi,
+                        });
+                      }}
+                    >
+                      <span className="truncate">
+                        {preset.label}
+                        <span className="ml-1 text-xs text-slate-500">({preset.id})</span>
+                      </span>
+                      {preset.id === activeWashiPresetId && (
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+                {activeWashiPresetLabel && (
+                  <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 truncate">
+                    Active: {activeWashiPresetLabel}
+                  </div>
+                )}
               </div>
             )}
           </div>
-        )}
-      </div>
+        </>
+      ) : null}
 
       <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
 
