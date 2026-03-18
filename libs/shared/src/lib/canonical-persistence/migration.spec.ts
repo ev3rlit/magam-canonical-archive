@@ -12,7 +12,7 @@ describe('canonical migration smoke', () => {
       order by tablename
     `);
 
-    expect(result.rows.map((row) => row.tablename)).toEqual([
+    expect(result.rows.map((row) => (row as { tablename: string }).tablename)).toEqual([
       'canvas_bindings',
       'canvas_nodes',
       'document_revisions',
