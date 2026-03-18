@@ -210,6 +210,9 @@ function inferRelativeCarrier(
 
 function inferReadOnlyReason(input: ParsedNodeLike): string | undefined {
   const data = input.data;
+  if (data?.locked === true) {
+    return 'LOCKED';
+  }
   const sourceMeta = data?.sourceMeta;
   if (!sourceMeta || typeof sourceMeta !== 'object') {
     return '원본 sourceMeta를 찾을 수 없습니다.';
@@ -364,8 +367,17 @@ export function pickStylePatch(
 
 export function getNodeEditMeta(node: Pick<Node, 'data'>): EditMeta | undefined {
   const data = (node.data || {}) as NodeDataWithEditMeta;
-  if (isCanonicalObject(data.canonicalObject)) {
-    return deriveEditMetaFromCanonical(data.canonicalObject);
+  const baseEditMeta = isCanonicalObject(data.canonicalObject)
+    ? deriveEditMetaFromCanonical(data.canonicalObject)
+    : data.editMeta;
+  if (!baseEditMeta) {
+    return baseEditMeta;
   }
-  return data.editMeta;
+  if ((node.data as Record<string, unknown> | undefined)?.locked === true) {
+    return {
+      ...baseEditMeta,
+      readOnlyReason: 'LOCKED',
+    };
+  }
+  return baseEditMeta;
 }

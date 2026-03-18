@@ -52,6 +52,7 @@ export const mindmapBridgeNodeFixture = {
   position: { x: 0, y: 0 },
   data: {
     label: 'Child',
+    groupId: 'mindmap',
     sourceMeta: {
       sourceId: 'child-1',
       filePath: 'examples/mindmap.tsx',

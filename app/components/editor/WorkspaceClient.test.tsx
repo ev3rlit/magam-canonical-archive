@@ -204,6 +204,16 @@ describe('WorkspaceClient attach rejection guidance', () => {
     ).toContain('웹 편집 범위');
   });
 
+  it('LOCKED reason은 잠금 안내 메시지로 매핑된다', () => {
+    expect(
+      mapEditRpcErrorToToast({
+        code: 42201,
+        message: 'EDIT_NOT_ALLOWED',
+        data: { reason: 'LOCKED' },
+      }),
+    ).toContain('잠금된');
+  });
+
   it('MindMap reparent 후보가 없으면 구조 편집 안내 메시지를 반환한다', () => {
     expect(
       mapEditRpcErrorToToast({
@@ -286,11 +296,18 @@ describe('WorkspaceClient editability helpers', () => {
         renderedNodeId: 'profile-node-1',
         sourceId: 'profile-node-1',
         filePath: 'examples/fallback.tsx',
+        nodeType: 'shape',
       },
       metadata: {
         semanticRole: 'topic',
         primaryContentKind: 'text',
         capabilities: ['frame', 'content'],
+      },
+      relations: {
+        hasParentRelation: false,
+        isGroupMember: false,
+        isMindmapMember: false,
+        isFrameScoped: false,
       },
       editability: {
         canMutate: true,

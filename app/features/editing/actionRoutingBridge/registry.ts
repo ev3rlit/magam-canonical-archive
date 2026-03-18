@@ -26,6 +26,7 @@ import {
   ok,
   type ActionRoutingContext,
   type ActionRoutingRegistryEntry,
+  type MutationActionPayloadMap,
   type OrderedDispatchPlan,
   type UIIntentEnvelope,
 } from '@/features/editing/actionRoutingBridge/types';
@@ -74,6 +75,35 @@ type CreateNormalized = {
   createInput: ReturnType<typeof toCreateNodeInput>;
   baseVersion: string;
   renderedId: string;
+};
+
+type DuplicateNormalized = {
+  target: ResolvedTarget;
+  targetFile: string;
+  sourceId: string;
+  scopeId?: string;
+  frameScope?: string;
+  createInput: MutationActionPayloadMap['node.create']['node'];
+  baseVersion: string;
+  renderedId: string;
+};
+
+type DeleteNormalized = {
+  target: ResolvedTarget;
+  recreateInput: MutationActionPayloadMap['node.create']['node'];
+  baseVersion: string;
+};
+
+type LockToggleNormalized = {
+  target: ResolvedTarget;
+  previousLocked: boolean;
+  nextLocked: boolean;
+  baseVersion: string;
+};
+
+type GroupSelectNormalized = {
+  target: ResolvedTarget;
+  groupId: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -139,6 +169,14 @@ function requireBaseVersion(context: ActionRoutingContext, filePath: string) {
     );
   }
   return ok(baseVersion);
+}
+
+function hasMutableTarget(target: ResolvedTarget): boolean {
+  return !target.editMeta?.readOnlyReason;
+}
+
+function canToggleLock(target: ResolvedTarget): boolean {
+  return !target.editMeta?.readOnlyReason || target.editMeta.readOnlyReason === 'LOCKED';
 }
 
 function requirePatch(rawPayload: Record<string, unknown>) {
@@ -251,6 +289,126 @@ function buildRenderedNodeId(input: {
   return [input.scopeId, input.frameScope, input.sourceId]
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .join('.') || input.sourceId;
+}
+
+function isSupportedCreateNodeType(value: unknown): value is CreatePayload['nodeType'] {
+  return value === 'shape'
+    || value === 'text'
+    || value === 'markdown'
+    || value === 'sticky'
+    || value === 'sticker'
+    || value === 'washi-tape'
+    || value === 'image';
+}
+
+function resolveNodeContent(node: Node): string | undefined {
+  const data = (node.data || {}) as Record<string, unknown>;
+  const canonicalObject = isRecord(data.canonicalObject) ? data.canonicalObject : {};
+  const capabilities = isRecord(canonicalObject.capabilities) ? canonicalObject.capabilities : {};
+  const contentCapability = isRecord(capabilities.content) ? capabilities.content : {};
+
+  if (contentCapability.kind === 'markdown' && typeof contentCapability.source === 'string') {
+    return contentCapability.source;
+  }
+
+  if (contentCapability.kind === 'text' && typeof contentCapability.value === 'string') {
+    return contentCapability.value;
+  }
+
+  return typeof data.label === 'string' && data.label.length > 0
+    ? data.label
+    : undefined;
+}
+
+function clonePersistedNodeProps(node: Node): Record<string, unknown> {
+  const data = (node.data || {}) as Record<string, unknown>;
+  const omittedKeys = new Set([
+    'canonicalObject',
+    'canonicalValidation',
+    'editMeta',
+    'groupId',
+    'children',
+    'resolvedGeometry',
+    'seed',
+    'sourceMeta',
+    'label',
+  ]);
+
+  return Object.entries(data).reduce<Record<string, unknown>>((acc, [key, value]) => {
+    if (omittedKeys.has(key) || value === undefined) {
+      return acc;
+    }
+    acc[key] = value;
+    return acc;
+  }, {});
+}
+
+function buildCreateInputFromNode(input: {
+  target: ResolvedTarget;
+  sourceId: string;
+  placement: CreatePayload['placement'];
+}): MutationActionPayloadMap['node.create']['node'] | null {
+  if (!isSupportedCreateNodeType(input.target.node.type)) {
+    return null;
+  }
+
+  const props = clonePersistedNodeProps(input.target.node);
+  const content = resolveNodeContent(input.target.node);
+
+  return {
+    id: input.sourceId,
+    type: input.target.node.type,
+    props: {
+      ...props,
+      ...(content ? { content } : {}),
+    },
+    placement: input.placement,
+  };
+}
+
+function resolveDuplicatePlacement(target: ResolvedTarget): CreatePayload['placement'] {
+  const data = (target.node.data || {}) as Record<string, unknown>;
+  const canonicalObject = isRecord(data.canonicalObject) ? data.canonicalObject : {};
+  const core = isRecord(canonicalObject.core) ? canonicalObject.core : {};
+  const relations = isRecord(core.relations) ? core.relations : {};
+  const parentSourceId = typeof relations.from === 'string' ? relations.from : null;
+
+  if (target.editMeta?.family === 'mindmap-member') {
+    return {
+      mode: 'mindmap-sibling',
+      siblingOf: target.sourceId,
+      parentId: parentSourceId,
+    };
+  }
+
+  return {
+    mode: 'canvas-absolute',
+    x: target.node.position.x + 48,
+    y: target.node.position.y + 48,
+  };
+}
+
+function resolveDeleteRecreatePlacement(target: ResolvedTarget): CreatePayload['placement'] | null {
+  const data = (target.node.data || {}) as Record<string, unknown>;
+  const canonicalObject = isRecord(data.canonicalObject) ? data.canonicalObject : {};
+  const core = isRecord(canonicalObject.core) ? canonicalObject.core : {};
+  const relations = isRecord(core.relations) ? core.relations : {};
+  const parentSourceId = typeof relations.from === 'string' ? relations.from : null;
+
+  if (target.editMeta?.family === 'mindmap-member') {
+    return parentSourceId
+      ? {
+          mode: 'mindmap-child',
+          parentId: parentSourceId,
+        }
+      : null;
+  }
+
+  return {
+    mode: 'canvas-absolute',
+    x: target.node.position.x,
+    y: target.node.position.y,
+  };
 }
 
 function getExistingSourceIds(nodes: Node[]): string[] {
@@ -457,6 +615,128 @@ function buildCreatePlan(input: {
           },
           reloadGraphOnSuccess: true,
           pendingSelectionRenderedId: input.normalized.renderedId,
+        },
+      },
+    ],
+    rollbackSteps: [],
+  };
+}
+
+function buildDuplicatePlan(input: {
+  envelope: UIIntentEnvelope;
+  normalized: DuplicateNormalized;
+}): OrderedDispatchPlan {
+  return {
+    intentId: input.envelope.intentId,
+    steps: [
+      {
+        kind: 'canonical-mutation',
+        actionId: 'node.create',
+        payload: {
+          filePath: input.normalized.targetFile,
+          node: input.normalized.createInput,
+        },
+        historyEffect: {
+          eventType: 'NODE_CREATED',
+          nodeId: input.normalized.sourceId,
+          filePath: input.normalized.targetFile,
+          baseVersion: input.normalized.baseVersion,
+          before: { created: false },
+          after: {
+            create: input.normalized.createInput,
+            renderedId: input.normalized.renderedId,
+          },
+          reloadGraphOnSuccess: true,
+          pendingSelectionRenderedId: input.normalized.renderedId,
+        },
+      },
+    ],
+    rollbackSteps: [],
+  };
+}
+
+function buildDeletePlan(input: {
+  envelope: UIIntentEnvelope;
+  normalized: DeleteNormalized;
+}): OrderedDispatchPlan {
+  return {
+    intentId: input.envelope.intentId,
+    steps: [
+      {
+        kind: 'canonical-mutation',
+        actionId: 'node.delete',
+        payload: {
+          nodeId: input.normalized.target.sourceId,
+          filePath: input.normalized.target.filePath,
+        },
+        historyEffect: {
+          eventType: 'NODE_DELETED',
+          nodeId: input.normalized.target.sourceId,
+          filePath: input.normalized.target.filePath,
+          baseVersion: input.normalized.baseVersion,
+          before: {
+            create: input.normalized.recreateInput,
+          },
+          after: {
+            deleted: true,
+          },
+          reloadGraphOnSuccess: true,
+        },
+      },
+    ],
+    rollbackSteps: [],
+  };
+}
+
+function buildLockTogglePlan(input: {
+  envelope: UIIntentEnvelope;
+  normalized: LockToggleNormalized;
+}): OrderedDispatchPlan {
+  return {
+    intentId: input.envelope.intentId,
+    steps: [
+      {
+        kind: 'canonical-mutation',
+        actionId: 'node.update',
+        payload: {
+          nodeId: input.normalized.target.sourceId,
+          filePath: input.normalized.target.filePath,
+          props: {
+            locked: input.normalized.nextLocked,
+          },
+        },
+        historyEffect: {
+          eventType: 'NODE_LOCK_TOGGLED',
+          nodeId: input.normalized.target.sourceId,
+          filePath: input.normalized.target.filePath,
+          baseVersion: input.normalized.baseVersion,
+          before: {
+            locked: input.normalized.previousLocked,
+          },
+          after: {
+            locked: input.normalized.nextLocked,
+          },
+          reloadGraphOnSuccess: true,
+        },
+      },
+    ],
+    rollbackSteps: [],
+  };
+}
+
+function buildGroupSelectPlan(input: {
+  envelope: UIIntentEnvelope;
+  normalized: GroupSelectNormalized;
+}): OrderedDispatchPlan {
+  return {
+    intentId: input.envelope.intentId,
+    steps: [
+      {
+        kind: 'runtime-only-action',
+        actionId: 'select-node-group',
+        payload: {
+          groupId: input.normalized.groupId,
+          anchorNodeId: input.normalized.target.renderedNodeId,
         },
       },
     ],
@@ -712,12 +992,206 @@ const fitViewEntry: ActionRoutingRegistryEntry<Record<string, never>> = {
   }),
 };
 
+const duplicateEntry: ActionRoutingRegistryEntry<DuplicateNormalized> = {
+  intentId: 'node.duplicate',
+  supportedSurfaces: ['node-context-menu'],
+  isEnabled: ({ envelope, context }) => {
+    const target = resolveTarget(context, envelope);
+    if (!target) {
+      return fail('INTENT_GATING_DENIED', 'duplicable target is required');
+    }
+    if (!hasMutableTarget(target)) {
+      return fail('INTENT_GATING_DENIED', 'duplicate is not allowed', {
+        nodeId: target.renderedNodeId,
+        reason: target.editMeta?.readOnlyReason,
+      });
+    }
+    if (!isSupportedCreateNodeType(target.node.type)) {
+      return fail('INTENT_GATING_DENIED', 'duplicate is not supported for this node type', {
+        nodeId: target.renderedNodeId,
+        nodeType: target.node.type,
+      });
+    }
+    return ok(true);
+  },
+  normalizePayload: ({ envelope, context }) => {
+    const target = resolveTarget(context, envelope);
+    if (!target) {
+      return fail('INTENT_PAYLOAD_INVALID', 'target node is required');
+    }
+    const versionResult = requireBaseVersion(context, target.filePath);
+    if (!versionResult.ok) {
+      return versionResult;
+    }
+    const placement = resolveDuplicatePlacement(target);
+    const nextId = createUniqueNodeId(
+      target.node.type as CreatePayload['nodeType'],
+      getExistingSourceIds(context.nodes),
+      target.sourceId,
+    );
+    const createInput = buildCreateInputFromNode({
+      target,
+      sourceId: nextId,
+      placement,
+    });
+    if (!createInput) {
+      return fail('INTENT_PAYLOAD_INVALID', 'duplicate is not supported for this node type', {
+        nodeType: target.node.type,
+      });
+    }
+    const renderedId = buildRenderedNodeId({
+      sourceId: nextId,
+      scopeId: target.scopeId,
+      frameScope: target.frameScope,
+    });
+    return ok({
+      target,
+      targetFile: target.filePath,
+      sourceId: nextId,
+      scopeId: target.scopeId,
+      frameScope: target.frameScope,
+      createInput,
+      baseVersion: versionResult.value,
+      renderedId,
+    });
+  },
+  buildDispatch: ({ envelope, normalized }) => ok(buildDuplicatePlan({ envelope, normalized })),
+};
+
+const deleteEntry: ActionRoutingRegistryEntry<DeleteNormalized> = {
+  intentId: 'node.delete',
+  supportedSurfaces: ['node-context-menu'],
+  isEnabled: ({ envelope, context }) => {
+    const target = resolveTarget(context, envelope);
+    if (!target) {
+      return fail('INTENT_GATING_DENIED', 'deletable target is required');
+    }
+    if (!hasMutableTarget(target)) {
+      return fail('INTENT_GATING_DENIED', 'delete is not allowed', {
+        nodeId: target.renderedNodeId,
+        reason: target.editMeta?.readOnlyReason,
+      });
+    }
+    if (!resolveDeleteRecreatePlacement(target)) {
+      return fail('INTENT_GATING_DENIED', 'delete is not supported for this structural context', {
+        nodeId: target.renderedNodeId,
+      });
+    }
+    return ok(true);
+  },
+  normalizePayload: ({ envelope, context }) => {
+    const target = resolveTarget(context, envelope);
+    if (!target) {
+      return fail('INTENT_PAYLOAD_INVALID', 'target node is required');
+    }
+    const versionResult = requireBaseVersion(context, target.filePath);
+    if (!versionResult.ok) {
+      return versionResult;
+    }
+    const placement = resolveDeleteRecreatePlacement(target);
+    if (!placement) {
+      return fail('INTENT_PAYLOAD_INVALID', 'delete rollback snapshot is not supported for this structural context', {
+        nodeType: target.node.type,
+      });
+    }
+    const recreateInput = buildCreateInputFromNode({
+      target,
+      sourceId: target.sourceId,
+      placement,
+    });
+    if (!recreateInput) {
+      return fail('INTENT_PAYLOAD_INVALID', 'delete rollback snapshot is not supported for this node type', {
+        nodeType: target.node.type,
+      });
+    }
+    return ok({
+      target,
+      recreateInput,
+      baseVersion: versionResult.value,
+    });
+  },
+  buildDispatch: ({ envelope, normalized }) => ok(buildDeletePlan({ envelope, normalized })),
+};
+
+const lockToggleEntry: ActionRoutingRegistryEntry<LockToggleNormalized> = {
+  intentId: 'node.lock.toggle',
+  supportedSurfaces: ['node-context-menu'],
+  isEnabled: ({ envelope, context }) => {
+    const target = resolveTarget(context, envelope);
+    if (!target) {
+      return fail('INTENT_GATING_DENIED', 'lock target is required');
+    }
+    if (!canToggleLock(target)) {
+      return fail('INTENT_GATING_DENIED', 'lock toggle is not allowed', {
+        nodeId: target.renderedNodeId,
+        reason: target.editMeta?.readOnlyReason,
+      });
+    }
+    return ok(true);
+  },
+  normalizePayload: ({ envelope, context }) => {
+    const target = resolveTarget(context, envelope);
+    if (!target) {
+      return fail('INTENT_PAYLOAD_INVALID', 'target node is required');
+    }
+    const versionResult = requireBaseVersion(context, target.filePath);
+    if (!versionResult.ok) {
+      return versionResult;
+    }
+    const previousLocked = ((target.node.data || {}) as Record<string, unknown>).locked === true;
+    return ok({
+      target,
+      previousLocked,
+      nextLocked: !previousLocked,
+      baseVersion: versionResult.value,
+    });
+  },
+  buildDispatch: ({ envelope, normalized }) => ok(buildLockTogglePlan({ envelope, normalized })),
+};
+
+const groupSelectEntry: ActionRoutingRegistryEntry<GroupSelectNormalized> = {
+  intentId: 'node.group.select',
+  supportedSurfaces: ['node-context-menu'],
+  isEnabled: ({ envelope, context }) => {
+    const target = resolveTarget(context, envelope);
+    if (!target) {
+      return fail('INTENT_GATING_DENIED', 'group target is required');
+    }
+    const groupId = ((target.node.data || {}) as Record<string, unknown>).groupId;
+    if (typeof groupId !== 'string' || groupId.length === 0) {
+      return fail('INTENT_GATING_DENIED', 'group context is required', {
+        nodeId: target.renderedNodeId,
+      });
+    }
+    return ok(true);
+  },
+  normalizePayload: ({ envelope, context }) => {
+    const target = resolveTarget(context, envelope);
+    if (!target) {
+      return fail('INTENT_PAYLOAD_INVALID', 'target node is required');
+    }
+    const groupId = ((target.node.data || {}) as Record<string, unknown>).groupId;
+    if (typeof groupId !== 'string' || groupId.length === 0) {
+      return fail('INTENT_PAYLOAD_INVALID', 'group context is required');
+    }
+    return ok({
+      target,
+      groupId,
+    });
+  },
+  buildDispatch: ({ envelope, normalized }) => ok(buildGroupSelectPlan({ envelope, normalized })),
+};
+
 export function createActionRoutingRegistry(): Record<string, ActionRoutingRegistryEntry> {
   return {
     [styleUpdateEntry.intentId]: styleUpdateEntry,
     [contentUpdateEntry.intentId]: contentUpdateEntry,
     [renameEntry.intentId]: renameEntry,
     [createEntry.intentId]: createEntry,
+    [duplicateEntry.intentId]: duplicateEntry,
+    [deleteEntry.intentId]: deleteEntry,
+    [lockToggleEntry.intentId]: lockToggleEntry,
+    [groupSelectEntry.intentId]: groupSelectEntry,
     [fitViewEntry.intentId]: fitViewEntry,
   };
 }

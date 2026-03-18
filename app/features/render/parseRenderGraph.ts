@@ -903,6 +903,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             participantSpacing: child.props.participantSpacing ?? 200,
             messageSpacing: child.props.messageSpacing ?? 60,
             className: child.props.className,
+            locked: child.props.locked,
             fontFamily: sequenceFontFamily,
             groupId: mindmapId,
             anchor: child.props.anchor,
@@ -991,6 +992,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             type: child.props.type || 'rectangle',
             color: child.props.color || child.props.bg,
             className: child.props.className,
+            locked: child.props.locked,
             groupId: mindmapId,
             sourceMeta: child.props.sourceMeta || {
               sourceId: nodeId,
@@ -1039,6 +1041,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             height: child.props.height,
             fit: child.props.fit,
             className: child.props.className,
+            locked: child.props.locked,
             groupId: mindmapId,
             sourceMeta: child.props.sourceMeta || {
               sourceId: imageId,
@@ -1097,6 +1100,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             height: child.props.height,
             rotation: child.props.rotation,
             fontFamily: stickerFontFamily,
+            locked: child.props.locked,
             groupId: mindmapId,
             children: stickerChildren,
             outlineWidth: normalized.outlineWidth,
@@ -1166,6 +1170,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           data: withEditMeta('washi-tape', washiId, {
             label: washiLabel || child.props.label || '',
             className: child.props.className,
+            locked: child.props.locked,
             pattern: child.props.pattern ?? normalizedWashi.pattern,
             edge: child.props.edge,
             texture: child.props.texture,
@@ -1352,6 +1357,7 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           data: withEditMeta(nodeType, nodeId, {
             label: safeLabel,
             type: readStringProp(renderFrame?.shape) || child.props.type || 'rectangle',
+            locked: child.props.locked,
             shape: nodeType === 'sticky'
               ? normalizedSticky?.shape ?? readStringProp(renderFrame?.shape)
               : undefined,
@@ -1413,32 +1419,39 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
   processChildren(children);
 
   const finalizedNodes = nodes.map((node) => {
-    if (node.type !== 'washi-tape') {
-      return node;
+    const baseNode = ((node.data || {}) as Record<string, unknown>).locked === true
+      ? {
+          ...node,
+          draggable: false,
+        }
+      : node;
+
+    if (baseNode.type !== 'washi-tape') {
+      return baseNode;
     }
 
-    const data = (node.data || {}) as Record<string, unknown>;
+    const data = (baseNode.data || {}) as Record<string, unknown>;
     const normalizedWashi = normalizeWashiDefaults({
       ...data,
-      id: node.id,
-      x: node.position.x,
-      y: node.position.y,
+      id: baseNode.id,
+      x: baseNode.position.x,
+      y: baseNode.position.y,
     });
     const atInput = (data.at as Record<string, unknown> | undefined) ?? normalizedWashi.at;
     const resolvedGeometry = resolveWashiGeometry({
       at: atInput as any,
       nodes,
       seed: (data.seed as string | number | undefined) ?? normalizedWashi.seed,
-      fallbackPosition: node.position,
+      fallbackPosition: baseNode.position,
     });
     const isAttach = (atInput as { type?: unknown }).type === 'attach';
     const attachedPosition = getWashiNodePosition(resolvedGeometry);
 
     return {
-      ...node,
-      position: isAttach ? attachedPosition : node.position,
+      ...baseNode,
+      position: isAttach ? attachedPosition : baseNode.position,
       data: {
-        ...(node.data || {}),
+        ...(baseNode.data || {}),
         at: atInput,
         resolvedGeometry,
       },

@@ -21,6 +21,7 @@ type RpcLikeError = {
 type NodeSourceMeta = {
   sourceId?: unknown;
   filePath?: unknown;
+  kind?: unknown;
   frameScope?: unknown;
 };
 
@@ -43,6 +44,25 @@ function getCapabilityKeys(canonicalObject: CanonicalObject | undefined): string
     return [];
   }
   return Object.keys(canonicalObject.capabilities);
+}
+
+function getSourceKind(
+  sourceMeta: {
+    kind?: unknown;
+  },
+  canonicalObject: CanonicalObject | undefined,
+): 'canvas' | 'mindmap' | undefined {
+  const candidate = sourceMeta.kind ?? canonicalObject?.core?.sourceMeta?.kind;
+  return candidate === 'canvas' || candidate === 'mindmap'
+    ? candidate
+    : undefined;
+}
+
+function getParentSourceId(canonicalObject: CanonicalObject | undefined): string | undefined {
+  const parentSourceId = canonicalObject?.core?.relations?.from;
+  return typeof parentSourceId === 'string' && parentSourceId.length > 0
+    ? parentSourceId
+    : undefined;
 }
 
 function deriveLocalSourceId(nodeId: string, frameScope: unknown): string {
@@ -96,8 +116,17 @@ export function resolveNodeActionRoutingContext(
   const sourceMeta = (data.sourceMeta || {}) as {
     scopeId?: unknown;
     frameScope?: unknown;
+    kind?: unknown;
   };
   const canonicalObject = (data.canonicalObject || undefined) as CanonicalObject | undefined;
+  const sourceKind = getSourceKind(sourceMeta, canonicalObject);
+  const parentSourceId = getParentSourceId(canonicalObject);
+  const groupId = typeof data.groupId === 'string' && data.groupId.length > 0
+    ? data.groupId
+    : undefined;
+  const frameScope = typeof sourceMeta.frameScope === 'string' && sourceMeta.frameScope.length > 0
+    ? sourceMeta.frameScope
+    : undefined;
 
   return {
     surfaceId: currentFile ?? undefined,
@@ -109,6 +138,7 @@ export function resolveNodeActionRoutingContext(
       renderedNodeId: node.id,
       sourceId: target.nodeId,
       filePath: target.filePath,
+      nodeType: node.type,
       ...(typeof sourceMeta.scopeId === 'string' ? { scopeId: sourceMeta.scopeId } : {}),
       ...(typeof sourceMeta.frameScope === 'string' ? { frameScope: sourceMeta.frameScope } : {}),
     },
@@ -116,6 +146,16 @@ export function resolveNodeActionRoutingContext(
       semanticRole: canonicalObject?.semanticRole,
       primaryContentKind: getPrimaryContentKind(canonicalObject),
       capabilities: getCapabilityKeys(canonicalObject),
+    },
+    relations: {
+      ...(sourceKind ? { sourceKind } : {}),
+      ...(parentSourceId ? { parentSourceId } : {}),
+      ...(groupId ? { groupId } : {}),
+      ...(frameScope ? { frameScope } : {}),
+      hasParentRelation: Boolean(parentSourceId),
+      isGroupMember: Boolean(groupId),
+      isMindmapMember: sourceKind === 'mindmap' || Boolean(groupId),
+      isFrameScoped: Boolean(frameScope),
     },
     editability: {
       canMutate: !editMeta?.readOnlyReason,
@@ -140,6 +180,12 @@ export function createPaneActionRoutingContext(input: {
     },
     metadata: {
       capabilities: [],
+    },
+    relations: {
+      hasParentRelation: false,
+      isGroupMember: false,
+      isMindmapMember: false,
+      isFrameScoped: false,
     },
     editability: {
       canMutate: hasFile,
@@ -204,6 +250,9 @@ export function mapEditRpcErrorToToast(error: unknown): string | null {
   }
   if (rpc.code === 42201 || rpc.message === 'EDIT_NOT_ALLOWED') {
     const reason = (rpc.data as { reason?: unknown } | undefined)?.reason;
+    if (reason === 'LOCKED') {
+      return '잠금된 오브젝트라서 변경할 수 없습니다.';
+    }
     if (reason === 'NO_VALID_PARENT') {
       return 'MindMap 노드는 다른 MindMap 노드 위에 놓아 부모를 바꿔야 합니다.';
     }

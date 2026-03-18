@@ -76,6 +76,8 @@ export type EditCompletionEventType =
   | 'STYLE_UPDATED'
   | 'NODE_RENAMED'
   | 'NODE_CREATED'
+  | 'NODE_DELETED'
+  | 'NODE_LOCK_TOGGLED'
   | 'NODE_REPARENTED';
 
 export interface EditCompletionEvent {
@@ -487,6 +489,10 @@ function getPendingActionTypesForEvent(event: EditCompletionEvent): string[] {
       return ['node.rename'];
     case 'NODE_CREATED':
       return ['node.create', 'mindmap.child.create', 'mindmap.sibling.create'];
+    case 'NODE_DELETED':
+      return ['node.delete'];
+    case 'NODE_LOCK_TOGGLED':
+      return ['node.lock.toggle'];
     case 'NODE_REPARENTED':
       return ['node.reparent'];
     default:

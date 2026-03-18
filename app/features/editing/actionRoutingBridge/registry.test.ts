@@ -103,4 +103,174 @@ describe('action routing bridge registry', () => {
     if (!result || result.ok) return;
     expect(result.error.code).toBe('INTENT_GATING_DENIED');
   });
+
+  it('enables node.delete for mutable node-context-menu targets', () => {
+    const result = registry['node.delete']?.isEnabled({
+      envelope: {
+        surfaceId: 'node-context-menu',
+        intentId: 'node.delete',
+        selectionRef: {
+          currentFile: 'examples/bridge.tsx',
+          selectedNodeIds: ['shape-1'],
+        },
+        targetRef: {
+          renderedNodeId: 'shape-1',
+        },
+        rawPayload: {},
+        optimistic: false,
+      },
+      context: makeActionRoutingContext({
+        nodes: [
+          makeCanonicalNode({
+            id: 'shape-1',
+            type: 'shape',
+          }),
+        ],
+      }),
+    });
+
+    expect(result).toEqual({ ok: true, value: true });
+  });
+
+  it('builds duplicate dispatch through node.create instead of leaving a placeholder', () => {
+    const node = makeCanonicalNode({
+      id: 'shape-1',
+      type: 'shape',
+      data: { label: 'Duplicate me', color: '#ffffff' },
+    });
+    const normalized = registry['node.duplicate']?.normalizePayload({
+      envelope: {
+        surfaceId: 'node-context-menu',
+        intentId: 'node.duplicate',
+        selectionRef: {
+          currentFile: 'examples/bridge.tsx',
+          selectedNodeIds: ['shape-1'],
+        },
+        targetRef: {
+          renderedNodeId: 'shape-1',
+        },
+        rawPayload: {},
+        optimistic: false,
+      },
+      context: makeActionRoutingContext({
+        nodes: [node],
+      }),
+    });
+
+    expect(normalized?.ok).toBe(true);
+    if (!normalized || !normalized.ok) return;
+    const plan = registry['node.duplicate']?.buildDispatch({
+      envelope: {
+        surfaceId: 'node-context-menu',
+        intentId: 'node.duplicate',
+        selectionRef: {
+          currentFile: 'examples/bridge.tsx',
+          selectedNodeIds: ['shape-1'],
+        },
+        targetRef: {
+          renderedNodeId: 'shape-1',
+        },
+        rawPayload: {},
+        optimistic: false,
+      },
+      context: makeActionRoutingContext({
+        nodes: [node],
+      }),
+      normalized: normalized.value,
+    });
+
+    expect(plan?.ok).toBe(true);
+    if (!plan || !plan.ok) return;
+    expect(plan.value.steps[0]).toMatchObject({
+      kind: 'canonical-mutation',
+      actionId: 'node.create',
+    });
+  });
+
+  it('routes group select as a runtime-only action for grouped nodes', () => {
+    const node = makeCanonicalNode({
+      id: 'mind-1',
+      type: 'shape',
+      groupId: 'map-1',
+    });
+    const normalized = registry['node.group.select']?.normalizePayload({
+      envelope: {
+        surfaceId: 'node-context-menu',
+        intentId: 'node.group.select',
+        selectionRef: {
+          currentFile: 'examples/bridge.tsx',
+          selectedNodeIds: ['mind-1'],
+        },
+        targetRef: {
+          renderedNodeId: 'mind-1',
+        },
+        rawPayload: {},
+        optimistic: false,
+      },
+      context: makeActionRoutingContext({
+        nodes: [node],
+      }),
+    });
+
+    expect(normalized?.ok).toBe(true);
+    if (!normalized || !normalized.ok) return;
+    const plan = registry['node.group.select']?.buildDispatch({
+      envelope: {
+        surfaceId: 'node-context-menu',
+        intentId: 'node.group.select',
+        selectionRef: {
+          currentFile: 'examples/bridge.tsx',
+          selectedNodeIds: ['mind-1'],
+        },
+        targetRef: {
+          renderedNodeId: 'mind-1',
+        },
+        rawPayload: {},
+        optimistic: false,
+      },
+      context: makeActionRoutingContext({
+        nodes: [node],
+      }),
+      normalized: normalized.value,
+    });
+
+    expect(plan?.ok).toBe(true);
+    if (!plan || !plan.ok) return;
+    expect(plan.value.steps[0]).toEqual({
+      kind: 'runtime-only-action',
+      actionId: 'select-node-group',
+      payload: {
+        groupId: 'map-1',
+        anchorNodeId: 'mind-1',
+      },
+    });
+  });
+
+  it('allows node.lock.toggle to unlock locked nodes', () => {
+    const node = makeCanonicalNode({
+      id: 'locked-1',
+      type: 'shape',
+      data: { locked: true },
+    });
+    const result = registry['node.lock.toggle']?.isEnabled({
+      envelope: {
+        surfaceId: 'node-context-menu',
+        intentId: 'node.lock.toggle',
+        selectionRef: {
+          currentFile: 'examples/bridge.tsx',
+          selectedNodeIds: ['locked-1'],
+        },
+        targetRef: {
+          renderedNodeId: 'locked-1',
+        },
+        rawPayload: {},
+        optimistic: false,
+      },
+      context: makeActionRoutingContext({
+        nodes: [node],
+      }),
+    });
+
+    expect(result).toEqual({ ok: true, value: true });
+  });
 });

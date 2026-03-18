@@ -8,11 +8,13 @@ mock.module('lucide-react', () => ({
   Copy: iconStub,
   Download: iconStub,
   FileText: iconStub,
+  Lock: iconStub,
   Maximize: iconStub,
   MousePointerSquareDashed: iconStub,
   Pencil: iconStub,
   Plus: iconStub,
   Square: iconStub,
+  Trash2: iconStub,
   Type: iconStub,
 }));
 
@@ -121,6 +123,9 @@ describe('useContextMenu helpers', () => {
       'mindmap-add-child',
       'mindmap-add-sibling',
       'select-group',
+      'duplicate-node',
+      'delete-node',
+      'lock-node',
     ]);
   });
 

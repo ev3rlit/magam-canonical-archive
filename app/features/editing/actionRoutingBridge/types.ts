@@ -73,7 +73,8 @@ export type DispatchKind =
 export type RuntimeActionId =
   | 'apply-node-data-patch'
   | 'restore-node-data'
-  | 'fit-view';
+  | 'fit-view'
+  | 'select-node-group';
 
 export interface RuntimeActionPayloadMap {
   'apply-node-data-patch': {
@@ -85,6 +86,10 @@ export interface RuntimeActionPayloadMap {
     previousData: Record<string, unknown>;
   };
   'fit-view': Record<string, never>;
+  'select-node-group': {
+    groupId: string;
+    anchorNodeId?: string;
+  };
 }
 
 export interface ActionRoutingHistoryEffect {
@@ -93,7 +98,9 @@ export interface ActionRoutingHistoryEffect {
     | 'STYLE_UPDATED'
     | 'NODE_RENAMED'
     | 'NODE_CREATED'
-    | 'NODE_REPARENTED';
+    | 'NODE_REPARENTED'
+    | 'NODE_DELETED'
+    | 'NODE_LOCK_TOGGLED';
   nodeId: string;
   filePath: string;
   baseVersion: string;
@@ -119,6 +126,7 @@ export interface ActionRoutingOptimisticMeta extends ActionRoutingPendingRecord 
 export type MutationActionId =
   | 'node.update'
   | 'node.create'
+  | 'node.delete'
   | 'node.reparent';
 
 export interface MutationActionPayloadMap {
@@ -136,6 +144,10 @@ export interface MutationActionPayloadMap {
       props: Record<string, unknown>;
       placement: CreatePayload['placement'];
     };
+  };
+  'node.delete': {
+    nodeId: string;
+    filePath: string;
   };
   'node.reparent': {
     nodeId: string;
@@ -195,6 +207,18 @@ export interface ActionRoutingRegistryEntry<TNormalized extends Record<string, u
     context: ActionRoutingContext;
     normalized: TNormalized;
   }) => ActionRoutingResult<OrderedDispatchPlan>;
+}
+
+export type DeferredNodeContextMenuIntentId =
+  | 'node.duplicate'
+  | 'node.delete'
+  | 'node.lock.toggle'
+  | 'node.group.select';
+
+export interface DeferredNodeContextMenuIntent {
+  intentId: DeferredNodeContextMenuIntentId;
+  supportedSurfaces: Extract<ActionRoutingSurfaceId, 'node-context-menu'>[];
+  message: string;
 }
 
 export function createActionRoutingError(

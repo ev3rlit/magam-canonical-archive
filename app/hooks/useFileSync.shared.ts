@@ -288,6 +288,8 @@ export function shouldReloadAfterHistoryReplay(event: EditCompletionEvent): bool
   return (
     event.type === 'NODE_RENAMED'
     || event.type === 'NODE_CREATED'
+    || event.type === 'NODE_DELETED'
+    || event.type === 'NODE_LOCK_TOGGLED'
     || event.type === 'NODE_REPARENTED'
   );
 }
@@ -358,12 +360,34 @@ export async function applyEditCompletionSnapshot(
     return;
   }
 
+  if (event.type === 'NODE_DELETED') {
+    const recreateInput = event.before.create;
+    if (!recreateInput || typeof recreateInput !== 'object') {
+      throw new Error('INVALID_EVENT_SNAPSHOT');
+    }
+    if (direction === 'before') {
+      await mutators.createNode(recreateInput as Record<string, unknown>, event.filePath);
+      return;
+    }
+    await mutators.deleteNode(event.nodeId, event.filePath);
+    return;
+  }
+
   if (event.type === 'NODE_REPARENTED') {
     const parentId = 'parentId' in snapshot ? snapshot.parentId : undefined;
     if (parentId !== null && parentId !== undefined && typeof parentId !== 'string') {
       throw new Error('INVALID_EVENT_SNAPSHOT');
     }
     await mutators.reparentNode(event.nodeId, parentId ?? undefined, event.filePath);
+    return;
+  }
+
+  if (event.type === 'NODE_LOCK_TOGGLED') {
+    const locked = snapshot.locked;
+    if (typeof locked !== 'boolean') {
+      throw new Error('INVALID_EVENT_SNAPSHOT');
+    }
+    await mutators.updateNode(event.nodeId, { locked }, event.filePath);
     return;
   }
 

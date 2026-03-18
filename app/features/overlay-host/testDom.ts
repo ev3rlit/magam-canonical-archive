@@ -1,5 +1,16 @@
 import { JSDOM } from 'jsdom';
 
+function defineGlobalProperty<TKey extends keyof typeof globalThis>(
+  key: TKey,
+  value: (typeof globalThis)[TKey],
+): void {
+  Object.defineProperty(globalThis, key, {
+    configurable: true,
+    writable: true,
+    value,
+  });
+}
+
 export function installTestDom(): () => void {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     pretendToBeVisual: true,
@@ -20,23 +31,31 @@ export function installTestDom(): () => void {
     cancelAnimationFrame: globalThis.cancelAnimationFrame,
   };
 
-  Object.assign(globalThis, {
-    window: dom.window,
-    document: dom.window.document,
-    navigator: dom.window.navigator,
-    HTMLElement: dom.window.HTMLElement,
-    Node: dom.window.Node,
-    Event: dom.window.Event,
-    MouseEvent: dom.window.MouseEvent,
-    KeyboardEvent: dom.window.KeyboardEvent,
-    getComputedStyle: dom.window.getComputedStyle.bind(dom.window),
-    requestAnimationFrame: dom.window.requestAnimationFrame.bind(dom.window),
-    cancelAnimationFrame: dom.window.cancelAnimationFrame.bind(dom.window),
-    IS_REACT_ACT_ENVIRONMENT: true,
-  });
+  defineGlobalProperty('window', dom.window);
+  defineGlobalProperty('document', dom.window.document);
+  defineGlobalProperty('navigator', dom.window.navigator);
+  defineGlobalProperty('HTMLElement', dom.window.HTMLElement);
+  defineGlobalProperty('Node', dom.window.Node);
+  defineGlobalProperty('Event', dom.window.Event);
+  defineGlobalProperty('MouseEvent', dom.window.MouseEvent);
+  defineGlobalProperty('KeyboardEvent', dom.window.KeyboardEvent);
+  defineGlobalProperty('getComputedStyle', dom.window.getComputedStyle.bind(dom.window));
+  defineGlobalProperty('requestAnimationFrame', dom.window.requestAnimationFrame.bind(dom.window));
+  defineGlobalProperty('cancelAnimationFrame', dom.window.cancelAnimationFrame.bind(dom.window));
+  defineGlobalProperty('IS_REACT_ACT_ENVIRONMENT', true);
 
   return () => {
     dom.window.close();
-    Object.assign(globalThis, previous);
+    defineGlobalProperty('window', previous.window);
+    defineGlobalProperty('document', previous.document);
+    defineGlobalProperty('navigator', previous.navigator);
+    defineGlobalProperty('HTMLElement', previous.HTMLElement);
+    defineGlobalProperty('Node', previous.Node);
+    defineGlobalProperty('Event', previous.Event);
+    defineGlobalProperty('MouseEvent', previous.MouseEvent);
+    defineGlobalProperty('KeyboardEvent', previous.KeyboardEvent);
+    defineGlobalProperty('getComputedStyle', previous.getComputedStyle);
+    defineGlobalProperty('requestAnimationFrame', previous.requestAnimationFrame);
+    defineGlobalProperty('cancelAnimationFrame', previous.cancelAnimationFrame);
   };
 }

@@ -98,15 +98,21 @@ type GraphCanvasProps = {
   onRedoEditStep?: () => Promise<boolean> | boolean;
   mapEditErrorToToast?: (error: unknown) => string | null;
   onRenameNode?: (input: GraphCanvasRenameIntentInput) => Promise<void> | void;
+  onDuplicateNode?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
+  onDeleteNode?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
+  onToggleNodeLock?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
+  onSelectNodeGroup?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
   onCreateNode?: (input: GraphCanvasCreateIntentInput) => Promise<void> | void;
 };
 
-export interface GraphCanvasRenameIntentInput {
+export interface GraphCanvasNodeMenuIntentInput {
   nodeId: string;
   surfaceId: ActionRoutingSurfaceId;
   surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
   trigger?: { source: 'menu' };
 }
+
+export type GraphCanvasRenameIntentInput = GraphCanvasNodeMenuIntentInput;
 
 export interface GraphCanvasCreateIntentInput {
   surfaceId: ActionRoutingSurfaceId;
@@ -121,13 +127,17 @@ export interface GraphCanvasCreateIntentInput {
   frameScope?: string;
 }
 
-export function buildGraphCanvasRenameIntent(nodeId: string): GraphCanvasRenameIntentInput {
+export function buildGraphCanvasNodeMenuIntent(nodeId: string): GraphCanvasNodeMenuIntentInput {
   return {
     nodeId,
     surfaceId: 'node-context-menu',
     surface: 'node-context-menu',
     trigger: { source: 'menu' },
   };
+}
+
+export function buildGraphCanvasRenameIntent(nodeId: string): GraphCanvasRenameIntentInput {
+  return buildGraphCanvasNodeMenuIntent(nodeId);
 }
 
 export function buildGraphCanvasCreateIntent(
@@ -239,6 +249,10 @@ function GraphCanvasContent({
   onRedoEditStep,
   mapEditErrorToToast,
   onRenameNode,
+  onDuplicateNode,
+  onDeleteNode,
+  onToggleNodeLock,
+  onSelectNodeGroup,
   onCreateNode,
 }: GraphCanvasProps) {
   const nodeTypes = useMemo(
@@ -477,26 +491,9 @@ function GraphCanvasContent({
     }, 350);
   };
 
-  const selectMindMapGroupByNodeId = useCallback((nodeId: string) => {
-    const node = useGraphStore.getState().nodes.find((item) => item.id === nodeId);
-    const groupId = node?.data?.groupId as string | undefined;
-
-    if (!groupId) {
-      showToast('그룹 정보가 없는 노드입니다.');
-      return;
-    }
-
-    const groupNodeIds = useGraphStore.getState().nodes
-      .filter((item) => item.data?.groupId === groupId)
-      .map((item) => item.id);
-    setSelectedNodes(groupNodeIds);
-    showToast('그룹 노드가 선택되었습니다.');
-  }, [setSelectedNodes, showToast]);
-
   const contextMenuActions = useMemo(() => createGraphCanvasContextMenuActions({
     copyImageToClipboard,
     handleFitView,
-    selectMindMapGroupByNodeId,
     openExportDialog: (scope: 'selection' | 'full', selectedNodeIds?: string[]) => {
       setExportDialog({
         isOpen: true,
@@ -511,10 +508,25 @@ function GraphCanvasContent({
       return runtime.edges.find((edge) => edge.target === nodeId)?.source ?? null;
     },
     onRenameNode,
+    onDuplicateNode,
+    onDeleteNode,
+    onToggleNodeLock,
+    onSelectNodeGroup,
     onCreateNode,
     buildRenameIntent: buildGraphCanvasRenameIntent,
+    buildNodeMenuIntent: buildGraphCanvasNodeMenuIntent,
     buildCreateIntent: buildGraphCanvasCreateIntent,
-  }), [copyImageToClipboard, handleFitView, onCreateNode, onRenameNode, screenToFlowPosition, selectMindMapGroupByNodeId]);
+  }), [
+    copyImageToClipboard,
+    handleFitView,
+    onCreateNode,
+    onDeleteNode,
+    onDuplicateNode,
+    onRenameNode,
+    onSelectNodeGroup,
+    onToggleNodeLock,
+    screenToFlowPosition,
+  ]);
 
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: FlowNode) => {
@@ -1189,6 +1201,10 @@ export function GraphCanvas({
   onRedoEditStep,
   mapEditErrorToToast,
   onRenameNode,
+  onDuplicateNode,
+  onDeleteNode,
+  onToggleNodeLock,
+  onSelectNodeGroup,
   onCreateNode,
 }: GraphCanvasProps) {
   return (
@@ -1206,6 +1222,10 @@ export function GraphCanvas({
                     onRedoEditStep={onRedoEditStep}
                     mapEditErrorToToast={mapEditErrorToToast}
                     onRenameNode={onRenameNode}
+                    onDuplicateNode={onDuplicateNode}
+                    onDeleteNode={onDeleteNode}
+                    onToggleNodeLock={onToggleNodeLock}
+                    onSelectNodeGroup={onSelectNodeGroup}
                     onCreateNode={onCreateNode}
                   />
                 </PluginRuntimeProvider>
