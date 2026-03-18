@@ -19,6 +19,7 @@ import type {
   CanonicalObject,
   ValidationResult,
 } from '@/features/render/canonicalObject';
+import type { ActionRoutingPendingRecord } from '@/features/editing/actionRoutingBridge/types';
 import {
   applySessionUpdate,
   createStaleUpdateDiagnostic,
@@ -185,6 +186,7 @@ export interface GraphState {
   workspaceStyleSession: WorkspaceStyleSessionState;
   workspaceStyleByNodeId: Record<string, InterpretedStyleResult>;
   workspaceStyleDiagnosticsByNodeId: Record<string, StylingDiagnostic[]>;
+  pendingActionRoutingByKey: Record<string, ActionRoutingPendingRecord>;
   setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null; sourceVersions?: Record<string, string> }) => void;
   setSourceVersion: (version: string | null) => void;
   setSourceVersionForFile: (filePath: string, version: string | null) => void;
@@ -239,6 +241,8 @@ export interface GraphState {
   commitUndoEventSuccess: (eventId: string) => void;
   commitRedoEventSuccess: (eventId: string) => void;
   refreshWorkspaceStyles: () => void;
+  registerPendingActionRouting: (record: ActionRoutingPendingRecord) => void;
+  clearPendingActionRouting: (pendingKey: string) => void;
 }
 
 export const getDefaultTabTitle = (pageId: string): string => {
@@ -437,6 +441,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   workspaceStyleSession: createWorkspaceStyleSessionState(),
   workspaceStyleByNodeId: {},
   workspaceStyleDiagnosticsByNodeId: {},
+  pendingActionRoutingByKey: {},
   setGraph: ({
     nodes,
     edges,
@@ -989,6 +994,22 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return {
       editHistoryFuture: state.editHistoryFuture.slice(0, -1),
       editHistoryPast: [...state.editHistoryPast, last],
+    };
+  }),
+  registerPendingActionRouting: (record) => set((state) => ({
+    pendingActionRoutingByKey: {
+      ...state.pendingActionRoutingByKey,
+      [record.pendingKey]: record,
+    },
+  })),
+  clearPendingActionRouting: (pendingKey) => set((state) => {
+    if (!(pendingKey in state.pendingActionRoutingByKey)) {
+      return state;
+    }
+    const next = { ...state.pendingActionRoutingByKey };
+    delete next[pendingKey];
+    return {
+      pendingActionRoutingByKey: next,
     };
   }),
   refreshWorkspaceStyles: () => set((state) => buildWorkspaceStyleSnapshot({

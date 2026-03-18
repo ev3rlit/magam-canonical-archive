@@ -208,6 +208,29 @@ describe('WorkspaceClient attach rejection guidance', () => {
       }),
     ).toContain('부모를 바꿔야');
   });
+
+  it('bridge intent 오류는 surface/registry 안내 메시지로 매핑된다', () => {
+    expect(
+      mapEditRpcErrorToToast({
+        code: 42212,
+        message: 'INTENT_NOT_REGISTERED',
+      }),
+    ).toContain('등록되지 않은 UI intent');
+
+    expect(
+      mapEditRpcErrorToToast({
+        code: 42214,
+        message: 'INTENT_GATING_DENIED',
+      }),
+    ).toContain('현재 선택 상태');
+
+    expect(
+      mapEditRpcErrorToToast({
+        code: 40904,
+        message: 'OPTIMISTIC_CONFLICT',
+      }),
+    ).toContain('optimistic');
+  });
 });
 
 describe('WorkspaceClient editability helpers', () => {

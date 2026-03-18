@@ -3,6 +3,10 @@ import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { basename, dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { createHash } from 'crypto';
+import { createPaneCreateIntentEnvelope, createRenameIntentEnvelope } from '@/features/editing/actionRoutingBridge/__fixtures__/intentEnvelopes';
+import { routeIntent } from '@/features/editing/actionRoutingBridge/routeIntent';
+import { makeActionRoutingContext, makeCanonicalNode } from '@/features/editing/actionRoutingBridge/testUtils';
+import type { MutationDispatchDescriptor } from '@/features/editing/actionRoutingBridge/types';
 import { methods } from './methods';
 
 const tempDirs: string[] = [];
@@ -524,5 +528,84 @@ describe('RPC editing methods', () => {
       const data = rejection.data as { path?: string; diagnostics?: { path?: string } };
       expect(data.path ?? data.diagnostics?.path).toBe('capabilities.content');
     }
+  });
+
+  it('bridge planned rename descriptor는 node.update RPC shape로 그대로 실행된다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample(){ return <Canvas><Node id="n1" label={"Before"} /></Canvas>; }
+    `);
+    const original = await readFile(filePath, 'utf-8');
+
+    const routed = routeIntent({
+      envelope: createRenameIntentEnvelope({
+        selectionRef: {
+          currentFile: filePath,
+          selectedNodeIds: ['n1'],
+        },
+        targetRef: {
+          renderedNodeId: 'n1',
+        },
+      }),
+      context: makeActionRoutingContext({
+        nodes: [
+          makeCanonicalNode({
+            id: 'n1',
+            type: 'shape',
+            filePath,
+            data: { label: 'Before' },
+          }),
+        ],
+        currentFile: filePath,
+        sourceVersions: { [filePath]: sha(original) },
+      }),
+    });
+
+    expect(routed.ok).toBe(true);
+    if (!routed.ok) return;
+    const step = routed.value.steps[0] as MutationDispatchDescriptor<'node.update'>;
+    const result = await methods[step.actionId]({
+      ...step.payload,
+      baseVersion: sha(original),
+      originId: 'client-bridge',
+      commandId: 'cmd-bridge-rename',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id={"shape-1-renamed"}')).toBe(true);
+  });
+
+  it('bridge planned create descriptor는 node.create RPC shape로 그대로 실행된다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }
+    `);
+    const original = await readFile(filePath, 'utf-8');
+
+    const routed = routeIntent({
+      envelope: createPaneCreateIntentEnvelope({
+        selectionRef: {
+          currentFile: filePath,
+          selectedNodeIds: [],
+        },
+      }),
+      context: makeActionRoutingContext({
+        currentFile: filePath,
+        sourceVersions: { [filePath]: sha(original) },
+      }),
+    });
+
+    expect(routed.ok).toBe(true);
+    if (!routed.ok) return;
+    const step = routed.value.steps[0] as MutationDispatchDescriptor<'node.create'>;
+    const result = await methods[step.actionId]({
+      ...step.payload,
+      baseVersion: sha(original),
+      originId: 'client-bridge',
+      commandId: 'cmd-bridge-create',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('<Shape')).toBe(true);
   });
 });

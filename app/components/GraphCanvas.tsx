@@ -69,6 +69,7 @@ import {
   type GraphCanvasCreateMode,
 } from './GraphCanvas.drag';
 import type { CreatePayload } from '@/features/editing/commands';
+import type { ActionRoutingSurfaceId } from '@/features/editing/actionRoutingBridge/types';
 import { resolveNodeEditContext } from '@/components/editor/workspaceEditUtils';
 import type { CreatableNodeType } from '@/types/contextMenu';
 
@@ -84,15 +85,37 @@ type GraphCanvasProps = {
   onUndoEditStep?: () => Promise<boolean> | boolean;
   onRedoEditStep?: () => Promise<boolean> | boolean;
   mapEditErrorToToast?: (error: unknown) => string | null;
-  onRenameNode?: (nodeId: string) => Promise<void> | void;
-  onCreateNode?: (input: {
-    nodeType: CreatableNodeType;
-    placement: CreatePayload['placement'];
-    filePath?: string;
-    scopeId?: string;
-    frameScope?: string;
-  }) => Promise<void> | void;
+  onRenameNode?: (input: GraphCanvasRenameIntentInput) => Promise<void> | void;
+  onCreateNode?: (input: GraphCanvasCreateIntentInput) => Promise<void> | void;
 };
+
+export interface GraphCanvasRenameIntentInput {
+  nodeId: string;
+  surfaceId: ActionRoutingSurfaceId;
+}
+
+export interface GraphCanvasCreateIntentInput {
+  surfaceId: ActionRoutingSurfaceId;
+  nodeType: CreatableNodeType;
+  placement: CreatePayload['placement'];
+  targetRenderedNodeId?: string;
+  filePath?: string;
+  scopeId?: string;
+  frameScope?: string;
+}
+
+export function buildGraphCanvasRenameIntent(nodeId: string): GraphCanvasRenameIntentInput {
+  return {
+    nodeId,
+    surfaceId: 'node-context-menu',
+  };
+}
+
+export function buildGraphCanvasCreateIntent(
+  input: GraphCanvasCreateIntentInput,
+): GraphCanvasCreateIntentInput {
+  return input;
+}
 
 type DragOriginState = {
   x: number;
@@ -342,16 +365,17 @@ function GraphCanvasContent({
       });
     },
     selectMindMapGroupByNodeId,
-    renameNode: (nodeId: string) => onRenameNode?.(nodeId),
+    renameNode: (nodeId: string) => onRenameNode?.(buildGraphCanvasRenameIntent(nodeId)),
     createCanvasNode: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => {
       if (!onCreateNode) {
         return;
       }
       const position = screenToFlowPosition(screenPosition);
-      return onCreateNode({
+      return onCreateNode(buildGraphCanvasCreateIntent({
+        surfaceId: 'pane-context-menu',
         nodeType,
         placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
-      });
+      }));
     },
     createMindMapChild: (renderedNodeId: string) => {
       if (!onCreateNode) {
@@ -360,13 +384,15 @@ function GraphCanvasContent({
       const targetNode = useGraphStore.getState().nodes.find((item) => item.id === renderedNodeId);
       const sourceMeta = (targetNode?.data as { sourceMeta?: Record<string, unknown> } | undefined)?.sourceMeta;
       const parentId = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
-      return onCreateNode({
+      return onCreateNode(buildGraphCanvasCreateIntent({
+        surfaceId: 'node-context-menu',
         nodeType: 'shape',
         placement: { mode: 'mindmap-child', parentId },
+        targetRenderedNodeId: renderedNodeId,
         filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
         scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
-      });
+      }));
     },
     createMindMapSibling: (renderedNodeId: string) => {
       if (!onCreateNode) {
@@ -384,13 +410,15 @@ function GraphCanvasContent({
         ? parentSourceMeta.sourceId
         : null;
       const siblingOf = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
-      return onCreateNode({
+      return onCreateNode(buildGraphCanvasCreateIntent({
+        surfaceId: 'node-context-menu',
         nodeType: 'shape',
         placement: { mode: 'mindmap-sibling', siblingOf, parentId },
+        targetRenderedNodeId: renderedNodeId,
         filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
         scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
-      });
+      }));
     },
   }), [copyImageToClipboard, handleFitView, onCreateNode, onRenameNode, screenToFlowPosition, selectMindMapGroupByNodeId]);
 
@@ -441,10 +469,11 @@ function GraphCanvasContent({
 
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       try {
-        await onCreateNode({
+        await onCreateNode(buildGraphCanvasCreateIntent({
+          surfaceId: 'toolbar',
           nodeType: createMode,
           placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
-        });
+        }));
         setCreateMode(null);
         showToast('새 오브젝트를 생성했습니다.');
       } catch (error) {

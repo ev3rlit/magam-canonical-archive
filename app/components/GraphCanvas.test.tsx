@@ -8,6 +8,10 @@ import {
   shouldScheduleAutoRelayout,
 } from './GraphCanvas.relayout';
 import {
+  buildGraphCanvasCreateIntent,
+  buildGraphCanvasRenameIntent,
+} from './GraphCanvas';
+import {
   resolveEditHistoryShortcut,
   resolveMindMapDragFeedback,
   resolveMindMapReparentIntent,
@@ -205,6 +209,37 @@ describe('GraphCanvas create mode helpers', () => {
     expect(shouldHandlePaneCreate({ interactionMode: 'pointer', createMode: 'shape' })).toBe(true);
     expect(shouldHandlePaneCreate({ interactionMode: 'hand', createMode: 'shape' })).toBe(false);
     expect(shouldHandlePaneCreate({ interactionMode: 'pointer', createMode: null })).toBe(false);
+  });
+
+  it('node context rename intent는 node-context-menu surface로 고정된다', () => {
+    expect(buildGraphCanvasRenameIntent('node-1')).toEqual({
+      nodeId: 'node-1',
+      surfaceId: 'node-context-menu',
+    });
+  });
+
+  it('pane/toolbar/node create intent는 surface-specific payload를 그대로 유지한다', () => {
+    expect(buildGraphCanvasCreateIntent({
+      surfaceId: 'pane-context-menu',
+      nodeType: 'shape',
+      placement: { mode: 'canvas-absolute', x: 20, y: 30 },
+    })).toEqual({
+      surfaceId: 'pane-context-menu',
+      nodeType: 'shape',
+      placement: { mode: 'canvas-absolute', x: 20, y: 30 },
+    });
+
+    expect(buildGraphCanvasCreateIntent({
+      surfaceId: 'node-context-menu',
+      nodeType: 'shape',
+      placement: { mode: 'mindmap-child', parentId: 'root' },
+      targetRenderedNodeId: 'root.rendered',
+    })).toEqual({
+      surfaceId: 'node-context-menu',
+      nodeType: 'shape',
+      placement: { mode: 'mindmap-child', parentId: 'root' },
+      targetRenderedNodeId: 'root.rendered',
+    });
   });
 });
 

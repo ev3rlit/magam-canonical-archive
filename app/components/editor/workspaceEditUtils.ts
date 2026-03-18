@@ -1,5 +1,6 @@
 import type { Node } from 'reactflow';
 import type { WorkspaceStyleInput } from '@/features/workspace-styling';
+import { buildContentDraftPatch } from '@/features/editing/commands';
 import {
   getNodeEditMeta,
   isCommandAllowed,
@@ -134,6 +135,24 @@ export function mapEditRpcErrorToToast(error: unknown): string | null {
   if (rpc.code === 42211 || rpc.message === 'PATCH_SURFACE_VIOLATION') {
     return '허용되지 않은 편집 surface라서 변경을 적용할 수 없습니다.';
   }
+  if (rpc.code === 42212 || rpc.message === 'INTENT_NOT_REGISTERED') {
+    return '등록되지 않은 UI intent라서 실행할 수 없습니다.';
+  }
+  if (rpc.code === 42213 || rpc.message === 'INTENT_SURFACE_NOT_ALLOWED') {
+    return '이 surface에서는 해당 intent를 실행할 수 없습니다.';
+  }
+  if (rpc.code === 42214 || rpc.message === 'INTENT_GATING_DENIED') {
+    return '현재 선택 상태에서는 이 intent를 실행할 수 없습니다.';
+  }
+  if (rpc.code === 42215 || rpc.message === 'INTENT_PAYLOAD_INVALID') {
+    return 'UI payload가 bridge 계약과 맞지 않아 실행할 수 없습니다.';
+  }
+  if (rpc.code === 42216 || rpc.message === 'DISPATCH_PLAN_INVALID') {
+    return 'bridge dispatch plan이 유효하지 않아 실행할 수 없습니다.';
+  }
+  if (rpc.code === 40904 || rpc.message === 'OPTIMISTIC_CONFLICT') {
+    return 'optimistic 편집 상태가 충돌해서 요청을 다시 시도해야 합니다.';
+  }
   if (rpc.code === 50001 || rpc.message === 'PATCH_FAILED') {
     return '편집 반영에 실패했습니다. 잠시 후 다시 시도해주세요.';
   }
@@ -152,16 +171,7 @@ export function canCommitTextEdit(input: {
 }
 
 export function buildTextDraftPatch(nodeType: string | undefined, draft: string): Record<string, unknown> {
-  if (nodeType === 'markdown') {
-    return {
-      label: draft,
-      children: [{ type: 'graph-markdown', content: draft }],
-    };
-  }
-  return {
-    label: draft,
-    children: [{ type: 'text', text: draft }],
-  };
+  return buildContentDraftPatch(nodeType, draft);
 }
 
 export function extractWorkspaceStyleInput(
