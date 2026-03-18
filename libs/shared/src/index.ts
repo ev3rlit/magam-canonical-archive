@@ -3,3 +3,6 @@ export * from './lib/module-resolution';
 export * from './lib/chat-types';
 export * from './lib/canonical-object-contract';
 export * from './lib/canonical-persistence';
+export * from './lib/canonical-cli';
+export * from './lib/canonical-query';
+export * from './lib/canonical-mutation';

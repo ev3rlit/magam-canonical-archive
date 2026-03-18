@@ -31,6 +31,8 @@
 - core query/mutation은 계속 headless fallback 가능
 - session-aware command만 app-attached 전용
 - command 이름, 인자, JSON 응답 형식은 실행 모드와 무관하게 유지
+- headless v0에서 고정한 `workspace`, `document`, `surface`, `object`, `search`, `canvas-node`, `mutation` resource/subcommand 이름을 그대로 재사용한다.
+- headless가 유도 조회로 제공하는 `workspace` / `document` summary와 structured error taxonomy를 app-attached mode도 같은 envelope로 유지한다.
 
 ## 선행조건
 
