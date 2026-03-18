@@ -4,6 +4,7 @@ import type {
   EditMeta,
   EditRelativeCarrier,
 } from './editability';
+import { createPendingUiRequestId } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 
 export interface EditTarget {
   sourceId: string;
@@ -86,6 +87,14 @@ export type AnyEditCommand =
   | RenameCommand
   | CreateCommand
   | ReparentCommand;
+
+export function getPendingActionTypeForCommand(commandType: EditCommandType): string {
+  return commandType;
+}
+
+export function createPendingRequestIdForCommand(commandType: EditCommandType, ownerId?: string): string {
+  return createPendingUiRequestId(getPendingActionTypeForCommand(commandType), ownerId);
+}
 
 export function buildAbsoluteMoveCommand(input: {
   target: EditTarget;

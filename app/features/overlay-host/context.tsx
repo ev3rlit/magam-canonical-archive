@@ -11,6 +11,7 @@ import React, {
 import { createPortal } from 'react-dom';
 import {
   closeOverlay,
+  closeOverlayBySlot,
   measureOverlay,
   openOverlay,
   replaceOverlay,
@@ -259,7 +260,11 @@ export function OverlayHostProvider({ children }: { children: React.ReactNode })
     previousTopMostIdRef.current = nextTopMostId;
     requestAnimationFrame(() => {
       const root = elementMapRef.current.get(nextTopMostId) ?? null;
-      focusOverlayOnOpen(root, topMost.focusPolicy);
+      const currentTopMost = resolveTopmostOverlay(stateRef.current.active);
+      if (!currentTopMost || currentTopMost.instanceId !== nextTopMostId) {
+        return;
+      }
+      focusOverlayOnOpen(root, currentTopMost.focusPolicy);
     });
   }, [state.active]);
 

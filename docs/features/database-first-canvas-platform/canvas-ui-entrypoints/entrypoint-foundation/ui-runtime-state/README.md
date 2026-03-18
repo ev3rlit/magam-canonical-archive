@@ -21,3 +21,10 @@
 ## 완료 기준
 
 - persisted state와 runtime-only state의 경계가 섞이지 않는다.
+
+## 관련 문서
+
+- `./implementation-plan.md`
+- `../README.md`
+- `../../README.md`
+- `../../../implementation-plan.md`

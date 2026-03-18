@@ -1,5 +1,6 @@
 import { type ComponentType } from 'react';
 import type { CreatePayload } from '@/features/editing/commands';
+import type { EntrypointSurfaceKind } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 
 export type ContextMenuTargetType = 'node' | 'pane';
 export type CreatableNodeType = Exclude<CreatePayload['nodeType'], 'image'>;
@@ -19,6 +20,10 @@ export interface ContextMenuContext {
     type: ContextMenuTargetType;
     /** 우클릭 화면 좌표 */
     position: { x: number; y: number };
+    /** shared runtime-state anchor id */
+    anchorId?: string;
+    /** shared runtime-state surface kind */
+    surfaceKind?: Extract<EntrypointSurfaceKind, 'pane-context-menu' | 'node-context-menu'>;
     /** type === 'node'일 때 해당 노드 ID */
     nodeId?: string;
     /** type === 'node'일 때 해당 노드 family */
