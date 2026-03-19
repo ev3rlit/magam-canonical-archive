@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+const lastActiveStorageKey = 'magam:lastActiveDocumentSession';
 const files = [
   'docs/resume.graph.tsx',
   'docs/empty-canvas.graph.tsx',
@@ -90,11 +91,29 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('canvas core authoring entry', () => {
-  test.skip('canvas core authoring entry: resumes last active document', async ({ page }) => {
-    await expect(page).toHaveURL('/');
+  test('canvas core authoring entry: resumes last active document', async ({ page }) => {
+    await page.addInitScript(([storageKey, value]) => {
+      window.localStorage.setItem(storageKey, JSON.stringify(value));
+    }, [
+      lastActiveStorageKey,
+      {
+        workspaceKey: `workspace:${files.join('|')}`,
+        documentPath: 'docs/resume.graph.tsx',
+        updatedAt: Date.now(),
+      },
+    ]);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle');
+
+    await expect(page.getByRole('tab', { name: 'resume.graph.tsx' })).toBeVisible();
+    await expect(page.getByText('resume.graph.tsx')).toBeVisible();
   });
 
-  test.skip('canvas core authoring entry: creates a document into an empty canvas', async ({ page }) => {
-    await expect(page).toHaveURL('/');
+  test('canvas core authoring entry: creates a document into an empty canvas', async ({ page }) => {
+    await page.getByRole('button', { name: 'New document' }).click();
+
+    await expect(page.getByRole('tab', { name: 'untitled-1.graph.tsx' })).toBeVisible();
+    await expect(page.getByText('untitled-1.graph.tsx')).toBeVisible();
   });
 });

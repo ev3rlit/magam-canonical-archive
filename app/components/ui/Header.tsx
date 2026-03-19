@@ -4,17 +4,24 @@ import { useChatUiStore } from '@/store/chatUi';
 import {
   Bot,
   Command,
+  Plus,
   Search as SearchIcon,
   Wifi,
   WifiOff,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
-export const Header: React.FC = () => {
-  const { status, currentFile, isSearchOpen, openSearch, closeSearch } = useGraphStore();
+interface HeaderProps {
+  onCreateDocument?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ onCreateDocument }) => {
+  const { status, currentFile, fileTree, isSearchOpen, openSearch, closeSearch } = useGraphStore();
   const { isOpen: isChatOpen, toggleOpen: toggleChatOpen } = useChatUiStore();
 
   const isConnected = status === 'connected';
+  const workspaceLabel = fileTree?.name || 'workspace';
+  const currentDocumentLabel = currentFile ? currentFile.split('/').at(-1) ?? currentFile : null;
 
   return (
     <header className="h-12 px-4 border-b border-slate-200 bg-white/80 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80 flex items-center justify-between z-10 relative">
@@ -30,19 +37,32 @@ export const Header: React.FC = () => {
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         {currentFile ? (
           <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-            <span className="text-xs text-slate-400 font-medium">EDITING</span>
+            <span className="text-xs text-slate-400 font-medium uppercase">Workspace</span>
+            <span className="text-sm text-slate-600 dark:text-slate-300">{workspaceLabel}</span>
+            <span className="text-slate-300 dark:text-slate-600">/</span>
             <span className="text-sm font-mono text-slate-700 dark:text-slate-200 font-medium">
-              {currentFile}
+              {currentDocumentLabel}
             </span>
           </div>
         ) : (
           <span className="text-sm text-slate-400 italic">
-            No file selected
+            Resume or create a document to start on canvas
           </span>
         )}
       </div>
 
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onCreateDocument}
+          className="px-3 py-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-700 dark:text-slate-200 flex items-center gap-2 hover:bg-slate-100 dark:hover:bg-slate-800"
+          aria-label="New document"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">New document</span>
+          <span className="sm:hidden">New</span>
+        </button>
+
         <button
           type="button"
           onClick={() => {

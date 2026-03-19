@@ -237,6 +237,15 @@ export function buildSelectionBoundsAnchor(input: {
   });
 }
 
+function areSelectionIdsEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const leftSet = new Set(left);
+  return right.every((value) => leftSet.has(value));
+}
+
 export function shouldHandleRuntimePaneCreate(input: {
   interactionMode: EntrypointInteractionMode;
   createMode: GraphCanvasCreateMode;
@@ -384,10 +393,10 @@ function GraphCanvasContent({
     [activeTabId, openTabs],
   );
 
-  const showToast = (message: string) => {
+  const showToast = useCallback((message: string) => {
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 2000);
-  };
+  }, []);
 
   const handleSelectionStylePatch = useCallback(async (input: {
     nodeIds: string[];
@@ -493,29 +502,29 @@ function GraphCanvasContent({
     return true;
   }, [persistActiveTabViewport, setViewport]);
 
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
     zoomIn({ duration: 300 });
     setTimeout(() => {
       persistActiveTabViewport(getViewport());
       showToast(`Zoom: ${Math.round(getZoom() * 100)}%`);
     }, 350);
-  };
+  }, [getViewport, getZoom, persistActiveTabViewport, showToast, zoomIn]);
 
-  const handleZoomOut = () => {
+  const handleZoomOut = useCallback(() => {
     zoomOut({ duration: 300 });
     setTimeout(() => {
       persistActiveTabViewport(getViewport());
       showToast(`Zoom: ${Math.round(getZoom() * 100)}%`);
     }, 350);
-  };
+  }, [getViewport, getZoom, persistActiveTabViewport, showToast, zoomOut]);
 
-  const handleFitView = () => {
+  const handleFitView = useCallback(() => {
     fitView({ duration: 300 });
     setTimeout(() => {
       persistActiveTabViewport(getViewport());
       showToast('Fit to view');
     }, 350);
-  };
+  }, [fitView, getViewport, persistActiveTabViewport, showToast]);
 
   const contextMenuActions = useMemo(() => createGraphCanvasContextMenuActions({
     copyImageToClipboard,
@@ -819,6 +828,11 @@ function GraphCanvasContent({
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
       const selectedIds = selectedNodes.map((node) => node.id);
+      const currentSelectedIds = useGraphStore.getState().selectedNodeIds;
+      if (areSelectionIdsEqual(currentSelectedIds, selectedIds)) {
+        return;
+      }
+
       setSelectedNodes(selectedIds);
       handleSelectionChange(selectedIds);
       if (selectedIds.length === 0) {
@@ -1057,6 +1071,8 @@ function GraphCanvasContent({
   }), [
     createMode,
     handleFitView,
+    handleZoomIn,
+    handleZoomOut,
     interactionMode,
     setEntrypointCreateMode,
     setEntrypointInteractionMode,
@@ -1214,7 +1230,6 @@ function GraphCanvasContent({
           panOnScrollMode={undefined} // Allow pan on scroll
           minZoom={0.1}
           maxZoom={2}
-          fitView
           defaultEdgeOptions={{
             type: 'floating',
             animated: false,

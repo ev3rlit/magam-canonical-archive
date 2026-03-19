@@ -26,7 +26,9 @@ export const TabBar: React.FC<TabBarProps> = ({
     >
       <div className="flex items-stretch">
         {tabs.length === 0 ? (
-          <div className="text-xs text-slate-500 px-3 py-2">No tabs opened</div>
+          <div className="text-xs text-slate-500 px-3 py-2">
+            Open a document or run `new-document` from Quick Open
+          </div>
         ) : (
           tabs.map((tab) => {
             const isActive = tab.tabId === activeTabId;

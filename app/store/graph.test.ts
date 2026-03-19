@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import type { SearchResult } from '../utils/search';
-import { useGraphStore } from './graph';
+import {
+  LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY,
+  useGraphStore,
+} from './graph';
 import { GLOBAL_FONT_STORAGE_KEY } from '../utils/fontHierarchy';
 
 const initialGraphState = useGraphStore.getState();
@@ -74,6 +77,9 @@ describe('graph metadata state', () => {
 
 describe('document session persistence', () => {
   beforeEach(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY);
+    }
     useGraphStore.setState(initialGraphState);
   });
 
@@ -124,8 +130,88 @@ describe('document session persistence', () => {
     });
   });
 
-  it.todo('persists lastActive document metadata per workspace source');
-  it.todo('tracks new-document empty-canvas entry state without requiring a pre-open naming gate');
+  it('treats repeated tab snapshot writes as a no-op when values are unchanged', () => {
+    const opened = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    if (opened.status !== 'opened') {
+      throw new Error('expected tab to open for snapshot no-op test');
+    }
+
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: { x: 12, y: 24, zoom: 1.1 },
+      lastSelection: {
+        nodeIds: ['node-a'],
+        edgeIds: [],
+        updatedAt: 10,
+      },
+    });
+
+    const before = useGraphStore.getState();
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: { x: 12, y: 24, zoom: 1.1 },
+      lastSelection: {
+        nodeIds: ['node-a'],
+        edgeIds: [],
+        updatedAt: 10,
+      },
+    });
+    const after = useGraphStore.getState();
+
+    expect(after).toBe(before);
+  });
+
+  it('persists lastActive document metadata per workspace source', () => {
+    useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
+    useGraphStore.getState().hydrateDocumentSession('workspace:docs/resume.graph.tsx');
+    useGraphStore.getState().rememberLastActiveDocument('docs/resume.graph.tsx');
+
+    expect(useGraphStore.getState().lastActiveDocumentPath).toBe('docs/resume.graph.tsx');
+    if (typeof window !== 'undefined') {
+      expect(
+        window.localStorage.getItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY),
+      ).toContain('docs/resume.graph.tsx');
+    }
+  });
+
+  it('tracks new-document empty-canvas entry state without requiring a pre-open naming gate', () => {
+    useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
+    useGraphStore.getState().setFileTree({
+      name: 'workspace',
+      path: '/',
+      type: 'directory',
+      children: [
+        {
+          name: 'docs',
+          path: 'docs',
+          type: 'directory',
+          children: [
+            {
+              name: 'resume.graph.tsx',
+              path: 'docs/resume.graph.tsx',
+              type: 'file',
+            },
+          ],
+        },
+      ],
+    });
+
+    useGraphStore.getState().registerDraftDocument('docs/untitled-1.graph.tsx');
+
+    expect(useGraphStore.getState().files).toContain('docs/untitled-1.graph.tsx');
+    expect(useGraphStore.getState().draftDocuments).toContain('docs/untitled-1.graph.tsx');
+    expect(useGraphStore.getState().fileTree?.children?.[0]?.children).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'docs/untitled-1.graph.tsx', type: 'file' }),
+      ]),
+    );
+  });
+
+  it('ignores repeated empty selection commits to avoid render loops', () => {
+    const before = useGraphStore.getState();
+    useGraphStore.getState().setSelectedNodes([]);
+    const after = useGraphStore.getState();
+
+    expect(after).toBe(before);
+  });
 });
 
 describe('font hierarchy state', () => {

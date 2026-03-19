@@ -85,6 +85,36 @@ function getNodeLabel(node: { data?: unknown }): string {
   const data = (node.data || {}) as Record<string, unknown>;
   return typeof data.label === 'string' ? data.label : '';
 }
+
+function createDraftDocumentPath(existingFiles: string[]): string {
+  const baseDir = existingFiles.some((filePath) => filePath.startsWith('docs/'))
+    ? 'docs'
+    : '';
+  const taken = new Set(existingFiles);
+  let counter = 1;
+
+  while (true) {
+    const fileName = `untitled-${counter}.graph.tsx`;
+    const candidate = baseDir ? `${baseDir}/${fileName}` : fileName;
+    if (!taken.has(candidate)) {
+      return candidate;
+    }
+    counter += 1;
+  }
+}
+
+function createWorkspaceSessionKey(input: {
+  files: string[];
+  workspaceName?: string | null;
+}): string | null {
+  if (input.files.length === 0) {
+    return null;
+  }
+
+  const workspaceName = input.workspaceName?.trim() || 'workspace';
+  return `${workspaceName}:${input.files.join('|')}`;
+}
+
 declare global {
   interface Window {
     __magamTest?: MagamTestHooks;
@@ -124,6 +154,9 @@ export function WorkspaceClient() {
     clearPendingActionRouting,
     refreshWorkspaceStyles,
     workspaceStyleDiagnosticsByNodeId,
+    draftDocuments,
+    rememberLastActiveDocument,
+    registerDraftDocument,
   } = useGraphStore();
   const isChatOpen = useChatUiStore((state) => state.isOpen);
   const toggleChat = useChatUiStore((state) => state.toggleOpen);
@@ -174,6 +207,17 @@ export function WorkspaceClient() {
       const data = await res.json();
       if (data.files) {
         setFiles(data.files);
+        const runtime = useGraphStore.getState();
+        runtime.hydrateDocumentSession(createWorkspaceSessionKey({
+          files: data.files,
+          workspaceName: runtime.fileTree?.name,
+        }));
+        const resumeTarget = useGraphStore.getState().lastActiveDocumentPath;
+        if (!runtime.currentFile && runtime.openTabs.length === 0 && resumeTarget) {
+          window.setTimeout(() => {
+            useGraphStore.getState().openTab(resumeTarget);
+          }, 0);
+        }
       }
     } catch (error) {
       console.error('Failed to load files:', error);
@@ -204,6 +248,14 @@ export function WorkspaceClient() {
   useEffect(() => {
     loadFiles();
   }, [loadFiles]);
+
+  useEffect(() => {
+    if (!currentFile) {
+      return;
+    }
+
+    rememberLastActiveDocument(currentFile);
+  }, [currentFile, rememberLastActiveDocument]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
@@ -299,6 +351,12 @@ export function WorkspaceClient() {
     },
     [openTab],
   );
+
+  const handleCreateDraftDocument = useCallback(() => {
+    const nextDocumentPath = createDraftDocumentPath(files);
+    registerDraftDocument(nextDocumentPath);
+    return openTabByPath(nextDocumentPath);
+  }, [files, openTabByPath, registerDraftDocument]);
 
   const restoreNodeData = useCallback((nodeId: string, previousData: Record<string, unknown> | undefined) => {
     useGraphStore.setState((state) => ({
@@ -1032,6 +1090,10 @@ export function WorkspaceClient() {
 
   const runQuickOpenCommand = useCallback(
     async (commandId: string) => {
+      if (commandId === 'new-document') {
+        return handleCreateDraftDocument();
+      }
+
       if (commandId === 'washi:select-all') {
         return selectNodesByType('washi-tape').length > 0;
       }
@@ -1059,6 +1121,7 @@ export function WorkspaceClient() {
     },
     [
       focusNextNodeByType,
+      handleCreateDraftDocument,
       handleWashiPresetChange,
       selectNodesByType,
       selectedWashiNodeIds,
@@ -1070,6 +1133,12 @@ export function WorkspaceClient() {
     const hasWashiSelection = selectedWashiNodeIds.length > 0;
 
     const baseCommands: QuickOpenCommand[] = [
+      {
+        id: 'new-document',
+        label: 'New document',
+        hint: 'Empty canvas',
+        keywords: ['new', 'document', 'canvas', 'empty', '새 문서'],
+      },
       {
         id: 'washi:select-all',
         label: 'Washi: 전체 선택',
@@ -1359,6 +1428,20 @@ export function WorkspaceClient() {
     async function renderFile() {
       if (!currentFile) return;
 
+      if (draftDocuments.includes(currentFile)) {
+        setGraph({
+          nodes: [],
+          edges: [],
+          sourceVersion: null,
+          sourceVersions: {
+            ...useGraphStore.getState().sourceVersions,
+            [currentFile]: 'draft:empty-canvas',
+          },
+        });
+        setGraphError(null);
+        return;
+      }
+
       try {
         setGraphError(null); // Clear previous errors
 
@@ -1420,14 +1503,14 @@ export function WorkspaceClient() {
     }
 
     renderFile();
-  }, [currentFile, refreshKey, setGraph, setSelectedNodes]); // refreshKey triggers re-render on file changes
+  }, [currentFile, draftDocuments, refreshKey, setGraph, setSelectedNodes]); // refreshKey triggers re-render on file changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white text-slate-900">
       <Sidebar onOpenFile={openTabByPath} />
 
       <div className="flex flex-1 flex-col h-full overflow-hidden relative">
-        <Header />
+        <Header onCreateDocument={handleCreateDraftDocument} />
         {isChatOpen && <LazyChatPanel />}
         <TabBar
           tabs={openTabs}

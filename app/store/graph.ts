@@ -178,6 +178,14 @@ export interface FileTreeNode {
   children?: FileTreeNode[];
 }
 
+export const LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY = 'magam:lastActiveDocumentSession';
+
+export interface LastActiveDocumentSession {
+  workspaceKey: string;
+  documentPath: string;
+  updatedAt: number;
+}
+
 export interface GraphState {
   nodes: Node[];
   edges: Edge[];
@@ -185,6 +193,9 @@ export interface GraphState {
   fileTree: FileTreeNode | null;
   expandedFolders: Set<string>;
   currentFile: string | null;
+  workspaceSessionKey: string | null;
+  lastActiveDocumentPath: string | null;
+  draftDocuments: string[];
   graphId: string; // Unique ID for the current graph data version
   sourceVersion: string | null;
   sourceVersions: Record<string, string>;
@@ -225,6 +236,9 @@ export interface GraphState {
   setSourceVersion: (version: string | null) => void;
   setSourceVersionForFile: (filePath: string, version: string | null) => void;
   setLastAppliedCommandId: (commandId?: string) => void;
+  hydrateDocumentSession: (workspaceKey: string | null) => void;
+  rememberLastActiveDocument: (documentPath: string | null) => void;
+  registerDraftDocument: (filePath: string) => void;
   setFiles: (files: string[]) => void;
   setFileTree: (tree: FileTreeNode | null) => void;
   toggleFolder: (path: string) => void;
@@ -447,6 +461,118 @@ function resolveWorkspaceStyleRuntimeContext(): WorkspaceStyleRuntimeContext {
   };
 }
 
+function readLastActiveDocumentSession(): LastActiveDocumentSession | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as LastActiveDocumentSession;
+    if (
+      typeof parsed.workspaceKey !== 'string'
+      || typeof parsed.documentPath !== 'string'
+      || typeof parsed.updatedAt !== 'number'
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function persistLastActiveDocumentSession(session: LastActiveDocumentSession | null): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (!session) {
+    window.localStorage.removeItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(
+    LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY,
+    JSON.stringify(session),
+  );
+}
+
+function insertFileIntoTree(root: FileTreeNode | null, filePath: string): FileTreeNode | null {
+  if (!root) {
+    return root;
+  }
+
+  const segments = filePath.split('/').filter(Boolean);
+  if (segments.length === 0) {
+    return root;
+  }
+
+  const cloneNode = (node: FileTreeNode): FileTreeNode => ({
+    ...node,
+    children: node.children ? node.children.map(cloneNode) : undefined,
+  });
+
+  const nextRoot = cloneNode(root);
+  let current = nextRoot;
+  let currentPath = '';
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    const nextPath = currentPath ? `${currentPath}/${segment}` : segment;
+    const isLeaf = index === segments.length - 1;
+    const children = current.children ? [...current.children] : [];
+    const existingIndex = children.findIndex((child) => child.path === nextPath);
+
+    if (isLeaf) {
+      if (existingIndex === -1) {
+        children.push({
+          name: segment,
+          path: nextPath,
+          type: 'file',
+        });
+        children.sort((left, right) => left.path.localeCompare(right.path));
+      }
+      current.children = children;
+      break;
+    }
+
+    let nextNode: FileTreeNode;
+    if (existingIndex === -1) {
+      nextNode = {
+        name: segment,
+        path: nextPath,
+        type: 'directory',
+        children: [],
+      };
+      children.push(nextNode);
+      children.sort((left, right) => left.path.localeCompare(right.path));
+      current.children = children;
+    } else {
+      const existing = children[existingIndex];
+      nextNode = existing.type === 'directory'
+        ? existing
+        : {
+            name: segment,
+            path: nextPath,
+            type: 'directory',
+            children: [],
+          };
+      children[existingIndex] = nextNode;
+      current.children = children;
+    }
+
+    current = nextNode;
+    currentPath = nextPath;
+  }
+
+  return nextRoot;
+}
+
 const normalizeMindMapGroup = (group: MindMapGroup): MindMapGroup => ({
   ...group,
   spacing: group.spacing ?? DEFAULT_MINDMAP_SPACING,
@@ -460,6 +586,43 @@ const selectLeastRecentlyUsedTab = (tabs: TabState[]): TabState | null => {
 };
 
 const getNow = () => Date.now();
+
+function areTabViewportStatesEqual(
+  left: TabViewportState | null | undefined,
+  right: TabViewportState | null | undefined,
+): boolean {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.x === right.x && left.y === right.y && left.zoom === right.zoom;
+}
+
+function areTabSelectionStatesEqual(
+  left: TabSelectionState | null | undefined,
+  right: TabSelectionState | null | undefined,
+): boolean {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  if (left.updatedAt !== right.updatedAt) {
+    return false;
+  }
+  if (left.nodeIds.length !== right.nodeIds.length || left.edgeIds.length !== right.edgeIds.length) {
+    return false;
+  }
+
+  return (
+    left.nodeIds.every((nodeId) => right.nodeIds.includes(nodeId))
+    && left.edgeIds.every((edgeId) => right.edgeIds.includes(edgeId))
+  );
+}
 
 function resetEntrypointRuntimeState(input: {
   current: EntrypointRuntimeState;
@@ -534,6 +697,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   fileTree: null,
   expandedFolders: new Set<string>(),
   currentFile: null,
+  workspaceSessionKey: null,
+  lastActiveDocumentPath: null,
+  draftDocuments: [],
   graphId: uuidv4(),
   sourceVersion: null,
   sourceVersions: {},
@@ -651,8 +817,64 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     };
   }),
   setLastAppliedCommandId: (lastAppliedCommandId) => set({ lastAppliedCommandId }),
-  setFiles: (files) => set({ files }),
-  setFileTree: (fileTree) => set({ fileTree }),
+  hydrateDocumentSession: (workspaceSessionKey) => set((state) => {
+    const normalizedWorkspaceKey = workspaceSessionKey && workspaceSessionKey.length > 0
+      ? workspaceSessionKey
+      : null;
+    const stored = readLastActiveDocumentSession();
+    const knownFiles = new Set([...state.files, ...state.draftDocuments]);
+    const lastActiveDocumentPath = (
+      normalizedWorkspaceKey
+      && stored
+      && stored.workspaceKey === normalizedWorkspaceKey
+      && knownFiles.has(stored.documentPath)
+    )
+      ? stored.documentPath
+      : null;
+
+    return {
+      workspaceSessionKey: normalizedWorkspaceKey,
+      lastActiveDocumentPath,
+    };
+  }),
+  rememberLastActiveDocument: (documentPath) => set((state) => {
+    const nextDocumentPath = documentPath && documentPath.length > 0
+      ? documentPath
+      : state.lastActiveDocumentPath;
+    if (!state.workspaceSessionKey || !nextDocumentPath) {
+      return state;
+    }
+
+    persistLastActiveDocumentSession({
+      workspaceKey: state.workspaceSessionKey,
+      documentPath: nextDocumentPath,
+      updatedAt: Date.now(),
+    });
+
+    return {
+      lastActiveDocumentPath: nextDocumentPath,
+    };
+  }),
+  registerDraftDocument: (filePath) => set((state) => {
+    if (!filePath || state.files.includes(filePath)) {
+      return state;
+    }
+
+    return {
+      draftDocuments: [...state.draftDocuments, filePath],
+      files: [...state.files, filePath].sort((left, right) => left.localeCompare(right)),
+      fileTree: insertFileIntoTree(state.fileTree, filePath),
+    };
+  }),
+  setFiles: (files) => set((state) => ({
+    files: [...new Set([...files, ...state.draftDocuments])].sort((left, right) => left.localeCompare(right)),
+  })),
+  setFileTree: (fileTree) => set((state) => ({
+    fileTree: state.draftDocuments.reduce<FileTreeNode | null>(
+      (tree, draftPath) => insertFileIntoTree(tree, draftPath),
+      fileTree,
+    ),
+  })),
   toggleFolder: (path) => set((state) => {
     const newExpanded = new Set(state.expandedFolders);
     if (newExpanded.has(path)) {
@@ -696,6 +918,14 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const shouldClearTextEdit =
       Boolean(state.activeTextEditNodeId)
       && !selectedNodeIds.includes(state.activeTextEditNodeId as string);
+    const hasSameSelection = (
+      state.selectedNodeIds.length === selectedNodeIds.length
+      && state.selectedNodeIds.every((nodeId) => selectedNodeIds.includes(nodeId))
+    );
+    if (hasSameSelection && !shouldClearTextEdit) {
+      return state;
+    }
+
     const nextRuntime = clearEntrypointAnchorsForSelectionReducer(
       dismissEntrypointSurfaceOnSelectionChangeReducer(state.entrypointRuntime),
       selectedNodeIds,
@@ -939,19 +1169,33 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     }));
   },
   updateTabSnapshot: (tabId, snapshot) => {
-    set((state) => ({
-      openTabs: state.openTabs.map((tab) => {
+    set((state) => {
+      let changed = false;
+      const openTabs = state.openTabs.map((tab) => {
         if (tab.tabId !== tabId) {
           return tab;
         }
+
+        const nextViewport = snapshot.lastViewport ?? tab.lastViewport;
+        const nextSelection = snapshot.lastSelection ?? tab.lastSelection;
+        if (
+          areTabViewportStatesEqual(nextViewport, tab.lastViewport)
+          && areTabSelectionStatesEqual(nextSelection, tab.lastSelection)
+        ) {
+          return tab;
+        }
+
+        changed = true;
         return {
           ...tab,
           lastAccessedAt: getNow(),
-          lastViewport: snapshot.lastViewport ?? tab.lastViewport,
-          lastSelection: snapshot.lastSelection ?? tab.lastSelection,
+          lastViewport: nextViewport,
+          lastSelection: nextSelection,
         };
-      }),
-    }));
+      });
+
+      return changed ? { openTabs } : state;
+    });
   },
   openSearch: () => {
     set({ isSearchOpen: true });

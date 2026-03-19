@@ -11,7 +11,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ onOpenFile }) => {
-  const { fileTree, setFileTree } = useGraphStore();
+  const { fileTree, files, setFileTree } = useGraphStore();
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   // Load file tree from API
@@ -47,7 +47,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenFile }) => {
           <div className="flex items-center gap-2 overflow-hidden">
             <FolderOpen className="w-4 h-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
             <h2 className="font-semibold text-sm text-slate-700 dark:text-slate-200 truncate">
-              Explorer
+              {fileTree?.name || 'Workspace'}
             </h2>
           </div>
         )}
@@ -88,7 +88,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenFile }) => {
             <div>
               {/* Render root folder name as header */}
               <div className="px-3 py-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider truncate">
-                {fileTree.name}
+                {fileTree.name} · {files.length} docs
               </div>
               {/* Render children */}
               {fileTree.children.map((child) => (
@@ -111,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onOpenFile }) => {
       <div className="p-3 border-t border-slate-200 dark:border-slate-800 flex justify-center">
         {!isCollapsed ? (
           <div className="text-xs text-slate-400 dark:text-slate-500 truncate">
-            Programmatic Whiteboard
+            Canvas-first document loop
           </div>
         ) : (
           <div className="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-700" />
