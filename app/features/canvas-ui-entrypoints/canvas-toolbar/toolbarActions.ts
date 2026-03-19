@@ -40,11 +40,25 @@ export const canvasToolbarInteractionActions = [
 
 export const canvasToolbarCreateActions = [
   {
-    actionId: 'create.shape',
+    actionId: 'create.rectangle',
     sectionId: 'create',
     kind: 'create-node',
-    label: 'Shape',
-    value: 'shape',
+    label: 'Rectangle',
+    value: 'rectangle',
+  },
+  {
+    actionId: 'create.ellipse',
+    sectionId: 'create',
+    kind: 'create-node',
+    label: 'Ellipse',
+    value: 'ellipse',
+  },
+  {
+    actionId: 'create.diamond',
+    sectionId: 'create',
+    kind: 'create-node',
+    label: 'Diamond',
+    value: 'diamond',
   },
   {
     actionId: 'create.text',
@@ -61,18 +75,18 @@ export const canvasToolbarCreateActions = [
     value: 'markdown',
   },
   {
-    actionId: 'create.sticker',
+    actionId: 'create.line',
     sectionId: 'create',
     kind: 'create-node',
-    label: 'Sticker',
-    value: 'sticker',
+    label: 'Line',
+    value: 'line',
   },
   {
-    actionId: 'create.washi-tape',
+    actionId: 'create.sticky',
     sectionId: 'create',
     kind: 'create-node',
-    label: 'Washi',
-    value: 'washi-tape',
+    label: 'Sticky',
+    value: 'sticky',
   },
 ] as const satisfies readonly CanvasToolbarCreateActionDefinition[];
 

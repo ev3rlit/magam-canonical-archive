@@ -3,12 +3,16 @@ import { DEFAULT_WASHI_PRESET_ID } from '@/utils/washiTapeDefaults';
 import { getDefaultStickerCreateProps } from '@/utils/stickerDefaults';
 
 const DEFAULT_NODE_LABEL_BY_TYPE: Record<CreatePayload['nodeType'], string> = {
-  shape: 'New shape',
+  shape: 'shape',
+  rectangle: 'rectangle',
+  ellipse: 'ellipse',
+  diamond: 'diamond',
+  line: 'line',
   text: 'New text',
   markdown: '# New note',
   sticky: 'New sticky',
-  sticker: 'New sticker',
-  'washi-tape': 'New tape',
+  sticker: 'sticker',
+  'washi-tape': 'washi-tape',
   image: 'https://placehold.co/640x360',
 };
 
@@ -51,6 +55,61 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
 } {
   const stickerDefaults = getDefaultStickerCreateProps();
   switch (nodeType) {
+    case 'shape':
+      return {
+        initialContent: 'New shape',
+        initialProps: {
+          type: 'rectangle',
+          size: {
+            token: 'm',
+            ratio: 'landscape',
+          },
+        },
+      };
+    case 'rectangle':
+      return {
+        initialProps: {
+          type: 'rectangle',
+          size: {
+            token: 'm',
+            ratio: 'landscape',
+          },
+        },
+      };
+    case 'ellipse':
+      return {
+        initialProps: {
+          type: 'ellipse',
+          size: {
+            token: 'm',
+            ratio: 'landscape',
+          },
+        },
+      };
+    case 'diamond':
+      return {
+        initialProps: {
+          type: 'diamond',
+          size: {
+            token: 'm',
+            ratio: 'square',
+          },
+        },
+      };
+    case 'line':
+      return {
+        initialProps: {
+          type: 'line',
+          lineDirection: 'down',
+          size: {
+            width: 180,
+            height: 48,
+          },
+          fill: 'transparent',
+          stroke: '#475569',
+          strokeWidth: 3,
+        },
+      };
     case 'text':
       return {
         initialContent: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
@@ -91,6 +150,28 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
         initialProps: {},
       };
   }
+}
+
+export function isImmediateEditCreateNodeType(
+  nodeType: CreatePayload['nodeType'],
+): boolean {
+  return nodeType === 'text' || nodeType === 'markdown' || nodeType === 'sticky';
+}
+
+export function isDragCreateNodeType(
+  nodeType: CreatePayload['nodeType'],
+): boolean {
+  return nodeType === 'rectangle'
+    || nodeType === 'ellipse'
+    || nodeType === 'diamond'
+    || nodeType === 'line'
+    || nodeType === 'sticky';
+}
+
+export function isDragRequiredCreateNodeType(
+  nodeType: CreatePayload['nodeType'],
+): boolean {
+  return nodeType === 'line';
 }
 
 export function createSuggestedPluginInstanceId(pluginExportId: string, seed?: string): string {

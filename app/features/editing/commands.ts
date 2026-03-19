@@ -50,7 +50,18 @@ export interface RenamePayload {
 }
 
 export interface CreatePayload {
-  nodeType: 'shape' | 'text' | 'markdown' | 'sticky' | 'sticker' | 'washi-tape' | 'image';
+  nodeType:
+    | 'shape'
+    | 'rectangle'
+    | 'ellipse'
+    | 'diamond'
+    | 'line'
+    | 'text'
+    | 'markdown'
+    | 'sticky'
+    | 'sticker'
+    | 'washi-tape'
+    | 'image';
   id: string;
   initialProps?: Record<string, unknown>;
   initialContent?: string;

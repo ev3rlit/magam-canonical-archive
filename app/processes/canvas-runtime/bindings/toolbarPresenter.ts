@@ -1,10 +1,11 @@
 import React from 'react';
 import {
-  Bookmark,
-  Check,
+  Circle,
+  Diamond,
   FileText,
-  Plus,
+  Minus,
   Square,
+  StickyNote,
   Type,
 } from 'lucide-react';
 import type { GraphCanvasCreateMode } from '@/components/GraphCanvas.drag';
@@ -51,11 +52,13 @@ export const TOOLBAR_CREATE_ANCHOR_ID = 'toolbar:create-anchor';
 export const TOOLBAR_PRESET_ANCHOR_ID = 'toolbar:preset-anchor';
 
 export const TOOLBAR_CREATE_OPTIONS: ToolbarCreateOption[] = [
-  { id: 'shape', label: 'Shape', icon: React.createElement(Square, { className: 'w-4 h-4' }) },
+  { id: 'rectangle', label: 'Rectangle', icon: React.createElement(Square, { className: 'w-4 h-4' }) },
+  { id: 'ellipse', label: 'Ellipse', icon: React.createElement(Circle, { className: 'w-4 h-4' }) },
+  { id: 'diamond', label: 'Diamond', icon: React.createElement(Diamond, { className: 'w-4 h-4' }) },
   { id: 'text', label: 'Text', icon: React.createElement(Type, { className: 'w-4 h-4' }) },
   { id: 'markdown', label: 'Markdown', icon: React.createElement(FileText, { className: 'w-4 h-4' }) },
-  { id: 'sticker', label: 'Sticker', icon: React.createElement(Plus, { className: 'w-4 h-4' }) },
-  { id: 'washi-tape', label: 'Washi', icon: React.createElement(Bookmark, { className: 'w-4 h-4' }) },
+  { id: 'line', label: 'Line', icon: React.createElement(Minus, { className: 'w-4 h-4' }) },
+  { id: 'sticky', label: 'Sticky', icon: React.createElement(StickyNote, { className: 'w-4 h-4' }) },
 ];
 
 export function resolveToolbarPresenterState(input: ToolbarPresenterStateInput) {

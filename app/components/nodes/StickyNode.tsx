@@ -1,5 +1,5 @@
-import React, { memo, useMemo } from 'react';
-import { NodeProps } from 'reactflow';
+import React, { memo, useCallback, useMemo } from 'react';
+import { NodeProps, useNodeId } from 'reactflow';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import {
@@ -91,9 +91,16 @@ export function resolveStickySizing(width: unknown, height: unknown): StickySizi
 }
 
 const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
+  const nodeId = useNodeId();
   const raw = (data || {}) as StickyNodeData;
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
+  const activeTextEditNodeId = useGraphStore((state) => state.activeTextEditNodeId);
+  const textEditDraft = useGraphStore((state) => state.textEditDraft);
+  const startTextEditSession = useGraphStore((state) => state.startTextEditSession);
+  const updateTextEditDraft = useGraphStore((state) => state.updateTextEditDraft);
+  const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
+  const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
 
   const shouldApplyHierarchy = !hasExplicitFontFamilyClass(raw.className);
   const resolvedFontFamily = shouldApplyHierarchy
@@ -130,6 +137,7 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     [resolvedObjectSize],
   );
   const isContentDrivenAuto = !sizing.hasWidth && !sizing.hasHeight;
+  const isActiveEditor = Boolean(nodeId && selected && activeTextEditNodeId === nodeId);
 
   const legacyColorClassName = (
     typeof raw.color === 'string'
@@ -174,6 +182,24 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     ...paperSurface.surfaceStyle,
     backgroundColor: raw.fill ?? paperSurface.surfaceStyle.backgroundColor ?? '#fce588',
   };
+  const beginEditing = useCallback(() => {
+    if (!nodeId || !selected) return;
+    startTextEditSession({
+      nodeId,
+      initialDraft: raw.label || '',
+      mode: 'text',
+    });
+  }, [nodeId, raw.label, selected, startTextEditSession]);
+
+  const commitEditing = useCallback(() => {
+    if (!nodeId) return;
+    requestTextEditCommit(nodeId);
+  }, [nodeId, requestTextEditCommit]);
+
+  const cancelEditing = useCallback(() => {
+    if (!nodeId) return;
+    requestTextEditCancel(nodeId);
+  }, [nodeId, requestTextEditCancel]);
 
   return (
     <BaseNode
@@ -186,9 +212,30 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
         ),
       )}
       style={stickyStyle}
+      onDoubleClick={beginEditing}
     >
       <NoiseOverlay opacity={paperSurface.noiseOpacity} />
-      {(() => {
+      {isActiveEditor ? (
+        <textarea
+          value={textEditDraft}
+          onChange={(event) => updateTextEditDraft(event.currentTarget.value)}
+          onBlur={commitEditing}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              cancelEditing();
+              return;
+            }
+            const isCommitShortcut = (event.metaKey || event.ctrlKey) && event.key === 'Enter';
+            if (isCommitShortcut) {
+              event.preventDefault();
+              commitEditing();
+            }
+          }}
+          className="pointer-events-auto w-[220px] min-h-[120px] rounded border border-slate-300 bg-white/95 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          style={{ fontFamily: resolvedFontFamily, color: textColor }}
+        />
+      ) : (() => {
         const hasMarkdownChildren = Array.isArray(raw.children) &&
           raw.children.some((c) => c.type === 'graph-markdown');
 

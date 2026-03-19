@@ -52,6 +52,10 @@ function ensureNodeType(
 ): CreatePayload['nodeType'] {
   if (
     value === 'shape'
+    || value === 'rectangle'
+    || value === 'ellipse'
+    || value === 'diamond'
+    || value === 'line'
     || value === 'text'
     || value === 'markdown'
     || value === 'sticky'
@@ -236,6 +240,7 @@ function normalizeCreateNode(
     type: nodeType,
     props: {
       ...(defaults.initialProps ?? {}),
+      ...(isRecord(request.uiPayload.initialProps) ? request.uiPayload.initialProps : {}),
       ...(placement.mode === 'canvas-absolute'
         ? { x: placement.x, y: placement.y }
         : placement.mode === 'mindmap-child'

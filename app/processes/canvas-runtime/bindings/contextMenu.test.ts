@@ -4,15 +4,19 @@ import type { ContextMenuContext } from '@/types/contextMenu';
 const iconStub = () => null;
 
 mock.module('lucide-react', () => ({
+  Circle: iconStub,
   Copy: iconStub,
+  Diamond: iconStub,
   Download: iconStub,
   FileText: iconStub,
   Lock: iconStub,
   Maximize: iconStub,
+  Minus: iconStub,
   MousePointerSquareDashed: iconStub,
   Pencil: iconStub,
   Plus: iconStub,
   Square: iconStub,
+  StickyNote: iconStub,
   Trash2: iconStub,
   Type: iconStub,
 }));
@@ -65,9 +69,13 @@ describe('contextMenu binding', () => {
       dismissOnViewportChange: true,
     });
     expect(resolved.items.map((item) => item.type === 'action' ? item.id : item.type)).toEqual([
-      'create-shape',
+      'create-rectangle',
+      'create-ellipse',
+      'create-diamond',
       'create-text',
       'create-markdown',
+      'create-line',
+      'create-sticky',
       'export-all',
       'fit-view',
     ]);

@@ -39,7 +39,7 @@ interface PortData {
 }
 
 interface ShapeNodeData {
-  type: 'rectangle' | 'circle' | 'triangle' | 'heart' | 'cloud' | 'speech';
+  type: 'rectangle' | 'circle' | 'ellipse' | 'triangle' | 'diamond' | 'line' | 'heart' | 'cloud' | 'speech';
   label?: string;
   /** Enable bubble overlay when zoomed out */
   bubble?: boolean;
@@ -49,6 +49,7 @@ interface ShapeNodeData {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  lineDirection?: 'up' | 'down';
   pattern?: PaperMaterial;
   texture?: PaperTextureParams | Record<string, unknown>;
   // Rich text styling
@@ -183,10 +184,15 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     'relative flex items-center justify-center overflow-hidden transition-all duration-200',
     {
       'rounded-md': data.type === 'rectangle',
-      'rounded-full': data.type === 'circle',
+      'rounded-full': data.type === 'circle' || data.type === 'ellipse',
       'clip-triangle': data.type === 'triangle',
     },
   );
+  const shapeStyle: React.CSSProperties | undefined = data.type === 'diamond'
+    ? {
+        clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+      }
+    : undefined;
 
   const containerClasses = twMerge(
     clsx(
@@ -235,6 +241,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
 
   const imageUrl = data.imageSrc ? toAssetApiUrl(currentFile, data.imageSrc) : '';
   const hasImage = !!imageUrl && data.type !== 'triangle';
+  const hasLineShape = data.type === 'line';
   const imageStyle = hasImage ? {
     backgroundImage: `url(${imageUrl})`,
     backgroundRepeat: 'no-repeat',
@@ -253,6 +260,53 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
   )
     ? resolveStickyLikeShapeStyle(data.type)
     : undefined;
+
+  if (hasLineShape) {
+    const width = resolvedObjectSize?.widthPx ?? 180;
+    const height = Math.max(resolvedObjectSize?.heightPx ?? 48, 24);
+    const lineDirection = data.lineDirection === 'up' ? 'up' : 'down';
+
+    return (
+      <BaseNode
+        className={twMerge(
+          'flex items-center justify-center px-2 py-1',
+          data.className,
+        )}
+        bubble={data.bubble}
+        label={data.label}
+        style={{
+          width,
+          height,
+          minWidth: width,
+          minHeight: height,
+        }}
+      >
+        <svg
+          className="absolute inset-0 h-full w-full overflow-visible"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+        >
+          <line
+            x1="6"
+            y1={lineDirection === 'up' ? '92%' : '8%'}
+            x2="94"
+            y2={lineDirection === 'up' ? '8%' : '92%'}
+            stroke={data.stroke ?? '#475569'}
+            strokeWidth={data.strokeWidth ?? 3}
+            strokeLinecap="round"
+          />
+        </svg>
+        {data.label ? (
+          <div
+            className="pointer-events-none rounded-full bg-white/90 px-2 py-0.5 text-xs font-medium text-slate-700 shadow-sm"
+            style={{ fontFamily: resolvedFontFamily }}
+          >
+            {data.label}
+          </div>
+        ) : null}
+      </BaseNode>
+    );
+  }
 
   if (data.type === 'triangle' && !isContentDrivenAuto) {
     return (
@@ -304,7 +358,10 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
       className={containerClasses}
       bubble={data.bubble}
       label={data.label}
-      style={frameStyle}
+      style={{
+        ...(frameStyle ?? {}),
+        ...(shapeStyle ?? {}),
+      }}
     >
       <div
         className={clsx(

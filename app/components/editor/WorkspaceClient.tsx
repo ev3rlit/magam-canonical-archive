@@ -28,7 +28,9 @@ import {
   buildReparentCommand,
   buildRelativeMoveCommand,
   toUpdateNodeProps,
+  type CreatePayload,
 } from '@/features/editing/commands';
+import { isImmediateEditCreateNodeType } from '@/features/editing/createDefaults';
 import {
   type ActionRoutingHistoryEffect,
   type ActionRoutingSurfaceId,
@@ -68,6 +70,11 @@ type TabContextMenuState = {
   tabId: string;
   x: number;
   y: number;
+};
+
+type PendingCreateEdit = {
+  renderedId: string;
+  mode: 'text' | 'markdown-wysiwyg';
 };
 
 type MagamTestHooks = {
@@ -172,6 +179,7 @@ export function WorkspaceClient() {
     useState<TabContextMenuState | null>(null);
   const tabContextMenuRef = useRef<HTMLDivElement>(null);
   const pendingSelectionNodeIdRef = useRef<string | null>(null);
+  const pendingCreateEditRef = useRef<PendingCreateEdit | null>(null);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') {
@@ -419,6 +427,22 @@ export function WorkspaceClient() {
 
     if (effect.pendingSelectionRenderedId) {
       pendingSelectionNodeIdRef.current = effect.pendingSelectionRenderedId;
+      const createdNode = (
+        effect.after
+        && typeof effect.after === 'object'
+        && 'create' in (effect.after as Record<string, unknown>)
+      )
+        ? (effect.after as { create?: { type?: string } }).create
+        : undefined;
+      if (
+        createdNode?.type
+        && isImmediateEditCreateNodeType(createdNode.type as CreatePayload['nodeType'])
+      ) {
+        pendingCreateEditRef.current = {
+          renderedId: effect.pendingSelectionRenderedId,
+          mode: createdNode.type === 'markdown' ? 'markdown-wysiwyg' : 'text',
+        };
+      }
     }
     if (effect.reloadGraphOnSuccess) {
       handleFileChange();
@@ -793,11 +817,12 @@ export function WorkspaceClient() {
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Exclude<CanvasEntrypointSurface, 'selection-floating-menu'>;
     trigger?: { source: 'click' | 'menu' };
-    nodeType: 'shape' | 'text' | 'markdown' | 'sticky' | 'sticker' | 'washi-tape';
+    nodeType: Exclude<CreatePayload['nodeType'], 'image'>;
     placement:
       | { mode: 'canvas-absolute'; x: number; y: number }
       | { mode: 'mindmap-child'; parentId: string }
       | { mode: 'mindmap-sibling'; siblingOf: string; parentId: string | null };
+    initialProps?: Record<string, unknown>;
     targetRenderedNodeId?: string;
     filePath?: string;
     scopeId?: string;
@@ -841,6 +866,7 @@ export function WorkspaceClient() {
         uiPayload: {
           nodeType: input.nodeType,
           placement: input.placement,
+          ...(input.initialProps ? { initialProps: input.initialProps } : {}),
           filePath: input.filePath,
           scopeId: input.scopeId,
           frameScope: input.frameScope,
@@ -1496,10 +1522,19 @@ export function WorkspaceClient() {
           setGraph(parsed);
           if (pendingSelectionNodeIdRef.current) {
             const createdNodeId = pendingSelectionNodeIdRef.current;
-            const createdNodeExists = parsed.nodes.some((node) => node.id === createdNodeId);
-            if (createdNodeExists) {
+            const createdNode = parsed.nodes.find((node) => node.id === createdNodeId);
+            if (createdNode) {
               setSelectedNodes([createdNodeId]);
               pendingSelectionNodeIdRef.current = null;
+              if (pendingCreateEditRef.current?.renderedId === createdNodeId) {
+                const data = (createdNode.data || {}) as Record<string, unknown>;
+                useGraphStore.getState().startTextEditSession({
+                  nodeId: createdNodeId,
+                  initialDraft: typeof data.label === 'string' ? data.label : '',
+                  mode: pendingCreateEditRef.current.mode,
+                });
+                pendingCreateEditRef.current = null;
+              }
             }
           }
         }

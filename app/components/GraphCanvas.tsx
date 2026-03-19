@@ -69,8 +69,11 @@ import {
 import type { ActionRoutingSurfaceId } from '@/features/editing/actionRoutingBridge/types';
 import { createPendingRequestIdForCommand } from '@/features/editing/commands';
 import type { CreatePayload } from '@/features/editing/commands';
+import {
+  isDragCreateNodeType,
+  isDragRequiredCreateNodeType,
+} from '@/features/editing/createDefaults';
 import { resolveNodeEditContext } from '@/components/editor/workspaceEditUtils';
-import type { CreatableNodeType } from '@/types/contextMenu';
 import {
   OverlayHostProvider,
   useOverlayHost,
@@ -129,8 +132,9 @@ export interface GraphCanvasCreateIntentInput {
   surfaceId: Exclude<ActionRoutingSurfaceId, 'selection-floating-menu'>;
   surface?: Exclude<CanvasEntrypointSurface, 'selection-floating-menu'>;
   trigger?: { source: 'click' | 'menu' };
-  nodeType: CreatableNodeType;
+  nodeType: CreatePayload['nodeType'];
   placement: CreatePayload['placement'];
+  initialProps?: Record<string, unknown>;
   targetRenderedNodeId?: string;
   targetNodeId?: string;
   filePath?: string;
@@ -222,6 +226,14 @@ type SelectionShellGestureSession =
       screenBounds: NonNullable<GraphCanvasSelectionShellState['screenBounds']>;
       lastPatch: Record<string, unknown> | null;
     };
+
+type GraphCanvasCreateGesture = {
+  nodeType: GraphCanvasCreateMode;
+  startScreen: { x: number; y: number };
+  currentScreen: { x: number; y: number };
+};
+
+const DRAG_CREATE_THRESHOLD_PX = 6;
 
 export type GraphCanvasDismissalKind =
   | 'commit-text-edit'
@@ -518,6 +530,60 @@ export function shouldHandleRuntimePaneCreate(input: {
   });
 }
 
+function resolveCreateGestureDistance(input: GraphCanvasCreateGesture): number {
+  return Math.hypot(
+    input.currentScreen.x - input.startScreen.x,
+    input.currentScreen.y - input.startScreen.y,
+  );
+}
+
+function resolveCreateGestureScreenBounds(input: GraphCanvasCreateGesture) {
+  return {
+    left: Math.min(input.startScreen.x, input.currentScreen.x),
+    top: Math.min(input.startScreen.y, input.currentScreen.y),
+    width: Math.abs(input.currentScreen.x - input.startScreen.x),
+    height: Math.abs(input.currentScreen.y - input.startScreen.y),
+  };
+}
+
+export function resolveCreateGestureInitialProps(input: {
+  nodeType: GraphCanvasCreateMode;
+  startFlow: { x: number; y: number };
+  endFlow: { x: number; y: number };
+}): Record<string, unknown> | null {
+  const width = Math.abs(input.endFlow.x - input.startFlow.x);
+  const height = Math.abs(input.endFlow.y - input.startFlow.y);
+
+  switch (input.nodeType) {
+    case 'rectangle':
+    case 'ellipse':
+    case 'diamond':
+      return {
+        size: {
+          width: Math.max(width, 64),
+          height: Math.max(height, 64),
+        },
+      };
+    case 'sticky':
+      return {
+        size: {
+          width: Math.max(width, 160),
+          height: Math.max(height, 96),
+        },
+      };
+    case 'line':
+      return {
+        size: {
+          width: Math.max(width, 24),
+          height: Math.max(height, 24),
+        },
+        lineDirection: input.endFlow.y < input.startFlow.y ? 'up' : 'down',
+      };
+    default:
+      return null;
+  }
+}
+
 function GraphCanvasContent({
   onNodeDragStop,
   onUndoEditStep,
@@ -628,6 +694,7 @@ function GraphCanvasContent({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dragFeedback, setDragFeedback] = useState<DragFeedbackState>(null);
   const [selectionShellGesture, setSelectionShellGesture] = useState<SelectionShellGestureState>(null);
+  const [createGesture, setCreateGesture] = useState<GraphCanvasCreateGesture | null>(null);
   const hasLayouted = useRef(false);
   const lastLayoutedGraphId = useRef<string | null>(null);
   const lastSizeSignaturesRef = useRef<Map<string, string>>(new Map());
@@ -648,6 +715,9 @@ function GraphCanvasContent({
   const toolbarOverlayIdRef = useRef<string | null>(null);
   const selectionFloatingMenuOverlayIdRef = useRef<string | null>(null);
   const selectionShellGestureRef = useRef<SelectionShellGestureSession | null>(null);
+  const createGestureRef = useRef<GraphCanvasCreateGesture | null>(null);
+  const suppressNextPaneClickRef = useRef(false);
+  const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
 
   const activeTab = useMemo(
@@ -659,6 +729,13 @@ function GraphCanvasContent({
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 2000);
   }, []);
+  const createGestureBounds = useMemo(
+    () => createGesture ? resolveCreateGestureScreenBounds(createGesture) : null,
+    [createGesture],
+  );
+  const shouldRenderCreateGesture = Boolean(
+    createGesture && resolveCreateGestureDistance(createGesture) >= DRAG_CREATE_THRESHOLD_PX,
+  );
 
   const selectionNodes = useMemo(
     () => nodes.filter((node) => selectedNodeIds.includes(node.id)) as SelectionShellNode[],
@@ -784,6 +861,101 @@ function GraphCanvasContent({
     clearPendingRelayout();
   }, [clearPendingRelayout]);
 
+  useEffect(() => {
+    createGestureRef.current = createGesture;
+  }, [createGesture]);
+
+  useEffect(() => {
+    if (!createGesture) {
+      return;
+    }
+
+    const handlePointerMove = (event: MouseEvent) => {
+      setCreateGesture((current) => (
+        current
+          ? {
+              ...current,
+              currentScreen: { x: event.clientX, y: event.clientY },
+            }
+          : current
+      ));
+    };
+
+    const handlePointerUp = (event: MouseEvent) => {
+      const session = createGestureRef.current;
+      createGestureRef.current = null;
+      setCreateGesture(null);
+
+      if (!session || !onCreateNode) {
+        return;
+      }
+
+      const completedGesture: GraphCanvasCreateGesture = {
+        ...session,
+        currentScreen: { x: event.clientX, y: event.clientY },
+      };
+      const distance = resolveCreateGestureDistance(completedGesture);
+
+      if (distance < DRAG_CREATE_THRESHOLD_PX) {
+        if (isDragRequiredCreateNodeType(session.nodeType)) {
+          showToast('선을 만들려면 드래그하세요.');
+        }
+        return;
+      }
+
+      const startFlow = screenToFlowPosition(completedGesture.startScreen);
+      const endFlow = screenToFlowPosition(completedGesture.currentScreen);
+      const initialProps = resolveCreateGestureInitialProps({
+        nodeType: completedGesture.nodeType,
+        startFlow,
+        endFlow,
+      });
+
+      if (!initialProps) {
+        return;
+      }
+
+      suppressNextPaneClickRef.current = true;
+      void runPendingUiAction({
+        actionType: 'node.create',
+        targetIds: [completedGesture.nodeType],
+        execute: () => Promise.resolve(onCreateNode(buildGraphCanvasCreateIntent({
+          surfaceId: 'toolbar',
+          surface: 'canvas-toolbar',
+          trigger: { source: 'click' },
+          nodeType: completedGesture.nodeType,
+          placement: {
+            mode: 'canvas-absolute',
+            x: Math.min(startFlow.x, endFlow.x),
+            y: Math.min(startFlow.y, endFlow.y),
+          },
+          initialProps,
+        }))),
+      }).then(() => {
+        setEntrypointCreateMode(null);
+        showToast('새 오브젝트를 생성했습니다.');
+      }).catch((error) => {
+        const mapped = mapEditErrorToToast?.(error);
+        showToast(mapped ?? '오브젝트 생성에 실패했습니다.');
+      });
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+    };
+  }, [
+    createGesture,
+    mapEditErrorToToast,
+    onCreateNode,
+    runPendingUiAction,
+    screenToFlowPosition,
+    setEntrypointCreateMode,
+    showToast,
+  ]);
+
   const persistActiveTabViewport = useCallback((viewport: { x: number; y: number; zoom: number }) => {
     if (!activeTabId) {
       return;
@@ -907,8 +1079,37 @@ function GraphCanvasContent({
     [contextMenuActions, openMenu],
   );
 
+  const onCanvasMouseDownCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      event.button !== 0
+      || !createMode
+      || !onCreateNode
+      || !shouldHandleRuntimePaneCreate({ interactionMode, createMode, hasPendingUiActions })
+      || !isDragCreateNodeType(createMode)
+    ) {
+      return;
+    }
+
+    if (!(event.target instanceof Element) || !event.target.closest('.react-flow__pane')) {
+      return;
+    }
+
+    const session: GraphCanvasCreateGesture = {
+      nodeType: createMode,
+      startScreen: { x: event.clientX, y: event.clientY },
+      currentScreen: { x: event.clientX, y: event.clientY },
+    };
+    createGestureRef.current = session;
+    setCreateGesture(session);
+  }, [createMode, hasPendingUiActions, interactionMode, onCreateNode]);
+
   const onPaneClick = useCallback(
     async (event: React.MouseEvent) => {
+      if (suppressNextPaneClickRef.current) {
+        suppressNextPaneClickRef.current = false;
+        return;
+      }
+
       if (!shouldHandleRuntimePaneCreate({ interactionMode, createMode, hasPendingUiActions }) || !onCreateNode) {
         const dismissal = resolveCanvasDismissal({
           reason: 'pane',
@@ -932,6 +1133,10 @@ function GraphCanvasContent({
         if (dismissal.kind === 'clear-selection') {
           syncControlledSelection([]);
         }
+        return;
+      }
+
+      if (createMode && isDragRequiredCreateNodeType(createMode)) {
         return;
       }
 
@@ -1673,7 +1878,9 @@ function GraphCanvasContent({
          We wait until isGraphVisible is true.
       */}
       <div
+        ref={canvasWrapperRef}
         className="w-full h-full min-h-[500px] flex-1 bg-white transition-opacity duration-300"
+        onMouseDownCapture={onCanvasMouseDownCapture}
         style={{
           opacity: isGraphVisible ? 1 : 0,
           fontFamily: canvasResolvedFontFamily,
@@ -1712,8 +1919,8 @@ function GraphCanvasContent({
           nodesConnectable={false}
           zoomOnScroll={true}
           panOnScroll={true}
-          panOnDrag={interactionMode === 'hand'}
-          selectionOnDrag={interactionMode === 'pointer'}
+          panOnDrag={interactionMode === 'hand' && createMode === null}
+          selectionOnDrag={interactionMode === 'pointer' && createMode === null}
           panOnScrollMode={undefined} // Allow pan on scroll
           minZoom={0.1}
           maxZoom={2}
@@ -1736,6 +1943,44 @@ function GraphCanvasContent({
             <CustomBackground svg={canvasBackground.svg} gap={canvasBackground.gap} />
           )}
         </ReactFlow>
+
+        {shouldRenderCreateGesture && createGestureBounds ? (
+          <div className="pointer-events-none absolute inset-0 z-[92]">
+            {createGesture?.nodeType === 'line' ? (
+              <svg className="absolute inset-0 h-full w-full overflow-visible">
+                <line
+                  x1={createGesture.startScreen.x - (canvasWrapperRef.current?.getBoundingClientRect().left ?? 0)}
+                  y1={createGesture.startScreen.y - (canvasWrapperRef.current?.getBoundingClientRect().top ?? 0)}
+                  x2={createGesture.currentScreen.x - (canvasWrapperRef.current?.getBoundingClientRect().left ?? 0)}
+                  y2={createGesture.currentScreen.y - (canvasWrapperRef.current?.getBoundingClientRect().top ?? 0)}
+                  stroke="#0f172a"
+                  strokeWidth={3}
+                  strokeLinecap="round"
+                  strokeDasharray="8 6"
+                />
+              </svg>
+            ) : (
+              <div
+                className={[
+                  'absolute border-2 border-sky-500/80 bg-sky-200/20',
+                  createGesture?.nodeType === 'ellipse' ? 'rounded-full' : '',
+                ].join(' ')}
+                style={{
+                  left: createGestureBounds.left - (canvasWrapperRef.current?.getBoundingClientRect().left ?? 0),
+                  top: createGestureBounds.top - (canvasWrapperRef.current?.getBoundingClientRect().top ?? 0),
+                  width: createGestureBounds.width,
+                  height: createGestureBounds.height,
+                  clipPath: createGesture?.nodeType === 'diamond'
+                    ? 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)'
+                    : undefined,
+                  backgroundColor: createGesture?.nodeType === 'sticky'
+                    ? 'rgba(252, 229, 136, 0.35)'
+                    : undefined,
+                }}
+              />
+            )}
+          </div>
+        ) : null}
 
         {selectionShell.visible && selectionShell.screenBounds ? (
           <div className="pointer-events-none absolute inset-0 z-[95]">

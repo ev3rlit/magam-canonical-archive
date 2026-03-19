@@ -16,6 +16,7 @@ import {
 } from './GraphCanvas.relayout';
 import {
   buildGraphCanvasCreateIntent,
+  resolveCreateGestureInitialProps,
   buildGraphCanvasRenameIntent,
   resolveCanvasDismissal,
   resolveSelectionResizePatch,
@@ -231,6 +232,31 @@ describe('GraphCanvas drag-stop commit policy', () => {
 });
 
 describe('GraphCanvas direct manipulation baseline', () => {
+  it('derives drag-create geometry for minimal shape variants', () => {
+    expect(resolveCreateGestureInitialProps({
+      nodeType: 'rectangle',
+      startFlow: { x: 40, y: 60 },
+      endFlow: { x: 220, y: 180 },
+    })).toEqual({
+      size: {
+        width: 180,
+        height: 120,
+      },
+    });
+
+    expect(resolveCreateGestureInitialProps({
+      nodeType: 'line',
+      startFlow: { x: 220, y: 180 },
+      endFlow: { x: 80, y: 100 },
+    })).toEqual({
+      size: {
+        width: 140,
+        height: 80,
+      },
+      lineDirection: 'up',
+    });
+  });
+
   it('uses faster mouse drag commit thresholds and more conservative touch thresholds', () => {
     expect(resolveDragCommitDistance('mouse')).toBeLessThan(resolveDragCommitDistance('touch'));
     expect(resolveDragCommitDistance('touch')).toBe(12);
