@@ -20,6 +20,8 @@ import {
   buildGraphCanvasRenameIntent,
   resolveCanvasDismissal,
   resolveGroupFocusEntry,
+  resolveNodeDoubleClickDecision,
+  resolveSelectionBodyEditSession,
   resolveSelectionResizePatch,
   resolveSelectionRotation,
   resolveSelectionShellState,
@@ -386,6 +388,81 @@ describe('GraphCanvas direct manipulation baseline', () => {
         { id: 'map.root', data: { groupId: 'map' } },
         { id: 'map.child-a', data: { groupId: 'map' } },
         { id: 'map.child-b', data: { groupId: 'map' } },
+      ],
+    })).toBeNull();
+  });
+
+  it('routes double click into group focus first and markdown-first body entry otherwise', () => {
+    expect(resolveNodeDoubleClickDecision({
+      node: {
+        id: 'map.child-a',
+        type: 'text',
+        data: {
+          label: 'Child note',
+          groupId: 'map',
+        },
+      },
+      selectedNodeIds: ['map.root', 'map.child-a', 'map.child-b'],
+      nodes: [
+        { id: 'map.root', data: { groupId: 'map' } },
+        { id: 'map.child-a', data: { groupId: 'map' } },
+        { id: 'map.child-b', data: { groupId: 'map' } },
+      ],
+    })).toEqual({
+      kind: 'enter-group',
+      groupId: 'map',
+      nodeIds: ['map.child-a'],
+    });
+
+    expect(resolveNodeDoubleClickDecision({
+      node: {
+        id: 'text-1',
+        type: 'text',
+        data: { label: '## Body' },
+      },
+      selectedNodeIds: ['text-1'],
+      nodes: [
+        { id: 'text-1', data: { label: '## Body' } },
+      ],
+    })).toEqual({
+      kind: 'start-body-edit',
+      session: {
+        nodeId: 'text-1',
+        initialDraft: '## Body',
+        mode: 'markdown-wysiwyg',
+      },
+    });
+  });
+
+  it('starts shell/body entry only for a single selected editable node', () => {
+    expect(resolveSelectionBodyEditSession({
+      selectedNodeIds: ['sticky-1'],
+      nodes: [
+        {
+          id: 'sticky-1',
+          type: 'sticky',
+          data: { label: '- todo' },
+        },
+      ],
+    })).toEqual({
+      nodeId: 'sticky-1',
+      initialDraft: '- todo',
+      mode: 'markdown-wysiwyg',
+    });
+
+    expect(resolveSelectionBodyEditSession({
+      selectedNodeIds: ['text-1', 'sticky-1'],
+      nodes: [
+        {
+          id: 'text-1',
+          type: 'text',
+          data: { label: 'A' },
+        },
+        {
+          id: 'sticky-1',
+          type: 'sticky',
+          data: { label: 'B' },
+        },
       ],
     })).toBeNull();
   });

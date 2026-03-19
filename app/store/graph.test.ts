@@ -784,6 +784,26 @@ describe('text edit session state', () => {
     expect(state.pendingTextEditAction?.nodeId).toBe('md-1');
   });
 
+  it('cancel 요청은 같은 active node session에만 기록되고 clear로 정리된다', () => {
+    useGraphStore.getState().startTextEditSession({
+      nodeId: 'sticky-1',
+      initialDraft: '- task',
+      mode: 'markdown-wysiwyg',
+    });
+
+    useGraphStore.getState().requestTextEditCancel('sticky-1');
+    expect(useGraphStore.getState().pendingTextEditAction).toMatchObject({
+      type: 'cancel',
+      nodeId: 'sticky-1',
+    });
+
+    useGraphStore.getState().clearTextEditSession();
+    const state = useGraphStore.getState();
+    expect(state.activeTextEditNodeId).toBeNull();
+    expect(state.textEditMode).toBeNull();
+    expect(state.pendingTextEditAction).toBeNull();
+  });
+
   it('선택이 다른 노드로 바뀌면 편집 세션을 정리한다', () => {
     useGraphStore.getState().startTextEditSession({
       nodeId: 'text-1',

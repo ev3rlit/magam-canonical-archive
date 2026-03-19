@@ -31,7 +31,6 @@ import {
   toUpdateNodeProps,
   type CreatePayload,
 } from '@/features/editing/commands';
-import { isImmediateEditCreateNodeType } from '@/features/editing/createDefaults';
 import {
   type ActionRoutingHistoryEffect,
   type ActionRoutingSurfaceId,
@@ -58,6 +57,7 @@ import {
   canRunNodeCommand,
   flattenWorkspaceStyleDiagnostics,
   mapEditRpcErrorToToast,
+  resolveImmediateCreateEditMode,
   resolveNodeEditContext,
   resolveNodeEditTarget,
   resolveNodeActionRoutingContext,
@@ -449,11 +449,11 @@ export function WorkspaceClient() {
         : undefined;
       if (
         createdNode?.type
-        && isImmediateEditCreateNodeType(createdNode.type as CreatePayload['nodeType'])
+        && resolveImmediateCreateEditMode(createdNode.type as CreatePayload['nodeType'])
       ) {
         pendingCreateEditRef.current = {
           renderedId: effect.pendingSelectionRenderedId,
-          mode: createdNode.type === 'markdown' ? 'markdown-wysiwyg' : 'text',
+          mode: resolveImmediateCreateEditMode(createdNode.type as CreatePayload['nodeType']) as PendingCreateEdit['mode'],
         };
       }
     }

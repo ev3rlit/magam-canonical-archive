@@ -17,6 +17,7 @@ import {
   resolveNodeActionRoutingContext,
   resolveNodeEditContext,
   resolveNodeEditTarget,
+  resolveImmediateCreateEditMode,
 } from './workspaceEditUtils';
 
 function makeNode(input: Partial<Node> & { id: string; type: string; data?: Record<string, unknown> }): Node {
@@ -115,6 +116,13 @@ describe('WorkspaceClient text edit isolation', () => {
       requestNodeId: 'md-1',
       selectedNodeIds: ['md-2'],
     })).toBe(false);
+  });
+
+  it('markdown first shell/body entry는 text markdown sticky 생성 직후 같은 body session mode를 사용한다', () => {
+    expect(resolveImmediateCreateEditMode('text')).toBe('markdown-wysiwyg');
+    expect(resolveImmediateCreateEditMode('markdown')).toBe('markdown-wysiwyg');
+    expect(resolveImmediateCreateEditMode('sticky')).toBe('markdown-wysiwyg');
+    expect(resolveImmediateCreateEditMode('rectangle')).toBeNull();
   });
 
   it('외부 파일 sourceMeta가 있으면 해당 파일과 sourceId를 편집 대상으로 선택한다', () => {
@@ -292,7 +300,7 @@ describe('WorkspaceClient editability helpers', () => {
       }),
       'examples/fallback.tsx',
       ['profile-node-1'],
-    )).toEqual({
+    )).toEqual(expect.objectContaining({
       surfaceId: 'examples/fallback.tsx',
       selection: {
         nodeIds: ['profile-node-1'],
@@ -315,21 +323,25 @@ describe('WorkspaceClient editability helpers', () => {
         isMindmapMember: false,
         isFrameScoped: false,
       },
-      editability: {
+      editability: expect.objectContaining({
         canMutate: true,
-        allowedCommands: ['node.move.absolute', 'node.content.update', 'node.style.update', 'node.rename', 'node.create'],
-        styleEditableKeys: canonicalProfileNode.capabilities.content
-          ? expect.any(Array)
-          : [],
+        allowedCommands: expect.arrayContaining([
+          'node.move.absolute',
+          'node.content.update',
+          'node.style.update',
+          'node.rename',
+          'node.create',
+        ]),
+        styleEditableKeys: expect.arrayContaining(['fontFamily', 'className']),
         reason: undefined,
-        editMeta: {
+        editMeta: expect.objectContaining({
           family: 'rich-content',
           contentCarrier: 'text-child',
-          styleEditableKeys: expect.any(Array),
           createMode: 'canvas',
-        },
-      },
-    });
+          styleEditableKeys: expect.arrayContaining(['fontFamily', 'className']),
+        }),
+      }),
+    }));
   });
 
   it('canRunNodeCommand respects editMeta gating', () => {

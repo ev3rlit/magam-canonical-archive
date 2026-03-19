@@ -9,6 +9,10 @@ import { toAssetApiUrl } from '@/utils/imageSource';
 import { useGraphStore } from '@/store/graph';
 import { LazyMarkdownRenderer } from '@/components/markdown/LazyMarkdownRenderer';
 import type { RenderableChild } from '@/utils/childComposition';
+import {
+    resolveBodyEditSession,
+    useExplicitBodyEntryAffordance,
+} from './renderableContent';
 import type { FontFamilyPreset, MarkdownSizeInput } from '@magam/core';
 import {
     hasExplicitFontFamilyClass,
@@ -38,6 +42,7 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
     const updateTextEditDraft = useGraphStore((state) => state.updateTextEditDraft);
     const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
     const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
+    const explicitBodyEntryEnabled = useExplicitBodyEntryAffordance();
     const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
     const resolvedFontFamily = shouldApplyHierarchy
         ? resolveFontFamilyCssValue({
@@ -161,15 +166,22 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
     ), [data.label, components, isContentDrivenAuto, resolvedFontFamily]);
 
     const isActiveEditor = Boolean(nodeId && selected && activeTextEditNodeId === nodeId);
+    const bodyEditSession = nodeId ? resolveBodyEditSession({
+        id: nodeId,
+        type: 'markdown',
+        data,
+    }) : null;
+    const shouldRenderExplicitBodyEntry = (
+        selected
+        && !isActiveEditor
+        && explicitBodyEntryEnabled
+        && Boolean(bodyEditSession)
+    );
 
     const beginEditing = useCallback(() => {
-        if (!selected || !nodeId) return;
-        startTextEditSession({
-            nodeId,
-            initialDraft: data.label || '',
-            mode: 'markdown-wysiwyg',
-        });
-    }, [data.label, nodeId, selected, startTextEditSession]);
+        if (!selected || !bodyEditSession) return;
+        startTextEditSession(bodyEditSession);
+    }, [bodyEditSession, selected, startTextEditSession]);
 
     const commitEditing = useCallback(() => {
         if (!nodeId) return;
@@ -196,11 +208,29 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
             )}
             bubble={data.bubble}
             label={data.label}
-            onDoubleClick={beginEditing}
         >
+            {shouldRenderExplicitBodyEntry ? (
+                <button
+                    type="button"
+                    aria-label="Edit content"
+                    className="pointer-events-auto absolute right-3 top-3 z-10 rounded-full border border-slate-300 bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur"
+                    onPointerDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        beginEditing();
+                    }}
+                >
+                    Edit
+                </button>
+            ) : null}
             {isActiveEditor ? (
                 <div className="w-full space-y-3 pointer-events-auto">
                     <textarea
+                        autoFocus
                         value={textEditDraft}
                         onChange={(event) => updateTextEditDraft(event.currentTarget.value)}
                         onBlur={commitEditing}

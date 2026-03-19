@@ -702,6 +702,65 @@ describe('parseRenderGraph canonical object normalization', () => {
     );
   });
 
+  it('preserves markdown-authored child content on graph-text and graph-sticky nodes without collapsing shell type', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-text',
+            props: {
+              id: 'text-markdown-child',
+              x: 10,
+              y: 20,
+            },
+            children: [
+              {
+                type: 'graph-markdown',
+                props: {
+                  content: '# Text body',
+                },
+                children: [],
+              },
+            ],
+          },
+          {
+            type: 'graph-sticky',
+            props: {
+              id: 'sticky-markdown-child',
+              x: 30,
+              y: 40,
+            },
+            children: [
+              {
+                type: 'graph-markdown',
+                props: {
+                  content: '## Sticky body',
+                },
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.nodes.find((node) => node.id === 'text-markdown-child')).toMatchObject({
+      type: 'text',
+      data: {
+        label: '# Text body',
+        children: [{ type: 'graph-markdown', content: '# Text body' }],
+      },
+    });
+    expect(parsed?.nodes.find((node) => node.id === 'sticky-markdown-child')).toMatchObject({
+      type: 'sticky',
+      data: {
+        label: '## Sticky body',
+        children: [{ type: 'graph-markdown', content: '## Sticky body' }],
+      },
+    });
+  });
+
   it('parses graph-sequence nodes as sequence renderer with canonical sequence content', () => {
     const parsed = parseRenderGraph({
       graph: {

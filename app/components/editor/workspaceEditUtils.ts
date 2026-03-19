@@ -2,7 +2,11 @@ import type { Node } from 'reactflow';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
 import type { ActionRoutingResolvedContext } from '@/features/editing/actionRoutingBridge.types';
 import type { WorkspaceStyleInput } from '@/features/workspace-styling';
-import { buildContentDraftPatch } from '@/features/editing/commands';
+import {
+  buildContentDraftPatch,
+  type CreatePayload,
+} from '@/features/editing/commands';
+import { isImmediateEditCreateNodeType } from '@/features/editing/createDefaults';
 import {
   EDIT_COMMAND_TYPES,
   getNodeEditMeta,
@@ -24,6 +28,12 @@ type NodeSourceMeta = {
   kind?: unknown;
   frameScope?: unknown;
 };
+
+export function resolveImmediateCreateEditMode(
+  nodeType: CreatePayload['nodeType'],
+): 'text' | 'markdown-wysiwyg' | null {
+  return isImmediateEditCreateNodeType(nodeType) ? 'markdown-wysiwyg' : null;
+}
 
 export interface ResolvedNodeEditContext {
   target: {

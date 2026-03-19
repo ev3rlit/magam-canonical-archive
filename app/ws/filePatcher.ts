@@ -359,8 +359,26 @@ function setMarkdownChildContent(parentEl: NodePath<t.JSXElement>, content: stri
     return true;
 }
 
-function setTextChildContent(parentEl: NodePath<t.JSXElement>, content: string): void {
-    const hasComplexChildren = parentEl.node.children.some((child) => {
+function createMarkdownChildElement(content: string): t.JSXElement {
+    return t.jsxElement(
+        t.jsxOpeningElement(t.jsxIdentifier('Markdown'), [], false),
+        t.jsxClosingElement(t.jsxIdentifier('Markdown')),
+        [t.jsxExpressionContainer(t.templateLiteral([t.templateElement({ raw: content, cooked: content }, true)], []))],
+        false,
+    );
+}
+
+function ensureElementCanHostChildren(parentEl: NodePath<t.JSXElement>): void {
+    if (!parentEl.node.openingElement.selfClosing) {
+        return;
+    }
+
+    parentEl.node.openingElement.selfClosing = false;
+    parentEl.node.closingElement = t.jsxClosingElement(t.cloneNode(parentEl.node.openingElement.name));
+}
+
+function hasComplexTextChildren(parentEl: NodePath<t.JSXElement>): boolean {
+    return parentEl.node.children.some((child) => {
         if (t.isJSXText(child)) {
             return false;
         }
@@ -372,11 +390,30 @@ function setTextChildContent(parentEl: NodePath<t.JSXElement>, content: string):
         }
         return false;
     });
+}
+
+function upsertMarkdownChildContent(parentEl: NodePath<t.JSXElement>, content: string): boolean {
+    if (setMarkdownChildContent(parentEl, content)) {
+        return true;
+    }
+
+    if (hasComplexTextChildren(parentEl)) {
+        return false;
+    }
+
+    ensureElementCanHostChildren(parentEl);
+    parentEl.node.children = [createMarkdownChildElement(content)];
+    return true;
+}
+
+function setTextChildContent(parentEl: NodePath<t.JSXElement>, content: string): void {
+    const hasComplexChildren = hasComplexTextChildren(parentEl);
 
     if (hasComplexChildren) {
         throw new Error('EDIT_NOT_ALLOWED');
     }
 
+    ensureElementCanHostChildren(parentEl);
     parentEl.node.children = [t.jsxText(content)];
 }
 
@@ -523,16 +560,9 @@ function upsertJsxAttribute(path: NodePath<t.JSXOpeningElement>, propName: strin
 
 function toJsxChildren(type: CreateNodeInput['type'], props: Record<string, unknown>): t.JSXElement['children'] {
     const content = props.content;
-    if (type === 'markdown') {
+    if (type === 'markdown' || type === 'text' || type === 'sticky') {
         if (typeof content === 'string') {
-            return [
-                t.jsxElement(
-                    t.jsxOpeningElement(t.jsxIdentifier('Markdown'), [], false),
-                    t.jsxClosingElement(t.jsxIdentifier('Markdown')),
-                    [t.jsxExpressionContainer(t.templateLiteral([t.templateElement({ raw: content, cooked: content }, true)], []))],
-                    false,
-                ),
-            ];
+            return [createMarkdownChildElement(content)];
         }
         return [];
     }
@@ -785,19 +815,27 @@ export async function patchNodeContent(filePath: string, nodeId: string, content
         ensureNoSpreadAttributes(node.node);
         const tagName = getJsxTagName(node.node);
         assertContentContractPatchAllowed(tagName, { content }, 'node.content.update');
+        const shouldPreferMarkdownSourceBody = tagName === 'Text' || tagName === 'Sticky';
         const labelAttr = getAttrByName(node.node, 'label');
+        const parentEl = node.parentPath;
         if (labelAttr) {
             const currentLabel = getAttributeValue(labelAttr);
             if (currentLabel === undefined) {
                 throw new Error('EDIT_NOT_ALLOWED');
             }
             upsertJsxAttribute(node, 'label', content);
+            if (shouldPreferMarkdownSourceBody && parentEl && parentEl.isJSXElement()) {
+                upsertMarkdownChildContent(parentEl, content);
+            }
             return true;
         }
 
-        const parentEl = node.parentPath;
         if (!parentEl || !parentEl.isJSXElement()) {
             throw new Error('EDIT_NOT_ALLOWED');
+        }
+
+        if (shouldPreferMarkdownSourceBody && upsertMarkdownChildContent(parentEl, content)) {
+            return true;
         }
 
         if (setMarkdownChildContent(parentEl, content)) {

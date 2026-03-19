@@ -2,6 +2,7 @@ import React from 'react';
 import { getLucideIconByName } from '@/utils/lucideRegistry';
 import type { RenderableChild } from '@/utils/childComposition';
 import { LazyMarkdownRenderer } from '@/components/markdown/LazyMarkdownRenderer';
+import type { TextEditMode } from '@/store/graph';
 
 interface RenderNodeContentOptions {
   children?: RenderableChild[];
@@ -9,6 +10,66 @@ interface RenderNodeContentOptions {
   iconClassName: string;
   textClassName: string;
   textStyle?: React.CSSProperties;
+}
+
+type BodyEditNodeLike = {
+  id: string;
+  type?: string | null;
+  data?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function useExplicitBodyEntryAffordance(): boolean {
+  const [explicitEntryEnabled, setExplicitEntryEnabled] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return;
+    }
+
+    const narrowViewportQuery = window.matchMedia('(max-width: 767px)');
+    const coarsePointerQuery = window.matchMedia('(pointer: coarse)');
+    const update = () => {
+      setExplicitEntryEnabled(narrowViewportQuery.matches || coarsePointerQuery.matches);
+    };
+    const addListener = (query: MediaQueryList) => {
+      if (typeof query.addEventListener === 'function') {
+        query.addEventListener('change', update);
+        return () => query.removeEventListener('change', update);
+      }
+      query.addListener(update);
+      return () => query.removeListener(update);
+    };
+
+    update();
+    const removeNarrowListener = addListener(narrowViewportQuery);
+    const removePointerListener = addListener(coarsePointerQuery);
+
+    return () => {
+      removeNarrowListener();
+      removePointerListener();
+    };
+  }, []);
+
+  return explicitEntryEnabled;
+}
+
+export function resolveBodyEditSession(
+  node: BodyEditNodeLike | null | undefined,
+): { nodeId: string; initialDraft: string; mode: TextEditMode } | null {
+  if (!node || (node.type !== 'text' && node.type !== 'markdown' && node.type !== 'sticky')) {
+    return null;
+  }
+
+  const data = isRecord(node.data) ? node.data : {};
+  return {
+    nodeId: node.id,
+    initialDraft: typeof data.label === 'string' ? data.label : '',
+    mode: 'markdown-wysiwyg',
+  };
 }
 
 export function renderNodeContent({

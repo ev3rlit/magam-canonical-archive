@@ -462,7 +462,7 @@ export function buildContentDraftPatch(
   nodeType: string | undefined,
   draft: string,
 ): Record<string, unknown> {
-  if (nodeType === 'markdown') {
+  if (nodeType === 'markdown' || nodeType === 'text' || nodeType === 'sticky') {
     return {
       label: draft,
       children: [{ type: 'graph-markdown', content: draft }],

@@ -142,6 +142,28 @@ describe('filePatcher', () => {
     expect(patched.includes('y={80}')).toBe(true);
   });
 
+  it('update: text와 sticky label carrier는 markdown-first body child로 승격할 수 있다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <Text id="text-1" label={"Old text"} />
+          <Sticky id="sticky-1" label={"Old sticky"} />
+        </Canvas>;
+      }
+    `);
+
+    await patchNodeContent(filePath, 'text-1', '# New text');
+    await patchNodeContent(filePath, 'sticky-1', '## New sticky');
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(/id=\{?"text-1"\}?/.test(patched)).toBe(true);
+    expect(patched.includes('label={"# New text"}')).toBe(true);
+    expect(patched.includes('<Markdown>{`# New text`}</Markdown>')).toBe(true);
+    expect(/id=\{?"sticky-1"\}?/.test(patched)).toBe(true);
+    expect(patched.includes('label={"## New sticky"}')).toBe(true);
+    expect(patched.includes('<Markdown>{`## New sticky`}</Markdown>')).toBe(true);
+  });
+
   it('move: patchNodePosition은 x/y만 갱신한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {
@@ -170,6 +192,33 @@ describe('filePatcher', () => {
     expect(patched.includes('id={"n-new"}')).toBe(true);
     expect(patched.includes('from={"root"}')).toBe(true);
     expect(patched.includes('hello')).toBe(true);
+  });
+
+  it('create: text와 sticky는 markdown child body를 기본으로 생성한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas></Canvas>;
+      }
+    `);
+
+    await patchNodeCreate(filePath, {
+      id: 'text-body',
+      type: 'text',
+      props: { content: '# hello' },
+      placement: { mode: 'canvas-absolute', x: 40, y: 60 },
+    });
+    await patchNodeCreate(filePath, {
+      id: 'sticky-body',
+      type: 'sticky',
+      props: { content: '## sticky' },
+      placement: { mode: 'canvas-absolute', x: 120, y: 140 },
+    });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id={"text-body"}')).toBe(true);
+    expect(patched.includes('<Markdown>{`# hello`}</Markdown>')).toBe(true);
+    expect(patched.includes('id={"sticky-body"}')).toBe(true);
+    expect(patched.includes('<Markdown>{`## sticky`}</Markdown>')).toBe(true);
   });
 
   it('create: canvas-absolute placement는 Shape에 x/y를 직접 기록한다', async () => {

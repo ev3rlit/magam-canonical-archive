@@ -9,7 +9,11 @@ import {
   resolveStickyLikeShapeStyle,
 } from './BaseNode';
 import type { RenderableChild } from '@/utils/childComposition';
-import { renderNodeContent } from './renderableContent';
+import {
+  renderNodeContent,
+  resolveBodyEditSession,
+  useExplicitBodyEntryAffordance,
+} from './renderableContent';
 import { useGraphStore } from '@/store/graph';
 import type {
   FontFamilyPreset,
@@ -101,6 +105,7 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
   const updateTextEditDraft = useGraphStore((state) => state.updateTextEditDraft);
   const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
   const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
+  const explicitBodyEntryEnabled = useExplicitBodyEntryAffordance();
 
   const shouldApplyHierarchy = !hasExplicitFontFamilyClass(raw.className);
   const resolvedFontFamily = shouldApplyHierarchy
@@ -138,6 +143,17 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
   );
   const isContentDrivenAuto = !sizing.hasWidth && !sizing.hasHeight;
   const isActiveEditor = Boolean(nodeId && selected && activeTextEditNodeId === nodeId);
+  const bodyEditSession = nodeId ? resolveBodyEditSession({
+    id: nodeId,
+    type: 'sticky',
+    data: raw,
+  }) : null;
+  const shouldRenderExplicitBodyEntry = (
+    selected
+    && !isActiveEditor
+    && explicitBodyEntryEnabled
+    && Boolean(bodyEditSession)
+  );
 
   const legacyColorClassName = (
     typeof raw.color === 'string'
@@ -183,13 +199,9 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     backgroundColor: raw.fill ?? paperSurface.surfaceStyle.backgroundColor ?? '#fce588',
   };
   const beginEditing = useCallback(() => {
-    if (!nodeId || !selected) return;
-    startTextEditSession({
-      nodeId,
-      initialDraft: raw.label || '',
-      mode: 'text',
-    });
-  }, [nodeId, raw.label, selected, startTextEditSession]);
+    if (!selected || !bodyEditSession) return;
+    startTextEditSession(bodyEditSession);
+  }, [bodyEditSession, selected, startTextEditSession]);
 
   const commitEditing = useCallback(() => {
     if (!nodeId) return;
@@ -212,11 +224,29 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
         ),
       )}
       style={stickyStyle}
-      onDoubleClick={beginEditing}
     >
       <NoiseOverlay opacity={paperSurface.noiseOpacity} />
+      {shouldRenderExplicitBodyEntry ? (
+        <button
+          type="button"
+          aria-label="Edit content"
+          className="pointer-events-auto absolute right-3 top-3 z-10 rounded-full border border-slate-700/10 bg-white/85 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            beginEditing();
+          }}
+        >
+          Edit
+        </button>
+      ) : null}
       {isActiveEditor ? (
         <textarea
+          autoFocus
           value={textEditDraft}
           onChange={(event) => updateTextEditDraft(event.currentTarget.value)}
           onBlur={commitEditing}
@@ -232,6 +262,7 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
               commitEditing();
             }
           }}
+          placeholder="Write markdown..."
           className="pointer-events-auto w-[220px] min-h-[120px] rounded border border-slate-300 bg-white/95 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
           style={{ fontFamily: resolvedFontFamily, color: textColor }}
         />

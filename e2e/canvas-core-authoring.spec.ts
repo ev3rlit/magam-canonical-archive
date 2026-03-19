@@ -378,4 +378,84 @@ test.describe('canvas core authoring entry', () => {
     await expect(page.getByText('맨 앞으로')).toBeVisible();
     await expect(page.getByText('맨 뒤로')).toBeVisible();
   });
+
+  test('canvas core authoring body: markdown first editing', async ({ page }) => {
+    await page.evaluate(([storageKey]) => {
+      window.localStorage.removeItem(storageKey);
+    }, [lastActiveStorageKey]);
+    renderGraphChildren = [
+      {
+        type: 'graph-text',
+        props: {
+          id: 'text-body',
+          x: 120,
+          y: 120,
+          text: 'Body text',
+        },
+        children: [],
+      },
+      {
+        type: 'graph-node',
+        props: {
+          id: 'markdown-body',
+          x: 360,
+          y: 120,
+        },
+        children: [
+          {
+            type: 'graph-markdown',
+            props: {
+              content: '# Markdown body',
+            },
+            children: [],
+          },
+        ],
+      },
+      {
+        type: 'graph-sticky',
+        props: {
+          id: 'sticky-body',
+          x: 620,
+          y: 120,
+          text: 'Sticky body',
+        },
+        children: [],
+      },
+    ];
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    const pane = page.locator('.react-flow__pane');
+    const textNode = page.locator('.react-flow__node[data-id="text-body"]');
+    const markdownNode = page.locator('.react-flow__node[data-id="markdown-body"]');
+    const stickyNode = page.locator('.react-flow__node[data-id="sticky-body"]');
+
+    await expect(textNode).toBeVisible();
+    await expect(markdownNode).toBeVisible();
+    await expect(stickyNode).toBeVisible();
+
+    await textNode.dblclick();
+    await expect(page.locator('textarea')).toBeVisible();
+    await expect(page.getByTestId('graph-canvas-selection-shell')).toHaveCount(0);
+    await expect(page.locator('[data-selection-floating-control]')).toHaveCount(0);
+
+    await page.keyboard.press('Meta+A');
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(1);
+
+    await pane.click({ position: { x: 40, y: 40 } });
+    await expect(page.locator('textarea')).toHaveCount(0);
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(1);
+
+    await markdownNode.click();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('textarea')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('textarea')).toHaveCount(0);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await stickyNode.click();
+    const stickyEditButton = stickyNode.getByRole('button', { name: 'Edit content' });
+    await expect(stickyEditButton).toBeVisible();
+    await stickyEditButton.click();
+    await expect(page.locator('textarea')).toBeVisible();
+  });
 });
