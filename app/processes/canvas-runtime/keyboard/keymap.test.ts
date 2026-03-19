@@ -28,6 +28,10 @@ describe('resolveCanvasKeyBinding', () => {
     })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DUPLICATE);
 
     expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'g', metaKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP);
+
+    expect(resolveCanvasKeyBinding({
       chord: normalizeKeyEvent({ key: 'a', metaKey: true }),
     })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL);
 
@@ -50,6 +54,10 @@ describe('resolveCanvasKeyBinding', () => {
     expect(resolveCanvasKeyBinding({
       chord: normalizeKeyEvent({ key: '-', metaKey: true }),
     })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_OUT);
+
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'g', ctrlKey: true, shiftKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP);
   });
 
   it('returns null when no key binding matches the normalized chord', () => {

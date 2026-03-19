@@ -925,3 +925,46 @@ describe('action routing optimistic lifecycle state', () => {
     expect(useGraphStore.getState().actionRoutingPendingByToken).toEqual({});
   });
 });
+
+describe('group focus state', () => {
+  beforeEach(() => {
+    useGraphStore.setState(initialGraphState);
+  });
+
+  it('retains inner group focus only while the selection stays inside a partial grouped subset', () => {
+    useGraphStore.getState().setGraph({
+      nodes: [
+        {
+          id: 'shape-a',
+          type: 'shape',
+          position: { x: 0, y: 0 },
+          data: { groupId: 'group-1' },
+        } as any,
+        {
+          id: 'shape-b',
+          type: 'shape',
+          position: { x: 100, y: 0 },
+          data: { groupId: 'group-1' },
+        } as any,
+        {
+          id: 'shape-c',
+          type: 'shape',
+          position: { x: 200, y: 0 },
+          data: {},
+        } as any,
+      ],
+      edges: [],
+    });
+
+    useGraphStore.getState().setActiveGroupFocusGroupId('group-1');
+    useGraphStore.getState().setSelectedNodes(['shape-a']);
+    expect(useGraphStore.getState().activeGroupFocusGroupId).toBe('group-1');
+
+    useGraphStore.getState().setSelectedNodes(['shape-a', 'shape-b']);
+    expect(useGraphStore.getState().activeGroupFocusGroupId).toBeNull();
+
+    useGraphStore.getState().setActiveGroupFocusGroupId('group-1');
+    useGraphStore.getState().setSelectedNodes(['shape-c']);
+    expect(useGraphStore.getState().activeGroupFocusGroupId).toBeNull();
+  });
+});

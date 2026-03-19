@@ -85,6 +85,32 @@ function resolveCommandReason(
   return null;
 }
 
+function resolveStructuralCommandReason(
+  snapshot: NodeContextSnapshot,
+  commandType: Extract<EditCommandType, 'node.group.update' | 'node.z-order.update'>,
+): NodeContextMenuDisabledReason | null {
+  if (!snapshot.nodeContext) {
+    return {
+      code: 'NODE_CONTEXT_MISSING',
+      message: 'canonical node context를 아직 해석하지 못했습니다.',
+    };
+  }
+
+  const readOnlyReason = resolveReadOnlyReason(snapshot);
+  if (readOnlyReason) {
+    return readOnlyReason;
+  }
+
+  if (!snapshot.nodeContext.editability.allowedCommands.includes(commandType)) {
+    return {
+      code: 'COMMAND_NOT_ALLOWED',
+      message: '현재 canonical metadata에서는 이 명령을 허용하지 않습니다.',
+    };
+  }
+
+  return null;
+}
+
 function isDuplicableNodeType(nodeType: unknown): boolean {
   return nodeType === 'shape'
     || nodeType === 'text'
@@ -197,6 +223,21 @@ export function resolveNodeContextMenuActionState(
       return relations.isGroupMember || relations.isMindmapMember || snapshot.nodeFamily === 'mindmap-member'
         ? toVisibleActionState(resolveGroupSelectReason(snapshot))
         : hidden();
+    case 'enter-group':
+      return relations.isGroupMember
+        ? enabled()
+        : hidden();
+    case 'group-selection':
+      return snapshot.selectedNodeIds.length > 1
+        ? toVisibleActionState(resolveStructuralCommandReason(snapshot, 'node.group.update'))
+        : hidden();
+    case 'ungroup-selection':
+      return relations.isGroupMember
+        ? toVisibleActionState(resolveStructuralCommandReason(snapshot, 'node.group.update'))
+        : hidden();
+    case 'bring-to-front':
+    case 'send-to-back':
+      return toVisibleActionState(resolveStructuralCommandReason(snapshot, 'node.z-order.update'));
     case 'duplicate-node':
       return toVisibleActionState(resolveDuplicateReason(snapshot));
     case 'delete-node':
@@ -229,6 +270,11 @@ export function buildNodeContextMenuModel(snapshot: NodeContextSnapshot): NodeCo
     'mindmap-add-child': resolveNodeContextMenuActionState(snapshot, 'mindmap-add-child'),
     'mindmap-add-sibling': resolveNodeContextMenuActionState(snapshot, 'mindmap-add-sibling'),
     'select-group': resolveNodeContextMenuActionState(snapshot, 'select-group'),
+    'enter-group': resolveNodeContextMenuActionState(snapshot, 'enter-group'),
+    'group-selection': resolveNodeContextMenuActionState(snapshot, 'group-selection'),
+    'ungroup-selection': resolveNodeContextMenuActionState(snapshot, 'ungroup-selection'),
+    'bring-to-front': resolveNodeContextMenuActionState(snapshot, 'bring-to-front'),
+    'send-to-back': resolveNodeContextMenuActionState(snapshot, 'send-to-back'),
     'duplicate-node': resolveNodeContextMenuActionState(snapshot, 'duplicate-node'),
     'delete-node': resolveNodeContextMenuActionState(snapshot, 'delete-node'),
     'lock-node': resolveNodeContextMenuActionState(snapshot, 'lock-node'),

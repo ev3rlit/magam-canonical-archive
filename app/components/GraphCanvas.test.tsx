@@ -19,6 +19,7 @@ import {
   resolveCreateGestureInitialProps,
   buildGraphCanvasRenameIntent,
   resolveCanvasDismissal,
+  resolveGroupFocusEntry,
   resolveSelectionResizePatch,
   resolveSelectionRotation,
   resolveSelectionShellState,
@@ -340,6 +341,21 @@ describe('GraphCanvas direct manipulation baseline', () => {
     expect(resolveCanvasDismissal({
       reason: 'pane',
       activeTextEditNodeId: null,
+      activeGroupFocusGroupId: 'map',
+      selectedNodeIds: ['map.child-a'],
+      nodes: [
+        { id: 'map.root', data: { groupId: 'map' } },
+        { id: 'map.child-a', data: { groupId: 'map' } },
+        { id: 'map.child-b', data: { groupId: 'map' } },
+      ],
+    })).toEqual({
+      kind: 'expand-group-selection',
+      nodeIds: ['map.root', 'map.child-a', 'map.child-b'],
+    });
+
+    expect(resolveCanvasDismissal({
+      reason: 'pane',
+      activeTextEditNodeId: null,
       selectedNodeIds: ['shape-1'],
       nodes: [
         { id: 'shape-1', data: {} },
@@ -347,6 +363,31 @@ describe('GraphCanvas direct manipulation baseline', () => {
     })).toEqual({
       kind: 'clear-selection',
     });
+  });
+
+  it('enters focused group selection only when the full group is already selected', () => {
+    expect(resolveGroupFocusEntry({
+      clickedNodeId: 'map.child-a',
+      selectedNodeIds: ['map.root', 'map.child-a', 'map.child-b'],
+      nodes: [
+        { id: 'map.root', data: { groupId: 'map' } },
+        { id: 'map.child-a', data: { groupId: 'map' } },
+        { id: 'map.child-b', data: { groupId: 'map' } },
+      ],
+    })).toEqual({
+      groupId: 'map',
+      nodeIds: ['map.child-a'],
+    });
+
+    expect(resolveGroupFocusEntry({
+      clickedNodeId: 'map.child-a',
+      selectedNodeIds: ['map.child-a'],
+      nodes: [
+        { id: 'map.root', data: { groupId: 'map' } },
+        { id: 'map.child-a', data: { groupId: 'map' } },
+        { id: 'map.child-b', data: { groupId: 'map' } },
+      ],
+    })).toBeNull();
   });
 
   it('keeps shell bounds for multi-selection but reserves resize and rotate handles for supported single selections', () => {

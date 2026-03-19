@@ -301,4 +301,81 @@ test.describe('canvas core authoring entry', () => {
     await page.keyboard.press('Meta+A');
     await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
   });
+
+  test('canvas core authoring structure: group ungroup z-order', async ({ page, browserName }) => {
+    void browserName;
+    await page.evaluate(([storageKey]) => {
+      window.localStorage.removeItem(storageKey);
+    }, [lastActiveStorageKey]);
+    renderGraphChildren = [
+      {
+        type: 'graph-shape',
+        props: {
+          id: 'shape-a',
+          x: 120,
+          y: 140,
+          type: 'rectangle',
+          text: 'A',
+          groupId: 'group-1',
+          size: { width: 140, height: 100 },
+        },
+        children: [],
+      },
+      {
+        type: 'graph-shape',
+        props: {
+          id: 'shape-b',
+          x: 320,
+          y: 140,
+          type: 'rectangle',
+          text: 'B',
+          groupId: 'group-1',
+          size: { width: 140, height: 100 },
+        },
+        children: [],
+      },
+      {
+        type: 'graph-shape',
+        props: {
+          id: 'shape-c',
+          x: 520,
+          y: 140,
+          type: 'rectangle',
+          text: 'C',
+          size: { width: 140, height: 100 },
+        },
+        children: [],
+      },
+    ];
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    const shapeA = page.locator('.react-flow__node[data-id="shape-a"]');
+    const shapeB = page.locator('.react-flow__node[data-id="shape-b"]');
+    const shapeC = page.locator('.react-flow__node[data-id="shape-c"]');
+    await expect(shapeA).toBeVisible();
+    await expect(shapeB).toBeVisible();
+    await expect(shapeC).toBeVisible();
+
+    await shapeA.click({ button: 'right' });
+    await expect(page.getByText('그룹 선택')).toBeVisible();
+    await expect(page.getByText('그룹 안으로 들어가기')).toBeVisible();
+    await expect(page.getByText('그룹 해제')).toBeVisible();
+    await expect(page.getByText('맨 앞으로')).toBeVisible();
+    await expect(page.getByText('맨 뒤로')).toBeVisible();
+    await page.getByText('그룹 선택').click();
+
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
+
+    await shapeA.click({ button: 'right' });
+    await page.getByText('그룹 안으로 들어가기').click();
+
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
+
+    await shapeA.click({ button: 'right' });
+    await expect(page.getByText('그룹 해제')).toBeVisible();
+    await expect(page.getByText('맨 앞으로')).toBeVisible();
+    await expect(page.getByText('맨 뒤로')).toBeVisible();
+  });
 });

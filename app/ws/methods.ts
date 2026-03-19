@@ -37,7 +37,9 @@ type UpdateCommandType =
     | 'node.move.relative'
     | 'node.content.update'
     | 'node.style.update'
-    | 'node.rename';
+    | 'node.rename'
+    | 'node.group.update'
+    | 'node.z-order.update';
 const fileMutationLocks = new Map<string, Promise<void>>();
 const pluginInstancesByFile = new Map<string, Map<string, PluginInstanceRuntimeRecord>>();
 
@@ -109,6 +111,8 @@ function ensureOptionalUpdateCommandType(value: unknown): UpdateCommandType | un
         || value === 'node.content.update'
         || value === 'node.style.update'
         || value === 'node.rename'
+        || value === 'node.group.update'
+        || value === 'node.z-order.update'
     ) {
         return value;
     }
@@ -134,6 +138,12 @@ function inferUpdateCommandType(props: NodeProps, explicitType?: UpdateCommandTy
     }
     if (keys.length === 1 && typeof props.content === 'string') {
         return 'node.content.update';
+    }
+    if (keys.length === 1 && ('groupId' in props)) {
+        return 'node.group.update';
+    }
+    if (keys.length === 1 && typeof props.zIndex === 'number') {
+        return 'node.z-order.update';
     }
     if (keys.length === 1 && typeof props.gap === 'number') {
         return 'node.move.relative';

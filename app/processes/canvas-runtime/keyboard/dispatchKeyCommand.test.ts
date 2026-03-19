@@ -10,11 +10,14 @@ function createContext(
   overrides: Partial<CanvasKeyboardCommandContext> = {},
 ): CanvasKeyboardCommandContext {
   return {
+    isTextInputFocused: false,
     deleteSelection: async () => ({ nodeIds: ['shape-1'] }),
     duplicateSelection: async () => ({ nodeIds: ['shape-2'] }),
+    groupSelection: async () => ({ nodeIds: ['shape-1', 'shape-2'] }),
     selectAllNodes: () => ['shape-1', 'shape-2', 'shape-3'],
     focusNextWashi: () => 'washi-1',
     selectAllWashi: () => ['washi-1', 'washi-2'],
+    ungroupSelection: async () => ({ nodeIds: ['shape-1', 'shape-2'] }),
     copySelectionToClipboard: async () => ({
       clipboardText: 'washi-1\nwashi-2',
       nodeCount: 2,
@@ -69,7 +72,7 @@ describe('dispatchKeyCommand', () => {
     ]);
   });
 
-  it('dispatches delete, duplicate, select-all, and zoom commands through the shared command registry', async () => {
+  it('dispatches delete, duplicate, group, select-all, ungroup, and zoom commands through the shared command registry', async () => {
     const deleteResult = await dispatchKeyCommand({
       commandId: 'selection.delete',
       context: createContext(),
@@ -78,8 +81,16 @@ describe('dispatchKeyCommand', () => {
       commandId: 'selection.duplicate',
       context: createContext(),
     });
+    const groupResult = await dispatchKeyCommand({
+      commandId: 'selection.group',
+      context: createContext(),
+    });
     const selectAllResult = await dispatchKeyCommand({
       commandId: 'selection.select-all',
+      context: createContext(),
+    });
+    const ungroupResult = await dispatchKeyCommand({
+      commandId: 'selection.ungroup',
       context: createContext(),
     });
     const zoomResult = await dispatchKeyCommand({
@@ -98,9 +109,19 @@ describe('dispatchKeyCommand', () => {
       messageKey: 'selection.duplicate.success',
     });
 
+    expect(groupResult.outcome).toBe('executed');
+    expect(groupResult.feedback).toMatchObject({
+      messageKey: 'selection.group.success',
+    });
+
     expect(selectAllResult.outcome).toBe('executed');
     expect(selectAllResult.feedback).toMatchObject({
       messageKey: 'selection.select-all.success',
+    });
+
+    expect(ungroupResult.outcome).toBe('executed');
+    expect(ungroupResult.feedback).toMatchObject({
+      messageKey: 'selection.ungroup.success',
     });
 
     expect(zoomResult.outcome).toBe('executed');

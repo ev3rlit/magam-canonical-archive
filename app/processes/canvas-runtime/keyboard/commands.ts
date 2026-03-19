@@ -149,6 +149,58 @@ export function createCanvasKeyboardCommands(): CanvasKeyboardCommandRegistry {
         }),
       }),
     },
+    [CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP]: {
+      commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP,
+      execute: async (context) => {
+        const grouped = await context.groupSelection();
+        if (grouped.nodeIds.length === 0) {
+          return {
+            outcome: 'skipped',
+            preventDefault: false,
+            trace: [
+              createTraceEvent({
+                event: 'selection.group.skipped',
+                commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP,
+                outcome: 'skipped',
+              }),
+            ],
+          };
+        }
+
+        return {
+          outcome: 'executed',
+          preventDefault: true,
+          feedback: {
+            kind: 'info',
+            messageKey: 'selection.group.success',
+            params: {
+              count: grouped.nodeIds.length,
+            },
+          },
+          trace: [
+            createTraceEvent({
+              event: 'selection.group',
+              commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP,
+              outcome: 'executed',
+              payload: {
+                count: grouped.nodeIds.length,
+              },
+            }),
+          ],
+        };
+      },
+      onFailure: (error, context) => ({
+        outcome: 'failed',
+        preventDefault: true,
+        feedback: resolveFailureFeedback({
+          context,
+          commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP,
+          error,
+          fallbackMessageKey: 'selection.group.failure',
+          fallbackDefaultMessage: 'Failed to group the current selection.',
+        }),
+      }),
+    },
     [CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL]: {
       commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL,
       execute: (context): CanvasKeyboardResult => {
@@ -189,6 +241,58 @@ export function createCanvasKeyboardCommands(): CanvasKeyboardCommandRegistry {
           ],
         };
       },
+    },
+    [CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP]: {
+      commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP,
+      execute: async (context) => {
+        const ungrouped = await context.ungroupSelection();
+        if (ungrouped.nodeIds.length === 0) {
+          return {
+            outcome: 'skipped',
+            preventDefault: false,
+            trace: [
+              createTraceEvent({
+                event: 'selection.ungroup.skipped',
+                commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP,
+                outcome: 'skipped',
+              }),
+            ],
+          };
+        }
+
+        return {
+          outcome: 'executed',
+          preventDefault: true,
+          feedback: {
+            kind: 'info',
+            messageKey: 'selection.ungroup.success',
+            params: {
+              count: ungrouped.nodeIds.length,
+            },
+          },
+          trace: [
+            createTraceEvent({
+              event: 'selection.ungroup',
+              commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP,
+              outcome: 'executed',
+              payload: {
+                count: ungrouped.nodeIds.length,
+              },
+            }),
+          ],
+        };
+      },
+      onFailure: (error, context) => ({
+        outcome: 'failed',
+        preventDefault: true,
+        feedback: resolveFailureFeedback({
+          context,
+          commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP,
+          error,
+          fallbackMessageKey: 'selection.ungroup.failure',
+          fallbackDefaultMessage: 'Failed to ungroup the current selection.',
+        }),
+      }),
     },
     [CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_FOCUS_NEXT_WASHI]: {
       commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_FOCUS_NEXT_WASHI,

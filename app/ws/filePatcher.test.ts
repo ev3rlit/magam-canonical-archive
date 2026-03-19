@@ -51,6 +51,20 @@ describe('filePatcher', () => {
     expect(patched.includes('label={"Updated"}')).toBe(true);
   });
 
+  it('update: groupId와 zIndex structural patch를 JSX prop으로 반영한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Shape id="shape-1" x={10} y={20} /></Canvas>;
+      }
+    `);
+
+    await patchFile(filePath, 'shape-1', { groupId: 'group-1', zIndex: 12 });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('groupId={"group-1"}')).toBe(true);
+    expect(patched.includes('zIndex={12}')).toBe(true);
+  });
+
   it('update: id 변경 시 from/to/anchor 참조를 함께 갱신한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {

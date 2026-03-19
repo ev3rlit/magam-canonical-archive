@@ -5,9 +5,11 @@ export const CANVAS_KEYBOARD_COMMAND_IDS = {
   HISTORY_UNDO: 'history.undo',
   SELECTION_DELETE: 'selection.delete',
   SELECTION_DUPLICATE: 'selection.duplicate',
+  SELECTION_GROUP: 'selection.group',
   SELECTION_SELECT_ALL: 'selection.select-all',
   SELECTION_FOCUS_NEXT_WASHI: 'selection.focus-next-washi',
   SELECTION_SELECT_ALL_WASHI: 'selection.select-all-washi',
+  SELECTION_UNGROUP: 'selection.ungroup',
   VIEWPORT_ZOOM_IN: 'viewport.zoom-in',
   VIEWPORT_ZOOM_OUT: 'viewport.zoom-out',
 } as const;
@@ -111,9 +113,11 @@ export interface CanvasKeyboardContext {
   isTextInputFocused: boolean;
   deleteSelection: () => Promise<CanvasKeyboardSelectionMutationResult>;
   duplicateSelection: () => Promise<CanvasKeyboardSelectionMutationResult>;
+  groupSelection: () => Promise<CanvasKeyboardSelectionMutationResult>;
   selectAllNodes: () => string[];
   focusNextWashi: () => string | null;
   selectAllWashi: () => string[];
+  ungroupSelection: () => Promise<CanvasKeyboardSelectionMutationResult>;
   copySelectionToClipboard: () => Promise<CanvasKeyboardClipboardCopyResult>;
   pasteClipboardSelection: () => Promise<CanvasKeyboardClipboardPasteResult | null>;
   undo: () => Promise<{ source: CanvasKeyboardHistorySource }>;

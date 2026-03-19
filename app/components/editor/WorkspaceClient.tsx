@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import { RpcClientError, useFileSync } from '@/hooks/useFileSync';
 import { GraphCanvas } from '@/components/GraphCanvas';
+import type { GraphCanvasSelectionActionIntentInput } from '@/components/GraphCanvas';
 import { Sidebar } from '@/components/ui/Sidebar';
 import { Header } from '@/components/ui/Header';
 import { Footer } from '@/components/ui/Footer';
@@ -376,7 +377,11 @@ export function WorkspaceClient() {
     useGraphStore.setState((state) => ({
       nodes: state.nodes.map((node) => (
         node.id === nodeId
-          ? { ...node, data: previousData || {} }
+          ? {
+              ...node,
+              zIndex: typeof previousData?.zIndex === 'number' ? previousData.zIndex : undefined,
+              data: previousData || {},
+            }
           : node
       )),
     }));
@@ -395,11 +400,19 @@ export function WorkspaceClient() {
       const groupNodeIds = runtime.nodes
         .filter((node) => node.data?.groupId === descriptor.payload.groupId)
         .map((node) => node.id);
-      runtime.setSelectedNodes(
-        groupNodeIds.length > 0
-          ? groupNodeIds
-          : (descriptor.payload.anchorNodeId ? [descriptor.payload.anchorNodeId] : []),
-      );
+      const nextSelectedNodeIds = groupNodeIds.length > 0
+        ? groupNodeIds
+        : (descriptor.payload.anchorNodeId ? [descriptor.payload.anchorNodeId] : []);
+      useGraphStore.setState((state) => ({
+        nodes: state.nodes.map((node) => {
+          const selected = nextSelectedNodeIds.includes(node.id);
+          return node.selected === selected
+            ? node
+            : { ...node, selected };
+        }),
+        selectedNodeIds: nextSelectedNodeIds,
+        activeGroupFocusGroupId: null,
+      }));
     }
   }, [restoreNodeData]);
 
@@ -471,6 +484,22 @@ export function WorkspaceClient() {
         descriptor.payload.nodeId,
         descriptor.payload.newParentId,
         descriptor.payload.filePath,
+      );
+    }
+    if (descriptor.actionId === 'node.group-membership.update') {
+      return updateNode(
+        descriptor.payload.nodeId,
+        { groupId: descriptor.payload.groupId },
+        descriptor.payload.filePath,
+        { commandType: 'node.group.update' },
+      );
+    }
+    if (descriptor.actionId === 'node.z-order.update') {
+      return updateNode(
+        descriptor.payload.nodeId,
+        { zIndex: descriptor.payload.zIndex },
+        descriptor.payload.filePath,
+        { commandType: 'node.z-order.update' },
       );
     }
     throw new RpcClientError(RPC_ERRORS.INVALID_PARAMS.code, RPC_ERRORS.INVALID_PARAMS.message, {
@@ -608,7 +637,7 @@ export function WorkspaceClient() {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-    trigger?: { source: 'menu' };
+    trigger?: { source: 'menu' | 'hotkey' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -665,7 +694,7 @@ export function WorkspaceClient() {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-    trigger?: { source: 'menu' };
+    trigger?: { source: 'menu' | 'hotkey' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -703,7 +732,7 @@ export function WorkspaceClient() {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-    trigger?: { source: 'menu' };
+    trigger?: { source: 'menu' | 'hotkey' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -741,7 +770,7 @@ export function WorkspaceClient() {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-    trigger?: { source: 'menu' };
+    trigger?: { source: 'menu' | 'hotkey' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -779,7 +808,7 @@ export function WorkspaceClient() {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-    trigger?: { source: 'menu' };
+    trigger?: { source: 'menu' | 'hotkey' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -813,11 +842,84 @@ export function WorkspaceClient() {
     }
   }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
 
+  const handleSelectionStructuralCommit = useCallback(async (input: GraphCanvasSelectionActionIntentInput & {
+    intent: 'group-selection' | 'ungroup-selection' | 'bring-selection-to-front' | 'send-selection-to-back';
+    fallbackMessage: string;
+  }) => {
+    const runtime = useGraphStore.getState();
+    const anchorNodeId = input.anchorNodeId ?? runtime.selectedNodeIds[0];
+    if (!anchorNodeId) {
+      return;
+    }
+
+    const anchorNode = runtime.nodes.find((node) => node.id === anchorNodeId);
+    if (!anchorNode) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: anchorNodeId });
+    }
+
+    try {
+      await dispatchActionRoutingIntentOrThrow({
+        surface: resolveLegacyEntrypointSurface({
+          surfaceId: input.surfaceId,
+          surface: input.surface,
+        }),
+        intent: input.intent,
+        resolvedContext: resolveNodeActionRoutingContext(
+          anchorNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {},
+        trigger: input.trigger ?? { source: 'menu' },
+      });
+    } catch (error) {
+      const message = mapEditRpcErrorToToast(error) ?? input.fallbackMessage;
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
+
+  const handleGroupSelectionCommit = useCallback((input: GraphCanvasSelectionActionIntentInput) => (
+    handleSelectionStructuralCommit({
+      ...input,
+      intent: 'group-selection',
+      fallbackMessage: '선택 항목 그룹화에 실패했습니다.',
+    })
+  ), [handleSelectionStructuralCommit]);
+
+  const handleUngroupSelectionCommit = useCallback((input: GraphCanvasSelectionActionIntentInput) => (
+    handleSelectionStructuralCommit({
+      ...input,
+      intent: 'ungroup-selection',
+      fallbackMessage: '그룹 해제에 실패했습니다.',
+    })
+  ), [handleSelectionStructuralCommit]);
+
+  const handleBringSelectionToFrontCommit = useCallback((input: GraphCanvasSelectionActionIntentInput) => (
+    handleSelectionStructuralCommit({
+      ...input,
+      intent: 'bring-selection-to-front',
+      fallbackMessage: '맨 앞으로 이동에 실패했습니다.',
+    })
+  ), [handleSelectionStructuralCommit]);
+
+  const handleSendSelectionToBackCommit = useCallback((input: GraphCanvasSelectionActionIntentInput) => (
+    handleSelectionStructuralCommit({
+      ...input,
+      intent: 'send-selection-to-back',
+      fallbackMessage: '맨 뒤로 이동에 실패했습니다.',
+    })
+  ), [handleSelectionStructuralCommit]);
+
   const handleCreateNodeCommit = useCallback(async (input: {
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Exclude<CanvasEntrypointSurface, 'selection-floating-menu'>;
     trigger?: { source: 'click' | 'menu' };
-    nodeType: Exclude<CreatePayload['nodeType'], 'image'>;
+    nodeType: CreatePayload['nodeType'];
     placement:
       | { mode: 'canvas-absolute'; x: number; y: number }
       | { mode: 'mindmap-child'; parentId: string }
@@ -1574,6 +1676,10 @@ export function WorkspaceClient() {
             onDeleteNode={handleNodeDeleteCommit}
             onToggleNodeLock={handleNodeLockToggleCommit}
             onSelectNodeGroup={handleNodeGroupSelectCommit}
+            onGroupSelection={handleGroupSelectionCommit}
+            onUngroupSelection={handleUngroupSelectionCommit}
+            onBringSelectionToFront={handleBringSelectionToFrontCommit}
+            onSendSelectionToBack={handleSendSelectionToBackCommit}
             onCreateNode={handleCreateNodeCommit}
             onApplySelectionStyle={handleSelectionStyleCommit}
             onCommitSelectionContent={handleSelectionContentCommit}

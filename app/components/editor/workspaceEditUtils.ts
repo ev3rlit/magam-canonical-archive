@@ -154,7 +154,7 @@ export function resolveNodeActionRoutingContext(
       ...(frameScope ? { frameScope } : {}),
       hasParentRelation: Boolean(parentSourceId),
       isGroupMember: Boolean(groupId),
-      isMindmapMember: sourceKind === 'mindmap' || Boolean(groupId),
+      isMindmapMember: sourceKind === 'mindmap',
       isFrameScoped: Boolean(frameScope),
     },
     editability: {

@@ -97,11 +97,13 @@ export interface ActionRoutingHistoryEffect {
   eventType:
     | 'CONTENT_UPDATED'
     | 'STYLE_UPDATED'
+    | 'NODE_GROUP_MEMBERSHIP_UPDATED'
     | 'NODE_RENAMED'
     | 'NODE_CREATED'
     | 'NODE_REPARENTED'
     | 'NODE_DELETED'
-    | 'NODE_LOCK_TOGGLED';
+    | 'NODE_LOCK_TOGGLED'
+    | 'NODE_Z_ORDER_UPDATED';
   nodeId: string;
   filePath: string;
   baseVersion: string;
@@ -128,7 +130,9 @@ export type MutationActionId =
   | 'node.update'
   | 'node.create'
   | 'node.delete'
-  | 'node.reparent';
+  | 'node.reparent'
+  | 'node.group-membership.update'
+  | 'node.z-order.update';
 
 export interface MutationActionPayloadMap {
   'node.update': {
@@ -154,6 +158,16 @@ export interface MutationActionPayloadMap {
     nodeId: string;
     filePath: string;
     newParentId: string | null;
+  };
+  'node.group-membership.update': {
+    nodeId: string;
+    filePath: string;
+    groupId: string | null;
+  };
+  'node.z-order.update': {
+    nodeId: string;
+    filePath: string;
+    zIndex: number | null;
   };
 }
 

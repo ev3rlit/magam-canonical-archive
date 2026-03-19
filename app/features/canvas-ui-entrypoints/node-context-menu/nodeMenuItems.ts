@@ -151,6 +151,91 @@ export const nodeMenuItems: ContextMenuItem[] = [
   },
   {
     type: 'action',
+    id: 'enter-group',
+    label: '그룹 안으로 들어가기',
+    icon: MousePointerSquareDashed,
+    when: (ctx) => isVisible('enter-group', ctx),
+    disabled: (ctx) => isDisabled('enter-group', ctx),
+    disabledReason: (ctx) => getDisabledReason('enter-group', ctx),
+    handler: (ctx) => {
+      if (ctx.nodeId === undefined || !ctx.actions?.enterNodeGroup) {
+        return;
+      }
+
+      return ctx.actions.enterNodeGroup(ctx.nodeId);
+    },
+    order: 31,
+  },
+  {
+    type: 'action',
+    id: 'group-selection',
+    label: '그룹 만들기',
+    icon: Plus,
+    when: (ctx) => isVisible('group-selection', ctx),
+    disabled: (ctx) => isDisabled('group-selection', ctx),
+    disabledReason: (ctx) => getDisabledReason('group-selection', ctx),
+    handler: (ctx) => {
+      if (ctx.nodeId === undefined || !ctx.actions?.groupSelection) {
+        return;
+      }
+
+      return ctx.actions.groupSelection(ctx.nodeId);
+    },
+    order: 32,
+  },
+  {
+    type: 'action',
+    id: 'ungroup-selection',
+    label: '그룹 해제',
+    icon: MousePointerSquareDashed,
+    when: (ctx) => isVisible('ungroup-selection', ctx),
+    disabled: (ctx) => isDisabled('ungroup-selection', ctx),
+    disabledReason: (ctx) => getDisabledReason('ungroup-selection', ctx),
+    handler: (ctx) => {
+      if (ctx.nodeId === undefined || !ctx.actions?.ungroupSelection) {
+        return;
+      }
+
+      return ctx.actions.ungroupSelection(ctx.nodeId);
+    },
+    order: 33,
+  },
+  {
+    type: 'action',
+    id: 'bring-to-front',
+    label: '맨 앞으로',
+    icon: Copy,
+    when: (ctx) => isVisible('bring-to-front', ctx),
+    disabled: (ctx) => isDisabled('bring-to-front', ctx),
+    disabledReason: (ctx) => getDisabledReason('bring-to-front', ctx),
+    handler: (ctx) => {
+      if (ctx.nodeId === undefined || !ctx.actions?.bringSelectionToFront) {
+        return;
+      }
+
+      return ctx.actions.bringSelectionToFront(ctx.nodeId);
+    },
+    order: 34,
+  },
+  {
+    type: 'action',
+    id: 'send-to-back',
+    label: '맨 뒤로',
+    icon: Download,
+    when: (ctx) => isVisible('send-to-back', ctx),
+    disabled: (ctx) => isDisabled('send-to-back', ctx),
+    disabledReason: (ctx) => getDisabledReason('send-to-back', ctx),
+    handler: (ctx) => {
+      if (ctx.nodeId === undefined || !ctx.actions?.sendSelectionToBack) {
+        return;
+      }
+
+      return ctx.actions.sendSelectionToBack(ctx.nodeId);
+    },
+    order: 35,
+  },
+  {
+    type: 'action',
     id: 'duplicate-node',
     label: '복제',
     icon: Copy,

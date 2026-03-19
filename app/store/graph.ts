@@ -74,11 +74,13 @@ export type EditCompletionEventType =
   | 'RELATIVE_MOVE_COMMITTED'
   | 'CONTENT_UPDATED'
   | 'STYLE_UPDATED'
+  | 'NODE_GROUP_MEMBERSHIP_UPDATED'
   | 'NODE_RENAMED'
   | 'NODE_CREATED'
   | 'NODE_DELETED'
   | 'NODE_LOCK_TOGGLED'
-  | 'NODE_REPARENTED';
+  | 'NODE_REPARENTED'
+  | 'NODE_Z_ORDER_UPDATED';
 
 export interface EditCompletionEvent {
   eventId: string;
@@ -204,6 +206,7 @@ export interface GraphState {
   status: 'idle' | 'loading' | 'error' | 'success' | 'connected';
   error: AppError | null;
   selectedNodeIds: string[];
+  activeGroupFocusGroupId: string | null;
   needsAutoLayout: boolean; // true for MindMap, false for Canvas with explicit positions
   layoutType: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; // Layout algorithm type (legacy, for single MindMap)
   mindMapGroups: MindMapGroup[]; // Multiple MindMap support
@@ -246,6 +249,7 @@ export interface GraphState {
   setStatus: (status: GraphState['status']) => void;
   setError: (error: AppError | null) => void;
   setSelectedNodes: (selectedNodeIds: string[]) => void;
+  setActiveGroupFocusGroupId: (groupId: string | null) => void;
   selectNodesByType: (nodeType: string) => string[];
   focusNextNodeByType: (nodeType: string) => string | null;
   updateNodeData: (nodeId: string, partialData: Record<string, unknown>) => void;
@@ -317,6 +321,55 @@ export function getNodeCanonicalObject(
 ): CanonicalObject | undefined {
   const data = node?.data as CanonicalNodeData | undefined;
   return data?.canonicalObject;
+}
+
+export function getNodeGroupId(
+  node: Pick<Node, 'data'> | null | undefined,
+): string | null {
+  const groupId = (node?.data as { groupId?: unknown } | undefined)?.groupId;
+  return typeof groupId === 'string' && groupId.length > 0 ? groupId : null;
+}
+
+export function resolveGroupedNodeIds(
+  nodes: Array<Pick<Node, 'id' | 'data'>>,
+  groupId: string | null | undefined,
+): string[] {
+  if (!groupId) {
+    return [];
+  }
+
+  return nodes
+    .filter((node) => getNodeGroupId(node) === groupId)
+    .map((node) => node.id);
+}
+
+function resolveRetainedGroupFocusGroupId(input: {
+  nodes: Array<Pick<Node, 'id' | 'data'>>;
+  selectedNodeIds: string[];
+  activeGroupFocusGroupId: string | null;
+}): string | null {
+  const { activeGroupFocusGroupId } = input;
+  if (!activeGroupFocusGroupId) {
+    return null;
+  }
+
+  if (input.selectedNodeIds.length === 0) {
+    return activeGroupFocusGroupId;
+  }
+
+  const groupedNodeIds = resolveGroupedNodeIds(input.nodes, activeGroupFocusGroupId);
+  if (groupedNodeIds.length <= 1) {
+    return null;
+  }
+
+  const isSubset = input.selectedNodeIds.every((nodeId) => groupedNodeIds.includes(nodeId));
+  if (!isSubset) {
+    return null;
+  }
+
+  return groupedNodeIds.length === input.selectedNodeIds.length
+    ? null
+    : activeGroupFocusGroupId;
 }
 
 export function getNodeCanonicalValidation(
@@ -708,6 +761,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   status: 'idle',
   error: null,
   selectedNodeIds: [],
+  activeGroupFocusGroupId: null,
   needsAutoLayout: false,
   layoutType: 'compact',
   canvasBackground: 'dots',
@@ -771,6 +825,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       ...(isFontFamilyPreset(canvasFontFamily) ? { canvasFontFamily } : { canvasFontFamily: undefined }),
       ...(sourceVersion !== undefined ? { sourceVersion } : {}),
       sourceVersions: nextSourceVersions,
+      activeGroupFocusGroupId: null,
       entrypointRuntime: resetEntrypointRuntimeState({
         current: state.entrypointRuntime,
         preserveActiveTool: true,
@@ -896,6 +951,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return {
       currentFile,
       sourceVersion: currentFile ? (state.sourceVersions[currentFile] ?? null) : null,
+      activeGroupFocusGroupId: null,
       entrypointRuntime: resetEntrypointRuntimeState({
         current: state.entrypointRuntime,
         preserveActiveTool: true,
@@ -926,12 +982,18 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       return state;
     }
 
+    const nextActiveGroupFocusGroupId = resolveRetainedGroupFocusGroupId({
+      nodes: state.nodes,
+      selectedNodeIds,
+      activeGroupFocusGroupId: state.activeGroupFocusGroupId,
+    });
     const nextRuntime = clearEntrypointAnchorsForSelectionReducer(
       dismissEntrypointSurfaceOnSelectionChangeReducer(state.entrypointRuntime),
       selectedNodeIds,
     );
     return {
       selectedNodeIds,
+      activeGroupFocusGroupId: nextActiveGroupFocusGroupId,
       entrypointRuntime: nextRuntime,
       ...(shouldClearTextEdit
         ? {
@@ -944,11 +1006,17 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         : {}),
     };
   }),
+  setActiveGroupFocusGroupId: (groupId) => set({
+    activeGroupFocusGroupId: groupId && groupId.length > 0 ? groupId : null,
+  }),
   selectNodesByType: (nodeType) => {
     const ids = get().nodes
       .filter((node) => node.type === nodeType)
       .map((node) => node.id);
-    set({ selectedNodeIds: ids });
+    set({
+      selectedNodeIds: ids,
+      activeGroupFocusGroupId: null,
+    });
     return ids;
   },
   focusNextNodeByType: (nodeType) => {
@@ -964,7 +1032,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const currentSelectedId = selectedNodeIds.find((id) => ids.includes(id));
     const currentIndex = currentSelectedId ? ids.indexOf(currentSelectedId) : -1;
     const nextId = ids[(currentIndex + 1) % ids.length];
-    set({ selectedNodeIds: [nextId] });
+    set({
+      selectedNodeIds: [nextId],
+      activeGroupFocusGroupId: null,
+    });
     return nextId;
   },
   updateNodeData: (nodeId, partialData) => set((state) => {
@@ -972,8 +1043,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       if (node.id !== nodeId) {
         return node;
       }
+      const nextZIndex = Object.prototype.hasOwnProperty.call(partialData, 'zIndex')
+        ? (typeof partialData.zIndex === 'number' ? partialData.zIndex : undefined)
+        : node.zIndex;
       return {
         ...node,
+        zIndex: nextZIndex,
         data: {
           ...(node.data || {}),
           ...partialData,

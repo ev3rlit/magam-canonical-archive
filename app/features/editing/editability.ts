@@ -10,22 +10,26 @@ export type EditCommandType =
   | 'node.move.relative'
   | 'node.content.update'
   | 'node.style.update'
+  | 'node.group.update'
   | 'node.rename'
   | 'node.create'
   | 'mindmap.child.create'
   | 'mindmap.sibling.create'
-  | 'node.reparent';
+  | 'node.reparent'
+  | 'node.z-order.update';
 
 export const EDIT_COMMAND_TYPES: EditCommandType[] = [
   'node.move.absolute',
   'node.move.relative',
   'node.content.update',
   'node.style.update',
+  'node.group.update',
   'node.rename',
   'node.create',
   'mindmap.child.create',
   'mindmap.sibling.create',
   'node.reparent',
+  'node.z-order.update',
 ];
 
 export type EditFamily =
@@ -331,6 +335,10 @@ export function isCommandAllowed(editMeta: EditMeta | undefined, commandType: Ed
 
   if (commandType === 'node.style.update') {
     return editMeta.styleEditableKeys.length > 0;
+  }
+
+  if (commandType === 'node.group.update' || commandType === 'node.z-order.update') {
+    return editMeta.family !== 'mindmap-member';
   }
 
   if (commandType === 'node.rename') {

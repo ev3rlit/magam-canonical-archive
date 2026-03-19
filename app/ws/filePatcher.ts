@@ -12,6 +12,7 @@ import { RPC_ERRORS } from './rpc';
 
 export interface NodeProps {
     id?: string;
+    groupId?: string | null;
     from?: string | { node: string; edge?: Record<string, unknown> };
     to?: string;
     anchor?: string;
@@ -20,6 +21,7 @@ export interface NodeProps {
     content?: string;
     x?: number;
     y?: number;
+    zIndex?: number | null;
     width?: number;
     height?: number;
     pattern?: Record<string, unknown>;

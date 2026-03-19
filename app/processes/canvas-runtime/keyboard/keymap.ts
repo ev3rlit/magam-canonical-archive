@@ -26,6 +26,12 @@ export const DEFAULT_CANVAS_KEY_BINDINGS: readonly CanvasKeyBinding[] = [
     description: 'Duplicate the current selection.',
   },
   {
+    bindingId: 'selection.group.primary-g',
+    chord: createNormalizedKeyChord({ key: 'g', metaKey: true }),
+    commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP,
+    description: 'Group the current selection.',
+  },
+  {
     bindingId: 'selection.select-all.primary-a',
     chord: createNormalizedKeyChord({ key: 'a', metaKey: true }),
     commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL,
@@ -80,14 +86,20 @@ export const DEFAULT_CANVAS_KEY_BINDINGS: readonly CanvasKeyBinding[] = [
     description: 'Zoom the canvas out.',
   },
   {
+    bindingId: 'selection.ungroup.primary-shift-g',
+    chord: createNormalizedKeyChord({ key: 'g', metaKey: true, shiftKey: true }),
+    commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP,
+    description: 'Ungroup the current selection.',
+  },
+  {
     bindingId: 'selection.focus-next-washi.primary-shift-f',
     chord: createNormalizedKeyChord({ key: 'f', metaKey: true, shiftKey: true }),
     commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_FOCUS_NEXT_WASHI,
     description: 'Move focus to the next Washi node.',
   },
   {
-    bindingId: 'selection.select-all-washi.primary-shift-g',
-    chord: createNormalizedKeyChord({ key: 'g', metaKey: true, shiftKey: true }),
+    bindingId: 'selection.select-all-washi.primary-alt-shift-g',
+    chord: createNormalizedKeyChord({ key: 'g', metaKey: true, altKey: true, shiftKey: true }),
     commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL_WASHI,
     description: 'Select every Washi node in the graph.',
   },

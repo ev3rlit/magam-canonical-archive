@@ -10,6 +10,7 @@ function createHostInput(overrides: Partial<Parameters<typeof createGraphCanvasK
     selectAllNodeIds: () => ['shape-1', 'shape-2'],
     deleteSelectedNodes: async () => ['shape-1'],
     duplicateSelectedNodes: async () => ['shape-2'],
+    groupSelection: async () => ['shape-1', 'shape-2'],
     showToast: () => undefined,
     getGraphState: () => ({
       nodes: [],
@@ -19,6 +20,7 @@ function createHostInput(overrides: Partial<Parameters<typeof createGraphCanvasK
     setGraphState: () => undefined,
     getActiveElement: () => null,
     isEditorFocusActive: () => false,
+    ungroupSelection: async () => ['shape-1', 'shape-2'],
     zoomIn: () => 1.2,
     zoomOut: () => 0.8,
     ...overrides,

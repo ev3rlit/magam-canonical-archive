@@ -177,6 +177,38 @@ describe('parseRenderGraph mindmap roots', () => {
   });
 });
 
+describe('parseRenderGraph structural canvas metadata', () => {
+  it('preserves explicit groupId and zIndex props on canvas nodes', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'shape-a',
+              x: 40,
+              y: 80,
+              groupId: 'group-1',
+              zIndex: 12,
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.nodes[0]).toMatchObject({
+      id: 'shape-a',
+      zIndex: 12,
+      data: {
+        groupId: 'group-1',
+        zIndex: 12,
+      },
+    });
+  });
+});
+
 describe('parseRenderGraph canonical object normalization', () => {
   it('preserves minimal phase-1 shape variants on graph-shape nodes', () => {
     const parsed = parseRenderGraph({

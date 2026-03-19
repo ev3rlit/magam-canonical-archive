@@ -17,7 +17,9 @@ export type UpdateNodeCommandType =
   | 'node.move.relative'
   | 'node.content.update'
   | 'node.style.update'
-  | 'node.rename';
+  | 'node.rename'
+  | 'node.group.update'
+  | 'node.z-order.update';
 
 export interface RpcMutationResult {
   success?: boolean;
@@ -329,6 +331,16 @@ export async function applyEditCompletionSnapshot(
     return;
   }
 
+  if (event.type === 'NODE_GROUP_MEMBERSHIP_UPDATED') {
+    const groupId = 'groupId' in snapshot && typeof snapshot.groupId === 'string'
+      ? snapshot.groupId
+      : null;
+    await mutators.updateNode(event.nodeId, { groupId }, event.filePath, {
+      commandType: 'node.group.update',
+    });
+    return;
+  }
+
   if (event.type === 'NODE_RENAMED') {
     const beforeId = event.before.id;
     const afterId = event.after.id;
@@ -388,6 +400,16 @@ export async function applyEditCompletionSnapshot(
       throw new Error('INVALID_EVENT_SNAPSHOT');
     }
     await mutators.updateNode(event.nodeId, { locked }, event.filePath);
+    return;
+  }
+
+  if (event.type === 'NODE_Z_ORDER_UPDATED') {
+    const zIndex = 'zIndex' in snapshot && typeof snapshot.zIndex === 'number'
+      ? snapshot.zIndex
+      : null;
+    await mutators.updateNode(event.nodeId, { zIndex }, event.filePath, {
+      commandType: 'node.z-order.update',
+    });
     return;
   }
 

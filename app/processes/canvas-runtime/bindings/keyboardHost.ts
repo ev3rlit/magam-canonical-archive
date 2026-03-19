@@ -49,6 +49,7 @@ export interface GraphCanvasKeyboardHostInput {
   selectAllNodeIds: () => string[];
   deleteSelectedNodes: () => Promise<string[]>;
   duplicateSelectedNodes: () => Promise<string[]>;
+  groupSelection: () => Promise<string[]>;
   showToast: (message: string) => void;
   getGraphState: () => GraphCanvasSnapshotState;
   setGraphState: (next: GraphCanvasSnapshotState) => void;
@@ -61,6 +62,7 @@ export interface GraphCanvasKeyboardHostInput {
   getActiveElement?: () => Element | null;
   isEditorFocusActive?: () => boolean;
   getClipboard?: () => Pick<Clipboard, 'readText' | 'writeText'> | null | undefined;
+  ungroupSelection: () => Promise<string[]>;
   zoomIn?: () => Promise<number | null> | number | null;
   zoomOut?: () => Promise<number | null> | number | null;
 }
@@ -129,9 +131,15 @@ function createGraphCanvasKeyboardCommandContext(
     duplicateSelection: async () => ({
       nodeIds: await input.duplicateSelectedNodes(),
     }),
+    groupSelection: async () => ({
+      nodeIds: await input.groupSelection(),
+    }),
     selectAllNodes: () => input.selectAllNodeIds(),
     focusNextWashi: () => input.focusNextNodeByType('washi-tape'),
     selectAllWashi: () => input.selectNodesByType('washi-tape'),
+    ungroupSelection: async () => ({
+      nodeIds: await input.ungroupSelection(),
+    }),
     copySelectionToClipboard: async () => {
       const { nodes, edges, selectedNodeIds } = input.getGraphState();
       const payload = createGraphClipboardPayload(nodes, edges, selectedNodeIds);

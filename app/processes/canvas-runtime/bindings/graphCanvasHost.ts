@@ -6,6 +6,7 @@ import type {
   GraphCanvasCreateIntentInput,
   GraphCanvasNodeMenuIntentInput,
   GraphCanvasRenameIntentInput,
+  GraphCanvasSelectionActionIntentInput,
 } from '@/components/GraphCanvas';
 import { SelectionFloatingMenu } from '@/features/canvas-ui-entrypoints/selection-floating-menu/SelectionFloatingMenu';
 import { resolveSelectionFloatingMenuModel } from '@/features/canvas-ui-entrypoints/selection-floating-menu/selectionModel';
@@ -49,9 +50,15 @@ export interface GraphCanvasHostContextMenuActionsInput {
   onDeleteNode?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
   onToggleNodeLock?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
   onSelectNodeGroup?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
+  onEnterNodeGroup?: (nodeId: string) => Promise<void> | void;
+  onGroupSelection?: (input: GraphCanvasSelectionActionIntentInput) => Promise<void> | void;
+  onUngroupSelection?: (input: GraphCanvasSelectionActionIntentInput) => Promise<void> | void;
+  onBringSelectionToFront?: (input: GraphCanvasSelectionActionIntentInput) => Promise<void> | void;
+  onSendSelectionToBack?: (input: GraphCanvasSelectionActionIntentInput) => Promise<void> | void;
   onCreateNode?: (input: GraphCanvasCreateIntentInput) => Promise<void> | void;
   buildRenameIntent: (nodeId: string) => GraphCanvasRenameIntentInput;
   buildNodeMenuIntent: (nodeId: string) => GraphCanvasNodeMenuIntentInput;
+  buildSelectionActionIntent: (input?: Partial<GraphCanvasSelectionActionIntentInput>) => GraphCanvasSelectionActionIntentInput;
   buildCreateIntent: (input: GraphCanvasCreateIntentInput) => GraphCanvasCreateIntentInput;
 }
 
@@ -159,6 +166,23 @@ export function createGraphCanvasContextMenuActions(
     deleteNode: (nodeId: string) => input.onDeleteNode?.(input.buildNodeMenuIntent(nodeId)),
     toggleNodeLock: (nodeId: string) => input.onToggleNodeLock?.(input.buildNodeMenuIntent(nodeId)),
     selectNodeGroup: (nodeId: string) => input.onSelectNodeGroup?.(input.buildNodeMenuIntent(nodeId)),
+    enterNodeGroup: (nodeId: string) => input.onEnterNodeGroup?.(nodeId),
+    groupSelection: (nodeId: string) => input.onGroupSelection?.(input.buildSelectionActionIntent({
+      anchorNodeId: nodeId,
+      trigger: { source: 'menu' },
+    })),
+    ungroupSelection: (nodeId: string) => input.onUngroupSelection?.(input.buildSelectionActionIntent({
+      anchorNodeId: nodeId,
+      trigger: { source: 'menu' },
+    })),
+    bringSelectionToFront: (nodeId: string) => input.onBringSelectionToFront?.(input.buildSelectionActionIntent({
+      anchorNodeId: nodeId,
+      trigger: { source: 'menu' },
+    })),
+    sendSelectionToBack: (nodeId: string) => input.onSendSelectionToBack?.(input.buildSelectionActionIntent({
+      anchorNodeId: nodeId,
+      trigger: { source: 'menu' },
+    })),
     createCanvasNode: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => {
       if (!input.onCreateNode) {
         return;

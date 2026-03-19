@@ -103,3 +103,28 @@ export function createContentIntentEnvelope(overrides?: Partial<UIIntentEnvelope
     ...overrides,
   };
 }
+
+export function createSelectionStructuralIntentEnvelope(input: {
+  intentId: 'selection.group' | 'selection.ungroup' | 'selection.z-order.bring-to-front' | 'selection.z-order.send-to-back';
+  selectedNodeIds: string[];
+  renderedNodeId?: string;
+  currentFile?: string;
+  overrides?: Partial<UIIntentEnvelope>;
+}): UIIntentEnvelope {
+  return {
+    surfaceId: 'node-context-menu',
+    intentId: input.intentId,
+    selectionRef: {
+      currentFile: input.currentFile ?? 'examples/bridge.tsx',
+      selectedNodeIds: input.selectedNodeIds,
+    },
+    ...(input.renderedNodeId ? {
+      targetRef: {
+        renderedNodeId: input.renderedNodeId,
+      },
+    } : {}),
+    rawPayload: {},
+    optimistic: false,
+    ...(input.overrides ?? {}),
+  };
+}
