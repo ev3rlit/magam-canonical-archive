@@ -20,6 +20,18 @@ describe('resolveCanvasKeyBinding', () => {
 
   it('maps clipboard and Washi navigation shortcuts through the default keymap', () => {
     expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'backspace' }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DELETE);
+
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'd', ctrlKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DUPLICATE);
+
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: 'a', metaKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL);
+
+    expect(resolveCanvasKeyBinding({
       chord: normalizeKeyEvent({ key: 'c', metaKey: true }),
     })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.CLIPBOARD_COPY_SELECTION);
 
@@ -30,6 +42,14 @@ describe('resolveCanvasKeyBinding', () => {
     expect(resolveCanvasKeyBinding({
       chord: normalizeKeyEvent({ key: 'f', metaKey: true, shiftKey: true }),
     })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_FOCUS_NEXT_WASHI);
+
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: '=', ctrlKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_IN);
+
+    expect(resolveCanvasKeyBinding({
+      chord: normalizeKeyEvent({ key: '-', metaKey: true }),
+    })?.commandId).toBe(CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_OUT);
   });
 
   it('returns null when no key binding matches the normalized chord', () => {

@@ -8,6 +8,30 @@ import {
 
 export const DEFAULT_CANVAS_KEY_BINDINGS: readonly CanvasKeyBinding[] = [
   {
+    bindingId: 'selection.delete.backspace',
+    chord: createNormalizedKeyChord({ key: 'backspace' }),
+    commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DELETE,
+    description: 'Delete the current selection.',
+  },
+  {
+    bindingId: 'selection.delete.delete',
+    chord: createNormalizedKeyChord({ key: 'delete' }),
+    commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DELETE,
+    description: 'Delete the current selection.',
+  },
+  {
+    bindingId: 'selection.duplicate.primary-d',
+    chord: createNormalizedKeyChord({ key: 'd', metaKey: true }),
+    commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DUPLICATE,
+    description: 'Duplicate the current selection.',
+  },
+  {
+    bindingId: 'selection.select-all.primary-a',
+    chord: createNormalizedKeyChord({ key: 'a', metaKey: true }),
+    commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL,
+    description: 'Select every canvas node.',
+  },
+  {
     bindingId: 'history.undo.primary-z',
     chord: createNormalizedKeyChord({ key: 'z', metaKey: true }),
     commandId: CANVAS_KEYBOARD_COMMAND_IDS.HISTORY_UNDO,
@@ -36,6 +60,24 @@ export const DEFAULT_CANVAS_KEY_BINDINGS: readonly CanvasKeyBinding[] = [
     chord: createNormalizedKeyChord({ key: 'v', metaKey: true }),
     commandId: CANVAS_KEYBOARD_COMMAND_IDS.CLIPBOARD_PASTE_SELECTION,
     description: 'Paste the last copied graph selection.',
+  },
+  {
+    bindingId: 'viewport.zoom-in.primary-equals',
+    chord: createNormalizedKeyChord({ key: '=', metaKey: true }),
+    commandId: CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_IN,
+    description: 'Zoom the canvas in.',
+  },
+  {
+    bindingId: 'viewport.zoom-in.primary-plus',
+    chord: createNormalizedKeyChord({ key: '+', metaKey: true, shiftKey: true }),
+    commandId: CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_IN,
+    description: 'Zoom the canvas in.',
+  },
+  {
+    bindingId: 'viewport.zoom-out.primary-minus',
+    chord: createNormalizedKeyChord({ key: '-', metaKey: true }),
+    commandId: CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_OUT,
+    description: 'Zoom the canvas out.',
   },
   {
     bindingId: 'selection.focus-next-washi.primary-shift-f',

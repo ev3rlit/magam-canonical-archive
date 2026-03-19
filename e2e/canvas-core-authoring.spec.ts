@@ -232,4 +232,73 @@ test.describe('canvas core authoring entry', () => {
     await expect(page.locator('[data-floating-toolbar-create-toggle]')).toHaveAttribute('title', 'Create Mode: Line');
     await expect(page.getByText('EDIT_REJECTED')).toHaveCount(0);
   });
+
+  test('canvas core authoring actions: floating menu context menu shortcuts', async ({ page, browserName }) => {
+    void browserName;
+    await page.evaluate(([storageKey]) => {
+      window.localStorage.removeItem(storageKey);
+    }, [lastActiveStorageKey]);
+    renderGraphChildren = [
+      {
+        type: 'graph-shape',
+        props: {
+          id: 'shape-actions',
+          x: 120,
+          y: 120,
+          type: 'rectangle',
+          text: 'Shape actions',
+          size: { width: 180, height: 120 },
+        },
+        children: [],
+      },
+      {
+        type: 'graph-text',
+        props: {
+          id: 'text-actions',
+          x: 380,
+          y: 160,
+          text: 'Editable text',
+        },
+        children: [],
+      },
+    ];
+    await page.reload({ waitUntil: 'domcontentloaded' });
+
+    const shapeNode = page.locator('.react-flow__node[data-id="shape-actions"]');
+    const textNode = page.locator('.react-flow__node[data-id="text-actions"]');
+    await expect(shapeNode).toBeVisible();
+    await expect(textNode).toBeVisible();
+
+    await shapeNode.click();
+    await expect(page.locator('[data-selection-floating-control="font-family"]')).toBeVisible();
+    await expect(page.locator('[data-selection-floating-control="font-size"]')).toBeVisible();
+    await expect(page.locator('[data-selection-floating-control="bold"]')).toBeVisible();
+    await expect(page.locator('[data-selection-floating-control="color"]')).toBeVisible();
+    await expect(page.locator('[data-selection-floating-control="more"]')).toHaveCount(0);
+    await expect(page.locator('[data-selection-floating-control="object-type"]')).toHaveCount(0);
+
+    await shapeNode.click({ button: 'right' });
+    await expect(page.getByText('ID 변경')).toBeVisible();
+    await expect(page.getByText('복제')).toBeVisible();
+    await expect(page.getByText('삭제')).toBeVisible();
+    await expect(page.getByText('잠금 토글')).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await textNode.dblclick();
+    await expect(page.locator('textarea')).toBeVisible();
+    await expect(page.locator('[data-selection-floating-control]')).toHaveCount(0);
+
+    await page.keyboard.press('Meta+=');
+    await expect(page.locator('textarea')).toBeVisible();
+    await expect(page.getByText('Zoom:')).toBeVisible();
+
+    await page.keyboard.press('Meta+D');
+    await expect(page.getByText('EDIT_REJECTED')).toHaveCount(0);
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('textarea')).toHaveCount(0);
+
+    await page.keyboard.press('Meta+A');
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
+  });
 });
