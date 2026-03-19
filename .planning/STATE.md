@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: active
-stopped_at: 01-05 complete; proceed to 01-06 with editable object content surface and markdown-first body entry
-last_updated: "2026-03-19T10:34:39Z"
+stopped_at: 01-06 complete; run gsd-verify-work for Phase 01 acceptance and completion
+last_updated: "2026-03-19T12:29:10Z"
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -19,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** AI and humans can reliably create, review, and evolve a shared knowledge canvas through the same canonical mutation backbone.
-**Current focus:** Phase 01 — canvas-core-authoring
+**Current focus:** Phase 01 — canvas-core-authoring verification and completion
 
 ## Current Position
 
-Phase: 01 (canvas-core-authoring) — EXECUTING
+Phase: 01 (canvas-core-authoring) — READY FOR VERIFICATION
 Plan: 6 of 6
 
 ## Performance Metrics
@@ -62,6 +62,8 @@ Plan: 6 of 6
 - 01-04: Suppress floating or context menu surfaces during active body editing and allow only truly global canvas shortcuts such as zoom to pass through the editor state
 - 01-05: Represent Phase 1 grouping as explicit groupId-backed structural metadata so group or ungroup and z-order changes can stay on the current action-bridge and compatibility-patch path
 - 01-05: Keep inner-group focus store-owned and unwind it through desktop double-click entry, explicit enter-group menu actions, and progressive Escape or pane dismissal
+- 01-06: Use markdown-first source entry as the default Phase 1 body-edit mode for text, markdown, and sticky objects while keeping compatibility upgrades on the TSX patch path
+- 01-06: Keep desktop body re-entry on double click and Enter, add explicit narrow/mobile edit affordances, and preserve selection when pane-click commits exit body editing
 
 ### Pending Todos
 
@@ -70,10 +72,10 @@ None yet.
 ### Blockers/Concerns
 
 - Legacy file-first editing still exists and must remain a compatibility path while canonical DB flows become primary
-- Editable body surfaces and markdown-first entry still need `01-06` to close the remaining content authoring gap
+- Phase 01 execution is complete, but the milestone still needs verification/completion routing before Phase 02 begins
 
 ## Session Continuity
 
-Last session: 2026-03-19T10:34:39Z
-Stopped at: 01-05 complete; proceed to 01-06 with editable object content surface and markdown-first body entry
-Resume file: .planning/phases/01-canvas-core-authoring/01-06-PLAN.md
+Last session: 2026-03-19T12:29:10Z
+Stopped at: 01-06 complete; run gsd-verify-work for Phase 01 acceptance and completion
+Resume file: .planning/phases/01-canvas-core-authoring/01-06-SUMMARY.md
