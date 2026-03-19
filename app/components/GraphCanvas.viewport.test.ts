@@ -43,6 +43,18 @@ describe('GraphCanvas viewport helpers', () => {
     ).toBeNull();
   });
 
+  it('restores the current viewport snapshot when the same file re-renders without a saved tab snapshot', () => {
+    expect(
+      resolveViewportToRestore({
+        hasRenderedGraph: true,
+        previousFile: 'examples/a.tsx',
+        currentFile: 'examples/a.tsx',
+        currentViewport: { x: -64, y: 96, zoom: 1.4 },
+        savedViewport: null,
+      }),
+    ).toEqual({ x: -64, y: 96, zoom: 1.4 });
+  });
+
   it('normalizes a flow viewport into tab snapshot shape', () => {
     expect(toTabViewportState({ x: 10, y: 20, zoom: 0.75 })).toEqual({
       x: 10,

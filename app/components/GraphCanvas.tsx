@@ -199,15 +199,43 @@ type SelectionAnchorNode = Pick<FlowNode, 'id' | 'position' | 'width' | 'height'
   };
 };
 
-export function buildSelectionBoundsAnchor(input: {
+type CanvasDismissNode = Pick<FlowNode, 'id' | 'data'>;
+type SelectionShellNode = SelectionAnchorNode & Pick<FlowNode, 'type' | 'data'>;
+
+export type GraphCanvasDismissalKind =
+  | 'commit-text-edit'
+  | 'cancel-text-edit'
+  | 'expand-group-selection'
+  | 'clear-selection'
+  | 'noop';
+
+export interface GraphCanvasDismissalDecision {
+  kind: GraphCanvasDismissalKind;
+  nodeIds?: string[];
+  activeTextEditNodeId?: string;
+}
+
+export interface GraphCanvasSelectionShellState {
+  visible: boolean;
+  canResize: boolean;
+  canRotate: boolean;
+  activeGesture: 'move' | 'resize' | 'rotate' | null;
+  screenBounds: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null;
+}
+
+function resolveSelectionBounds(input: {
   selectedNodes: SelectionAnchorNode[];
-  viewport: { x: number; y: number; zoom: number };
 }) {
   if (input.selectedNodes.length === 0) {
     return null;
   }
 
-  const bounds = input.selectedNodes.reduce((acc, node) => {
+  return input.selectedNodes.reduce((acc, node) => {
     const width = node.width ?? node.measured?.width ?? 0;
     const height = node.height ?? node.measured?.height ?? 0;
     const minX = Math.min(acc.minX, node.position.x);
@@ -221,6 +249,83 @@ export function buildSelectionBoundsAnchor(input: {
     maxX: Number.NEGATIVE_INFINITY,
     maxY: Number.NEGATIVE_INFINITY,
   });
+}
+
+function resolveNodeGroupSelection(nodeIds: string[], nodes: CanvasDismissNode[]): string[] | null {
+  if (nodeIds.length === 0) {
+    return null;
+  }
+
+  const selectedNodes = nodes.filter((node) => nodeIds.includes(node.id));
+  if (selectedNodes.length !== nodeIds.length) {
+    return null;
+  }
+
+  const groupIds = selectedNodes.map((node) => {
+    const data = (node.data || {}) as Record<string, unknown>;
+    return typeof data.groupId === 'string' && data.groupId.length > 0
+      ? data.groupId
+      : null;
+  });
+
+  const primaryGroupId = groupIds[0];
+  if (!primaryGroupId || groupIds.some((groupId) => groupId !== primaryGroupId)) {
+    return null;
+  }
+
+  const groupedNodeIds = nodes
+    .filter((node) => {
+      const data = (node.data || {}) as Record<string, unknown>;
+      return data.groupId === primaryGroupId;
+    })
+    .map((node) => node.id);
+
+  if (groupedNodeIds.length <= nodeIds.length) {
+    return null;
+  }
+
+  return groupedNodeIds;
+}
+
+function resolveSelectionShellCapabilities(node: SelectionShellNode | undefined) {
+  if (!node) {
+    return {
+      canResize: false,
+      canRotate: false,
+    };
+  }
+
+  const nodeData = (node.data || {}) as Record<string, unknown>;
+  const canResize = (
+    node.type === 'image'
+    || node.type === 'sticker'
+    || node.type === 'sticky'
+    || node.type === 'shape'
+    || node.type === 'markdown'
+  );
+  const canRotate = node.type === 'sticker'
+    || (typeof nodeData.rotation === 'number' && Number.isFinite(nodeData.rotation));
+
+  return {
+    canResize,
+    canRotate,
+  };
+}
+
+export function buildSelectionBoundsAnchor(input: {
+  selectedNodes: SelectionAnchorNode[];
+  viewport: { x: number; y: number; zoom: number };
+}) {
+  if (input.selectedNodes.length === 0) {
+    return null;
+  }
+
+  const bounds = resolveSelectionBounds({
+    selectedNodes: input.selectedNodes,
+  });
+  if (!bounds) {
+    return null;
+  }
 
   return createEntrypointAnchor({
     anchorId: 'selection-floating-menu:selection-bounds',
@@ -235,6 +340,76 @@ export function buildSelectionBoundsAnchor(input: {
     },
     viewport: input.viewport,
   });
+}
+
+export function resolveCanvasDismissal(input: {
+  reason: 'escape' | 'pane';
+  activeTextEditNodeId: string | null;
+  selectedNodeIds: string[];
+  nodes: CanvasDismissNode[];
+}): GraphCanvasDismissalDecision {
+  if (input.activeTextEditNodeId) {
+    return {
+      kind: input.reason === 'pane' ? 'commit-text-edit' : 'cancel-text-edit',
+      activeTextEditNodeId: input.activeTextEditNodeId,
+    };
+  }
+
+  const groupedSelection = resolveNodeGroupSelection(input.selectedNodeIds, input.nodes);
+  if (groupedSelection) {
+    return {
+      kind: 'expand-group-selection',
+      nodeIds: groupedSelection,
+    };
+  }
+
+  if (input.selectedNodeIds.length > 0) {
+    return {
+      kind: 'clear-selection',
+    };
+  }
+
+  return {
+    kind: 'noop',
+  };
+}
+
+export function resolveSelectionShellState(input: {
+  selectedNodes: SelectionShellNode[];
+  viewport: { x: number; y: number; zoom: number };
+  activeGesture?: 'move' | 'resize' | 'rotate' | null;
+}): GraphCanvasSelectionShellState {
+  const bounds = resolveSelectionBounds({
+    selectedNodes: input.selectedNodes,
+  });
+  if (!bounds) {
+    return {
+      visible: false,
+      canResize: false,
+      canRotate: false,
+      activeGesture: input.activeGesture ?? null,
+      screenBounds: null,
+    };
+  }
+
+  const primaryNode = input.selectedNodes.length === 1
+    ? input.selectedNodes[0]
+    : undefined;
+  const capabilities = resolveSelectionShellCapabilities(primaryNode);
+  const zoom = input.viewport.zoom || 1;
+
+  return {
+    visible: true,
+    canResize: capabilities.canResize,
+    canRotate: capabilities.canRotate,
+    activeGesture: input.activeGesture ?? null,
+    screenBounds: {
+      left: bounds.minX * zoom + input.viewport.x,
+      top: bounds.minY * zoom + input.viewport.y,
+      width: Math.max((bounds.maxX - bounds.minX) * zoom, 0),
+      height: Math.max((bounds.maxY - bounds.minY) * zoom, 0),
+    },
+  };
 }
 
 function areSelectionIdsEqual(left: string[], right: string[]): boolean {

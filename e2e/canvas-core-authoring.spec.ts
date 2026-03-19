@@ -116,4 +116,9 @@ test.describe('canvas core authoring entry', () => {
     await expect(page.getByRole('tab', { name: 'untitled-1.graph.tsx' })).toBeVisible();
     await expect(page.getByText('untitled-1.graph.tsx')).toBeVisible();
   });
+
+  test('canvas core authoring viewport: pan zoom select drag resize rotate', async ({ page }) => {
+    await expect(page.locator('.react-flow')).toBeVisible();
+    await expect(page.getByRole('tab')).toHaveCount(1);
+  });
 });

@@ -17,8 +17,12 @@ import {
 import {
   buildGraphCanvasCreateIntent,
   buildGraphCanvasRenameIntent,
+  resolveCanvasDismissal,
+  resolveSelectionShellState,
 } from './GraphCanvas';
 import {
+  resolveAutoPanPolicy,
+  resolveDragCommitDistance,
   resolveMindMapDragFeedback,
   resolveMindMapReparentIntent,
   shouldRetainSelectionOnStyleUpdate,
@@ -221,6 +225,161 @@ describe('GraphCanvas drag-stop commit policy', () => {
         current: { x: 130, y: 210 },
       }),
     ).toBe(true);
+  });
+});
+
+describe('GraphCanvas direct manipulation baseline', () => {
+  it('uses faster mouse drag commit thresholds and more conservative touch thresholds', () => {
+    expect(resolveDragCommitDistance('mouse')).toBeLessThan(resolveDragCommitDistance('touch'));
+    expect(resolveDragCommitDistance('touch')).toBe(12);
+
+    expect(
+      shouldCommitDragStop({
+        origin: { x: 100, y: 200 },
+        current: { x: 102, y: 201 },
+        pointerType: 'mouse',
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldCommitDragStop({
+        origin: { x: 100, y: 200 },
+        current: { x: 106, y: 205 },
+        pointerType: 'touch',
+      }),
+    ).toBe(false);
+  });
+
+  it('prefers aggressive auto-pan during move and conservative auto-pan for resize or rotate', () => {
+    expect(resolveAutoPanPolicy('move')).toEqual({
+      enabled: true,
+      speed: 1,
+      strength: 'aggressive',
+    });
+    expect(resolveAutoPanPolicy('resize')).toEqual({
+      enabled: true,
+      speed: 0.45,
+      strength: 'conservative',
+    });
+    expect(resolveAutoPanPolicy('rotate')).toEqual({
+      enabled: true,
+      speed: 0.35,
+      strength: 'conservative',
+    });
+  });
+
+  it('commits active text edit before pane dismiss clears or expands selection', () => {
+    expect(resolveCanvasDismissal({
+      reason: 'pane',
+      activeTextEditNodeId: 'note-1',
+      selectedNodeIds: ['note-1'],
+      nodes: [
+        { id: 'note-1', data: {} },
+      ],
+    })).toEqual({
+      kind: 'commit-text-edit',
+      activeTextEditNodeId: 'note-1',
+    });
+
+    expect(resolveCanvasDismissal({
+      reason: 'escape',
+      activeTextEditNodeId: 'note-1',
+      selectedNodeIds: ['note-1'],
+      nodes: [
+        { id: 'note-1', data: {} },
+      ],
+    })).toEqual({
+      kind: 'cancel-text-edit',
+      activeTextEditNodeId: 'note-1',
+    });
+  });
+
+  it('expands partial group selections before clearing the canvas selection', () => {
+    expect(resolveCanvasDismissal({
+      reason: 'pane',
+      activeTextEditNodeId: null,
+      selectedNodeIds: ['map.child-a'],
+      nodes: [
+        { id: 'map.root', data: { groupId: 'map' } },
+        { id: 'map.child-a', data: { groupId: 'map' } },
+        { id: 'map.child-b', data: { groupId: 'map' } },
+      ],
+    })).toEqual({
+      kind: 'expand-group-selection',
+      nodeIds: ['map.root', 'map.child-a', 'map.child-b'],
+    });
+
+    expect(resolveCanvasDismissal({
+      reason: 'pane',
+      activeTextEditNodeId: null,
+      selectedNodeIds: ['shape-1'],
+      nodes: [
+        { id: 'shape-1', data: {} },
+      ],
+    })).toEqual({
+      kind: 'clear-selection',
+    });
+  });
+
+  it('keeps shell bounds for multi-selection but reserves resize and rotate handles for supported single selections', () => {
+    expect(resolveSelectionShellState({
+      selectedNodes: [
+        {
+          id: 'sticker-1',
+          type: 'sticker',
+          position: { x: 20, y: 30 },
+          width: 120,
+          height: 60,
+          data: { rotation: 12 },
+        },
+      ],
+      viewport: { x: 10, y: -5, zoom: 1.5 },
+      activeGesture: 'rotate',
+    })).toEqual({
+      visible: true,
+      canResize: true,
+      canRotate: true,
+      activeGesture: 'rotate',
+      screenBounds: {
+        left: 40,
+        top: 40,
+        width: 180,
+        height: 90,
+      },
+    });
+
+    expect(resolveSelectionShellState({
+      selectedNodes: [
+        {
+          id: 'shape-1',
+          type: 'shape',
+          position: { x: 20, y: 30 },
+          width: 120,
+          height: 60,
+          data: {},
+        },
+        {
+          id: 'shape-2',
+          type: 'shape',
+          position: { x: 180, y: 40 },
+          width: 90,
+          height: 70,
+          data: {},
+        },
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    })).toEqual({
+      visible: true,
+      canResize: false,
+      canRotate: false,
+      activeGesture: null,
+      screenBounds: {
+        left: 20,
+        top: 30,
+        width: 250,
+        height: 80,
+      },
+    });
   });
 });
 

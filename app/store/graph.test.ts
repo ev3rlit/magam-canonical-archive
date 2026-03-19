@@ -159,6 +159,34 @@ describe('document session persistence', () => {
     expect(after).toBe(before);
   });
 
+  it('updates tab selection snapshots without mutating unrelated tab metadata', () => {
+    const firstOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const secondOpen = useGraphStore.getState().openTab('docs/guide.graph.tsx');
+
+    if (firstOpen.status !== 'opened' || secondOpen.status !== 'opened') {
+      throw new Error('expected tabs to open for selection snapshot test');
+    }
+
+    const beforeSecondTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === secondOpen.tabId);
+    useGraphStore.getState().updateTabSnapshot(firstOpen.tabId, {
+      lastSelection: {
+        nodeIds: ['shape-1', 'shape-2'],
+        edgeIds: [],
+        updatedAt: 42,
+      },
+    });
+
+    const firstTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === firstOpen.tabId);
+    const secondTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === secondOpen.tabId);
+
+    expect(firstTab?.lastSelection).toEqual({
+      nodeIds: ['shape-1', 'shape-2'],
+      edgeIds: [],
+      updatedAt: 42,
+    });
+    expect(secondTab).toEqual(beforeSecondTab);
+  });
+
   it('persists lastActive document metadata per workspace source', () => {
     useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
     useGraphStore.getState().hydrateDocumentSession('workspace:docs/resume.graph.tsx');
