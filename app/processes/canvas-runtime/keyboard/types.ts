@@ -3,8 +3,13 @@ export const CANVAS_KEYBOARD_COMMAND_IDS = {
   CLIPBOARD_PASTE_SELECTION: 'clipboard.paste-selection',
   HISTORY_REDO: 'history.redo',
   HISTORY_UNDO: 'history.undo',
+  SELECTION_DELETE: 'selection.delete',
+  SELECTION_DUPLICATE: 'selection.duplicate',
+  SELECTION_SELECT_ALL: 'selection.select-all',
   SELECTION_FOCUS_NEXT_WASHI: 'selection.focus-next-washi',
   SELECTION_SELECT_ALL_WASHI: 'selection.select-all-washi',
+  VIEWPORT_ZOOM_IN: 'viewport.zoom-in',
+  VIEWPORT_ZOOM_OUT: 'viewport.zoom-out',
 } as const;
 
 export type CanvasKeyboardCommandId =
@@ -94,14 +99,27 @@ export interface CanvasKeyboardClipboardPasteResult {
   pastedNodeIds: string[];
 }
 
+export interface CanvasKeyboardSelectionMutationResult {
+  nodeIds: string[];
+}
+
+export interface CanvasKeyboardViewportResult {
+  zoom: number | null;
+}
+
 export interface CanvasKeyboardContext {
   isTextInputFocused: boolean;
+  deleteSelection: () => Promise<CanvasKeyboardSelectionMutationResult>;
+  duplicateSelection: () => Promise<CanvasKeyboardSelectionMutationResult>;
+  selectAllNodes: () => string[];
   focusNextWashi: () => string | null;
   selectAllWashi: () => string[];
   copySelectionToClipboard: () => Promise<CanvasKeyboardClipboardCopyResult>;
   pasteClipboardSelection: () => Promise<CanvasKeyboardClipboardPasteResult | null>;
   undo: () => Promise<{ source: CanvasKeyboardHistorySource }>;
   redo: () => Promise<{ source: CanvasKeyboardHistorySource }>;
+  zoomIn: () => Promise<CanvasKeyboardViewportResult> | CanvasKeyboardViewportResult;
+  zoomOut: () => Promise<CanvasKeyboardViewportResult> | CanvasKeyboardViewportResult;
   mapErrorToFeedback?: (input: {
     commandId: CanvasKeyboardCommandId;
     error: unknown;
@@ -114,6 +132,7 @@ export interface CanvasKeyboardCommand<
   TContext extends CanvasKeyboardContext = CanvasKeyboardContext,
 > {
   commandId: CanvasKeyboardCommandId;
+  allowInTextInput?: boolean;
   when?: (context: TContext) => boolean;
   execute: (context: TContext) => CanvasKeyboardResult | Promise<CanvasKeyboardResult>;
   onFailure?: (error: unknown, context: TContext) => CanvasKeyboardResult;

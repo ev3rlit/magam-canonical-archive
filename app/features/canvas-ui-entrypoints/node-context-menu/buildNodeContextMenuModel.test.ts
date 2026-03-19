@@ -43,6 +43,18 @@ describe('buildNodeContextMenuModel', () => {
     expect(model['lock-node'].visibility).toBe('enabled');
   });
 
+  it('keeps structural actions in the node context menu for mutable single-node selections', () => {
+    const model = buildNodeContextMenuModel(makeSnapshot({
+      node: stickerBridgeNodeFixture,
+      currentFile: 'examples/bridge.tsx',
+      selectedNodeIds: ['sticker-1'],
+    }));
+
+    expect(model['duplicate-node'].visibility).toBe('enabled');
+    expect(model['delete-node'].visibility).toBe('enabled');
+    expect(model['lock-node'].visibility).toBe('enabled');
+  });
+
   it('enables child and sibling create when canonical relation context marks a mindmap member', () => {
     const model = buildNodeContextMenuModel(makeSnapshot({
       node: mindmapBridgeNodeFixture,

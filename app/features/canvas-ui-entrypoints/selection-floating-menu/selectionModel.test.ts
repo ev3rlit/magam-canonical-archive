@@ -27,7 +27,7 @@ function makeSelectionNode(input: {
 }
 
 describe('selection floating menu selectionModel', () => {
-  it('hides the menu for heterogeneous multi-selection', () => {
+  it('hides the compact menu for heterogeneous multi-selection', () => {
     const nodes = [
       makeSelectionNode({
         id: 'text-1',
@@ -73,7 +73,7 @@ describe('selection floating menu selectionModel', () => {
     expect(model.hiddenReason).toBe('HETEROGENEOUS_SELECTION');
   });
 
-  it('derives direct-edit controls for a single text selection', () => {
+  it('derives a compact direct-edit inventory for a single text selection', () => {
     const node = makeSelectionNode({
       id: 'text-1',
       type: 'text',
@@ -104,7 +104,6 @@ describe('selection floating menu selectionModel', () => {
     expect(model.summary.commonValues.bold).toBe(true);
     expect(model.summary.commonValues.color).toBe('#2563eb');
     expect(model.primaryControls.map((control) => control.inventory.controlId)).toEqual([
-      'object-type',
       'font-family',
       'font-size',
       'bold',
@@ -114,7 +113,7 @@ describe('selection floating menu selectionModel', () => {
     expect(model.overflowControls.map((control) => control.inventory.controlId)).toEqual(['content']);
   });
 
-  it('shows washi preset overflow and disables controls while selection actions are pending', () => {
+  it('keeps the compact primary row minimal for pending washi multi-selection', () => {
     const washiA = makeSelectionNode({
       id: 'washi-1',
       type: 'washi-tape',
@@ -161,11 +160,59 @@ describe('selection floating menu selectionModel', () => {
     expect(model.visible).toBe(true);
     expect(model.summary.activePresetId).toBe('paper-grid');
     expect(model.primaryControls.map((control) => control.inventory.controlId)).toEqual([
-      'object-type',
       'more',
     ]);
     expect(model.overflowControls.map((control) => control.inventory.controlId)).toEqual(['washi-preset']);
     expect(model.overflowControls[0]?.enabled).toBe(false);
     expect(model.overflowControls[0]?.disabledReason).toBe('PENDING_ACTION');
+  });
+
+  it('keeps multi-selection content editing out of the compact floating menu', () => {
+    const first = makeSelectionNode({
+      id: 'text-a',
+      type: 'text',
+      data: {
+        label: 'A',
+        color: '#111827',
+        fontSize: 'm',
+        fontFamily: 'sans-inter',
+      },
+      editMeta: {
+        family: 'rich-content',
+        contentCarrier: 'text-child',
+        styleEditableKeys: ['color', 'fontSize', 'fontFamily', 'bold'],
+      },
+    });
+    const second = makeSelectionNode({
+      id: 'text-b',
+      type: 'text',
+      data: {
+        label: 'B',
+        color: '#111827',
+        fontSize: 'm',
+        fontFamily: 'sans-inter',
+      },
+      editMeta: {
+        family: 'rich-content',
+        contentCarrier: 'text-child',
+        styleEditableKeys: ['color', 'fontSize', 'fontFamily', 'bold'],
+      },
+    });
+
+    const model = resolveSelectionFloatingMenuModel({
+      nodes: [first, second],
+      selectedNodeIds: ['text-a', 'text-b'],
+      currentFile: 'examples/bridge.tsx',
+      runtimeState: DEFAULT_ENTRYPOINT_RUNTIME_STATE,
+    });
+
+    expect(model.visible).toBe(true);
+    expect(model.primaryControls.map((control) => control.inventory.controlId)).toEqual([
+      'font-family',
+      'font-size',
+      'bold',
+      'color',
+    ]);
+    expect(model.overflowControls).toEqual([]);
   });
 });

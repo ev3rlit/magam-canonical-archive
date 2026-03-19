@@ -73,6 +73,7 @@ export interface GraphCanvasSelectionFloatingMenuContributionInput extends Graph
   nodes: FlowNode[];
   selectedNodeIds: string[];
   currentFile: string | null;
+  activeTextEditNodeId: string | null;
   runtimeState: EntrypointRuntimeState;
   pendingActionRoutingByKey: Record<string, ActionRoutingPendingRecord>;
   washiPresets: SelectionFloatingMenuPresetOption[];
@@ -261,6 +262,10 @@ export function createGraphCanvasSelectionFloatingMenuContribution(
   input: GraphCanvasSelectionFloatingMenuContributionInput,
 ): OverlayContribution | null {
   if (input.selectionFloatingMenuSlot.items.length === 0) {
+    return null;
+  }
+
+  if (input.activeTextEditNodeId) {
     return null;
   }
 

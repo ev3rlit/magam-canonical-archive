@@ -191,13 +191,11 @@ function createControlState(input: {
       : undefined;
 
   if (input.controlId === 'object-type') {
-    const visible = input.selectedNodes.length > 0;
     return {
       inventory,
-      visible,
+      visible: false,
       enabled: false,
-      disabledReason: visible ? 'OBJECT_TYPE_PLACEHOLDER' : 'NO_SELECTION',
-      value: input.selectedNodes[0]?.nodeType,
+      disabledReason: 'OBJECT_TYPE_PLACEHOLDER',
     };
   }
 
@@ -261,17 +259,15 @@ function createControlState(input: {
   }
 
   if (input.controlId === 'content') {
-    const supportsContent = input.selectedNodes.some((node) => node.editMeta?.contentCarrier !== undefined);
     const canEditContent = input.selectedNodes.length === 1
       && Boolean(input.selectedNodes[0]?.editMeta)
       && input.selectedNodes[0]?.editMeta?.contentCarrier !== undefined;
     return {
       inventory,
-      visible: canEditContent || (input.selectedNodes.length > 1 && supportsContent),
+      visible: canEditContent,
       enabled: canEditContent && !disabledReason,
-      disabledReason: input.selectedNodes.length > 1
-        ? 'MULTI_SELECTION_CONTENT'
-        : disabledReason,
+      ...(input.selectedNodes.length > 1 ? { disabledReason: 'MULTI_SELECTION_CONTENT' as const } : {}),
+      ...(disabledReason && input.selectedNodes.length <= 1 ? { disabledReason } : {}),
       value: input.activeTextValue,
     };
   }

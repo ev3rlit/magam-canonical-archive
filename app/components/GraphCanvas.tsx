@@ -680,7 +680,7 @@ function GraphCanvasContent({
     close: closeOverlayHost,
     getActive: getActiveOverlays,
   } = useOverlayHost();
-  const { openMenu, handleSelectionChange } = useContextMenu();
+  const { openMenu, closeMenu, handleSelectionChange } = useContextMenu();
   const { copyImageToClipboard } = useExportImage();
   const [exportDialog, setExportDialog] = useState<{
     isOpen: boolean;
@@ -860,6 +860,12 @@ function GraphCanvasContent({
   useEffect(() => () => {
     clearPendingRelayout();
   }, [clearPendingRelayout]);
+
+  useEffect(() => {
+    if (activeTextEditNodeId) {
+      closeMenu('programmatic-close');
+    }
+  }, [activeTextEditNodeId, closeMenu]);
 
   useEffect(() => {
     createGestureRef.current = createGesture;
@@ -1046,6 +1052,9 @@ function GraphCanvasContent({
 
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: FlowNode) => {
+      if (activeTextEditNodeId) {
+        return;
+      }
       event.preventDefault();
       const runtime = useGraphStore.getState();
       openMenu(createGraphCanvasNodeContextMenu({
@@ -1060,11 +1069,14 @@ function GraphCanvasContent({
         triggerElement: event.currentTarget as HTMLElement,
       });
     },
-    [openMenu, contextMenuActions],
+    [activeTextEditNodeId, openMenu, contextMenuActions],
   );
 
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
+      if (activeTextEditNodeId) {
+        return;
+      }
       event.preventDefault();
       const runtime = useGraphStore.getState();
       openMenu(createGraphCanvasPaneContextMenu({
@@ -1076,7 +1088,7 @@ function GraphCanvasContent({
         triggerElement: event.currentTarget as HTMLElement,
       });
     },
-    [contextMenuActions, openMenu],
+    [activeTextEditNodeId, contextMenuActions, openMenu],
   );
 
   const onCanvasMouseDownCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
@@ -1729,6 +1741,7 @@ function GraphCanvasContent({
     nodes,
     selectedNodeIds,
     currentFile,
+    activeTextEditNodeId,
     runtimeState: entrypointRuntime,
     pendingActionRoutingByKey,
     washiPresets,
@@ -1736,6 +1749,7 @@ function GraphCanvasContent({
     onCommitContent: handleSelectionContentCommit,
   }), [
     currentFile,
+    activeTextEditNodeId,
     entrypointRuntime,
     handleSelectionContentCommit,
     handleSelectionStylePatch,
@@ -1830,6 +1844,33 @@ function GraphCanvasContent({
       graphClipboardRef,
       focusNextNodeByType,
       selectNodesByType,
+      selectAllNodeIds: () => {
+        const ids = getNodes().map((node) => node.id);
+        syncControlledSelection(ids);
+        return ids;
+      },
+      deleteSelectedNodes: async () => {
+        if (!onDeleteNode) {
+          return [];
+        }
+
+        const ids = [...useGraphStore.getState().selectedNodeIds];
+        for (const nodeId of ids) {
+          await Promise.resolve(onDeleteNode(buildGraphCanvasNodeMenuIntent(nodeId)));
+        }
+        return ids;
+      },
+      duplicateSelectedNodes: async () => {
+        if (!onDuplicateNode) {
+          return [];
+        }
+
+        const ids = [...useGraphStore.getState().selectedNodeIds];
+        for (const nodeId of ids) {
+          await Promise.resolve(onDuplicateNode(buildGraphCanvasNodeMenuIntent(nodeId)));
+        }
+        return ids;
+      },
       showToast,
       getGraphState: () => {
         const state = useGraphStore.getState();
@@ -1849,9 +1890,18 @@ function GraphCanvasContent({
       mapEditErrorToToast,
       onUndoEditStep,
       onRedoEditStep,
+      isEditorFocusActive: () => Boolean(useGraphStore.getState().activeTextEditNodeId),
       getClipboard: () => (
         typeof navigator !== 'undefined' ? navigator.clipboard : null
       ),
+      zoomIn: () => {
+        handleZoomIn();
+        return null;
+      },
+      zoomOut: () => {
+        handleZoomOut();
+        return null;
+      },
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1860,7 +1910,20 @@ function GraphCanvasContent({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusNextNodeByType, mapEditErrorToToast, onRedoEditStep, onUndoEditStep, selectNodesByType, showToast]);
+  }, [
+    focusNextNodeByType,
+    getNodes,
+    handleZoomIn,
+    handleZoomOut,
+    mapEditErrorToToast,
+    onDeleteNode,
+    onDuplicateNode,
+    onRedoEditStep,
+    onUndoEditStep,
+    selectNodesByType,
+    showToast,
+    syncControlledSelection,
+  ]);
 
   return (
     <>

@@ -46,6 +46,9 @@ export interface GraphCanvasKeyboardHostInput {
   graphClipboardRef: MutableRefObject<GraphCanvasClipboardState>;
   focusNextNodeByType: (nodeType: string) => string | null;
   selectNodesByType: (nodeType: string) => string[];
+  selectAllNodeIds: () => string[];
+  deleteSelectedNodes: () => Promise<string[]>;
+  duplicateSelectedNodes: () => Promise<string[]>;
   showToast: (message: string) => void;
   getGraphState: () => GraphCanvasSnapshotState;
   setGraphState: (next: GraphCanvasSnapshotState) => void;
@@ -56,7 +59,10 @@ export interface GraphCanvasKeyboardHostInput {
   bindings?: readonly CanvasKeyBinding[];
   traceSink?: CanvasKeyboardTraceSink;
   getActiveElement?: () => Element | null;
+  isEditorFocusActive?: () => boolean;
   getClipboard?: () => Pick<Clipboard, 'readText' | 'writeText'> | null | undefined;
+  zoomIn?: () => Promise<number | null> | number | null;
+  zoomOut?: () => Promise<number | null> | number | null;
 }
 
 export interface GraphCanvasKeyboardHost {
@@ -64,9 +70,15 @@ export interface GraphCanvasKeyboardHost {
 }
 
 export function isCanvasKeyboardTextInputFocused(element: Element | null): boolean {
-  return element instanceof HTMLInputElement
-    || element instanceof HTMLTextAreaElement
-    || (element as HTMLElement | null)?.isContentEditable === true;
+  const hasHtmlInput = typeof HTMLInputElement !== 'undefined'
+    && element instanceof HTMLInputElement;
+  const hasHtmlTextarea = typeof HTMLTextAreaElement !== 'undefined'
+    && element instanceof HTMLTextAreaElement;
+  const isEditableElement = typeof HTMLElement !== 'undefined'
+    && element instanceof HTMLElement
+    && element.isContentEditable === true;
+
+  return hasHtmlInput || hasHtmlTextarea || isEditableElement;
 }
 
 function pushClipboardHistory(
@@ -107,9 +119,17 @@ function createHostTraceEvent(input: {
 function createGraphCanvasKeyboardCommandContext(
   input: GraphCanvasKeyboardHostInput,
   traceSink: CanvasKeyboardTraceSink,
+  isTextInputFocused: boolean,
 ): CanvasKeyboardCommandContext {
   return {
-    isTextInputFocused: false,
+    isTextInputFocused,
+    deleteSelection: async () => ({
+      nodeIds: await input.deleteSelectedNodes(),
+    }),
+    duplicateSelection: async () => ({
+      nodeIds: await input.duplicateSelectedNodes(),
+    }),
+    selectAllNodes: () => input.selectAllNodeIds(),
     focusNextWashi: () => input.focusNextNodeByType('washi-tape'),
     selectAllWashi: () => input.selectNodesByType('washi-tape'),
     copySelectionToClipboard: async () => {
@@ -262,7 +282,18 @@ function createGraphCanvasKeyboardCommandContext(
         defaultMessage: mapped,
       };
     },
+    zoomIn: async () => ({
+      zoom: await input.zoomIn?.() ?? null,
+    }),
+    zoomOut: async () => ({
+      zoom: await input.zoomOut?.() ?? null,
+    }),
   };
+}
+
+function isKeyboardGlobalCommand(commandId: string | null | undefined): boolean {
+  return commandId === CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_IN
+    || commandId === CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_OUT;
 }
 
 export function createGraphCanvasKeyboardHost(
@@ -286,14 +317,24 @@ export function createGraphCanvasKeyboardHost(
         return null;
       }
 
-      const activeElement = input.getActiveElement?.() ?? document.activeElement;
-      if (isCanvasKeyboardTextInputFocused(activeElement)) {
+      const activeElement = input.getActiveElement?.()
+        ?? (typeof document !== 'undefined' ? document.activeElement : null);
+      const activeCommand = commands[resolvedBinding.commandId];
+      const hasTextInputFocus = isCanvasKeyboardTextInputFocused(activeElement);
+      const hasEditorFocus = input.isEditorFocusActive?.() === true;
+      const isEditingFocused = hasTextInputFocus || hasEditorFocus;
+
+      if (
+        isEditingFocused
+        && !activeCommand?.allowInTextInput
+        && !isKeyboardGlobalCommand(resolvedBinding.commandId)
+      ) {
         traceSink.write(createHostTraceEvent({
           event: 'command.skipped',
           commandId: resolvedBinding.commandId,
           bindingId: resolvedBinding.binding.bindingId,
           outcome: 'skipped',
-          reason: 'text-input-focused',
+          reason: hasTextInputFocus ? 'text-input-focused' : 'editor-focused',
           payload: {
             signature: chord.signature,
           },
@@ -319,7 +360,7 @@ export function createGraphCanvasKeyboardHost(
 
       const result = await dispatchKeyCommand({
         commandId: resolvedBinding.commandId,
-        context: createGraphCanvasKeyboardCommandContext(input, traceSink),
+        context: createGraphCanvasKeyboardCommandContext(input, traceSink, isEditingFocused),
         commands,
         emitTrace: (traceEvent) => {
           traceSink.write({
