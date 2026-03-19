@@ -90,6 +90,12 @@ const canonicalProfileShape: CanonicalObject = {
   alias: 'Shape',
 };
 
+describe('WorkspaceClient document entry convergence', () => {
+  it.todo('resumes the last active document before showing an idle shell');
+  it.todo('creates a new document into an empty canvas without a blocking naming modal');
+  it.todo('switches documents through Quick Open without duplicating the active tab');
+});
+
 describe('WorkspaceClient text edit isolation', () => {
   it('선택된 activeTextEditNodeId만 커밋 가능하다', () => {
     expect(canCommitTextEdit({

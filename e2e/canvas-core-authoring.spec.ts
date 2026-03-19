@@ -89,10 +89,12 @@ test.beforeEach(async ({ page }) => {
   await page.waitForLoadState('networkidle');
 });
 
-test.skip('canvas core authoring entry: resumes last active document', async ({ page }) => {
-  await expect(page).toHaveURL('/');
-});
+test.describe('canvas core authoring entry', () => {
+  test.skip('canvas core authoring entry: resumes last active document', async ({ page }) => {
+    await expect(page).toHaveURL('/');
+  });
 
-test.skip('canvas core authoring entry: creates a document into an empty canvas', async ({ page }) => {
-  await expect(page).toHaveURL('/');
+  test.skip('canvas core authoring entry: creates a document into an empty canvas', async ({ page }) => {
+    await expect(page).toHaveURL('/');
+  });
 });

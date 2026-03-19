@@ -125,6 +125,7 @@ describe('document session persistence', () => {
   });
 
   it.todo('persists lastActive document metadata per workspace source');
+  it.todo('tracks new-document empty-canvas entry state without requiring a pre-open naming gate');
 });
 
 describe('font hierarchy state', () => {
