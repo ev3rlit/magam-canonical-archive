@@ -32,7 +32,7 @@ Plans:
 - [x] 01-01-PLAN.md — Workspace and document canvas entry convergence
 - [x] 01-02-PLAN.md — Viewport, selection, drag, resize, and rotate baseline
 - [x] 01-03-PLAN.md — Minimal shape set and creation flows
-- [ ] 01-04-PLAN.md — Context menu, floating actions, and keyboard shortcuts
+- [x] 01-04-PLAN.md — Context menu, floating actions, and keyboard shortcuts
 - [ ] 01-05-PLAN.md — Grouping, z-order, and multi-selection behavior
 - [ ] 01-06-PLAN.md — Editable object content surface and markdown-first body entry
 
@@ -85,6 +85,6 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Canvas Core Authoring | 3/6 | In progress | - |
+| 1. Canvas Core Authoring | 4/6 | In progress | - |
 | 2. External Agent and Block Body Beta | 0/7 | Not started | - |
 | 3. Magam 1.0 Fast Path | 0/7 | Not started | - |
