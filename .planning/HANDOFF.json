@@ -1,0 +1,90 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-03-19T08:18:13.822Z",
+  "phase": "01",
+  "phase_name": "canvas-core-authoring",
+  "phase_dir": ".planning/phases/01-canvas-core-authoring",
+  "plan": 1,
+  "task": 2,
+  "total_tasks": 2,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Add entry-flow regression coverage and the Phase 1 browser scaffold",
+      "status": "done",
+      "commit": "2bab6f4"
+    },
+    {
+      "id": 2,
+      "name": "Implement last-active resume, lightweight document context, and inline empty-canvas creation",
+      "status": "in_progress",
+      "progress": "Added last-active document session persistence, draft-document registration, lightweight header/sidebar/tab copy, new-document entry flow, E2E scaffolding, GraphCanvas no-op guards for repeated selection/snapshot writes, and callback stability fixes. Unit tests pass, but Playwright still fails with Maximum update depth exceeded at GraphCanvas ReactFlow mount."
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 2,
+      "name": "Finish GraphCanvas loop fix, pass 01-01 browser verification, commit Task 2, write 01-01-SUMMARY.md, then continue wave 2",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [
+    {
+      "description": "E2E remains blocked by a runtime loop: Maximum update depth exceeded at GraphCanvas ReactFlow mount during both resume and new-document entry scenarios.",
+      "type": "technical",
+      "workaround": "No reliable workaround yet. Candidate fixes already tried: idempotent selection updates, idempotent tab snapshot writes, removing ReactFlow fitView prop, stabilizing toolbar callbacks, and stabilizing showToast."
+    },
+    {
+      "description": ".planning/phases/01-canvas-core-authoring/01-RESEARCH.md still matches placeholder/TBD grep and should be treated as incomplete planning collateral.",
+      "type": "technical",
+      "workaround": "Do not treat 01-RESEARCH as finished without a separate cleanup pass."
+    }
+  ],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "Keep WorkspaceClient and the existing graph tab model as the only entry seam.",
+      "rationale": "The phase plan explicitly avoids a second shell or setup-first onboarding flow.",
+      "phase": "01"
+    },
+    {
+      "decision": "Persist last-active document state by workspace session key derived from workspace name plus file list.",
+      "rationale": "Resume behavior should remain tied to the current workspace source without adding new transport or storage systems.",
+      "phase": "01"
+    },
+    {
+      "decision": "Represent new untitled documents as draft documents in graph store/file tree state and open them directly into an empty canvas.",
+      "rationale": "Phase 1 requires empty-canvas-first creation without a naming modal or server-side file creation flow.",
+      "phase": "01"
+    },
+    {
+      "decision": "Do not commit Task 2 until browser verification passes.",
+      "rationale": "Repeated test runs were deliberate verification passes after each candidate fix so the phase would not record a false completion.",
+      "phase": "01"
+    }
+  ],
+  "uncommitted_files": [
+    ".planning/PROJECT.md",
+    ".planning/REQUIREMENTS.md",
+    ".planning/STATE.md",
+    ".planning/config.json",
+    ".planning/phases/01-agent-handoff-baseline/.gitkeep",
+    ".planning/phases/02-canonical-authoring-beta/.gitkeep",
+    "app/components/GraphCanvas.tsx",
+    "app/components/editor/WorkspaceClient.tsx",
+    "app/components/ui/Header.tsx",
+    "app/components/ui/Sidebar.tsx",
+    "app/components/ui/TabBar.tsx",
+    "app/store/graph.test.ts",
+    "app/store/graph.ts",
+    "docs/milestones/R1-external-agent-beta/R1-P0-workspace-document-canvas-authoring-convergence/README.md",
+    "e2e/canvas-core-authoring.spec.ts",
+    "playwright.config.ts",
+    ".planning/phases/01-canvas-core-authoring/.gitkeep",
+    ".planning/phases/02-external-agent-and-block-body-beta/",
+    "test-results/"
+  ],
+  "next_action": "Resume by instrumenting GraphCanvas mount/update paths to identify the remaining loop source, starting with ReactFlow mount callbacks and overlay/viewport effects that still mutate state during entry boot. Re-run bun run test:e2e --grep \"canvas core authoring entry\" only after the next concrete fix.",
+  "context_notes": "Current execution target is .planning/phases/01-canvas-core-authoring/01-01-PLAN.md Task 2. Task 1 is already committed as 2bab6f4. The browser is still crashing before the entry assertions can see the tab or New document button. The strongest remaining suspicion is a GraphCanvas mount/update loop that was not eliminated by the first round of idempotency and callback-stability fixes. There are unrelated dirty planning/docs files in the worktree; do not revert them."
+}
