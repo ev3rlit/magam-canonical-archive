@@ -3,6 +3,8 @@ import type { SearchResult } from '../utils/search';
 import { useGraphStore } from './graph';
 import { GLOBAL_FONT_STORAGE_KEY } from '../utils/fontHierarchy';
 
+const initialGraphState = useGraphStore.getState();
+
 const getFixtureResults = (): SearchResult[] => ([
   { type: 'element', key: 'node-a', title: 'A', score: 100, matchKind: 'exact' },
   { type: 'element', key: 'node-b', title: 'B', score: 90, matchKind: 'exact' },
@@ -68,6 +70,61 @@ describe('graph metadata state', () => {
       useGraphStore.getState().pendingActionRoutingByKey['selection-floating-menu:selection.style.update:shape-1:sha256:v1'],
     ).toBeUndefined();
   });
+});
+
+describe('document session persistence', () => {
+  beforeEach(() => {
+    useGraphStore.setState(initialGraphState);
+  });
+
+  it('re-activates the same document tab instead of duplicating it', () => {
+    const firstOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const secondOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const state = useGraphStore.getState();
+
+    expect(firstOpen.status).toBe('opened');
+    expect(secondOpen).toEqual({
+      status: 'activated',
+      tabId: firstOpen.status === 'opened' ? firstOpen.tabId : secondOpen.tabId,
+    });
+    expect(state.openTabs).toHaveLength(1);
+    expect(state.activeTabId).toBe(firstOpen.status === 'opened' ? firstOpen.tabId : null);
+    expect(state.currentFile).toBe('docs/overview.graph.tsx');
+  });
+
+  it('keeps the stored viewport and selection snapshot when switching away and back', () => {
+    const firstOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const secondOpen = useGraphStore.getState().openTab('docs/guide.graph.tsx');
+
+    expect(firstOpen.status).toBe('opened');
+    expect(secondOpen.status).toBe('opened');
+
+    if (firstOpen.status !== 'opened' || secondOpen.status !== 'opened') {
+      throw new Error('expected tabs to open during snapshot test');
+    }
+
+    useGraphStore.getState().updateTabSnapshot(firstOpen.tabId, {
+      lastViewport: { x: 120, y: 48, zoom: 1.25 },
+      lastSelection: {
+        nodeIds: ['node-a'],
+        edgeIds: ['edge-a'],
+        updatedAt: 100,
+      },
+    });
+
+    useGraphStore.getState().activateTab(secondOpen.tabId);
+    useGraphStore.getState().activateTab(firstOpen.tabId);
+
+    const restoredTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === firstOpen.tabId);
+    expect(restoredTab?.lastViewport).toEqual({ x: 120, y: 48, zoom: 1.25 });
+    expect(restoredTab?.lastSelection).toEqual({
+      nodeIds: ['node-a'],
+      edgeIds: ['edge-a'],
+      updatedAt: 100,
+    });
+  });
+
+  it.todo('persists lastActive document metadata per workspace source');
 });
 
 describe('font hierarchy state', () => {

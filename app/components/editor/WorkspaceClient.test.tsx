@@ -560,6 +560,28 @@ describe('WorkspaceClient capability-profile editability parity', () => {
   });
 });
 
+describe('WorkspaceClient document entry convergence', () => {
+  it('keeps the quick-open entry seam inside WorkspaceClient', async () => {
+    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+
+    expect(source).toContain('LazyQuickOpenDialog');
+    expect(source).toContain('openTabByPath');
+    expect(source).toContain('runQuickOpenCommand');
+  });
+
+  it('routes document switching through the shared tab primitives', async () => {
+    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+
+    expect(source).toContain('openTab(');
+    expect(source).toContain('activateTab');
+    expect(source).toContain('replaceLeastRecentlyUsedTab');
+  });
+
+  it.todo('resumes the last active document before leaving the workspace idle');
+  it.todo('creates a new document inline without a blocking naming modal');
+  it.todo('switches documents from Quick Open without leaving the canvas shell');
+});
+
 describe('WorkspaceClient action-dispatch binding', () => {
   it('maps compat requests into action-routing envelopes with surface and target fallbacks', async () => {
     let capturedEnvelope: unknown = null;
