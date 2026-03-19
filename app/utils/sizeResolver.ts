@@ -412,7 +412,7 @@ export function resolveMarkdownSize(
 }
 
 export function resolveShapeDefaultRatio(shapeType?: string): SizeRatio {
-  if (shapeType === 'circle' || shapeType === 'triangle') {
+  if (shapeType === 'circle' || shapeType === 'triangle' || shapeType === 'diamond') {
     return 'square';
   }
   return 'landscape';

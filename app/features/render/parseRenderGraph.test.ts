@@ -178,6 +178,98 @@ describe('parseRenderGraph mindmap roots', () => {
 });
 
 describe('parseRenderGraph canonical object normalization', () => {
+  it('preserves minimal phase-1 shape variants on graph-shape nodes', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'ellipse-shape',
+              x: 20,
+              y: 30,
+              type: 'ellipse',
+              size: { width: 220, height: 140 },
+            },
+            children: [],
+          },
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'diamond-shape',
+              x: 60,
+              y: 80,
+              type: 'diamond',
+              size: { width: 160, height: 160 },
+            },
+            children: [],
+          },
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'line-shape',
+              x: 90,
+              y: 140,
+              type: 'line',
+              lineDirection: 'up',
+              size: { width: 180, height: 48 },
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    const ellipseNode = parsed!.nodes.find((node) => node.id === 'ellipse-shape');
+    const diamondNode = parsed!.nodes.find((node) => node.id === 'diamond-shape');
+    const lineNode = parsed!.nodes.find((node) => node.id === 'line-shape');
+
+    expect(ellipseNode?.type).toBe('shape');
+    expect((ellipseNode?.data as Record<string, unknown>)?.type).toBe('ellipse');
+    assertCanonicalMatch(
+      (ellipseNode?.data as Record<string, unknown>)?.canonicalObject,
+      {
+        semanticRole: 'shape',
+        alias: 'Shape',
+        capabilities: {
+          frame: {
+            shape: 'ellipse',
+          },
+        },
+      },
+    );
+
+    expect((diamondNode?.data as Record<string, unknown>)?.type).toBe('diamond');
+    assertCanonicalMatch(
+      (diamondNode?.data as Record<string, unknown>)?.canonicalObject,
+      {
+        semanticRole: 'shape',
+        alias: 'Shape',
+        capabilities: {
+          frame: {
+            shape: 'diamond',
+          },
+        },
+      },
+    );
+
+    expect((lineNode?.data as Record<string, unknown>)?.type).toBe('line');
+    expect((lineNode?.data as Record<string, unknown>)?.lineDirection).toBe('up');
+    assertCanonicalMatch(
+      (lineNode?.data as Record<string, unknown>)?.canonicalObject,
+      {
+        semanticRole: 'shape',
+        alias: 'Shape',
+        capabilities: {
+          frame: {
+            shape: 'line',
+          },
+        },
+      },
+    );
+  });
+
   it('normalizes legacy node aliases into canonical text content', () => {
     const fixture = CANONICAL_OBJECT_FIXTURE_SETS.legacyAliasInference;
     const parsed = parseRenderGraph({

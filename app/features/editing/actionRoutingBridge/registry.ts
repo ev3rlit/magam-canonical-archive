@@ -215,15 +215,22 @@ function requireNextId(rawPayload: Record<string, unknown>) {
 function requireCreatePlacement(rawPayload: Record<string, unknown>): ReturnType<typeof ok<{
   nodeType: CreatePayload['nodeType'];
   placement: CreatePayload['placement'];
+  initialProps?: Record<string, unknown>;
 }>> | ReturnType<typeof fail<{
   nodeType: CreatePayload['nodeType'];
   placement: CreatePayload['placement'];
+  initialProps?: Record<string, unknown>;
 }>> {
   const nodeType = rawPayload.nodeType;
   const placement = rawPayload.placement;
+  const initialProps = isRecord(rawPayload.initialProps) ? rawPayload.initialProps : undefined;
 
   if (
     nodeType !== 'shape'
+    && nodeType !== 'rectangle'
+    && nodeType !== 'ellipse'
+    && nodeType !== 'diamond'
+    && nodeType !== 'line'
     && nodeType !== 'text'
     && nodeType !== 'markdown'
     && nodeType !== 'sticky'
@@ -249,6 +256,7 @@ function requireCreatePlacement(rawPayload: Record<string, unknown>): ReturnType
   if (casted.mode === 'canvas-absolute' && typeof casted.x === 'number' && typeof casted.y === 'number') {
     return ok({
       nodeType: validNodeType,
+      ...(initialProps ? { initialProps } : {}),
       placement: {
         mode: 'canvas-absolute',
         x: casted.x,
@@ -260,6 +268,7 @@ function requireCreatePlacement(rawPayload: Record<string, unknown>): ReturnType
   if (casted.mode === 'mindmap-child' && typeof casted.parentId === 'string') {
     return ok({
       nodeType: validNodeType,
+      ...(initialProps ? { initialProps } : {}),
       placement: {
         mode: 'mindmap-child',
         parentId: casted.parentId,
@@ -270,6 +279,7 @@ function requireCreatePlacement(rawPayload: Record<string, unknown>): ReturnType
   if (casted.mode === 'mindmap-sibling' && typeof casted.siblingOf === 'string') {
     return ok({
       nodeType: validNodeType,
+      ...(initialProps ? { initialProps } : {}),
       placement: {
         mode: 'mindmap-sibling',
         siblingOf: casted.siblingOf,
@@ -300,6 +310,10 @@ function buildRenderedNodeId(input: {
 
 function isSupportedCreateNodeType(value: unknown): value is CreatePayload['nodeType'] {
   return value === 'shape'
+    || value === 'rectangle'
+    || value === 'ellipse'
+    || value === 'diamond'
+    || value === 'line'
     || value === 'text'
     || value === 'markdown'
     || value === 'sticky'
@@ -953,7 +967,10 @@ const createEntry: ActionRoutingRegistryEntry<CreateNormalized> = {
       payload: {
         nodeType: createResult.value.nodeType,
         id: nextId,
-        initialProps: defaults.initialProps,
+        initialProps: {
+          ...defaults.initialProps,
+          ...(createResult.value.initialProps ?? {}),
+        },
         initialContent: defaults.initialContent,
         placement: createResult.value.placement,
       },

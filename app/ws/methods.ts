@@ -493,7 +493,23 @@ async function handleNodeCreate(
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.id is required' };
     }
 
-    if (!node.type || !['shape', 'text', 'markdown', 'mindmap', 'sticky', 'sticker', 'washi-tape', 'image'].includes(node.type)) {
+    if (
+        !node.type
+        || ![
+            'shape',
+            'rectangle',
+            'ellipse',
+            'diamond',
+            'line',
+            'text',
+            'markdown',
+            'mindmap',
+            'sticky',
+            'sticker',
+            'washi-tape',
+            'image',
+        ].includes(node.type)
+    ) {
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.type is invalid' };
     }
 

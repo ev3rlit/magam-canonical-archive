@@ -30,7 +30,19 @@ export interface NodeProps {
 
 export interface CreateNodeInput {
     id: string;
-    type: 'shape' | 'text' | 'markdown' | 'mindmap' | 'sticky' | 'sticker' | 'washi-tape' | 'image';
+    type:
+        | 'shape'
+        | 'rectangle'
+        | 'ellipse'
+        | 'diamond'
+        | 'line'
+        | 'text'
+        | 'markdown'
+        | 'mindmap'
+        | 'sticky'
+        | 'sticker'
+        | 'washi-tape'
+        | 'image';
     props?: Record<string, unknown>;
     placement?: (
         | { mode: 'canvas-absolute'; x: number; y: number }
@@ -546,6 +558,10 @@ function buildNodeElement(input: CreateNodeInput): t.JSXElement {
         : input.type === 'mindmap'
         ? 'MindMap'
         : input.type === 'shape'
+            || input.type === 'rectangle'
+            || input.type === 'ellipse'
+            || input.type === 'diamond'
+            || input.type === 'line'
             ? 'Shape'
             : input.type === 'text'
                 ? 'Text'
@@ -558,7 +574,22 @@ function buildNodeElement(input: CreateNodeInput): t.JSXElement {
             : input.type === 'washi-tape'
                 ? 'WashiTape'
             : 'Node';
-    const props = { ...(input.props || {}), ...placementProps, id: input.id };
+    const shapeType =
+        input.type === 'rectangle'
+            ? 'rectangle'
+            : input.type === 'ellipse'
+                ? 'ellipse'
+                : input.type === 'diamond'
+                    ? 'diamond'
+                    : input.type === 'line'
+                        ? 'line'
+                        : undefined;
+    const props = {
+        ...(input.props || {}),
+        ...(shapeType ? { type: shapeType } : {}),
+        ...placementProps,
+        id: input.id,
+    };
     const attrs = Object.entries(props)
         .filter(([key, value]) => key !== 'content' && value !== undefined && value !== null)
         .map(([key, value]) =>

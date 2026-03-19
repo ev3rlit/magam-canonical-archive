@@ -61,6 +61,7 @@ export interface RenderNode {
     fill?: string;
     stroke?: string;
     strokeWidth?: number;
+    lineDirection?: 'up' | 'down';
     labelTextColor?: string;
     labelBgColor?: string;
     edgeLabel?: string;
@@ -1384,6 +1385,12 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             fill: readStringProp(renderFrame?.fill) || child.props.fill,
             stroke: readStringProp(renderFrame?.stroke) || child.props.stroke,
             strokeWidth: readNumberProp(renderFrame?.strokeWidth) ?? child.props.strokeWidth,
+            lineDirection:
+              child.props.lineDirection === 'up'
+                ? 'up'
+                : child.props.lineDirection === 'down'
+                  ? 'down'
+                  : undefined,
             fontFamily: nodeFontFamily,
             children: parsedChildren,
             size: objectSizeInput,

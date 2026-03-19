@@ -179,6 +179,51 @@ describe('filePatcher', () => {
     expect(patched.includes('y={120}')).toBe(true);
   });
 
+  it('create: minimal shape variants stay on the Shape JSX path with explicit type props', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas></Canvas>;
+      }
+    `);
+
+    await patchNodeCreate(filePath, {
+      id: 'ellipse-new',
+      type: 'ellipse',
+      props: {
+        size: { width: 220, height: 140 },
+      },
+      placement: { mode: 'canvas-absolute', x: 40, y: 60 },
+    });
+    await patchNodeCreate(filePath, {
+      id: 'diamond-new',
+      type: 'diamond',
+      props: {
+        size: { width: 160, height: 160 },
+      },
+      placement: { mode: 'canvas-absolute', x: 240, y: 80 },
+    });
+    await patchNodeCreate(filePath, {
+      id: 'line-new',
+      type: 'line',
+      props: {
+        size: { width: 180, height: 48 },
+        lineDirection: 'up',
+      },
+      placement: { mode: 'canvas-absolute', x: 120, y: 240 },
+    });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('<Shape')).toBe(true);
+    expect(patched.includes('id={"ellipse-new"}')).toBe(true);
+    expect(patched.includes('type={"ellipse"}')).toBe(true);
+    expect(patched.includes('width: 220')).toBe(true);
+    expect(patched.includes('id={"diamond-new"}')).toBe(true);
+    expect(patched.includes('type={"diamond"}')).toBe(true);
+    expect(patched.includes('id={"line-new"}')).toBe(true);
+    expect(patched.includes('type={"line"}')).toBe(true);
+    expect(patched.includes('lineDirection={"up"}')).toBe(true);
+  });
+
   it('create: mindmap-child placement는 같은 MindMap container 안에 from을 붙여 삽입한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {

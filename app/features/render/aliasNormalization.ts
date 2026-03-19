@@ -47,7 +47,15 @@ const ALLOWED_CAPABILITY_KEYS = new Set<CanonicalCapabilityKey>([
   'content',
 ]);
 
-const SHAPE_TYPES = new Set(['rectangle', 'heart', 'cloud', 'speech']);
+const SHAPE_TYPES = new Set([
+  'rectangle',
+  'ellipse',
+  'diamond',
+  'line',
+  'heart',
+  'cloud',
+  'speech',
+]);
 
 const ALIAS_ALLOWED_CONTENT_KINDS: Readonly<Record<CanonicalObjectAlias, ReadonlyArray<ContentKind>>> = {
   Node: ['text', 'markdown'],

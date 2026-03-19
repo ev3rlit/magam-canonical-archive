@@ -66,6 +66,41 @@ describe('action routing bridge registry', () => {
     expect(result).toEqual({ ok: true, value: true });
   });
 
+  it('merges drag-sized rectangle create props into the node.create payload', () => {
+    const normalized = registry['node.create']?.normalizePayload({
+      envelope: createPaneCreateIntentEnvelope({
+        rawPayload: {
+          nodeType: 'rectangle',
+          placement: {
+            mode: 'canvas-absolute',
+            x: 120,
+            y: 160,
+          },
+          initialProps: {
+            size: {
+              width: 240,
+              height: 140,
+            },
+          },
+        },
+      }),
+      context: makeActionRoutingContext(),
+    });
+
+    expect(normalized?.ok).toBe(true);
+    if (!normalized || !normalized.ok) return;
+    expect(normalized.value.createInput).toMatchObject({
+      type: 'rectangle',
+      props: {
+        type: 'rectangle',
+        size: {
+          width: 240,
+          height: 140,
+        },
+      },
+    });
+  });
+
   it('normalizes content updates against canonical content carriers', () => {
     const node = makeCanonicalNode({
       id: 'text-1',
