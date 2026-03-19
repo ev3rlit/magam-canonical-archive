@@ -1176,8 +1176,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           return tab;
         }
 
-        const nextViewport = snapshot.lastViewport ?? tab.lastViewport;
-        const nextSelection = snapshot.lastSelection ?? tab.lastSelection;
+        const nextViewport = Object.prototype.hasOwnProperty.call(snapshot, 'lastViewport')
+          ? (snapshot.lastViewport ?? null)
+          : tab.lastViewport;
+        const nextSelection = Object.prototype.hasOwnProperty.call(snapshot, 'lastSelection')
+          ? (snapshot.lastSelection ?? null)
+          : tab.lastSelection;
         if (
           areTabViewportStatesEqual(nextViewport, tab.lastViewport)
           && areTabSelectionStatesEqual(nextSelection, tab.lastSelection)

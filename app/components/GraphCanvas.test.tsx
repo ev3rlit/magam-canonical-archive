@@ -18,6 +18,8 @@ import {
   buildGraphCanvasCreateIntent,
   buildGraphCanvasRenameIntent,
   resolveCanvasDismissal,
+  resolveSelectionResizePatch,
+  resolveSelectionRotation,
   resolveSelectionShellState,
 } from './GraphCanvas';
 import {
@@ -380,6 +382,62 @@ describe('GraphCanvas direct manipulation baseline', () => {
         height: 80,
       },
     });
+  });
+
+  it('derives resize patches from bottom-right shell drags with zoom-aware deltas', () => {
+    expect(resolveSelectionResizePatch({
+      node: {
+        id: 'sticker-1',
+        type: 'sticker',
+        position: { x: 20, y: 30 },
+        width: 120,
+        height: 60,
+        data: { width: 120, height: 60 },
+      },
+      deltaScreen: { x: 30, y: 45 },
+      zoom: 1.5,
+    })).toEqual({
+      width: 140,
+      height: 90,
+    });
+  });
+
+  it('maps rotate-handle pointer positions into top-origin rotation degrees', () => {
+    expect(resolveSelectionRotation({
+      node: {
+        id: 'sticker-1',
+        type: 'sticker',
+        position: { x: 20, y: 30 },
+        width: 120,
+        height: 60,
+        data: { rotation: 0 },
+      },
+      screenBounds: {
+        left: 100,
+        top: 100,
+        width: 120,
+        height: 60,
+      },
+      pointerScreen: { x: 160, y: 80 },
+    })).toBe(0);
+
+    expect(resolveSelectionRotation({
+      node: {
+        id: 'sticker-1',
+        type: 'sticker',
+        position: { x: 20, y: 30 },
+        width: 120,
+        height: 60,
+        data: { rotation: 0 },
+      },
+      screenBounds: {
+        left: 100,
+        top: 100,
+        width: 120,
+        height: 60,
+      },
+      pointerScreen: { x: 210, y: 130 },
+    })).toBe(90);
   });
 });
 

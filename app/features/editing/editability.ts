@@ -121,6 +121,16 @@ const STICKER_STYLE_KEYS = [
   'fontFamily',
 ] as const;
 
+const STICKER_GEOMETRY_KEYS = [
+  'width',
+  'height',
+] as const;
+
+const STICKER_EDITABLE_KEYS = [
+  ...STICKER_STYLE_KEYS,
+  ...STICKER_GEOMETRY_KEYS,
+] as const;
+
 const STICKY_STYLE_KEYS = [
   'pattern',
   'shape',
@@ -141,7 +151,7 @@ const SEMANTIC_ROLE_STYLE_KEYS: Record<string, readonly string[]> = {
   topic: SHAPE_STYLE_KEYS,
   shape: SHAPE_STYLE_KEYS,
   'sticky-note': STICKY_STYLE_KEYS,
-  sticker: STICKER_STYLE_KEYS,
+  sticker: STICKER_EDITABLE_KEYS,
   image: IMAGE_STYLE_KEYS,
   sequence: SEQUENCE_STYLE_KEYS,
 };
@@ -150,7 +160,7 @@ const NODE_TYPE_STYLE_KEYS: Record<string, readonly string[]> = {
   shape: SHAPE_STYLE_KEYS,
   text: TEXT_STYLE_KEYS,
   markdown: MARKDOWN_STYLE_KEYS,
-  sticker: STICKER_STYLE_KEYS,
+  sticker: STICKER_EDITABLE_KEYS,
   sticky: STICKY_STYLE_KEYS,
   'washi-tape': WASHI_STYLE_KEYS,
   image: IMAGE_STYLE_KEYS,
@@ -162,7 +172,7 @@ const JSX_TAG_STYLE_KEYS: Record<string, readonly string[]> = {
   Shape: SHAPE_STYLE_KEYS,
   Text: TEXT_STYLE_KEYS,
   Sticky: [...STICKY_STYLE_KEYS, ...STICKER_STYLE_KEYS],
-  Sticker: STICKER_STYLE_KEYS,
+  Sticker: STICKER_EDITABLE_KEYS,
   WashiTape: WASHI_STYLE_KEYS,
   Image: IMAGE_STYLE_KEYS,
   Sequence: SEQUENCE_STYLE_KEYS,

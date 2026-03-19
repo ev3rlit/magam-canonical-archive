@@ -187,6 +187,31 @@ describe('document session persistence', () => {
     expect(secondTab).toEqual(beforeSecondTab);
   });
 
+  it('allows tab viewport and selection snapshots to be cleared explicitly', () => {
+    const opened = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    if (opened.status !== 'opened') {
+      throw new Error('expected tab to open for snapshot clear test');
+    }
+
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: { x: 20, y: 40, zoom: 1.2 },
+      lastSelection: {
+        nodeIds: ['shape-1'],
+        edgeIds: [],
+        updatedAt: 12,
+      },
+    });
+
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: null,
+      lastSelection: null,
+    });
+
+    const clearedTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === opened.tabId);
+    expect(clearedTab?.lastViewport).toBeNull();
+    expect(clearedTab?.lastSelection).toBeNull();
+  });
+
   it('persists lastActive document metadata per workspace source', () => {
     useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
     useGraphStore.getState().hydrateDocumentSession('workspace:docs/resume.graph.tsx');
@@ -582,6 +607,38 @@ describe('entrypoint runtime state', () => {
 
     useGraphStore.getState().closeEntrypointSurface();
     expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
+  });
+
+  it('동일한 anchor와 surface 재등록은 runtime state를 다시 만들지 않는다', () => {
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 10, y: 20 },
+    });
+    const afterAnchor = useGraphStore.getState().entrypointRuntime;
+
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 10, y: 20 },
+    });
+    expect(useGraphStore.getState().entrypointRuntime).toBe(afterAnchor);
+
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    const afterOpenSurface = useGraphStore.getState().entrypointRuntime;
+
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    expect(useGraphStore.getState().entrypointRuntime).toBe(afterOpenSurface);
   });
 
   it('selection 변경 시 selection 의존 surface를 닫고 stale selection anchor를 정리한다', () => {

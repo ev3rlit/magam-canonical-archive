@@ -40,6 +40,37 @@ export function normalizePointerType(pointerType: unknown): GraphCanvasPointerTy
   return 'unknown';
 }
 
+export function resolvePointerTypeFromEvent(event: unknown): GraphCanvasPointerType {
+  if (!event || typeof event !== 'object') {
+    return 'unknown';
+  }
+
+  const candidate = event as {
+    pointerType?: unknown;
+    nativeEvent?: { pointerType?: unknown };
+    touches?: { length?: unknown };
+    changedTouches?: { length?: unknown };
+  };
+
+  const nativePointerType = candidate.nativeEvent?.pointerType;
+  if (nativePointerType !== undefined) {
+    return normalizePointerType(nativePointerType);
+  }
+
+  if (candidate.pointerType !== undefined) {
+    return normalizePointerType(candidate.pointerType);
+  }
+
+  if (
+    (typeof candidate.touches?.length === 'number' && candidate.touches.length > 0)
+    || (typeof candidate.changedTouches?.length === 'number' && candidate.changedTouches.length > 0)
+  ) {
+    return 'touch';
+  }
+
+  return 'unknown';
+}
+
 export function resolveDragCommitDistance(pointerType: unknown): number {
   return DRAG_COMMIT_DISTANCE_PX[normalizePointerType(pointerType)];
 }

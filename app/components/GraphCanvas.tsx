@@ -60,6 +60,7 @@ import {
 import type { CanvasEntrypointSurface } from '@/features/canvas-ui-entrypoints/contracts';
 import {
   resolveMindMapDragFeedback,
+  resolvePointerTypeFromEvent,
   shouldCommitDragStop,
   shouldHandlePaneCreate,
   shouldSuppressDragStopErrorToast,
@@ -172,6 +173,7 @@ type DragOriginState = {
   x: number;
   y: number;
   generation: number;
+  pointerType: 'mouse' | 'pen' | 'touch' | 'unknown';
 };
 
 type DragFeedbackState =
@@ -192,7 +194,7 @@ function getCanvasNodeLabel(node: Pick<FlowNode, 'id' | 'data'> | null | undefin
   return label.length > 24 ? `${label.slice(0, 24)}...` : label;
 }
 
-type SelectionAnchorNode = Pick<FlowNode, 'id' | 'position' | 'width' | 'height'> & {
+type SelectionAnchorNode = Pick<FlowNode, 'id' | 'position' | 'width' | 'height' | 'data'> & {
   measured?: {
     width?: number;
     height?: number;
@@ -201,6 +203,25 @@ type SelectionAnchorNode = Pick<FlowNode, 'id' | 'position' | 'width' | 'height'
 
 type CanvasDismissNode = Pick<FlowNode, 'id' | 'data'>;
 type SelectionShellNode = SelectionAnchorNode & Pick<FlowNode, 'type' | 'data'>;
+
+type SelectionShellGestureState = 'move' | 'resize' | 'rotate' | null;
+
+type SelectionShellGestureSession =
+  | {
+      kind: 'resize';
+      nodeId: string;
+      originScreen: { x: number; y: number };
+      originalData: Record<string, unknown>;
+      zoom: number;
+      lastPatch: Record<string, unknown> | null;
+    }
+  | {
+      kind: 'rotate';
+      nodeId: string;
+      originalData: Record<string, unknown>;
+      screenBounds: NonNullable<GraphCanvasSelectionShellState['screenBounds']>;
+      lastPatch: Record<string, unknown> | null;
+    };
 
 export type GraphCanvasDismissalKind =
   | 'commit-text-edit'
@@ -228,6 +249,25 @@ export interface GraphCanvasSelectionShellState {
   } | null;
 }
 
+function readFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function resolveSelectionNodeDimensions(
+  node: Pick<SelectionAnchorNode, 'width' | 'height' | 'measured' | 'data'>,
+) {
+  const nodeData = (node.data || {}) as Record<string, unknown>;
+  const width = node.width
+    ?? node.measured?.width
+    ?? readFiniteNumber(nodeData.width)
+    ?? 0;
+  const height = node.height
+    ?? node.measured?.height
+    ?? readFiniteNumber(nodeData.height)
+    ?? 0;
+  return { width, height };
+}
+
 function resolveSelectionBounds(input: {
   selectedNodes: SelectionAnchorNode[];
 }) {
@@ -236,8 +276,7 @@ function resolveSelectionBounds(input: {
   }
 
   return input.selectedNodes.reduce((acc, node) => {
-    const width = node.width ?? node.measured?.width ?? 0;
-    const height = node.height ?? node.measured?.height ?? 0;
+    const { width, height } = resolveSelectionNodeDimensions(node);
     const minX = Math.min(acc.minX, node.position.x);
     const minY = Math.min(acc.minY, node.position.y);
     const maxX = Math.max(acc.maxX, node.position.x + width);
@@ -296,14 +335,20 @@ function resolveSelectionShellCapabilities(node: SelectionShellNode | undefined)
   }
 
   const nodeData = (node.data || {}) as Record<string, unknown>;
-  const canResize = (
-    node.type === 'image'
-    || node.type === 'sticker'
-    || node.type === 'sticky'
-    || node.type === 'shape'
-    || node.type === 'markdown'
+  const editMeta = (
+    nodeData.editMeta && typeof nodeData.editMeta === 'object'
+      ? nodeData.editMeta as { styleEditableKeys?: unknown }
+      : null
   );
-  const canRotate = node.type === 'sticker'
+  const styleEditableKeys = Array.isArray(editMeta?.styleEditableKeys)
+    ? editMeta.styleEditableKeys.filter((value): value is string => typeof value === 'string')
+    : [];
+  const canResize = (
+    styleEditableKeys.includes('width')
+    && styleEditableKeys.includes('height')
+  ) || node.type === 'image' || node.type === 'sticker';
+  const canRotate = styleEditableKeys.includes('rotation')
+    || node.type === 'sticker'
     || (typeof nodeData.rotation === 'number' && Number.isFinite(nodeData.rotation));
 
   return {
@@ -412,6 +457,43 @@ export function resolveSelectionShellState(input: {
   };
 }
 
+export function resolveSelectionResizePatch(input: {
+  node: SelectionShellNode;
+  deltaScreen: { x: number; y: number };
+  zoom: number;
+}): Record<string, unknown> | null {
+  const capabilities = resolveSelectionShellCapabilities(input.node);
+  if (!capabilities.canResize) {
+    return null;
+  }
+
+  const { width, height } = resolveSelectionNodeDimensions(input.node);
+  const zoom = input.zoom > 0 ? input.zoom : 1;
+  return {
+    width: Math.max(48, Math.round(width + (input.deltaScreen.x / zoom))),
+    height: Math.max(48, Math.round(height + (input.deltaScreen.y / zoom))),
+  };
+}
+
+export function resolveSelectionRotation(input: {
+  node: SelectionShellNode;
+  screenBounds: NonNullable<GraphCanvasSelectionShellState['screenBounds']>;
+  pointerScreen: { x: number; y: number };
+}): number | null {
+  const capabilities = resolveSelectionShellCapabilities(input.node);
+  if (!capabilities.canRotate) {
+    return null;
+  }
+
+  const centerX = input.screenBounds.left + (input.screenBounds.width / 2);
+  const centerY = input.screenBounds.top + (input.screenBounds.height / 2);
+  const angle = (Math.atan2(
+    input.pointerScreen.y - centerY,
+    input.pointerScreen.x - centerX,
+  ) * 180) / Math.PI;
+  return Math.round((angle + 450) % 360);
+}
+
 function areSelectionIdsEqual(left: string[], right: string[]): boolean {
   if (left.length !== right.length) {
     return false;
@@ -478,6 +560,7 @@ function GraphCanvasContent({
     nodes,
     edges,
     selectedNodeIds,
+    activeTextEditNodeId,
     onNodesChange,
     onEdgesChange,
     setSelectedNodes,
@@ -494,6 +577,8 @@ function GraphCanvasContent({
     activeTabId,
     openTabs,
     updateTabSnapshot,
+    requestTextEditCommit,
+    requestTextEditCancel,
     entrypointRuntime,
     setEntrypointInteractionMode,
     setEntrypointCreateMode,
@@ -542,6 +627,7 @@ function GraphCanvasContent({
   const [isGraphVisible, setIsGraphVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dragFeedback, setDragFeedback] = useState<DragFeedbackState>(null);
+  const [selectionShellGesture, setSelectionShellGesture] = useState<SelectionShellGestureState>(null);
   const hasLayouted = useRef(false);
   const lastLayoutedGraphId = useRef<string | null>(null);
   const lastSizeSignaturesRef = useRef<Map<string, string>>(new Map());
@@ -561,6 +647,7 @@ function GraphCanvasContent({
   const previousNodeIdsRef = useRef<Set<string>>(new Set());
   const toolbarOverlayIdRef = useRef<string | null>(null);
   const selectionFloatingMenuOverlayIdRef = useRef<string | null>(null);
+  const selectionShellGestureRef = useRef<SelectionShellGestureSession | null>(null);
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
 
   const activeTab = useMemo(
@@ -571,6 +658,53 @@ function GraphCanvasContent({
   const showToast = useCallback((message: string) => {
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 2000);
+  }, []);
+
+  const selectionNodes = useMemo(
+    () => nodes.filter((node) => selectedNodeIds.includes(node.id)) as SelectionShellNode[],
+    [nodes, selectedNodeIds],
+  );
+  const selectionShell = resolveSelectionShellState({
+    selectedNodes: selectionNodes,
+    viewport: getViewport(),
+    activeGesture: selectionShellGesture,
+  });
+
+  const syncControlledSelection = useCallback((nodeIds: string[]) => {
+    setNodes((prev) => prev.map((node) => {
+      const shouldSelect = nodeIds.includes(node.id);
+      return node.selected === shouldSelect
+        ? node
+        : { ...node, selected: shouldSelect };
+    }));
+    setSelectedNodes(nodeIds);
+    if (!activeTabId) {
+      return;
+    }
+    updateTabSnapshot(activeTabId, {
+      lastSelection: nodeIds.length > 0
+        ? {
+            nodeIds,
+            edgeIds: [],
+            updatedAt: Date.now(),
+          }
+        : null,
+    });
+  }, [activeTabId, setNodes, setSelectedNodes, updateTabSnapshot]);
+
+  const restoreSelectionNodePreview = useCallback((nodeId: string, originalData: Record<string, unknown>) => {
+    useGraphStore.setState((state) => ({
+      nodes: state.nodes.map((node) => (
+        node.id === nodeId
+          ? { ...node, data: originalData }
+          : node
+      )),
+    }));
+  }, []);
+
+  const clearSelectionShellGesture = useCallback(() => {
+    selectionShellGestureRef.current = null;
+    setSelectionShellGesture(null);
   }, []);
 
   const handleSelectionStylePatch = useCallback(async (input: {
@@ -776,9 +910,28 @@ function GraphCanvasContent({
   const onPaneClick = useCallback(
     async (event: React.MouseEvent) => {
       if (!shouldHandleRuntimePaneCreate({ interactionMode, createMode, hasPendingUiActions }) || !onCreateNode) {
-        return;
-      }
-      if (createMode === null) {
+        const dismissal = resolveCanvasDismissal({
+          reason: 'pane',
+          activeTextEditNodeId,
+          selectedNodeIds,
+          nodes: useGraphStore.getState().nodes,
+        });
+
+        if (dismissal.kind === 'commit-text-edit' && dismissal.activeTextEditNodeId) {
+          requestTextEditCommit(dismissal.activeTextEditNodeId);
+          return;
+        }
+        if (dismissal.kind === 'cancel-text-edit' && dismissal.activeTextEditNodeId) {
+          requestTextEditCancel(dismissal.activeTextEditNodeId);
+          return;
+        }
+        if (dismissal.kind === 'expand-group-selection' && dismissal.nodeIds) {
+          syncControlledSelection(dismissal.nodeIds);
+          return;
+        }
+        if (dismissal.kind === 'clear-selection') {
+          syncControlledSelection([]);
+        }
         return;
       }
 
@@ -804,13 +957,18 @@ function GraphCanvasContent({
     },
     [
       createMode,
+      activeTextEditNodeId,
       hasPendingUiActions,
       interactionMode,
       mapEditErrorToToast,
       onCreateNode,
+      requestTextEditCancel,
+      requestTextEditCommit,
       runPendingUiAction,
       screenToFlowPosition,
+      selectedNodeIds,
       setEntrypointCreateMode,
+      syncControlledSelection,
     ],
   );
 
@@ -1010,6 +1168,17 @@ function GraphCanvasContent({
 
       setSelectedNodes(selectedIds);
       handleSelectionChange(selectedIds);
+      if (activeTabId) {
+        updateTabSnapshot(activeTabId, {
+          lastSelection: selectedIds.length > 0
+            ? {
+                nodeIds: selectedIds,
+                edgeIds: [],
+                updatedAt: Date.now(),
+              }
+            : null,
+        });
+      }
       if (selectedIds.length === 0) {
         clearEntrypointAnchor('selection-floating-menu:selection-bounds');
         return;
@@ -1023,7 +1192,7 @@ function GraphCanvasContent({
         registerEntrypointAnchor(selectionAnchor);
       }
     },
-    [clearEntrypointAnchor, getViewport, handleSelectionChange, registerEntrypointAnchor, setSelectedNodes],
+    [activeTabId, clearEntrypointAnchor, getViewport, handleSelectionChange, registerEntrypointAnchor, setSelectedNodes, updateTabSnapshot],
   );
 
   useEffect(() => {
@@ -1061,16 +1230,20 @@ function GraphCanvasContent({
   }, [clearEntrypointAnchorsForNode, nodes]);
 
   const onHandleNodeDragStart = useCallback(
-    (_event: React.MouseEvent, node: FlowNode) => {
+    (event: React.MouseEvent, node: FlowNode) => {
       const nextGeneration = (dragGenerationRef.current.get(node.id) ?? 0) + 1;
       dragGenerationRef.current.set(node.id, nextGeneration);
       dragOriginPositions.current.set(node.id, {
         x: node.position.x,
         y: node.position.y,
         generation: nextGeneration,
+        pointerType: resolvePointerTypeFromEvent(event),
       });
+      if (selectedNodeIds.includes(node.id)) {
+        setSelectionShellGesture('move');
+      }
     },
-    [],
+    [selectedNodeIds],
   );
 
   const updateDragFeedback = useCallback((node: FlowNode) => {
@@ -1116,10 +1289,12 @@ function GraphCanvasContent({
       if (!shouldCommitDragStop({
         origin: original ? { x: original.x, y: original.y } : undefined,
         current: { x: node.position.x, y: node.position.y },
+        pointerType: original?.pointerType,
       })) {
         if (isLatestDragAttempt()) {
           dragOriginPositions.current.delete(node.id);
           setDragFeedback(null);
+          setSelectionShellGesture(null);
         }
         return;
       }
@@ -1199,11 +1374,148 @@ function GraphCanvasContent({
       } finally {
         if (isLatestDragAttempt()) {
           dragOriginPositions.current.delete(node.id);
+          setSelectionShellGesture(null);
         }
       }
     },
     [getNodes, hasPendingUiActions, mapEditErrorToToast, onNodeDragStop, runPendingUiAction, setNodes],
   );
+
+  const beginSelectionResizeGesture = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!onApplySelectionStyle || selectionNodes.length !== 1) {
+      return;
+    }
+
+    const [targetNode] = selectionNodes;
+    selectionShellGestureRef.current = {
+      kind: 'resize',
+      nodeId: targetNode.id,
+      originScreen: { x: event.clientX, y: event.clientY },
+      originalData: { ...((targetNode.data || {}) as Record<string, unknown>) },
+      zoom: Math.max(getViewport().zoom, 0.1),
+      lastPatch: null,
+    };
+    setSelectionShellGesture('resize');
+    event.preventDefault();
+    event.stopPropagation();
+  }, [getViewport, onApplySelectionStyle, selectionNodes]);
+
+  const beginSelectionRotateGesture = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!onApplySelectionStyle || selectionNodes.length !== 1 || !selectionShell.screenBounds) {
+      return;
+    }
+
+    const [targetNode] = selectionNodes;
+    selectionShellGestureRef.current = {
+      kind: 'rotate',
+      nodeId: targetNode.id,
+      originalData: { ...((targetNode.data || {}) as Record<string, unknown>) },
+      screenBounds: selectionShell.screenBounds,
+      lastPatch: null,
+    };
+    setSelectionShellGesture('rotate');
+    event.preventDefault();
+    event.stopPropagation();
+  }, [onApplySelectionStyle, selectionNodes, selectionShell.screenBounds]);
+
+  useEffect(() => {
+    if (!selectionShellGesture) {
+      return;
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const gesture = selectionShellGestureRef.current;
+      if (!gesture) {
+        return;
+      }
+
+      const runtimeNode = useGraphStore.getState().nodes.find((node) => node.id === gesture.nodeId);
+      if (!runtimeNode) {
+        clearSelectionShellGesture();
+        return;
+      }
+
+      if (gesture.kind === 'resize') {
+        const patch = resolveSelectionResizePatch({
+          node: runtimeNode as SelectionShellNode,
+          deltaScreen: {
+            x: event.clientX - gesture.originScreen.x,
+            y: event.clientY - gesture.originScreen.y,
+          },
+          zoom: gesture.zoom,
+        });
+        if (!patch) {
+          return;
+        }
+        gesture.lastPatch = patch;
+        useGraphStore.getState().updateNodeData(gesture.nodeId, patch);
+        event.preventDefault();
+        return;
+      }
+
+      const rotation = resolveSelectionRotation({
+        node: runtimeNode as SelectionShellNode,
+        screenBounds: gesture.screenBounds,
+        pointerScreen: { x: event.clientX, y: event.clientY },
+      });
+      if (rotation === null) {
+        return;
+      }
+      gesture.lastPatch = { rotation };
+      useGraphStore.getState().updateNodeData(gesture.nodeId, { rotation });
+      event.preventDefault();
+    };
+
+    const finishGesture = async () => {
+      const gesture = selectionShellGestureRef.current;
+      clearSelectionShellGesture();
+      if (!gesture) {
+        return;
+      }
+
+      if (!gesture.lastPatch || !onApplySelectionStyle) {
+        restoreSelectionNodePreview(gesture.nodeId, gesture.originalData);
+        return;
+      }
+
+      try {
+        await Promise.resolve(onApplySelectionStyle({
+          nodeIds: [gesture.nodeId],
+          patch: gesture.lastPatch,
+          patchKey: gesture.kind === 'rotate' ? 'rotation' : 'width',
+        }));
+      } catch (error) {
+        restoreSelectionNodePreview(gesture.nodeId, gesture.originalData);
+        const mapped = mapEditErrorToToast?.(error);
+        showToast(mapped ?? '직접 조작 변경을 저장하지 못했습니다.');
+      }
+    };
+
+    const cancelGesture = () => {
+      const gesture = selectionShellGestureRef.current;
+      clearSelectionShellGesture();
+      if (!gesture) {
+        return;
+      }
+      restoreSelectionNodePreview(gesture.nodeId, gesture.originalData);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', finishGesture);
+    window.addEventListener('pointercancel', cancelGesture);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finishGesture);
+      window.removeEventListener('pointercancel', cancelGesture);
+    };
+  }, [
+    clearSelectionShellGesture,
+    mapEditErrorToToast,
+    onApplySelectionStyle,
+    restoreSelectionNodePreview,
+    selectionShellGesture,
+    showToast,
+  ]);
 
   const selectionFloatingMenuContribution = useMemo(() => createGraphCanvasSelectionFloatingMenuContribution({
     runtime: canvasRuntime,
@@ -1424,6 +1736,47 @@ function GraphCanvasContent({
             <CustomBackground svg={canvasBackground.svg} gap={canvasBackground.gap} />
           )}
         </ReactFlow>
+
+        {selectionShell.visible && selectionShell.screenBounds ? (
+          <div className="pointer-events-none absolute inset-0 z-[95]">
+            <div
+              data-testid="graph-canvas-selection-shell"
+              className={[
+                'absolute rounded-2xl border border-sky-500/80 bg-sky-500/5 shadow-[0_0_0_1px_rgba(255,255,255,0.7)] transition-colors',
+                selectionShell.activeGesture ? 'border-sky-600 bg-sky-500/10' : '',
+              ].join(' ')}
+              style={{
+                left: selectionShell.screenBounds.left,
+                top: selectionShell.screenBounds.top,
+                width: selectionShell.screenBounds.width,
+                height: selectionShell.screenBounds.height,
+              }}
+            >
+              {selectionShell.canRotate && selectionNodes.length === 1 ? (
+                <button
+                  type="button"
+                  data-testid="graph-canvas-rotate-handle"
+                  aria-label="Rotate selection"
+                  className="pointer-events-auto absolute left-1/2 top-0 h-4 w-4 -translate-x-1/2 -translate-y-6 rounded-full border border-sky-500 bg-white shadow-sm"
+                  onPointerDown={beginSelectionRotateGesture}
+                >
+                  <span className="sr-only">Rotate selection</span>
+                </button>
+              ) : null}
+              {selectionShell.canResize && selectionNodes.length === 1 ? (
+                <button
+                  type="button"
+                  data-testid="graph-canvas-resize-handle"
+                  aria-label="Resize selection"
+                  className="pointer-events-auto absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 rounded-full border border-sky-500 bg-white shadow-sm cursor-se-resize"
+                  onPointerDown={beginSelectionResizeGesture}
+                >
+                  <span className="sr-only">Resize selection</span>
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         <ExportDialog
           isOpen={exportDialog.isOpen}

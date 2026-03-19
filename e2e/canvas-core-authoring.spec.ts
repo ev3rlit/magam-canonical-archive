@@ -79,7 +79,21 @@ test.beforeEach(async ({ page }) => {
       contentType: 'application/json',
       json: {
         graph: {
-          children: [],
+          children: [
+            {
+              type: 'graph-sticker',
+              props: {
+                id: 'viewport-sticker',
+                x: 120,
+                y: 96,
+                width: 180,
+                height: 120,
+                rotation: 0,
+                text: 'Viewport baseline',
+              },
+              children: [],
+            },
+          ],
         },
       },
     });
@@ -87,7 +101,6 @@ test.beforeEach(async ({ page }) => {
 
   await page.route('**/api/assets/file', (route) => route.abort());
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle');
 });
 
 test.describe('canvas core authoring entry', () => {
@@ -104,7 +117,6 @@ test.describe('canvas core authoring entry', () => {
     ]);
 
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle');
 
     await expect(page.getByRole('tab', { name: 'resume.graph.tsx' })).toBeVisible();
     await expect(page.getByText('resume.graph.tsx')).toBeVisible();
@@ -120,5 +132,13 @@ test.describe('canvas core authoring entry', () => {
   test('canvas core authoring viewport: pan zoom select drag resize rotate', async ({ page }) => {
     await expect(page.locator('.react-flow')).toBeVisible();
     await expect(page.getByRole('tab')).toHaveCount(1);
+
+    const stickerNode = page.locator('.react-flow__node[data-id="viewport-sticker"]');
+    await expect(stickerNode).toBeVisible();
+    await stickerNode.click();
+
+    await expect(page.getByTestId('graph-canvas-selection-shell')).toBeVisible();
+    await expect(page.getByTestId('graph-canvas-resize-handle')).toBeVisible();
+    await expect(page.getByTestId('graph-canvas-rotate-handle')).toBeVisible();
   });
 });

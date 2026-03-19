@@ -213,9 +213,15 @@ export function WorkspaceClient() {
           workspaceName: runtime.fileTree?.name,
         }));
         const resumeTarget = useGraphStore.getState().lastActiveDocumentPath;
-        if (!runtime.currentFile && runtime.openTabs.length === 0 && resumeTarget) {
+        const initialDocument = (
+          typeof resumeTarget === 'string'
+          && data.files.includes(resumeTarget)
+        )
+          ? resumeTarget
+          : data.files[0] ?? null;
+        if (!runtime.currentFile && runtime.openTabs.length === 0 && initialDocument) {
           window.setTimeout(() => {
-            useGraphStore.getState().openTab(resumeTarget);
+            useGraphStore.getState().openTab(initialDocument);
           }, 0);
         }
       }

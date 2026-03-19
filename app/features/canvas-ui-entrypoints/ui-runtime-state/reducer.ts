@@ -20,6 +20,47 @@ function areStringSetsEqual(left: string[] | undefined, right: string[]): boolea
   return right.every((value) => leftSet.has(value));
 }
 
+function areAnchorsEqual(
+  left: EntrypointAnchorSnapshot | undefined,
+  right: EntrypointAnchorSnapshot,
+): boolean {
+  if (!left) {
+    return false;
+  }
+
+  return (
+    left.anchorId === right.anchorId
+    && left.kind === right.kind
+    && left.ownerId === right.ownerId
+    && areStringSetsEqual(left.nodeIds, right.nodeIds ?? [])
+    && left.flow?.x === right.flow?.x
+    && left.flow?.y === right.flow?.y
+    && left.screen?.x === right.screen?.x
+    && left.screen?.y === right.screen?.y
+    && left.screen?.width === right.screen?.width
+    && left.screen?.height === right.screen?.height
+    && left.viewport?.x === right.viewport?.x
+    && left.viewport?.y === right.viewport?.y
+    && left.viewport?.zoom === right.viewport?.zoom
+  );
+}
+
+function areOpenSurfacesEqual(
+  left: OpenSurfaceDescriptor | null,
+  right: OpenSurfaceDescriptor,
+): boolean {
+  if (!left) {
+    return false;
+  }
+
+  return (
+    left.kind === right.kind
+    && left.anchorId === right.anchorId
+    && left.dismissOnSelectionChange === right.dismissOnSelectionChange
+    && left.dismissOnViewportChange === right.dismissOnViewportChange
+  );
+}
+
 export function createDefaultEntrypointRuntimeState(): EntrypointRuntimeState {
   return {
     activeTool: { ...DEFAULT_ACTIVE_TOOL_STATE },
@@ -50,6 +91,10 @@ export function registerEntrypointAnchor(
   state: EntrypointRuntimeState,
   anchor: EntrypointAnchorSnapshot,
 ): EntrypointRuntimeState {
+  if (areAnchorsEqual(state.anchorsById[anchor.anchorId], anchor)) {
+    return state;
+  }
+
   return {
     ...state,
     anchorsById: {
@@ -111,6 +156,10 @@ export function openEntrypointSurface(
   surface: OpenSurfaceDescriptor,
 ): EntrypointRuntimeState {
   if (!state.anchorsById[surface.anchorId]) {
+    return state;
+  }
+
+  if (areOpenSurfacesEqual(state.openSurface, surface)) {
     return state;
   }
 
@@ -296,4 +345,3 @@ export function clearResolvedPendingUiActions(state: EntrypointRuntimeState): En
 export {
   DEFAULT_ENTRYPOINT_RUNTIME_STATE,
 };
-
