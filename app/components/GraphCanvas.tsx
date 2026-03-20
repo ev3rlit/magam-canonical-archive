@@ -330,6 +330,19 @@ function resolveSelectionBounds(input: {
   });
 }
 
+function resolveSelectionScreenBounds(input: {
+  bounds: NonNullable<ReturnType<typeof resolveSelectionBounds>>;
+  viewport: { x: number; y: number; zoom: number };
+}) {
+  const zoom = input.viewport.zoom || 1;
+  return {
+    left: input.bounds.minX * zoom + input.viewport.x,
+    top: input.bounds.minY * zoom + input.viewport.y,
+    width: Math.max((input.bounds.maxX - input.bounds.minX) * zoom, 0),
+    height: Math.max((input.bounds.maxY - input.bounds.minY) * zoom, 0),
+  };
+}
+
 function resolveNodeGroupSelection(nodeIds: string[], nodes: CanvasDismissNode[]): string[] | null {
   if (nodeIds.length === 0) {
     return null;
@@ -530,16 +543,21 @@ export function buildSelectionBoundsAnchor(input: {
     return null;
   }
 
+  const screenBounds = resolveSelectionScreenBounds({
+    bounds,
+    viewport: input.viewport,
+  });
+
   return createEntrypointAnchor({
     anchorId: 'selection-floating-menu:selection-bounds',
     kind: 'selection-bounds',
     nodeIds: input.selectedNodes.map((node) => node.id),
     flow: { x: bounds.minX, y: bounds.minY },
     screen: {
-      x: bounds.minX,
-      y: bounds.minY,
-      width: Math.max(bounds.maxX - bounds.minX, 0),
-      height: Math.max(bounds.maxY - bounds.minY, 0),
+      x: screenBounds.left,
+      y: screenBounds.top,
+      width: screenBounds.width,
+      height: screenBounds.height,
     },
     viewport: input.viewport,
   });
@@ -615,19 +633,17 @@ export function resolveSelectionShellState(input: {
     ? input.selectedNodes[0]
     : undefined;
   const capabilities = resolveSelectionShellCapabilities(primaryNode);
-  const zoom = input.viewport.zoom || 1;
+  const screenBounds = resolveSelectionScreenBounds({
+    bounds,
+    viewport: input.viewport,
+  });
 
   return {
     visible: true,
     canResize: capabilities.canResize,
     canRotate: capabilities.canRotate,
     activeGesture: input.activeGesture ?? null,
-    screenBounds: {
-      left: bounds.minX * zoom + input.viewport.x,
-      top: bounds.minY * zoom + input.viewport.y,
-      width: Math.max((bounds.maxX - bounds.minX) * zoom, 0),
-      height: Math.max((bounds.maxY - bounds.minY) * zoom, 0),
-    },
+    screenBounds,
   };
 }
 

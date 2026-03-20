@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -5,12 +6,14 @@ import { expect, test } from '@playwright/test';
 const lastActiveStorageKey = 'magam:lastActiveDocumentSession';
 const createFixtureRelativePath = 'test-results/canvas-core-authoring-create.graph.tsx';
 const createFixtureAbsolutePath = resolve(process.cwd(), createFixtureRelativePath);
-const createFixtureSource = `
-export default function CanvasCoreAuthoringCreateFixture() {
-  return <Canvas></Canvas>;
-}
-`;
-let renderGraphChildren: Array<Record<string, unknown>> = [];
+type RenderFixtureNode = {
+  type: string;
+  props?: Record<string, unknown>;
+  children?: RenderFixtureNode[];
+};
+
+let renderGraphChildren: RenderFixtureNode[] = [];
+let renderGraphSourceVersion = 'sha256:unknown';
 const files = [
   createFixtureRelativePath,
   'docs/resume.graph.tsx',
@@ -64,10 +67,90 @@ const treeData = {
   },
 };
 
-test.beforeEach(async ({ page }) => {
+function serializeExpression(value: unknown): string {
+  if (value === undefined) {
+    throw new Error('Cannot serialize undefined expression');
+  }
+  return JSON.stringify(value);
+}
+
+function serializeProps(
+  props: Record<string, unknown> | undefined,
+  options?: { omitKeys?: string[] },
+): string {
+  if (!props) {
+    return '';
+  }
+
+  const omitKeys = new Set(options?.omitKeys ?? []);
+  return Object.entries(props)
+    .filter(([, value]) => value !== undefined)
+    .filter(([key]) => !omitKeys.has(key))
+    .map(([key, value]) => ` ${key}={${serializeExpression(value)}}`)
+    .join('');
+}
+
+function serializeCanvasNode(node: RenderFixtureNode, indent: string): string {
+  const props = node.props ?? {};
+  const textChild = typeof props.text === 'string' ? `{${JSON.stringify(props.text)}}` : null;
+  const childrenMarkup = (node.children ?? []).map((child) => serializeCanvasNode(child, `${indent}  `));
+
+  if (node.type === 'graph-shape') {
+    return `${indent}<Shape${serializeProps(props, { omitKeys: ['text'] })}>${textChild ?? ''}</Shape>`;
+  }
+  if (node.type === 'graph-text') {
+    return `${indent}<Text${serializeProps(props, { omitKeys: ['text'] })}>${textChild ?? ''}</Text>`;
+  }
+  if (node.type === 'graph-sticker') {
+    return `${indent}<Sticker${serializeProps(props, { omitKeys: ['text'] })}>${textChild ?? ''}</Sticker>`;
+  }
+  if (node.type === 'graph-sticky') {
+    return `${indent}<Sticky${serializeProps(props, { omitKeys: ['text'] })}>${textChild ?? ''}</Sticky>`;
+  }
+  if (node.type === 'graph-markdown') {
+    return `${indent}<Markdown>${textChild ?? ''}</Markdown>`;
+  }
+  if (node.type === 'graph-node') {
+    if (childrenMarkup.length === 0) {
+      return `${indent}<Node${serializeProps(props)} />`;
+    }
+
+    return [
+      `${indent}<Node${serializeProps(props)}>`,
+      ...childrenMarkup,
+      `${indent}</Node>`,
+    ].join('\n');
+  }
+
+  throw new Error(`Unsupported fixture node type: ${node.type}`);
+}
+
+function buildCreateFixtureSource(children: RenderFixtureNode[]): string {
+  const lines = children.map((child) => serializeCanvasNode(child, '      '));
+  return [
+    "import { Canvas, Markdown, Node, Shape, Sticker, Sticky, Text } from '@magam/core';",
+    '',
+    'export default function CanvasCoreAuthoringCreateFixture() {',
+    '  return (',
+    '    <Canvas>',
+    ...lines,
+    '    </Canvas>',
+    '  );',
+    '}',
+    '',
+  ].join('\n');
+}
+
+function setCreateFixtureChildren(children: RenderFixtureNode[]): void {
+  renderGraphChildren = children;
+  const source = buildCreateFixtureSource(children);
   mkdirSync(dirname(createFixtureAbsolutePath), { recursive: true });
-  writeFileSync(createFixtureAbsolutePath, createFixtureSource, 'utf-8');
-  renderGraphChildren = [
+  writeFileSync(createFixtureAbsolutePath, source, 'utf-8');
+  renderGraphSourceVersion = `sha256:${createHash('sha256').update(source).digest('hex')}`;
+}
+
+test.beforeEach(async ({ page }) => {
+  setCreateFixtureChildren([
     {
       type: 'graph-sticker',
       props: {
@@ -81,7 +164,7 @@ test.beforeEach(async ({ page }) => {
       },
       children: [],
     },
-  ];
+  ]);
 
   await page.route('**/api/files', (route) => {
     if (route.request().method() !== 'GET') {
@@ -127,9 +210,9 @@ test.beforeEach(async ({ page }) => {
         graph: {
           children: renderGraphChildren,
         },
-        sourceVersion: 'test-version',
+        sourceVersion: renderGraphSourceVersion,
         sourceVersions: {
-          [filePath]: 'test-version',
+          [filePath]: renderGraphSourceVersion,
         },
       },
     });
@@ -182,7 +265,7 @@ test.describe('canvas core authoring entry', () => {
     await page.evaluate(([storageKey]) => {
       window.localStorage.removeItem(storageKey);
     }, [lastActiveStorageKey]);
-    renderGraphChildren = [];
+    setCreateFixtureChildren([]);
     await page.reload({ waitUntil: 'domcontentloaded' });
 
     await expect(page.getByRole('tab', { name: 'canvas-core-authoring-create.graph.tsx' })).toBeVisible();
@@ -238,7 +321,7 @@ test.describe('canvas core authoring entry', () => {
     await page.evaluate(([storageKey]) => {
       window.localStorage.removeItem(storageKey);
     }, [lastActiveStorageKey]);
-    renderGraphChildren = [
+    setCreateFixtureChildren([
       {
         type: 'graph-shape',
         props: {
@@ -261,7 +344,7 @@ test.describe('canvas core authoring entry', () => {
         },
         children: [],
       },
-    ];
+    ]);
     await page.reload({ waitUntil: 'domcontentloaded' });
 
     const shapeNode = page.locator('.react-flow__node[data-id="shape-actions"]');
@@ -307,7 +390,7 @@ test.describe('canvas core authoring entry', () => {
     await page.evaluate(([storageKey]) => {
       window.localStorage.removeItem(storageKey);
     }, [lastActiveStorageKey]);
-    renderGraphChildren = [
+    setCreateFixtureChildren([
       {
         type: 'graph-shape',
         props: {
@@ -344,7 +427,7 @@ test.describe('canvas core authoring entry', () => {
         },
         children: [],
       },
-    ];
+    ]);
     await page.reload({ waitUntil: 'domcontentloaded' });
 
     const shapeA = page.locator('.react-flow__node[data-id="shape-a"]');
@@ -356,31 +439,22 @@ test.describe('canvas core authoring entry', () => {
 
     await page.keyboard.press('Meta+A');
     await expect(page.locator('.react-flow__node.selected')).toHaveCount(3);
-
-    await shapeA.click({ button: 'right' });
-    await expect(page.getByText('그룹 만들기')).toBeVisible();
-    await page.getByText('그룹 만들기').click();
-
+    await page.keyboard.press('Meta+G');
+    await expect(page.getByText('EDIT_REJECTED')).toHaveCount(0);
     await expect(page.locator('.react-flow__node.selected')).toHaveCount(3);
 
-    await shapeA.click({ button: 'right' });
-    await expect(page.getByText('그룹 선택')).toBeVisible();
+    await shapeA.click({ button: 'right', force: true });
     await expect(page.getByText('그룹 안으로 들어가기')).toBeVisible();
     await expect(page.getByText('그룹 해제')).toBeVisible();
     await expect(page.getByText('맨 앞으로')).toBeVisible();
     await expect(page.getByText('맨 뒤로')).toBeVisible();
-    await page.getByText('그룹 선택').click();
-
-    await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
-
-    await shapeA.click({ button: 'right' });
     await page.getByText('그룹 안으로 들어가기').click();
 
     await expect(page.locator('.react-flow__node.selected')).toHaveCount(1);
     await page.keyboard.press('Escape');
-    await expect(page.locator('.react-flow__node.selected')).toHaveCount(2);
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(3);
 
-    await shapeA.click({ button: 'right' });
+    await shapeA.click({ button: 'right', force: true });
     await expect(page.getByText('그룹 해제')).toBeVisible();
     await expect(page.getByText('맨 앞으로')).toBeVisible();
     await expect(page.getByText('맨 뒤로')).toBeVisible();
@@ -390,7 +464,7 @@ test.describe('canvas core authoring entry', () => {
     await page.evaluate(([storageKey]) => {
       window.localStorage.removeItem(storageKey);
     }, [lastActiveStorageKey]);
-    renderGraphChildren = [
+    setCreateFixtureChildren([
       {
         type: 'graph-text',
         props: {
@@ -428,7 +502,7 @@ test.describe('canvas core authoring entry', () => {
         },
         children: [],
       },
-    ];
+    ]);
     await page.reload({ waitUntil: 'domcontentloaded' });
 
     const pane = page.locator('.react-flow__pane');

@@ -943,6 +943,18 @@ function buildGroupSelectionPlan(input: {
     ];
   });
 
+  const anchorNodeId = input.normalized.targets[0]?.target.renderedNodeId;
+  if (anchorNodeId) {
+    steps.push({
+      kind: 'runtime-only-action',
+      actionId: 'select-node-group',
+      payload: {
+        groupId: input.normalized.nextGroupId,
+        anchorNodeId,
+      },
+    });
+  }
+
   return {
     intentId: input.envelope.intentId,
     steps,
