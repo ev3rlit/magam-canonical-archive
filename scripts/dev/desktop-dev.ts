@@ -5,7 +5,9 @@ import { build } from 'esbuild';
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:net';
@@ -14,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 import autoprefixer from 'autoprefixer';
 import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
-import { resolveDevTargetDir, shouldBuildCore } from './app-dev';
+import { resolveDevTargetDir } from './app-dev';
 
 export interface DesktopDevFlags {
   headless: boolean;
@@ -45,6 +47,63 @@ export function resolveDesktopOutDir(repoRoot: string): string {
 
 function resolveRepoRoot(): string {
   return resolve(fileURLToPath(new URL('../..', import.meta.url)));
+}
+
+function listFilesRecursively(rootDir: string): string[] {
+  const files: string[] = [];
+
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) {
+        continue;
+      }
+
+      const fullPath = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+
+      files.push(fullPath);
+    }
+  };
+
+  if (existsSync(rootDir)) {
+    walk(rootDir);
+  }
+
+  return files;
+}
+
+function shouldBuildCore(repoRoot: string): boolean {
+  const coreRoot = resolve(repoRoot, 'libs/core');
+  const distDir = resolve(coreRoot, 'dist');
+  const sourceDir = resolve(coreRoot, 'src');
+
+  const buildInputs = [
+    ...listFilesRecursively(sourceDir),
+    resolve(coreRoot, 'package.json'),
+    resolve(coreRoot, 'tsup.config.ts'),
+    resolve(coreRoot, 'tsconfig.lib.json'),
+  ].filter((filePath) => existsSync(filePath));
+
+  if (buildInputs.length === 0) {
+    return false;
+  }
+
+  const distFiles = listFilesRecursively(distDir);
+  if (distFiles.length === 0) {
+    return true;
+  }
+
+  const newestInputMtime = Math.max(
+    ...buildInputs.map((filePath) => statSync(filePath).mtimeMs),
+  );
+  const oldestOutputMtime = Math.min(
+    ...distFiles.map((filePath) => statSync(filePath).mtimeMs),
+  );
+
+  return newestInputMtime > oldestOutputMtime;
 }
 
 async function runBuildCore(repoRoot: string): Promise<void> {

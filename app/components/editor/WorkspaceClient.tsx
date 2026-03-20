@@ -22,7 +22,7 @@ import {
   LazyStickerInspector,
 } from './LazyPanels';
 import { useChatUiStore } from '@/store/chatUi';
-import { TabState, useGraphStore } from '@/store/graph';
+import { type FileTreeNode, TabState, useGraphStore } from '@/store/graph';
 import {
   buildAbsoluteMoveCommand,
   buildReparentCommand,
@@ -109,6 +109,14 @@ export type CreateWorkspaceDocumentResult = {
   sourceVersion: string;
 };
 
+const LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY = 'magam:lastActiveDocumentSession';
+
+type LastActiveDocumentSession = {
+  workspaceKey: string;
+  documentPath: string;
+  updatedAt: number;
+};
+
 function isCreateWorkspaceDocumentResult(
   value: unknown,
 ): value is CreateWorkspaceDocumentResult {
@@ -148,6 +156,53 @@ function createWorkspaceSessionKey(input: {
   const workspaceName = input.workspaceName?.trim() || 'workspace';
   return `${workspaceName}:${input.files.join('|')}`;
 }
+
+function readLastActiveDocumentPath(
+  workspaceKey: string | null,
+  knownFiles: string[],
+): string | null {
+  if (typeof window === 'undefined' || !workspaceKey) {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as LastActiveDocumentSession;
+    if (
+      parsed.workspaceKey !== workspaceKey
+      || !knownFiles.includes(parsed.documentPath)
+      || typeof parsed.updatedAt !== 'number'
+    ) {
+      return null;
+    }
+    return parsed.documentPath;
+  } catch {
+    return null;
+  }
+}
+
+function persistLastActiveDocumentPath(
+  workspaceKey: string | null,
+  documentPath: string | null,
+): void {
+  if (typeof window === 'undefined' || !workspaceKey || !documentPath) {
+    return;
+  }
+
+  window.localStorage.setItem(
+    LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY,
+    JSON.stringify({
+      workspaceKey,
+      documentPath,
+      updatedAt: Date.now(),
+    } satisfies LastActiveDocumentSession),
+  );
+}
+
 declare global {
   interface Window {
     __magamTest?: MagamTestHooks;
@@ -157,6 +212,7 @@ declare global {
 export function WorkspaceClient() {
   const {
     setFiles,
+    fileTree,
     setGraph,
     currentFile,
     sourceVersions,
@@ -186,6 +242,7 @@ export function WorkspaceClient() {
     registerPendingActionRouting,
     clearPendingActionRouting,
     refreshWorkspaceStyles,
+    setFileTree,
     workspaceStyleDiagnosticsByNodeId,
   } = useGraphStore();
   const hostRuntime = useMemo(() => getHostRuntime(), []);
@@ -204,6 +261,10 @@ export function WorkspaceClient() {
     useState<TabContextMenuState | null>(null);
   const tabContextMenuRef = useRef<HTMLDivElement>(null);
   const pendingSelectionNodeIdRef = useRef<string | null>(null);
+  const workspaceSessionKey = useMemo(() => createWorkspaceSessionKey({
+    files,
+    workspaceName: fileTree?.name,
+  }), [fileTree?.name, files]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') {
@@ -239,11 +300,10 @@ export function WorkspaceClient() {
       if (data.files) {
         setFiles(data.files);
         const runtime = useGraphStore.getState();
-        runtime.hydrateDocumentSession(createWorkspaceSessionKey({
+        const resumeTarget = readLastActiveDocumentPath(createWorkspaceSessionKey({
           files: data.files,
           workspaceName: runtime.fileTree?.name,
-        }));
-        const resumeTarget = useGraphStore.getState().lastActiveDocumentPath;
+        }), data.files);
         const initialDocument = (
           typeof resumeTarget === 'string'
           && data.files.includes(resumeTarget)
@@ -1463,27 +1523,12 @@ export function WorkspaceClient() {
       return;
     }
 
-    rememberLastActiveDocument(currentFile);
-  }, [currentFile, rememberLastActiveDocument]);
+    persistLastActiveDocumentPath(workspaceSessionKey, currentFile);
+  }, [currentFile, workspaceSessionKey]);
 
   useEffect(() => {
     async function renderFile() {
       if (!currentFile) return;
-
-      if (draftDocuments.includes(currentFile)) {
-        setGraph({
-          nodes: [],
-          edges: [],
-          sourceVersion: null,
-          sourceVersions: {
-            ...useGraphStore.getState().sourceVersions,
-            [currentFile]: 'draft:empty-canvas',
-          },
-        });
-        setGraphError(null);
-        void hostRuntime.bootstrap.markReady({ currentFile });
-        return;
-      }
       try {
         setGraphError(null); // Clear previous errors
 
@@ -1552,7 +1597,6 @@ export function WorkspaceClient() {
     renderFile();
   }, [
     currentFile,
-    draftDocuments,
     hostRuntime.bootstrap,
     refreshKey,
     rpcClient,

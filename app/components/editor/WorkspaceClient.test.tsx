@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { resolveRestoreFocusTarget, restoreFocusForOverlay } from '@/features/overlay-host';
 import { installTestDom } from '@/features/overlay-host/testDom';
 import { createCanvasActionDispatchBinding } from '@/processes/canvas-runtime/bindings/actionDispatch';
@@ -6,6 +6,7 @@ import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
+import { createWorkspaceDocument } from './WorkspaceClient';
 import {
   canCommitTextEdit,
   canRunNodeCommand,
@@ -97,9 +98,9 @@ afterEach(() => {
 });
 
 describe('WorkspaceClient document entry convergence', () => {
-  it.todo('resumes the last active document before showing an idle shell');
-  it.todo('creates a new document into an empty canvas without a blocking naming modal');
-  it.todo('switches documents through Quick Open without duplicating the active tab');
+  it.todo('resumes the last active document before showing an idle shell', () => {});
+  it.todo('creates a new document into an empty canvas without a blocking naming modal', () => {});
+  it.todo('switches documents through Quick Open without duplicating the active tab', () => {});
 });
 
 describe('WorkspaceClient document materialization', () => {
