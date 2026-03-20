@@ -1,5 +1,5 @@
-import { WorkspaceClient } from '@/components/editor/WorkspaceClient';
+import { RendererAppShell } from '@/features/host/renderer';
 
 export default function HomePage() {
-  return <WorkspaceClient />;
+  return <RendererAppShell />;
 }

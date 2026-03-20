@@ -1,11 +1,11 @@
 /** @type {import('tailwindcss').Config} */
 const typography = require('@tailwindcss/typography');
+const { join } = require('path');
 
 module.exports = {
   content: [
-    './app/**/*.{js,ts,jsx,tsx,mdx}',
-    './components/**/*.{js,ts,jsx,tsx,mdx}',
-    '../libs/**/*.{js,ts,jsx,tsx}',
+    join(__dirname, 'app/**/*.{js,ts,jsx,tsx,mdx}'),
+    join(__dirname, 'components/**/*.{js,ts,jsx,tsx,mdx}'),
   ],
   darkMode: 'class',
   theme: {

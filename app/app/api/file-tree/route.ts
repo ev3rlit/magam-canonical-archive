@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { NextResponse } from 'next/server';
+import { proxyCompatibilityRequest } from '@/features/host/rpc';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -11,40 +11,24 @@ function pickRootPath(searchParams: URLSearchParams): string | null {
 }
 
 export async function GET(request: Request) {
-    const httpPort = process.env.MAGAM_HTTP_PORT || '3002';
+  const { searchParams } = new URL(request.url);
+  const rootPath = pickRootPath(searchParams);
+  if (rootPath && !path.isAbsolute(rootPath.trim())) {
+    return Response.json(
+      { error: 'rootPath must be an absolute path' },
+      { status: 400 },
+    );
+  }
 
-    try {
-        const { searchParams } = new URL(request.url);
-        const rootPath = pickRootPath(searchParams);
-        if (rootPath && !path.isAbsolute(rootPath.trim())) {
-            return NextResponse.json(
-                { error: 'rootPath must be an absolute path' },
-                { status: 400 },
-            );
-        }
+  const pathname = rootPath
+    ? `/file-tree?rootPath=${encodeURIComponent(path.resolve(rootPath.trim()))}`
+    : '/file-tree';
 
-        const upstreamUrl = new URL(`http://localhost:${httpPort}/file-tree`);
-        if (rootPath) {
-            upstreamUrl.searchParams.set('rootPath', path.resolve(rootPath.trim()));
-        }
-
-        const res = await fetch(upstreamUrl, {
-            cache: 'no-store',
-            next: { revalidate: 0 },
-            headers: {
-                'x-magam-proxy': 'file-tree',
-            },
-        });
-        const data = await res.json();
-
-        return NextResponse.json(data, { status: res.status });
-    } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        console.error('[API Proxy] FileTree Error:', message);
-
-        return NextResponse.json(
-            { error: `Failed to connect to render server: ${message}` },
-            { status: 502 }
-        );
-    }
+  return proxyCompatibilityRequest({
+    headers: {
+      'x-magam-proxy': 'file-tree',
+    },
+    method: 'GET',
+    pathname,
+  });
 }
