@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { resolveRestoreFocusTarget, restoreFocusForOverlay } from '@/features/overlay-host';
 import { installTestDom } from '@/features/overlay-host/testDom';
 import { createCanvasActionDispatchBinding } from '@/processes/canvas-runtime/bindings/actionDispatch';
@@ -6,6 +6,7 @@ import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
+import { createWorkspaceDocument } from './WorkspaceClient';
 import {
   canCommitTextEdit,
   canRunNodeCommand,
@@ -91,10 +92,57 @@ const canonicalProfileShape: CanonicalObject = {
   alias: 'Shape',
 };
 
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
 describe('WorkspaceClient document entry convergence', () => {
   it.todo('resumes the last active document before showing an idle shell');
   it.todo('creates a new document into an empty canvas without a blocking naming modal');
   it.todo('switches documents through Quick Open without duplicating the active tab');
+});
+
+describe('WorkspaceClient document materialization', () => {
+  it('creates untitled documents through the server contract with a real sourceVersion', async () => {
+    const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(input).toBe('/api/files');
+      expect(init?.method).toBe('POST');
+      expect(init?.body).toBe(JSON.stringify({ filePath: 'docs/untitled-2.graph.tsx' }));
+
+      return new Response(JSON.stringify({
+        filePath: 'docs/untitled-2.graph.tsx',
+        sourceVersion: 'sha256:created-document',
+      }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await expect(
+      createWorkspaceDocument('docs/untitled-2.graph.tsx'),
+    ).resolves.toEqual({
+      filePath: 'docs/untitled-2.graph.tsx',
+      sourceVersion: 'sha256:created-document',
+    });
+  });
+
+  it('rejects create-document responses that still expose a draft placeholder version', async () => {
+    const fetchMock = mock(async () => new Response(JSON.stringify({
+      filePath: 'docs/untitled-2.graph.tsx',
+      sourceVersion: 'draft:empty-canvas',
+    }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await expect(
+      createWorkspaceDocument('docs/untitled-2.graph.tsx'),
+    ).rejects.toThrow('새 문서 생성 응답이 올바르지 않습니다.');
+  });
 });
 
 describe('WorkspaceClient text edit isolation', () => {

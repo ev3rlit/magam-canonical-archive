@@ -135,6 +135,41 @@ describe('RPC editing methods', () => {
     expect(patched.includes('id={"child"}')).toBe(true);
   });
 
+  it('node.create: freshly materialized blank graph document works through the normal relative file contract', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'magam-methods-blank-'));
+    tempDirs.push(dir);
+    const filePath = join(dir, 'untitled-1.graph.tsx');
+    await writeFile(filePath, [
+      "import { Canvas } from '@magam/core';",
+      '',
+      'export default function UntitledDocument() {',
+      '  return <Canvas></Canvas>;',
+      '}',
+      '',
+    ].join('\n'), 'utf-8');
+    const original = await readFile(filePath, 'utf-8');
+    process.env.MAGAM_TARGET_DIR = dir;
+
+    const result = await methods['node.create']({
+      filePath: 'untitled-1.graph.tsx',
+      node: {
+        id: 'shape-1',
+        type: 'rectangle',
+        props: { size: { width: 180, height: 120 } },
+        placement: { mode: 'canvas-absolute', x: 120, y: 160 },
+      },
+      baseVersion: sha(original),
+      originId: 'client-1',
+      commandId: 'cmd-new-doc-first-create',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id={"shape-1"}')).toBe(true);
+    expect(patched.includes('x={120}')).toBe(true);
+    expect(patched.includes('y={160}')).toBe(true);
+  });
+
   it('node.create: canvas-absolute placement를 그대로 저장한다', async () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }`);
     const original = await readFile(filePath, 'utf-8');

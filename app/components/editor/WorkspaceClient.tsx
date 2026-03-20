@@ -23,7 +23,7 @@ import {
   LazyStickerInspector,
 } from './LazyPanels';
 import { useChatUiStore } from '@/store/chatUi';
-import { TabState, useGraphStore } from '@/store/graph';
+import { TabState, type FileTreeNode, useGraphStore } from '@/store/graph';
 import {
   buildAbsoluteMoveCommand,
   buildReparentCommand,
@@ -111,6 +111,62 @@ function createDraftDocumentPath(existingFiles: string[]): string {
   }
 }
 
+export type CreateWorkspaceDocumentResult = {
+  filePath: string;
+  sourceVersion: string;
+};
+
+function isCreateWorkspaceDocumentResult(
+  value: unknown,
+): value is CreateWorkspaceDocumentResult {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.filePath === 'string'
+    && typeof record.sourceVersion === 'string'
+    && record.sourceVersion.startsWith('sha256:')
+  );
+}
+
+export async function createWorkspaceDocument(
+  filePath: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<CreateWorkspaceDocumentResult> {
+  const response = await fetchImpl('/api/files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filePath }),
+  });
+
+  let data: unknown = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const message = (
+      data
+      && typeof data === 'object'
+      && 'error' in data
+      && typeof (data as { error?: unknown }).error === 'string'
+    )
+      ? (data as { error: string }).error
+      : '새 문서를 만드는 데 실패했습니다.';
+    throw new Error(message);
+  }
+
+  if (!isCreateWorkspaceDocumentResult(data)) {
+    throw new Error('새 문서 생성 응답이 올바르지 않습니다.');
+  }
+
+  return data;
+}
+
 function createWorkspaceSessionKey(input: {
   files: string[];
   workspaceName?: string | null;
@@ -164,7 +220,7 @@ export function WorkspaceClient() {
     workspaceStyleDiagnosticsByNodeId,
     draftDocuments,
     rememberLastActiveDocument,
-    registerDraftDocument,
+    setFileTree,
   } = useGraphStore();
   const isChatOpen = useChatUiStore((state) => state.isOpen);
   const toggleChat = useChatUiStore((state) => state.toggleOpen);
@@ -238,6 +294,18 @@ export function WorkspaceClient() {
       console.error('Failed to load files:', error);
     }
   }, [setFiles]);
+
+  const loadFileTree = useCallback(async () => {
+    try {
+      const res = await fetch('/api/file-tree');
+      const data = await res.json() as { tree?: FileTreeNode | null };
+      if (data.tree) {
+        setFileTree(data.tree);
+      }
+    } catch (error) {
+      console.error('Failed to load file tree:', error);
+    }
+  }, [setFileTree]);
 
   const dependencyFiles = useMemo(
     () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentFile),
@@ -367,11 +435,47 @@ export function WorkspaceClient() {
     [openTab],
   );
 
-  const handleCreateDraftDocument = useCallback(() => {
+  const handleCreateDocument = useCallback(async () => {
     const nextDocumentPath = createDraftDocumentPath(files);
-    registerDraftDocument(nextDocumentPath);
-    return openTabByPath(nextDocumentPath);
-  }, [files, openTabByPath, registerDraftDocument]);
+
+    try {
+      const createdDocument = await createWorkspaceDocument(nextDocumentPath);
+      const runtime = useGraphStore.getState();
+      runtime.setSourceVersionForFile(
+        createdDocument.filePath,
+        createdDocument.sourceVersion,
+      );
+
+      const opened = openTabByPath(createdDocument.filePath);
+      if (opened) {
+        const nextSourceVersions = {
+          ...useGraphStore.getState().sourceVersions,
+          [createdDocument.filePath]: createdDocument.sourceVersion,
+        };
+        setGraph({
+          nodes: [],
+          edges: [],
+          sourceVersion: createdDocument.sourceVersion,
+          sourceVersions: nextSourceVersions,
+        });
+        setGraphError(null);
+      }
+
+      void loadFiles();
+      void loadFileTree();
+      return opened;
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : '새 문서를 만드는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'DOCUMENT_CREATE_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [files, loadFileTree, loadFiles, openTabByPath, setGraph, setGraphError]);
 
   const restoreNodeData = useCallback((nodeId: string, previousData: Record<string, unknown> | undefined) => {
     useGraphStore.setState((state) => ({
@@ -1225,7 +1329,7 @@ export function WorkspaceClient() {
   const runQuickOpenCommand = useCallback(
     async (commandId: string) => {
       if (commandId === 'new-document') {
-        return handleCreateDraftDocument();
+        return handleCreateDocument();
       }
 
       if (commandId === 'washi:select-all') {
@@ -1255,7 +1359,7 @@ export function WorkspaceClient() {
     },
     [
       focusNextNodeByType,
-      handleCreateDraftDocument,
+      handleCreateDocument,
       handleWashiPresetChange,
       selectNodesByType,
       selectedWashiNodeIds,
@@ -1653,7 +1757,7 @@ export function WorkspaceClient() {
       <Sidebar onOpenFile={openTabByPath} />
 
       <div className="flex flex-1 flex-col h-full overflow-hidden relative">
-        <Header onCreateDocument={handleCreateDraftDocument} />
+        <Header onCreateDocument={() => { void handleCreateDocument(); }} />
         {isChatOpen && <LazyChatPanel />}
         <TabBar
           tabs={openTabs}

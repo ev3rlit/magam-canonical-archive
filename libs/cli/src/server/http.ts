@@ -110,6 +110,17 @@ function hashSourceContent(content: string): string {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
 
+function createEmptyCanvasDocumentSource(): string {
+  return [
+    "import { Canvas } from '@magam/core';",
+    '',
+    'export default function UntitledDocument() {',
+    '  return <Canvas></Canvas>;',
+    '}',
+    '',
+  ].join('\n');
+}
+
 function listWorkspaceRelativeCandidates(
   targetDir: string,
   candidatePath: string | undefined,
@@ -219,6 +230,8 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
     try {
       if (req.method === 'POST' && url.pathname === '/render') {
         await handleRender(req, res, config.targetDir);
+      } else if (req.method === 'POST' && url.pathname === '/files') {
+        await handleCreateFile(req, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/files') {
         await handleFiles(req, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/file-tree') {
@@ -327,6 +340,41 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
       details: error.details || error.stack
     }));
   }
+}
+
+async function handleCreateFile(req: http.IncomingMessage, res: http.ServerResponse, targetDir: string) {
+  const body = await parseBody(req);
+  const requestedFilePath = typeof body?.filePath === 'string' ? body.filePath : '';
+
+  if (!requestedFilePath) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing filePath in body', type: 'VALIDATION_ERROR' }));
+    return;
+  }
+
+  const workspacePath = normalizeWorkspacePath(targetDir, requestedFilePath, requestedFilePath);
+  if (!workspacePath.endsWith('.tsx')) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'filePath must point to a .tsx document', type: 'VALIDATION_ERROR' }));
+    return;
+  }
+
+  const absolutePath = path.resolve(targetDir, workspacePath);
+  if (fs.existsSync(absolutePath)) {
+    res.writeHead(409, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: `File already exists: ${workspacePath}`, type: 'FILE_EXISTS' }));
+    return;
+  }
+
+  const content = createEmptyCanvasDocumentSource();
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  fs.writeFileSync(absolutePath, content, 'utf-8');
+
+  res.writeHead(201, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    filePath: workspacePath,
+    sourceVersion: hashSourceContent(content),
+  }));
 }
 
 async function runRenderPipeline(input: {
