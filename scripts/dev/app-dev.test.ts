@@ -3,26 +3,7 @@ import {
   buildCliDevCommand,
   findTargetArgIndex,
   resolveDevTargetDir,
-  resolveWorkspaceStylingBootstrapPlan,
 } from './app-dev';
-
-describe('app-dev bootstrap planning', () => {
-  it('keeps safelist generation enabled when runtime styling rollout is enabled', () => {
-    expect(resolveWorkspaceStylingBootstrapPlan({
-      MAGAM_WORKSPACE_STYLING_RUNTIME: '1',
-    })).toEqual({
-      runtimeStylingEnabled: true,
-      shouldGenerateSafelist: true,
-    });
-  });
-
-  it('still generates safelist when runtime styling flag is absent', () => {
-    expect(resolveWorkspaceStylingBootstrapPlan({})).toEqual({
-      runtimeStylingEnabled: false,
-      shouldGenerateSafelist: true,
-    });
-  });
-});
 
 describe('app-dev command helpers', () => {
   const repoRoot = '/repo';

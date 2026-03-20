@@ -25,18 +25,6 @@ import type {
 } from '@/features/plugin-runtime';
 import type { ActionRoutingPendingRecord } from '@/features/editing/actionRoutingBridge/types';
 import {
-  applySessionUpdate,
-  createStaleUpdateDiagnostic,
-  createWorkspaceStyleSessionState,
-  interpretWorkspaceStyle,
-  resolveEligibleObjectProfileForNode,
-  type InterpretedStyleResult,
-  type StylingDiagnostic,
-  type WorkspaceStyleInput,
-  type WorkspaceStyleRuntimeContext,
-  type WorkspaceStyleSessionState,
-} from '@/features/workspace-styling';
-import {
   DEFAULT_ENTRYPOINT_RUNTIME_STATE,
   beginPendingUiAction as beginPendingUiActionReducer,
   clearEntrypointAnchor as clearEntrypointAnchorReducer,
@@ -230,9 +218,6 @@ export interface GraphState {
   editHistoryMaxSize: number;
   entrypointRuntime: EntrypointRuntimeState;
   hoveredNodeIdsByGroupId: Record<string, string[]>;
-  workspaceStyleSession: WorkspaceStyleSessionState;
-  workspaceStyleByNodeId: Record<string, InterpretedStyleResult>;
-  workspaceStyleDiagnosticsByNodeId: Record<string, StylingDiagnostic[]>;
   pendingActionRoutingByKey: Record<string, ActionRoutingPendingRecord>;
   actionRoutingPendingByToken: Record<string, ActionOptimisticLifecycleEvent>;
   setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null; sourceVersions?: Record<string, string> }) => void;
@@ -306,7 +291,6 @@ export interface GraphState {
   peekRedoEditEvent: () => EditCompletionEvent | null;
   commitUndoEventSuccess: (eventId: string) => void;
   commitRedoEventSuccess: (eventId: string) => void;
-  refreshWorkspaceStyles: () => void;
   registerPendingActionRouting: (record: ActionRoutingPendingRecord) => void;
   clearPendingActionRouting: (pendingKey: string) => void;
 }
@@ -394,125 +378,6 @@ export function getNodePluginRuntimeDiagnostic(
 }
 
 const DEFAULT_MINDMAP_SPACING = 50;
-
-type WorkspaceStyleStateSnapshot = {
-  workspaceStyleSession: WorkspaceStyleSessionState;
-  workspaceStyleByNodeId: Record<string, InterpretedStyleResult>;
-  workspaceStyleDiagnosticsByNodeId: Record<string, StylingDiagnostic[]>;
-};
-
-type NodeSourceMeta = {
-  filePath?: unknown;
-};
-
-function resolveStyleInputForNode(input: {
-  node: Node;
-  sourceVersions: Record<string, string>;
-  currentFile: string | null;
-  previousResult?: InterpretedStyleResult;
-}): WorkspaceStyleInput | null {
-  const data = ((input.node.data || {}) as Record<string, unknown>);
-  const hasClassNameSurface = typeof data.className === 'string';
-  if (!hasClassNameSurface && !input.previousResult) {
-    return null;
-  }
-
-  const sourceMeta = (data.sourceMeta || {}) as NodeSourceMeta;
-  const filePath = typeof sourceMeta.filePath === 'string' && sourceMeta.filePath.length > 0
-    ? sourceMeta.filePath
-    : input.currentFile;
-  const sourceRevision = filePath
-    ? (input.sourceVersions[filePath] ?? 'workspace-style:pending')
-    : 'workspace-style:pending';
-
-  return {
-    objectId: input.node.id,
-    className: hasClassNameSurface ? String(data.className || '') : '',
-    sourceRevision,
-    timestamp: Date.now(),
-    groupId: typeof data.groupId === 'string' && data.groupId.length > 0 ? data.groupId : undefined,
-  };
-}
-
-function buildWorkspaceStyleSnapshot(input: {
-  nodes: Node[];
-  sourceVersions: Record<string, string>;
-  currentFile: string | null;
-  previousSession: WorkspaceStyleSessionState;
-  previousResults: Record<string, InterpretedStyleResult>;
-  runtimeContext: WorkspaceStyleRuntimeContext;
-}): WorkspaceStyleStateSnapshot {
-  let workspaceStyleSession = input.previousSession;
-  const workspaceStyleByNodeId: Record<string, InterpretedStyleResult> = {};
-  const workspaceStyleDiagnosticsByNodeId: Record<string, StylingDiagnostic[]> = {};
-
-  input.nodes.forEach((node) => {
-    const previousResult = input.previousResults[node.id];
-    const styleInput = resolveStyleInputForNode({
-      node,
-      sourceVersions: input.sourceVersions,
-      currentFile: input.currentFile,
-      previousResult,
-    });
-    if (!styleInput) {
-      return;
-    }
-
-    const sessionUpdate = applySessionUpdate(workspaceStyleSession, {
-      objectId: styleInput.objectId,
-      sourceRevision: styleInput.sourceRevision,
-      timestamp: styleInput.timestamp,
-    });
-
-    if (sessionUpdate.stale) {
-      if (previousResult) {
-        workspaceStyleByNodeId[node.id] = previousResult;
-      }
-      workspaceStyleDiagnosticsByNodeId[node.id] = [
-        createStaleUpdateDiagnostic({
-          objectId: styleInput.objectId,
-          revision: styleInput.sourceRevision,
-          latestAcceptedRevision: workspaceStyleSession.byObjectId[styleInput.objectId]?.latestAcceptedRevision ?? styleInput.sourceRevision,
-        }),
-      ];
-      return;
-    }
-
-    workspaceStyleSession = sessionUpdate.state;
-    const interpreted = interpretWorkspaceStyle({
-      styleInput,
-      eligibleProfile: resolveEligibleObjectProfileForNode(node),
-      runtimeContext: input.runtimeContext,
-    });
-
-    if (styleInput.className.trim().length > 0 || previousResult) {
-      workspaceStyleByNodeId[node.id] = interpreted.result;
-    }
-    if (interpreted.diagnostics.length > 0) {
-      workspaceStyleDiagnosticsByNodeId[node.id] = interpreted.diagnostics;
-    }
-  });
-
-  return {
-    workspaceStyleSession,
-    workspaceStyleByNodeId,
-    workspaceStyleDiagnosticsByNodeId,
-  };
-}
-
-function resolveWorkspaceStyleRuntimeContext(): WorkspaceStyleRuntimeContext {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return {
-      colorScheme: 'light',
-      viewportWidth: 0,
-    };
-  }
-
-  return {
-    colorScheme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
-    viewportWidth: window.innerWidth,
-  };
-}
 
 function readLastActiveDocumentSession(): LastActiveDocumentSession | null {
   if (typeof window === 'undefined') {
@@ -787,9 +652,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   editHistoryMaxSize: 200,
   entrypointRuntime: DEFAULT_ENTRYPOINT_RUNTIME_STATE,
   hoveredNodeIdsByGroupId: {},
-  workspaceStyleSession: createWorkspaceStyleSessionState(),
-  workspaceStyleByNodeId: {},
-  workspaceStyleDiagnosticsByNodeId: {},
   pendingActionRoutingByKey: {},
   actionRoutingPendingByToken: {},
   setGraph: ({
@@ -806,14 +668,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const nextSourceVersions = sourceVersions ?? state.sourceVersions;
     const normalizedMindMapGroups = mindMapGroups.map(normalizeMindMapGroup);
     const resolvedLayoutType = layoutType ?? normalizedMindMapGroups[0]?.layoutType ?? 'compact';
-    const workspaceStyleState = buildWorkspaceStyleSnapshot({
-      nodes,
-      sourceVersions: nextSourceVersions,
-      currentFile: state.currentFile,
-      previousSession: state.workspaceStyleSession,
-      previousResults: state.workspaceStyleByNodeId,
-      runtimeContext: resolveWorkspaceStyleRuntimeContext(),
-    });
     return {
       nodes,
       edges,
@@ -831,7 +685,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         preserveActiveTool: true,
       }),
       hoveredNodeIdsByGroupId: {},
-      ...workspaceStyleState,
     };
   }),
   setSourceVersion: (sourceVersion) => set({ sourceVersion }),
@@ -847,15 +700,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       delete nextSourceVersions[filePath];
     }
 
-    const workspaceStyleState = buildWorkspaceStyleSnapshot({
-      nodes: state.nodes,
-      sourceVersions: nextSourceVersions,
-      currentFile: state.currentFile,
-      previousSession: state.workspaceStyleSession,
-      previousResults: state.workspaceStyleByNodeId,
-      runtimeContext: resolveWorkspaceStyleRuntimeContext(),
-    });
-
     return {
       sourceVersions: nextSourceVersions,
       ...(state.currentFile === filePath ? { sourceVersion: version } : {}),
@@ -868,7 +712,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         },
       },
       hoveredNodeIdsByGroupId: {},
-      ...workspaceStyleState,
     };
   }),
   setLastAppliedCommandId: (lastAppliedCommandId) => set({ lastAppliedCommandId }),
@@ -940,14 +783,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return { expandedFolders: newExpanded };
   }),
   setCurrentFile: (currentFile) => set((state) => {
-    const workspaceStyleState = buildWorkspaceStyleSnapshot({
-      nodes: state.nodes,
-      sourceVersions: state.sourceVersions,
-      currentFile,
-      previousSession: state.workspaceStyleSession,
-      previousResults: state.workspaceStyleByNodeId,
-      runtimeContext: resolveWorkspaceStyleRuntimeContext(),
-    });
     return {
       currentFile,
       sourceVersion: currentFile ? (state.sourceVersions[currentFile] ?? null) : null,
@@ -957,7 +792,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         preserveActiveTool: true,
       }),
       hoveredNodeIdsByGroupId: {},
-      ...workspaceStyleState,
     };
   }),
   setStatus: (status) => set({ status }),
@@ -1057,14 +891,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     });
     return {
       nodes,
-      ...buildWorkspaceStyleSnapshot({
-        nodes,
-        sourceVersions: state.sourceVersions,
-        currentFile: state.currentFile,
-        previousSession: state.workspaceStyleSession,
-        previousResults: state.workspaceStyleByNodeId,
-        runtimeContext: resolveWorkspaceStyleRuntimeContext(),
-      }),
     };
   }),
   onNodesChange: (changes) => {
@@ -1556,12 +1382,4 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       pendingActionRoutingByKey: next,
     };
   }),
-  refreshWorkspaceStyles: () => set((state) => buildWorkspaceStyleSnapshot({
-    nodes: state.nodes,
-    sourceVersions: state.sourceVersions,
-    currentFile: state.currentFile,
-    previousSession: state.workspaceStyleSession,
-    previousResults: state.workspaceStyleByNodeId,
-    runtimeContext: resolveWorkspaceStyleRuntimeContext(),
-  })),
 }));

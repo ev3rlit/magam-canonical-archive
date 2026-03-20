@@ -3,7 +3,6 @@ import { NodeProps } from 'reactflow';
 import { BaseNode } from './BaseNode';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import { useGraphStore } from '@/store/graph';
-import { twMerge } from 'tailwind-merge';
 
 interface ImageNodeData {
   src?: string;
@@ -48,7 +47,7 @@ const ImageNode = ({ data, selected }: NodeProps<ImageNodeData>) => {
 
   return (
     <BaseNode
-      className={twMerge("bg-white border-2 border-node-border shadow-node rounded-xl p-2", data.className)}
+      className="bg-white border-2 border-node-border shadow-node rounded-xl p-2"
       selected={selected}
       startHandle={false}
       endHandle={false}

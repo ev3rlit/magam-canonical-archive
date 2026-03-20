@@ -55,7 +55,6 @@ import {
   createPaneActionRoutingContext,
   canCommitTextEdit,
   canRunNodeCommand,
-  flattenWorkspaceStyleDiagnostics,
   mapEditRpcErrorToToast,
   resolveImmediateCreateEditMode,
   resolveNodeEditContext,
@@ -216,8 +215,6 @@ export function WorkspaceClient() {
     pushEditCompletionEvent,
     registerPendingActionRouting,
     clearPendingActionRouting,
-    refreshWorkspaceStyles,
-    workspaceStyleDiagnosticsByNodeId,
     draftDocuments,
     rememberLastActiveDocument,
     setFileTree,
@@ -311,10 +308,6 @@ export function WorkspaceClient() {
     () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentFile),
     [currentFile, sourceVersions],
   );
-  const workspaceStyleDiagnostics = useMemo(
-    () => flattenWorkspaceStyleDiagnostics(workspaceStyleDiagnosticsByNodeId),
-    [workspaceStyleDiagnosticsByNodeId],
-  );
 
   // File sync with reload callback for file list changes
   const {
@@ -339,33 +332,6 @@ export function WorkspaceClient() {
 
     rememberLastActiveDocument(currentFile);
   }, [currentFile, rememberLastActiveDocument]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof document === 'undefined') {
-      return;
-    }
-
-    const handleRuntimeStyleContextChange = () => {
-      refreshWorkspaceStyles();
-    };
-
-    window.addEventListener('resize', handleRuntimeStyleContextChange);
-    const observer = new MutationObserver((mutations) => {
-      const classMutation = mutations.some((mutation) => mutation.attributeName === 'class');
-      if (classMutation) {
-        handleRuntimeStyleContextChange();
-      }
-    });
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
-
-    return () => {
-      window.removeEventListener('resize', handleRuntimeStyleContextChange);
-      observer.disconnect();
-    };
-  }, [refreshWorkspaceStyles]);
 
   const executeCloseTabs = useCallback(
     (tabIds: string[]) => {
@@ -1789,18 +1755,6 @@ export function WorkspaceClient() {
             onCommitSelectionContent={handleSelectionContentCommit}
           />
           <LazyStickerInspector onApplyStylePatch={handleNodeStyleCommit} />
-          {process.env.NODE_ENV !== 'production' && workspaceStyleDiagnostics.length > 0 ? (
-            <div className="absolute bottom-4 left-4 z-40 max-w-sm rounded-lg border border-amber-200 bg-amber-50/95 px-3 py-2 text-xs text-amber-950 shadow-lg backdrop-blur">
-              <div className="font-semibold">Workspace Style Diagnostics</div>
-              <ul className="mt-1 space-y-1">
-                {workspaceStyleDiagnostics.map((message, index) => (
-                  <li key={`${message}-${index}`}>
-                    {message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
         </main>
 
         <Footer />

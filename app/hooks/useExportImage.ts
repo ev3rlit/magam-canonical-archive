@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import { getNodesBounds, getViewportForBounds, Node, useReactFlow, useStoreApi } from 'reactflow';
-import { toPng, toJpeg, toSvg } from 'html-to-image';
 
 export type ExportFormat = 'png' | 'jpg' | 'svg' | 'pdf';
 export type ExportBackground = 'grid' | 'transparent' | 'solid';
@@ -72,12 +71,20 @@ const EXPORT_SELECTION_CLASS_PATTERNS = [
 ] as const;
 
 let jsPdfModulePromise: Promise<typeof import('jspdf')> | null = null;
+let htmlToImageModulePromise: Promise<typeof import('html-to-image')> | null = null;
 
 async function loadJsPdf() {
   if (!jsPdfModulePromise) {
     jsPdfModulePromise = import('jspdf');
   }
   return jsPdfModulePromise;
+}
+
+async function loadHtmlToImage() {
+  if (!htmlToImageModulePromise) {
+    htmlToImageModulePromise = import('html-to-image');
+  }
+  return htmlToImageModulePromise;
 }
 
 type MeasuredExportNode = Node & {
@@ -485,6 +492,7 @@ export function useExportImage(): ExportReturn {
 
     try {
       await waitForFontsReady();
+      const { toPng, toJpeg, toSvg } = await loadHtmlToImage();
 
       if (options.format === 'png') {
         return await toPng(captureTarget, captureOptions);

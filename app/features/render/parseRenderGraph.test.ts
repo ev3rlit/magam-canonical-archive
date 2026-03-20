@@ -840,8 +840,8 @@ describe('parseRenderGraph canonical object normalization', () => {
       participantSpacing: 190,
       messageSpacing: 70,
       participants: [
-        { id: 'alice', label: 'Alice', className: undefined },
-        { id: 'bob', label: 'Bob', className: undefined },
+        { id: 'alice', label: 'Alice' },
+        { id: 'bob', label: 'Bob' },
       ],
       messages: [
         {
@@ -1177,7 +1177,7 @@ describe('parseRenderGraph standardized sizes', () => {
     });
   });
 
-  it('preserves className surfaces for image and washi runtime styling targets', () => {
+  it('drops legacy node className surfaces from parsed runtime data', () => {
     const parsed = parseRenderGraph({
       graph: {
         children: [
@@ -1207,7 +1207,7 @@ describe('parseRenderGraph standardized sizes', () => {
     const imageNode = parsed!.nodes.find((node) => node.id === 'image-1');
     const washiNode = parsed!.nodes.find((node) => node.id === 'washi-1');
 
-    expect(imageNode?.data?.className).toBe('rounded-2xl shadow-xl group-hover:ring-2');
-    expect(washiNode?.data?.className).toBe('bg-cyan-200 group-hover:bg-cyan-300');
+    expect(imageNode?.data?.className).toBeUndefined();
+    expect(washiNode?.data?.className).toBeUndefined();
   });
 });

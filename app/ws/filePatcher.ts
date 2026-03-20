@@ -558,7 +558,7 @@ function upsertJsxAttribute(path: NodePath<t.JSXOpeningElement>, propName: strin
     }
 }
 
-function shouldPreferMarkdownSourceBodyTag(tagName: string | undefined): boolean {
+function shouldPreferMarkdownSourceBodyTag(tagName: string | null | undefined): boolean {
     return tagName === 'Text' || tagName === 'Sticky' || tagName === 'Shape';
 }
 

@@ -46,7 +46,6 @@ const PluginFallbackNode = ({ data, selected }: PluginFallbackNodeProps) => {
       className={twMerge(
         'min-w-[260px] max-w-[360px] rounded-xl border-2 border-amber-200 bg-amber-50 p-3 shadow-node',
         selected ? 'ring-2 ring-amber-300' : '',
-        data.className,
       )}
       selected={selected}
       bubble={false}

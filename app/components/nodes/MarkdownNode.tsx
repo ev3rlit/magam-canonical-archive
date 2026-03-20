@@ -15,7 +15,6 @@ import {
 } from './renderableContent';
 import type { FontFamilyPreset, MarkdownSizeInput } from '@magam/core';
 import {
-    hasExplicitFontFamilyClass,
     resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import { resolveMarkdownSize } from '@/utils/sizeResolver';
@@ -43,14 +42,11 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
     const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
     const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
     const explicitBodyEntryEnabled = useExplicitBodyEntryAffordance();
-    const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
-    const resolvedFontFamily = shouldApplyHierarchy
-        ? resolveFontFamilyCssValue({
-            nodeFontFamily: data.fontFamily,
-            canvasFontFamily,
-            globalFontFamily,
-        })
-        : undefined;
+    const resolvedFontFamily = resolveFontFamilyCssValue({
+        nodeFontFamily: data.fontFamily,
+        canvasFontFamily,
+        globalFontFamily,
+    });
     const resolvedSize = resolveMarkdownSize(data.size, {
         component: 'MarkdownNode',
         inputPath: 'size',
@@ -203,8 +199,7 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
                 "bg-white border-2 border-slate-200 text-slate-800 transition-all duration-300",
                 "shadow-lg rounded-xl",
                 !selected && "hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1",
-                selected && "border-brand-500 ring-2 ring-brand-500/20 shadow-xl",
-                data.className
+                selected && "border-brand-500 ring-2 ring-brand-500/20 shadow-xl"
             )}
             bubble={data.bubble}
             label={data.label}

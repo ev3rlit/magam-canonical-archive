@@ -22,7 +22,6 @@ import type {
   PaperTextureParams,
 } from '@magam/core';
 import {
-  hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import {
@@ -106,15 +105,11 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
   const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
   const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
   const explicitBodyEntryEnabled = useExplicitBodyEntryAffordance();
-
-  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(raw.className);
-  const resolvedFontFamily = shouldApplyHierarchy
-    ? resolveFontFamilyCssValue({
-      nodeFontFamily: raw.fontFamily,
-      canvasFontFamily,
-      globalFontFamily,
-    })
-    : undefined;
+  const resolvedFontFamily = resolveFontFamilyCssValue({
+    nodeFontFamily: raw.fontFamily,
+    canvasFontFamily,
+    globalFontFamily,
+  });
 
   const normalized = useMemo(
     () => normalizeStickyDefaults(raw as unknown as Record<string, unknown>),
@@ -155,12 +150,6 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     && Boolean(bodyEditSession)
   );
 
-  const legacyColorClassName = (
-    typeof raw.color === 'string'
-    && raw.color.trim() !== ''
-    && !isCssColorLike(raw.color)
-  ) ? raw.color : undefined;
-
   const paperSurface = useMemo(
     () => resolvePaperSurface({
       pattern: normalized.pattern,
@@ -196,7 +185,10 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     ...(raw.stroke ? { border: `${raw.strokeWidth ?? 1}px solid ${raw.stroke}` } : {}),
     ...resolveStickyLikeShapeStyle(normalized.shape),
     ...paperSurface.surfaceStyle,
-    backgroundColor: raw.fill ?? paperSurface.surfaceStyle.backgroundColor ?? '#fce588',
+    backgroundColor: raw.fill
+      ?? (typeof raw.color === 'string' && isCssColorLike(raw.color) ? raw.color : undefined)
+      ?? paperSurface.surfaceStyle.backgroundColor
+      ?? '#fce588',
   };
   const beginEditing = useCallback(() => {
     if (!selected || !bodyEditSession) return;
@@ -219,8 +211,6 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
         clsx(
           'flex flex-col justify-center items-center',
           !selected && 'hover:-translate-y-0.5',
-          legacyColorClassName,
-          raw.className,
         ),
       )}
       style={stickyStyle}

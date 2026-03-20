@@ -27,6 +27,7 @@ import {
   fail,
   ok,
   type ActionRoutingContext,
+  type DispatchDescriptor,
   type ActionRoutingResult,
   type ActionRoutingRegistryEntry,
   type MutationActionPayloadMap,
@@ -904,7 +905,7 @@ function buildGroupSelectionPlan(input: {
     })
   ));
 
-  const steps = input.normalized.targets.flatMap(({ target, previousData, previousGroupId }) => {
+  const steps: DispatchDescriptor[] = input.normalized.targets.flatMap(({ target, previousData, previousGroupId }) => {
     const command = buildGroupMembershipUpdateCommand({
       target: {
         sourceId: target.sourceId,

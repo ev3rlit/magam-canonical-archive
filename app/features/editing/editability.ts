@@ -95,7 +95,6 @@ const SHAPE_STYLE_KEYS = [
   'labelFontSize',
   'labelBold',
   'fontFamily',
-  'className',
 ] as const;
 
 const TEXT_STYLE_KEYS = [
@@ -103,7 +102,6 @@ const TEXT_STYLE_KEYS = [
   'fontSize',
   'bold',
   'fontFamily',
-  'className',
 ] as const;
 
 const MARKDOWN_STYLE_KEYS = [
@@ -112,7 +110,6 @@ const MARKDOWN_STYLE_KEYS = [
   'stroke',
   'fontSize',
   'fontFamily',
-  'className',
   'size',
 ] as const;
 
@@ -139,7 +136,6 @@ const STICKY_STYLE_KEYS = [
   'pattern',
   'shape',
   'fontFamily',
-  'className',
 ] as const;
 
 const WASHI_STYLE_KEYS = [
@@ -149,7 +145,7 @@ const WASHI_STYLE_KEYS = [
 ] as const;
 
 const IMAGE_STYLE_KEYS = ['width', 'height', 'fit'] as const;
-const SEQUENCE_STYLE_KEYS = ['fontFamily', 'className'] as const;
+const SEQUENCE_STYLE_KEYS = ['fontFamily'] as const;
 
 const SEMANTIC_ROLE_STYLE_KEYS: Record<string, readonly string[]> = {
   topic: SHAPE_STYLE_KEYS,

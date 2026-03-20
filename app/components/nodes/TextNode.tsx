@@ -11,7 +11,6 @@ import {
 import { useGraphStore } from '@/store/graph';
 import type { FontFamilyPreset, FontSizeInput } from '@magam/core';
 import {
-    hasExplicitFontFamilyClass,
     resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import { useZoom } from '@/contexts/ZoomContext';
@@ -40,14 +39,11 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
     const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
     const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
     const explicitBodyEntryEnabled = useExplicitBodyEntryAffordance();
-    const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
-    const resolvedFontFamily = shouldApplyHierarchy
-        ? resolveFontFamilyCssValue({
-            nodeFontFamily: data.fontFamily,
-            canvasFontFamily,
-            globalFontFamily,
-        })
-        : undefined;
+    const resolvedFontFamily = resolveFontFamilyCssValue({
+        nodeFontFamily: data.fontFamily,
+        canvasFontFamily,
+        globalFontFamily,
+    });
     const isActiveEditor = Boolean(nodeId && selected && activeTextEditNodeId === nodeId);
     const typography = resolveTypography(data.fontSize, {
         component: 'TextNode',
@@ -85,7 +81,6 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
             className={twMerge(
                 "p-2 min-w-[50px] text-center select-none",
                 selected && "ring-1 ring-brand-500/50 rounded bg-brand-50/50",
-                data.className
             )}
             style={{ pointerEvents: 'auto' }}
         >

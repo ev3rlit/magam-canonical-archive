@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { spawn } from 'bun';
+import { existsSync, readdirSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -57,48 +58,81 @@ export function buildCliDevCommand(input: {
   return ['bun', '--watch', 'run', 'cli.ts', 'dev', ...forwardedArgs];
 }
 
-export function resolveWorkspaceStylingBootstrapPlan(
-  env: NodeJS.ProcessEnv = process.env,
-): {
-  runtimeStylingEnabled: boolean;
-  shouldGenerateSafelist: boolean;
-} {
-  return {
-    runtimeStylingEnabled: env.MAGAM_WORKSPACE_STYLING_RUNTIME === '1',
-    // During rollout, runtime styling must coexist with the existing safelist bootstrap path.
-    shouldGenerateSafelist: true,
+function listFilesRecursively(rootDir: string): string[] {
+  const files: string[] = [];
+
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) {
+        continue;
+      }
+
+      const fullPath = resolve(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+
+      files.push(fullPath);
+    }
   };
+
+  if (existsSync(rootDir)) {
+    walk(rootDir);
+  }
+
+  return files;
+}
+
+export function shouldBuildCore(repoRoot: string): boolean {
+  const coreRoot = resolve(repoRoot, 'libs/core');
+  const distDir = resolve(coreRoot, 'dist');
+  const sourceDir = resolve(coreRoot, 'src');
+
+  const buildInputs = [
+    ...listFilesRecursively(sourceDir),
+    resolve(coreRoot, 'package.json'),
+    resolve(coreRoot, 'tsup.config.ts'),
+    resolve(coreRoot, 'tsconfig.lib.json'),
+  ].filter((filePath) => existsSync(filePath));
+
+  if (buildInputs.length === 0) {
+    return false;
+  }
+
+  const distFiles = listFilesRecursively(distDir);
+  if (distFiles.length === 0) {
+    return true;
+  }
+
+  const newestInputMtime = Math.max(
+    ...buildInputs.map((filePath) => statSync(filePath).mtimeMs),
+  );
+  const oldestOutputMtime = Math.min(
+    ...distFiles.map((filePath) => statSync(filePath).mtimeMs),
+  );
+
+  return newestInputMtime > oldestOutputMtime;
 }
 
 async function run(): Promise<void> {
   const repoRoot = resolveRepoRoot();
   const targetDir = resolveDevTargetDir(repoRoot, process.env.MAGAM_TARGET_DIR);
-  const bootstrapPlan = resolveWorkspaceStylingBootstrapPlan(process.env);
 
-  if (bootstrapPlan.shouldGenerateSafelist) {
-    const generateTailwindSafelist = spawn({
-      cmd: ['node', 'scripts/generate-tailwind-workspace-safelist.mjs', targetDir],
+  if (shouldBuildCore(repoRoot)) {
+    const buildCore = spawn({
+      cmd: ['bun', 'run', 'build:core'],
       cwd: repoRoot,
       env: process.env,
       stdio: ['inherit', 'inherit', 'inherit'],
     });
 
-    const safelistExitCode = await generateTailwindSafelist.exited;
-    if (safelistExitCode !== 0) {
-      process.exit(safelistExitCode);
+    const buildExitCode = await buildCore.exited;
+    if (buildExitCode !== 0) {
+      process.exit(buildExitCode);
     }
-  }
-
-  const buildCore = spawn({
-    cmd: ['bun', 'run', 'build:core'],
-    cwd: repoRoot,
-    env: process.env,
-    stdio: ['inherit', 'inherit', 'inherit'],
-  });
-
-  const buildExitCode = await buildCore.exited;
-  if (buildExitCode !== 0) {
-    process.exit(buildExitCode);
+  } else {
+    console.log('[DevBootstrap] libs/core/dist is up to date, skipping build:core');
   }
 
   const cliDev = spawn({

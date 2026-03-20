@@ -233,9 +233,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
       ...(Array.isArray(enrichedData.children)
         ? { children: enrichedData.children }
         : {}),
-      ...(typeof enrichedData.className === 'string'
-        ? { className: enrichedData.className }
-        : {}),
       sourceMeta,
     };
 
@@ -351,7 +348,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
 
     return {
       label: displayName,
-      className: input.child.props.className,
       groupId: input.groupId ?? input.mindmapId,
       zIndex: input.zIndex,
       sourceMeta: input.child.props.sourceMeta || {
@@ -904,7 +900,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             participants.push({
               id: seqChild.props.id || '',
               label: seqChild.props.label || seqChild.props.id || '',
-              className: seqChild.props.className,
             });
           } else if (seqChild.type === 'graph-message') {
             const msgFrom = fromToEndpointValue(seqChild.props.from) || '';
@@ -937,7 +932,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             messages,
             participantSpacing: child.props.participantSpacing ?? 200,
             messageSpacing: child.props.messageSpacing ?? 60,
-            className: child.props.className,
             locked: child.props.locked,
             fontFamily: sequenceFontFamily,
             groupId: parsedGroupId,
@@ -1033,7 +1027,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             label: safeLabel,
             type: child.props.type || 'rectangle',
             color: child.props.color || child.props.bg,
-            className: child.props.className,
             locked: child.props.locked,
             groupId: parsedGroupId,
             zIndex: parsedZIndex,
@@ -1089,7 +1082,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             width: child.props.width,
             height: child.props.height,
             fit: child.props.fit,
-            className: child.props.className,
             locked: child.props.locked,
             groupId: parsedGroupId,
             zIndex: parsedZIndex,
@@ -1232,7 +1224,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           zIndex: parsedZIndex,
           data: withEditMeta('washi-tape', washiId, {
             label: washiLabel || child.props.label || '',
-            className: child.props.className,
             locked: child.props.locked,
             pattern: child.props.pattern ?? normalizedWashi.pattern,
             edge: child.props.edge,
@@ -1435,7 +1426,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
               ? normalizedSticky?.shape ?? readStringProp(renderFrame?.shape)
               : undefined,
             color: child.props.color || child.props.bg,
-            className: child.props.className,
             groupId: parsedGroupId,
             zIndex: parsedZIndex,
             pattern:

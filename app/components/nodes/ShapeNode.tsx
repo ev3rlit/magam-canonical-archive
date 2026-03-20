@@ -23,7 +23,6 @@ import type {
   PaperTextureParams,
 } from '@magam/core';
 import {
-  hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import { useZoom } from '@/contexts/ZoomContext';
@@ -129,14 +128,11 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
   const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
   const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
   const explicitBodyEntryEnabled = useExplicitBodyEntryAffordance();
-  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
-  const resolvedFontFamily = shouldApplyHierarchy
-    ? resolveFontFamilyCssValue({
-      nodeFontFamily: data.fontFamily,
-      canvasFontFamily,
-      globalFontFamily,
-    })
-    : undefined;
+  const resolvedFontFamily = resolveFontFamilyCssValue({
+    nodeFontFamily: data.fontFamily,
+    canvasFontFamily,
+    globalFontFamily,
+  });
   const resolvedObjectSize = useMemo(() => {
     const defaultRatio = resolveShapeDefaultRatio(data.type);
     const normalized = normalizeObjectSizeInput(data.size, {
@@ -218,9 +214,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
       {
         'border-brand-500 shadow-node-selected scale-105': selected,
       },
-      data.color, // Assuming this is a class string for background
       shapeClasses,
-      data.className, // Apply custom className (can override defaults)
     ),
   );
 
@@ -313,7 +307,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
           id={port.id}
           type="source" // In ReactFlow, handles are often source/target agnostic if connectionMode is loose, but let's default to source
           position={position}
-          className={clsx('w-3 h-3 bg-slate-400 border-2 border-white', port.className)}
+          className="w-3 h-3 bg-slate-400 border-2 border-white"
           style={{ ...posStyle, ...port.style }}
         />
       );
@@ -349,10 +343,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
 
     return (
       <BaseNode
-        className={twMerge(
-          'flex items-center justify-center px-2 py-1',
-          data.className,
-        )}
+        className="flex items-center justify-center px-2 py-1"
         bubble={data.bubble}
         label={data.label}
         style={{
