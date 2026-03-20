@@ -32,8 +32,8 @@
 
 - [ ] T005 Define `RegisteredWorkspace` and path health state types in `app/store/graph.ts`
 - [ ] T006 Implement workspace registry actions (create/add/remove/list) in `app/store/graph.ts`
-- [ ] T007 [P] Implement single active workspace session state and switch action in `app/store/graph.ts`
-- [ ] T008 [P] Implement active workspace scoped document-session reset behavior in `app/store/graph.ts`
+- [x] T007 [P] Implement single active workspace session state and switch action in `app/store/graph.ts`
+- [x] T008 [P] Implement active workspace scoped document-session reset behavior in `app/store/graph.ts`
 - [ ] T009 [P] Implement unavailable path state transitions and reconnect action in `app/store/graph.ts`
 - [ ] T010 Add registry/session persistence wiring and restore guards in `app/store/graph.ts`
 - [x] T033 [P] Add workspace registry route and filesystem helpers in `app/app/api/workspaces/route.ts` and `app/app/api/workspaces/_shared.ts`

@@ -26,6 +26,7 @@ export interface RpcMutationResult {
   newVersion?: string;
   commandId?: string;
   filePath?: string;
+  resolvedFilePath?: string;
 }
 
 export interface UpdateNodeMutationOptions {

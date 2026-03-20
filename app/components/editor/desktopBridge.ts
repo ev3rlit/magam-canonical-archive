@@ -1,11 +1,6 @@
 'use client';
 
-export interface MagamDesktopBridge {
-  pickDirectory?: (input?: { title?: string; defaultPath?: string }) => Promise<{ path: string } | null>;
-  revealPath?: (input: { path: string }) => Promise<void>;
-  openPath?: (input: { path: string }) => Promise<void>;
-  copyText?: (input: { text: string }) => Promise<void>;
-}
+import type { MagamDesktopBridge } from '@/lib/desktop/bridge-contract';
 
 declare global {
   interface Window {

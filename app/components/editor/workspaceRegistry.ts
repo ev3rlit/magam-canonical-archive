@@ -1,5 +1,3 @@
-'use client';
-
 export type WorkspaceHealthState = 'ok' | 'missing' | 'not-directory' | 'unreadable';
 
 export interface WorkspaceDocumentSummary {
@@ -122,8 +120,16 @@ function trimTrailingSeparators(value: string): string {
   return value.replace(/[\\/]+$/, '');
 }
 
+export function isAbsoluteLocalPath(value: string): boolean {
+  return /^(?:[a-zA-Z]:[\\/]|\/)/.test(value);
+}
+
+function normalizePathSeparators(value: string): string {
+  return value.replace(/\\/g, '/');
+}
+
 function basename(value: string): string {
-  const normalized = value.replace(/\\/g, '/');
+  const normalized = normalizePathSeparators(value);
   const segments = normalized.split('/').filter(Boolean);
   return segments[segments.length - 1] ?? normalized;
 }
@@ -143,8 +149,24 @@ export function updateWorkspaceFromProbe(
 }
 
 export function resolveWorkspaceDocumentAbsolutePath(rootPath: string, relativePath: string): string {
-  const normalizedRelativePath = relativePath.replace(/\\/g, '/').replace(/^\/+/, '');
-  return `${trimTrailingSeparators(rootPath)}/${normalizedRelativePath}`;
+  const normalizedRelativePath = normalizePathSeparators(relativePath).replace(/^\/+/, '');
+  return `${normalizePathSeparators(trimTrailingSeparators(rootPath))}/${normalizedRelativePath}`;
+}
+
+export function normalizeWorkspaceDocumentPath(
+  rootPath: string | null | undefined,
+  filePath: string,
+): string {
+  const normalizedFilePath = normalizePathSeparators(filePath).trim();
+  if (!normalizedFilePath) {
+    return normalizedFilePath;
+  }
+
+  if (isAbsoluteLocalPath(normalizedFilePath) || !rootPath) {
+    return normalizedFilePath;
+  }
+
+  return resolveWorkspaceDocumentAbsolutePath(rootPath, normalizedFilePath);
 }
 
 export function buildSidebarDocuments(

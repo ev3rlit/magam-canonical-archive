@@ -297,13 +297,26 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
 
 async function handleRender(req: http.IncomingMessage, res: http.ServerResponse, targetDir: string) {
   const body = await parseBody(req);
-  if (!body || !body.filePath) {
+  const requestedFilePath = typeof body?.filePath === 'string' ? body.filePath.trim() : '';
+  if (!requestedFilePath) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Missing filePath in body', type: 'VALIDATION_ERROR' }));
     return;
   }
 
-  const resolvedRequest = resolveWorkspaceFilePath(targetDir, body.filePath);
+  const rawRootPath = typeof body?.rootPath === 'string'
+    ? body.rootPath.trim()
+    : typeof body?.root === 'string'
+      ? body.root.trim()
+      : '';
+  if (rawRootPath && !path.isAbsolute(rawRootPath)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'rootPath must be an absolute path', type: 'VALIDATION_ERROR' }));
+    return;
+  }
+
+  const requestTargetDir = rawRootPath ? path.resolve(rawRootPath) : targetDir;
+  const resolvedRequest = resolveWorkspaceFilePath(requestTargetDir, requestedFilePath);
   const absolutePath = resolvedRequest.absolutePath;
   if (!fs.existsSync(absolutePath)) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -315,7 +328,7 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
     const pipelineResult = await runRenderPipeline({
       absolutePath,
       requestedFilePath: resolvedRequest.workspacePath,
-      targetDir,
+      targetDir: requestTargetDir,
       requestStart: performance.now(),
     });
 

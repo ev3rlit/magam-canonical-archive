@@ -71,6 +71,7 @@ function isClientOnlyDraftSourceVersion(version: string | null | undefined): boo
 
 export function useFileSync(
     filePath: string | null,
+    workspaceRootPath: string | null,
     onFileChange: () => void,
     onFilesChange?: () => void,
     dependencyFiles: string[] = [],
@@ -181,7 +182,14 @@ export function useFileSync(
         }
 
         if (data.method === 'file.changed') {
-            const changedFile = data.params?.filePath as string;
+            const changedFile = (
+                typeof data.params?.resolvedFilePath === 'string'
+                    ? data.params.resolvedFilePath
+                    : data.params?.filePath
+            ) as string;
+            if (typeof changedFile !== 'string' || changedFile.length === 0) {
+                return;
+            }
             if (watchedFilesRef.current.has(changedFile)) {
                 const incomingVersion = data.params?.version;
                 const incomingOriginId = data.params?.originId;
@@ -237,7 +245,10 @@ export function useFileSync(
 
         ws.onopen = () => {
             watchedFiles.forEach((watchedFilePath) => {
-                sendRequest('file.subscribe', { filePath: watchedFilePath }).catch((err) => console.error('[FileSync] Subscribe failed:', err));
+                sendRequest('file.subscribe', {
+                    filePath: watchedFilePath,
+                    ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
+                }).catch((err) => console.error('[FileSync] Subscribe failed:', err));
             });
         };
 
@@ -256,7 +267,7 @@ export function useFileSync(
             }
             watchedFilesRef.current = new Set();
         };
-    }, [filePath, handleMessage, rejectPendingRequests, sendRequest, watchedFiles, watchedFilesSignature]);
+    }, [filePath, handleMessage, rejectPendingRequests, sendRequest, watchedFiles, watchedFilesSignature, workspaceRootPath]);
 
     const withCommon = useCallback((params: Record<string, unknown>) => {
         const targetFilePath = typeof params.filePath === 'string' ? params.filePath : filePath;
@@ -280,14 +291,16 @@ export function useFileSync(
             baseVersion,
             originId: clientId,
             commandId,
+            ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
         };
-    }, [filePath]);
+    }, [filePath, workspaceRootPath]);
 
     const applyResultVersion = useCallback((result: unknown): RpcMutationResult => {
         const typed = result as RpcMutationResult;
         if (typed?.newVersion) {
-            if (typed.filePath) {
-                useGraphStore.getState().setSourceVersionForFile(typed.filePath, typed.newVersion);
+            const versionFilePath = typed.resolvedFilePath ?? typed.filePath;
+            if (versionFilePath) {
+                useGraphStore.getState().setSourceVersionForFile(versionFilePath, typed.newVersion);
             } else {
                 useGraphStore.getState().setSourceVersion(typed.newVersion);
             }

@@ -271,6 +271,7 @@ export function WorkspaceClient() {
     setFiles,
     setGraph,
     currentFile,
+    workspaceRootPath,
     sourceVersions,
     files,
     nodes,
@@ -299,6 +300,7 @@ export function WorkspaceClient() {
     clearPendingActionRouting,
     draftDocuments,
     setFileTree,
+    setWorkspaceSession,
   } = useGraphStore();
   const isChatOpen = useChatUiStore((state) => state.isOpen);
   const toggleChat = useChatUiStore((state) => state.toggleOpen);
@@ -369,7 +371,7 @@ export function WorkspaceClient() {
     writeLastActiveDocumentMap(current);
   }, []);
 
-  const resetWorkspaceShellState = useCallback((workspaceId: string | null) => {
+  const resetWorkspaceShellState = useCallback((workspaceId: string | null, rootPath: string | null) => {
     setGraph({
       nodes: [],
       edges: [],
@@ -382,12 +384,15 @@ export function WorkspaceClient() {
     closeSearch({ clearQuery: true, clearHighlights: true });
     setGraphError(null);
     setFileTree(null);
+    setWorkspaceSession({
+      workspaceId,
+      rootPath,
+    });
     useGraphStore.setState({
       files: [],
       currentFile: null,
       sourceVersion: null,
       sourceVersions: {},
-      workspaceSessionKey: workspaceId,
       lastActiveDocumentPath: null,
       draftDocuments: [],
       openTabs: [],
@@ -401,6 +406,7 @@ export function WorkspaceClient() {
     setGraph,
     setGraphError,
     setSelectedNodes,
+    setWorkspaceSession,
   ]);
 
   const syncWorkspaceEntry = useCallback((probe: WorkspaceProbeResponse, options?: {
@@ -497,8 +503,11 @@ export function WorkspaceClient() {
       setFiles(absoluteFiles);
       setFileTree(null);
       syncWorkspaceEntry(data, { existingId: workspace.id });
+      setWorkspaceSession({
+        workspaceId: workspace.id,
+        rootPath: workspace.rootPath,
+      });
       useGraphStore.setState({
-        workspaceSessionKey: workspace.id,
         lastActiveDocumentPath: initialDocument,
       });
 
@@ -526,7 +535,7 @@ export function WorkspaceClient() {
         details: error,
       });
     }
-  }, [setFileTree, setFiles, setGraphError, syncWorkspaceEntry]);
+  }, [setFileTree, setFiles, setGraphError, setWorkspaceSession, syncWorkspaceEntry]);
 
   const dependencyFiles = useMemo(
     () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentFile),
@@ -544,6 +553,7 @@ export function WorkspaceClient() {
     redoLastEdit,
   } = useFileSync(
     currentFile,
+    activeWorkspace?.rootPath ?? workspaceRootPath,
     handleFileChange,
     activeWorkspace ? () => {
       void loadActiveWorkspaceDocuments(activeWorkspace);
@@ -558,17 +568,17 @@ export function WorkspaceClient() {
   useEffect(() => {
     if (!activeWorkspace) {
       setWorkspaceDocuments([]);
-      resetWorkspaceShellState(null);
+      resetWorkspaceShellState(null, null);
       return;
     }
 
-    resetWorkspaceShellState(activeWorkspace.id);
+    resetWorkspaceShellState(activeWorkspace.id, activeWorkspace.rootPath);
     if (activeWorkspace.status !== 'ok') {
       setWorkspaceDocuments([]);
       return;
     }
     void loadActiveWorkspaceDocuments(activeWorkspace, { restoreInitialDocument: true });
-  }, [activeWorkspace?.id, activeWorkspace?.status, loadActiveWorkspaceDocuments, resetWorkspaceShellState]);
+  }, [activeWorkspace?.id, activeWorkspace?.rootPath, activeWorkspace?.status, loadActiveWorkspaceDocuments, resetWorkspaceShellState]);
 
   useEffect(() => {
     if (!activeWorkspace || !currentFile) {
@@ -2062,7 +2072,12 @@ export function WorkspaceClient() {
         const response = await fetch('/api/render', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filePath: currentFile }),
+          body: JSON.stringify({
+            filePath: currentFile,
+            ...(activeWorkspace?.rootPath ?? workspaceRootPath
+              ? { rootPath: activeWorkspace?.rootPath ?? workspaceRootPath }
+              : {}),
+          }),
         });
 
         const data = await response.json();
@@ -2126,7 +2141,7 @@ export function WorkspaceClient() {
     }
 
     renderFile();
-  }, [currentFile, draftDocuments, refreshKey, setGraph, setSelectedNodes]); // refreshKey triggers re-render on file changes
+  }, [activeWorkspace?.rootPath, currentFile, draftDocuments, refreshKey, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on file changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white text-slate-900">

@@ -5,7 +5,7 @@
  */
 
 import { watch } from 'chokidar';
-import { resolve } from 'path';
+import { isAbsolute, resolve } from 'path';
 import { readFile } from 'fs/promises';
 import { createHash } from 'crypto';
 import {
@@ -93,8 +93,12 @@ const server = Bun.serve({
                 const result = await handler(request.params || {}, ctx);
                 if (request.method === 'file.subscribe') {
                     const rawFilePath = request.params?.filePath;
+                    const rawRootPath = request.params?.rootPath;
                     if (typeof rawFilePath === 'string' && rawFilePath.length > 0) {
-                        ensureWatchedSubscriptionPath(rawFilePath);
+                        ensureWatchedSubscriptionPath(
+                            rawFilePath,
+                            typeof rawRootPath === 'string' ? rawRootPath : undefined,
+                        );
                     }
                 }
                 ws.send(JSON.stringify(createResponse(request.id, result)));
@@ -127,12 +131,16 @@ const watcher = watch(watchPath, {
     ignored: /(^|[\/\\])\../, // ignore dotfiles
 });
 
-function resolveSubscribedWatchPath(filePath: string): string {
-    return resolve(watchPath, filePath);
+function resolveSubscribedWatchPath(filePath: string, rootPath?: string): string {
+    if (isAbsolute(filePath)) {
+        return filePath;
+    }
+
+    return resolve(rootPath || watchPath, filePath);
 }
 
-function ensureWatchedSubscriptionPath(filePath: string): void {
-    const resolvedPath = resolveSubscribedWatchPath(filePath);
+function ensureWatchedSubscriptionPath(filePath: string, rootPath?: string): void {
+    const resolvedPath = resolveSubscribedWatchPath(filePath, rootPath);
     if (watchedSubscriptionPaths.has(resolvedPath)) {
         return;
     }
@@ -146,7 +154,9 @@ function ensureWatchedSubscriptionPath(filePath: string): void {
  */
 function broadcastFileListUpdate(event: 'add' | 'unlink', filePath: string) {
     // Extract relative path from the full path
-    const relativePath = filePath.replace(watchPath + '/', '');
+    const relativePath = filePath.startsWith(`${watchPath}/`)
+        ? filePath.replace(`${watchPath}/`, '')
+        : filePath;
 
     const notification = createNotification('files.changed', {
         event,
@@ -165,19 +175,23 @@ function broadcastFileListUpdate(event: 'add' | 'unlink', filePath: string) {
 
 function broadcastFileChanged(payload: {
     filePath: string;
+    resolvedFilePath: string;
     version: string;
     originId: string;
     commandId: string;
+    rootPath?: string;
 }) {
     const now = Date.now();
-    recentCommandEvents.set(payload.filePath, now);
+    recentCommandEvents.set(payload.resolvedFilePath, now);
 
     const notification = createNotification('file.changed', {
         filePath: payload.filePath,
+        resolvedFilePath: payload.resolvedFilePath,
         version: payload.version,
         originId: payload.originId,
         commandId: payload.commandId,
         timestamp: now,
+        ...(payload.rootPath ? { rootPath: payload.rootPath } : {}),
     });
     const message = JSON.stringify(notification);
 
@@ -185,9 +199,9 @@ function broadcastFileChanged(payload: {
         let matched = false;
         for (const sub of subscriptions) {
             if (
-                payload.filePath === sub ||
-                payload.filePath.endsWith(sub) ||
-                sub.endsWith(payload.filePath)
+                payload.resolvedFilePath === sub ||
+                payload.resolvedFilePath.endsWith(sub) ||
+                sub.endsWith(payload.resolvedFilePath)
             ) {
                 matched = true;
                 break;
@@ -199,7 +213,7 @@ function broadcastFileChanged(payload: {
         }
     });
 
-    console.log(`[WS] Broadcasted file.changed (command): ${payload.filePath}`);
+    console.log(`[WS] Broadcasted file.changed (command): ${payload.resolvedFilePath}`);
 }
 
 watcher.on('change', async (filePath) => {
@@ -237,6 +251,7 @@ watcher.on('change', async (filePath) => {
         if (matchedSubscription) {
             const notification = createNotification('file.changed', {
                 filePath: matchedSubscription, // Send back the subscription path
+                resolvedFilePath: matchedSubscription,
                 version,
                 originId: 'external',
                 commandId: `watch:${now}`,

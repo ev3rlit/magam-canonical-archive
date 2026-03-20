@@ -24,6 +24,7 @@ type RpcLikeError = {
 type NodeSourceMeta = {
   sourceId?: unknown;
   filePath?: unknown;
+  absoluteFilePath?: unknown;
   kind?: unknown;
   frameScope?: unknown;
 };
@@ -91,8 +92,10 @@ export function resolveNodeEditTarget(
   const sourceId = typeof sourceMeta?.sourceId === 'string' && sourceMeta.sourceId.length > 0
     ? sourceMeta.sourceId
     : deriveLocalSourceId(node.id, sourceMeta?.frameScope);
-  const filePath = typeof sourceMeta?.filePath === 'string' && sourceMeta.filePath.length > 0
-    ? sourceMeta.filePath
+  const filePath = typeof sourceMeta?.absoluteFilePath === 'string' && sourceMeta.absoluteFilePath.length > 0
+    ? sourceMeta.absoluteFilePath
+    : typeof sourceMeta?.filePath === 'string' && sourceMeta.filePath.length > 0
+      ? sourceMeta.filePath
     : currentFile;
 
   return {
