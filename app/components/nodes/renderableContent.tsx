@@ -22,6 +22,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function resolveMarkdownChildContent(data: Record<string, unknown>): string | null {
+  const children = data.children;
+  if (!Array.isArray(children)) {
+    return null;
+  }
+
+  for (const child of children) {
+    if (!isRecord(child) || child.type !== 'graph-markdown') {
+      continue;
+    }
+
+    if (typeof child.content === 'string') {
+      return child.content;
+    }
+  }
+
+  return null;
+}
+
 export function useExplicitBodyEntryAffordance(): boolean {
   const [explicitEntryEnabled, setExplicitEntryEnabled] = React.useState(false);
 
@@ -60,14 +79,14 @@ export function useExplicitBodyEntryAffordance(): boolean {
 export function resolveBodyEditSession(
   node: BodyEditNodeLike | null | undefined,
 ): { nodeId: string; initialDraft: string; mode: TextEditMode } | null {
-  if (!node || (node.type !== 'text' && node.type !== 'markdown' && node.type !== 'sticky')) {
+  if (!node || (node.type !== 'text' && node.type !== 'markdown' && node.type !== 'sticky' && node.type !== 'shape')) {
     return null;
   }
 
   const data = isRecord(node.data) ? node.data : {};
   return {
     nodeId: node.id,
-    initialDraft: typeof data.label === 'string' ? data.label : '',
+    initialDraft: resolveMarkdownChildContent(data) ?? (typeof data.label === 'string' ? data.label : ''),
     mode: 'markdown-wysiwyg',
   };
 }

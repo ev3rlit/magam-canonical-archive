@@ -558,9 +558,26 @@ function upsertJsxAttribute(path: NodePath<t.JSXOpeningElement>, propName: strin
     }
 }
 
+function shouldPreferMarkdownSourceBodyTag(tagName: string | undefined): boolean {
+    return tagName === 'Text' || tagName === 'Sticky' || tagName === 'Shape';
+}
+
+function shouldPreferMarkdownSourceBodyType(type: CreateNodeInput['type']): boolean {
+    return (
+        type === 'markdown'
+        || type === 'text'
+        || type === 'sticky'
+        || type === 'shape'
+        || type === 'rectangle'
+        || type === 'ellipse'
+        || type === 'diamond'
+        || type === 'line'
+    );
+}
+
 function toJsxChildren(type: CreateNodeInput['type'], props: Record<string, unknown>): t.JSXElement['children'] {
     const content = props.content;
-    if (type === 'markdown' || type === 'text' || type === 'sticky') {
+    if (shouldPreferMarkdownSourceBodyType(type)) {
         if (typeof content === 'string') {
             return [createMarkdownChildElement(content)];
         }
@@ -815,7 +832,7 @@ export async function patchNodeContent(filePath: string, nodeId: string, content
         ensureNoSpreadAttributes(node.node);
         const tagName = getJsxTagName(node.node);
         assertContentContractPatchAllowed(tagName, { content }, 'node.content.update');
-        const shouldPreferMarkdownSourceBody = tagName === 'Text' || tagName === 'Sticky';
+        const shouldPreferMarkdownSourceBody = shouldPreferMarkdownSourceBodyTag(tagName);
         const labelAttr = getAttrByName(node.node, 'label');
         const parentEl = node.parentPath;
         if (labelAttr) {

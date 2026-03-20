@@ -1,5 +1,5 @@
-import React, { memo, useMemo } from 'react';
-import { NodeProps, Handle, Position } from 'reactflow';
+import React, { memo, useCallback, useMemo } from 'react';
+import { NodeProps, Handle, Position, useNodeId } from 'reactflow';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import {
@@ -11,7 +11,11 @@ import {
 import { useGraphStore } from '@/store/graph';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import type { RenderableChild } from '@/utils/childComposition';
-import { renderNodeContent } from './renderableContent';
+import {
+  renderNodeContent,
+  resolveBodyEditSession,
+  useExplicitBodyEntryAffordance,
+} from './renderableContent';
 import type {
   FontFamilyPreset,
   ObjectSizeInput,
@@ -113,10 +117,18 @@ const getHandleConfig = (pos: string = 'top') => {
 };
 
 const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
+  const nodeId = useNodeId();
   const { isZoomBold } = useZoom();
   const currentFile = useGraphStore((state) => state.currentFile);
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
+  const activeTextEditNodeId = useGraphStore((state) => state.activeTextEditNodeId);
+  const textEditDraft = useGraphStore((state) => state.textEditDraft);
+  const startTextEditSession = useGraphStore((state) => state.startTextEditSession);
+  const updateTextEditDraft = useGraphStore((state) => state.updateTextEditDraft);
+  const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
+  const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
+  const explicitBodyEntryEnabled = useExplicitBodyEntryAffordance();
   const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
   const resolvedFontFamily = shouldApplyHierarchy
     ? resolveFontFamilyCssValue({
@@ -218,6 +230,75 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     fontWeight: (isZoomBold || data.labelBold) ? 'bold' : 'normal',
     fontFamily: resolvedFontFamily,
   };
+  const isActiveEditor = Boolean(nodeId && selected && activeTextEditNodeId === nodeId);
+  const bodyEditSession = nodeId ? resolveBodyEditSession({
+    id: nodeId,
+    type: 'shape',
+    data,
+  }) : null;
+  const shouldRenderExplicitBodyEntry = (
+    selected
+    && !isActiveEditor
+    && explicitBodyEntryEnabled
+    && Boolean(bodyEditSession)
+  );
+
+  const beginEditing = useCallback(() => {
+    if (!selected || !bodyEditSession) return;
+    startTextEditSession(bodyEditSession);
+  }, [bodyEditSession, selected, startTextEditSession]);
+
+  const commitEditing = useCallback(() => {
+    if (!nodeId) return;
+    requestTextEditCommit(nodeId);
+  }, [nodeId, requestTextEditCommit]);
+
+  const cancelEditing = useCallback(() => {
+    if (!nodeId) return;
+    requestTextEditCancel(nodeId);
+  }, [nodeId, requestTextEditCancel]);
+
+  const editButton = shouldRenderExplicitBodyEntry ? (
+    <button
+      type="button"
+      aria-label="Edit content"
+      className="pointer-events-auto absolute right-3 top-3 z-10 rounded-full border border-slate-300 bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur"
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        beginEditing();
+      }}
+    >
+      Edit
+    </button>
+  ) : null;
+
+  const bodyEditor = isActiveEditor ? (
+    <textarea
+      autoFocus
+      value={textEditDraft}
+      onChange={(event) => updateTextEditDraft(event.currentTarget.value)}
+      onBlur={commitEditing}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          cancelEditing();
+          return;
+        }
+        const isCommitShortcut = (event.metaKey || event.ctrlKey) && event.key === 'Enter';
+        if (isCommitShortcut) {
+          event.preventDefault();
+          commitEditing();
+        }
+      }}
+      placeholder="Write markdown..."
+      className="pointer-events-auto relative z-10 w-full min-h-[72px] rounded border border-slate-300 bg-white/95 px-2 py-1 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+    />
+  ) : null;
 
   // Render ports
   const renderPorts = () => {
@@ -281,6 +362,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
           minHeight: height,
         }}
       >
+        {editButton}
         <svg
           className="absolute inset-0 h-full w-full overflow-visible"
           viewBox="0 0 100 100"
@@ -296,14 +378,20 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
             strokeLinecap="round"
           />
         </svg>
-        {data.label ? (
+        {bodyEditor ?? (data.label ? (
           <div
-            className="pointer-events-none rounded-full bg-white/90 px-2 py-0.5 text-xs font-medium text-slate-700 shadow-sm"
+            className="pointer-events-none relative z-10 rounded-full bg-white/90 px-2 py-0.5 text-xs font-medium text-slate-700 shadow-sm"
             style={{ fontFamily: resolvedFontFamily }}
           >
-            {data.label}
+            {renderNodeContent({
+              children: data.children,
+              fallbackLabel: data.label,
+              iconClassName: 'w-4 h-4 text-slate-500 shrink-0',
+              textClassName: 'whitespace-pre-wrap leading-tight',
+              textStyle: labelStyle,
+            })}
           </div>
-        ) : null}
+        ) : null)}
       </BaseNode>
     );
   }
@@ -316,6 +404,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
         label={data.label}
         style={frameStyle ?? { width: 128, height: 128, minWidth: 128, minHeight: 128 }}
       >
+        {editButton}
         <div
           className={twMerge(
             clsx(
@@ -335,9 +424,9 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
               strokeWidth={data.strokeWidth ?? 2}
             />
           </svg>
-          <div className="absolute inset-0 flex items-center justify-center pt-8 pointer-events-none select-none">
-            <div className="flex items-center gap-2 px-4">
-              {renderNodeContent({
+          <div className="absolute inset-0 flex items-center justify-center pt-8 px-4">
+            <div className={isActiveEditor ? 'w-full max-w-[280px]' : 'pointer-events-none flex items-center gap-2 px-4 select-none'}>
+              {bodyEditor ?? renderNodeContent({
                 children: data.children,
                 fallbackLabel: data.label,
                 iconClassName: 'w-4 h-4 text-slate-500 shrink-0',
@@ -363,9 +452,11 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
         ...(shapeStyle ?? {}),
       }}
     >
+      {editButton}
       <div
         className={clsx(
-          'relative w-full flex justify-center text-left break-words pointer-events-none select-none',
+          'relative w-full flex justify-center text-left break-words',
+          isActiveEditor ? 'pointer-events-auto' : 'pointer-events-none select-none',
           isContentDrivenAuto ? 'items-center px-2 py-1.5' : 'items-start p-4',
         )}
         style={{
@@ -374,8 +465,8 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
         }}
       >
         <NoiseOverlay opacity={materialSurface.noiseOpacity} />
-        <div className="flex items-center gap-2">
-          {renderNodeContent({
+        <div className={isActiveEditor ? 'w-full' : 'flex items-center gap-2'}>
+          {bodyEditor ?? renderNodeContent({
             children: data.children,
             fallbackLabel: data.label,
             iconClassName: 'w-4 h-4 text-slate-500 shrink-0',
