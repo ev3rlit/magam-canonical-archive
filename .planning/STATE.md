@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: active
-stopped_at: 01 verification found BODY-01/BODY-02 gap; run gsd-plan-phase 01 --gaps
+stopped_at: 01-09 planned for BODY-01/BODY-02 gap; run gsd-execute-phase 01 --gaps-only
 last_updated: "2026-03-20T00:39:42Z"
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 8
+  total_plans: 9
   completed_plans: 8
 ---
 
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** AI and humans can reliably create, review, and evolve a shared knowledge canvas through the same canonical mutation backbone.
-**Current focus:** Phase 01 — gap planning for shape body-entry completion
+**Current focus:** Phase 01 — execute shape markdown body-entry gap closure
 
 ## Current Position
 
-Phase: 01 (canvas-core-authoring) — GAPS FOUND
-Plan: 8 of 8
+Phase: 01 (canvas-core-authoring) — GAP PLAN READY
+Plan: 8 of 9
 
 ## Performance Metrics
 
@@ -78,10 +78,10 @@ None yet.
 ### Blockers/Concerns
 
 - Legacy file-first editing still exists and must remain a compatibility path while canonical DB flows become primary
-- Phase 01 verification still fails BODY-01 and BODY-02 because shape nodes do not yet enter the shared markdown-first body-edit session
+- Phase 01 verification still fails BODY-01 and BODY-02 until 01-09 lands shape markdown-first body entry and shape-shell persistence
 
 ## Session Continuity
 
 Last session: 2026-03-20T00:39:42Z
-Stopped at: 01 verification found BODY-01/BODY-02 gap; run gsd-plan-phase 01 --gaps
-Resume file: .planning/phases/01-canvas-core-authoring/01-VERIFICATION.md
+Stopped at: 01-09 planned for BODY-01/BODY-02 gap; run gsd-execute-phase 01 --gaps-only
+Resume file: .planning/phases/01-canvas-core-authoring/01-09-PLAN.md
