@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { getHostRuntime } from '@/features/host/renderer';
 import { useGraphStore } from '@/store/graph';
 
 export type ChatProviderStatus = 'available' | 'unavailable' | 'unknown';
@@ -256,12 +257,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ status: 'loadingProviders', error: null });
 
     try {
-      const res = await fetch('/api/chat/providers', { cache: 'no-store' });
-      if (!res.ok) {
-        throw new Error(`Failed to load providers (${res.status})`);
-      }
-
-      const data = await res.json();
+      const data = await getHostRuntime().rpc.getChatProviders();
       const providers = Array.isArray(data?.providers)
         ? data.providers.map((provider: any): ChatProvider => ({
             id: String(provider.id),
@@ -397,26 +393,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const normalizedReasoningEffort =
         payload.reasoningEffort ?? reasoningEffort;
 
-      const res = await fetch('/api/chat/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: trimmed,
-          providerId: selectedProviderId,
-          sessionId,
-          currentFile,
-          permissionMode,
-          ...(normalizedModel ? { model: normalizedModel } : {}),
-          ...(normalizedReasoningEffort
-            ? { reasoningEffort: normalizedReasoningEffort }
-            : {}),
-          ...(normalizedFileMentions.length > 0
-            ? { fileMentions: normalizedFileMentions }
-            : {}),
-          ...(normalizedNodeMentions.length > 0
-            ? { nodeMentions: normalizedNodeMentions }
-            : {}),
-        }),
+      const res = await getHostRuntime().rpc.sendChat({
+        message: trimmed,
+        providerId: selectedProviderId,
+        sessionId,
+        currentFile,
+        permissionMode,
+        ...(normalizedModel ? { model: normalizedModel } : {}),
+        ...(normalizedReasoningEffort
+          ? { reasoningEffort: normalizedReasoningEffort }
+          : {}),
+        ...(normalizedFileMentions.length > 0
+          ? { fileMentions: normalizedFileMentions }
+          : {}),
+        ...(normalizedNodeMentions.length > 0
+          ? { nodeMentions: normalizedNodeMentions }
+          : {}),
+      }, {
         signal: activeAbortController.signal,
       });
 
@@ -566,11 +559,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     try {
-      await fetch('/api/chat/stop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId }),
-      });
+      await getHostRuntime().rpc.stopChat(sessionId);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Unknown stop request error';
@@ -582,19 +571,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadSessions: async (query) => {
     try {
-      const params = new URLSearchParams();
-      if (query?.groupId) params.set('groupId', query.groupId);
-      if (query?.providerId) params.set('providerId', query.providerId);
-      if (query?.q) params.set('q', query.q);
-      if (query?.limit) params.set('limit', String(query.limit));
-
-      const res = await fetch(`/api/chat/sessions${params.size ? `?${params.toString()}` : ''}`, {
-        cache: 'no-store',
-      });
-      if (!res.ok) throw new Error(`Failed to load sessions (${res.status})`);
-
-      const data = await res.json();
-      const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+      const data = await getHostRuntime().rpc.listChatSessions(query);
+      const sessions = Array.isArray(data?.sessions)
+        ? data.sessions as ChatSessionSummary[]
+        : [];
       set({ sessions });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown session loading error';
@@ -610,19 +590,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         return null;
       }
 
-      const res = await fetch('/api/chat/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: input?.title,
-          providerId,
-          groupId: input?.groupId,
-        }),
+      const data = await getHostRuntime().rpc.createChatSession({
+        title: input?.title,
+        providerId,
+        groupId: input?.groupId,
       });
-
-      if (!res.ok) throw new Error(`Failed to create session (${res.status})`);
-
-      const data = await res.json();
       const session = data?.session as ChatSessionSummary | undefined;
       if (!session) return null;
 
@@ -646,18 +618,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   openSession: async (sessionId) => {
     try {
-      const [sessionRes, messagesRes] = await Promise.all([
-        fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, { cache: 'no-store' }),
-        fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}/messages?limit=200`, {
-          cache: 'no-store',
-        }),
+      const [sessionData, messagesData] = await Promise.all([
+        getHostRuntime().rpc.getChatSession(sessionId),
+        getHostRuntime().rpc.getChatSessionMessages(sessionId, { limit: 200 }),
       ]);
-
-      if (!sessionRes.ok) throw new Error(`Failed to open session (${sessionRes.status})`);
-      if (!messagesRes.ok) throw new Error(`Failed to load messages (${messagesRes.status})`);
-
-      const sessionData = await sessionRes.json();
-      const messagesData = await messagesRes.json();
 
       const session = sessionData?.session as ChatSessionSummary | undefined;
       const messages = Array.isArray(messagesData?.items)
@@ -687,14 +651,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   updateSession: async (sessionId, patch) => {
     try {
-      const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
-      if (!res.ok) throw new Error(`Failed to update session (${res.status})`);
-
-      const data = await res.json();
+      const data = await getHostRuntime().rpc.updateChatSession(sessionId, patch);
       const updated = data?.session as ChatSessionSummary | undefined;
       if (!updated) return;
 
@@ -715,10 +672,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   deleteSession: async (sessionId) => {
     try {
-      const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error(`Failed to delete session (${res.status})`);
+      await getHostRuntime().rpc.deleteChatSession(sessionId);
 
       set((state) => {
         const nextSessions = state.sessions.filter((session) => session.id !== sessionId);
@@ -744,11 +698,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   loadGroups: async () => {
     try {
-      const res = await fetch('/api/chat/groups', { cache: 'no-store' });
-      if (!res.ok) throw new Error(`Failed to load groups (${res.status})`);
-
-      const data = await res.json();
-      const groups = Array.isArray(data?.groups) ? data.groups : [];
+      const data = await getHostRuntime().rpc.listChatGroups();
+      const groups = Array.isArray(data?.groups)
+        ? data.groups as ChatSessionGroup[]
+        : [];
       set({ groups });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown group loading error';
@@ -758,12 +711,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   createGroup: async (input) => {
     try {
-      const res = await fetch('/api/chat/groups', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(input),
-      });
-      if (!res.ok) throw new Error(`Failed to create group (${res.status})`);
+      await getHostRuntime().rpc.createChatGroup(input);
       await Promise.all([get().loadGroups(), get().loadSessions({ limit: 100 })]);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown group create error';
@@ -773,12 +721,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   updateGroup: async (groupId, patch) => {
     try {
-      const res = await fetch(`/api/chat/groups/${encodeURIComponent(groupId)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
-      if (!res.ok) throw new Error(`Failed to update group (${res.status})`);
+      await getHostRuntime().rpc.updateChatGroup(groupId, patch);
       await Promise.all([get().loadGroups(), get().loadSessions({ limit: 100 })]);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown group update error';
@@ -788,10 +731,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   deleteGroup: async (groupId) => {
     try {
-      const res = await fetch(`/api/chat/groups/${encodeURIComponent(groupId)}`, {
-        method: 'DELETE',
-      });
-      if (!res.ok) throw new Error(`Failed to delete group (${res.status})`);
+      await getHostRuntime().rpc.deleteChatGroup(groupId);
       await Promise.all([get().loadGroups(), get().loadSessions({ limit: 100 })]);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown group delete error';

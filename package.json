@@ -9,7 +9,9 @@
   "scripts": {
     "build:core": "cd libs/core && bun run build",
     "build:app": "cd app && bun run build",
-    "dev": "bun run scripts/dev/app-dev.ts",
+    "dev": "bun run scripts/dev/desktop-dev.ts",
+    "desktop:dev": "bun run scripts/dev/desktop-dev.ts",
+    "web:dev": "bun run scripts/dev/app-dev.ts",
     "ws:dev": "bun run app/ws/server.ts",
     "build": "bun run --filter '@magam/shared' build && bun run --filter '@magam/core' build && bun run --filter '@magam/runtime' build && bun run --filter '@magam/cli' build && bun run build:app",
     "perf:build": "bash scripts/perf/measure-build.sh --label current",
@@ -47,6 +49,7 @@
     "autoprefixer": "10.4.13",
     "copy-webpack-plugin": "^13.0.1",
     "drizzle-kit": "^0.31.4",
+    "electron": "^35.0.0",
     "eslint": "^9.8.0",
     "eslint-config-prettier": "^10.0.0",
     "eslint-plugin-import": "2.31.0",

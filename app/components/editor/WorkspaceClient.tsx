@@ -39,6 +39,7 @@ import {
   getWashiPresetPatternCatalog,
 } from '@/utils/washiTapeDefaults';
 import type { CanvasEntrypointSurface } from '@/features/canvas-ui-entrypoints/contracts';
+import { getHostRuntime } from '@/features/host/renderer';
 import { parseRenderGraph } from '@/features/render/parseRenderGraph';
 import { editDebugLog } from '@/utils/editDebug';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
@@ -85,6 +86,68 @@ function getNodeLabel(node: { data?: unknown }): string {
   const data = (node.data || {}) as Record<string, unknown>;
   return typeof data.label === 'string' ? data.label : '';
 }
+
+function createDraftDocumentPath(existingFiles: string[]): string {
+  const baseDir = existingFiles.some((filePath) => filePath.startsWith('docs/'))
+    ? 'docs'
+    : '';
+  const taken = new Set(existingFiles);
+  let counter = 1;
+
+  while (true) {
+    const fileName = `untitled-${counter}.graph.tsx`;
+    const candidate = baseDir ? `${baseDir}/${fileName}` : fileName;
+    if (!taken.has(candidate)) {
+      return candidate;
+    }
+    counter += 1;
+  }
+}
+
+export type CreateWorkspaceDocumentResult = {
+  filePath: string;
+  sourceVersion: string;
+};
+
+function isCreateWorkspaceDocumentResult(
+  value: unknown,
+): value is CreateWorkspaceDocumentResult {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.filePath === 'string'
+    && typeof record.sourceVersion === 'string'
+    && record.sourceVersion.startsWith('sha256:')
+  );
+}
+
+export async function createWorkspaceDocument(
+  filePath: string,
+  client = getHostRuntime().rpc,
+): Promise<CreateWorkspaceDocumentResult> {
+  const data = await client.createFile(filePath);
+
+  if (!isCreateWorkspaceDocumentResult(data)) {
+    throw new Error('새 문서 생성 응답이 올바르지 않습니다.');
+  }
+
+  return data;
+}
+
+function createWorkspaceSessionKey(input: {
+  files: string[];
+  workspaceName?: string | null;
+}): string | null {
+  if (input.files.length === 0) {
+    return null;
+  }
+
+  const workspaceName = input.workspaceName?.trim() || 'workspace';
+  return `${workspaceName}:${input.files.join('|')}`;
+}
 declare global {
   interface Window {
     __magamTest?: MagamTestHooks;
@@ -125,6 +188,8 @@ export function WorkspaceClient() {
     refreshWorkspaceStyles,
     workspaceStyleDiagnosticsByNodeId,
   } = useGraphStore();
+  const hostRuntime = useMemo(() => getHostRuntime(), []);
+  const rpcClient = hostRuntime.rpc;
   const isChatOpen = useChatUiStore((state) => state.isOpen);
   const toggleChat = useChatUiStore((state) => state.toggleOpen);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -170,16 +235,50 @@ export function WorkspaceClient() {
   // Load file list from API
   const loadFiles = useCallback(async () => {
     try {
-      const res = await fetch('/api/files');
-      const data = await res.json();
+      const data = await rpcClient.listFiles();
       if (data.files) {
         setFiles(data.files);
+        const runtime = useGraphStore.getState();
+        runtime.hydrateDocumentSession(createWorkspaceSessionKey({
+          files: data.files,
+          workspaceName: runtime.fileTree?.name,
+        }));
+        const resumeTarget = useGraphStore.getState().lastActiveDocumentPath;
+        const initialDocument = (
+          typeof resumeTarget === 'string'
+          && data.files.includes(resumeTarget)
+        )
+          ? resumeTarget
+          : data.files[0] ?? null;
+        if (!runtime.currentFile && runtime.openTabs.length === 0 && initialDocument) {
+          window.setTimeout(() => {
+            useGraphStore.getState().openTab(initialDocument);
+          }, 0);
+        }
       }
     } catch (error) {
       console.error('Failed to load files:', error);
+      void hostRuntime.bootstrap.markFailed({
+        code: 'DESKTOP_BOOT_WORKSPACE_RESOLVE_FAILED',
+        message: error instanceof Error ? error.message : 'Failed to load files.',
+      });
     }
-  }, [setFiles]);
+  }, [hostRuntime.bootstrap, rpcClient, setFiles]);
 
+  const loadFileTree = useCallback(async () => {
+    try {
+      const data = await rpcClient.getFileTree() as { tree?: FileTreeNode | null };
+      if (data.tree) {
+        setFileTree(data.tree);
+      }
+    } catch (error) {
+      console.error('Failed to load file tree:', error);
+      void hostRuntime.bootstrap.markFailed({
+        code: 'DESKTOP_BOOT_WORKSPACE_RESOLVE_FAILED',
+        message: error instanceof Error ? error.message : 'Failed to load file tree.',
+      });
+    }
+  }, [hostRuntime.bootstrap, rpcClient, setFileTree]);
   const dependencyFiles = useMemo(
     () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentFile),
     [currentFile, sourceVersions],
@@ -1356,21 +1455,41 @@ export function WorkspaceClient() {
   ]);
 
   useEffect(() => {
+    loadFiles();
+  }, [loadFiles]);
+
+  useEffect(() => {
+    if (!currentFile) {
+      return;
+    }
+
+    rememberLastActiveDocument(currentFile);
+  }, [currentFile, rememberLastActiveDocument]);
+
+  useEffect(() => {
     async function renderFile() {
       if (!currentFile) return;
 
+      if (draftDocuments.includes(currentFile)) {
+        setGraph({
+          nodes: [],
+          edges: [],
+          sourceVersion: null,
+          sourceVersions: {
+            ...useGraphStore.getState().sourceVersions,
+            [currentFile]: 'draft:empty-canvas',
+          },
+        });
+        setGraphError(null);
+        void hostRuntime.bootstrap.markReady({ currentFile });
+        return;
+      }
       try {
         setGraphError(null); // Clear previous errors
 
-        const response = await fetch('/api/render', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filePath: currentFile }),
-        });
+        const data = await rpcClient.renderFile(currentFile);
 
-        const data = await response.json();
-
-        if (!response.ok) {
+        if (data.error) {
           // Handle structured error from backend
           const errorMessage = data.error || 'Unknown rendering error';
 
@@ -1399,12 +1518,19 @@ export function WorkspaceClient() {
             details: data.details,
             location,
           });
+          void hostRuntime.bootstrap.markFailed({
+            code: 'DESKTOP_BOOT_RENDERER_READY_FAILED',
+            message: errorMessage,
+          });
           return;
         }
 
-        const parsed = parseRenderGraph(data);
+        const parsed = parseRenderGraph(
+          data as Parameters<typeof parseRenderGraph>[0],
+        );
         if (parsed) {
           setGraph(parsed);
+          void hostRuntime.bootstrap.markReady({ currentFile });
           if (pendingSelectionNodeIdRef.current) {
             const createdNodeId = pendingSelectionNodeIdRef.current;
             const createdNodeExists = parsed.nodes.some((node) => node.id === createdNodeId);
@@ -1416,11 +1542,24 @@ export function WorkspaceClient() {
         }
       } catch (error) {
         console.error('Failed to render file:', error);
+        void hostRuntime.bootstrap.markFailed({
+          code: 'DESKTOP_BOOT_RENDERER_READY_FAILED',
+          message: error instanceof Error ? error.message : 'Failed to render file.',
+        });
       }
     }
 
     renderFile();
-  }, [currentFile, refreshKey, setGraph, setSelectedNodes]); // refreshKey triggers re-render on file changes
+  }, [
+    currentFile,
+    draftDocuments,
+    hostRuntime.bootstrap,
+    refreshKey,
+    rpcClient,
+    setGraph,
+    setGraphError,
+    setSelectedNodes,
+  ]); // refreshKey triggers re-render on file changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white text-slate-900">

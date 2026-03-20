@@ -109,6 +109,26 @@ export class RpcClientError extends Error {
   }
 }
 
+function resolveDesktopBridgeWsUrl(): string | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  const candidate = (
+    window as Window & {
+      __MAGAM_DESKTOP_HOST__?: {
+        runtime?: {
+          wsUrl?: unknown;
+        };
+      };
+    }
+  ).__MAGAM_DESKTOP_HOST__?.runtime?.wsUrl;
+
+  return typeof candidate === 'string' && candidate.length > 0
+    ? candidate
+    : undefined;
+}
+
 export function resolveFileSyncWsUrl(input?: {
   port?: string;
   location?: {
@@ -116,6 +136,11 @@ export function resolveFileSyncWsUrl(input?: {
     hostname?: string;
   };
 }): string {
+  const desktopWsUrl = resolveDesktopBridgeWsUrl();
+  if (desktopWsUrl) {
+    return desktopWsUrl;
+  }
+
   const port = input?.port ?? process.env.NEXT_PUBLIC_MAGAM_WS_PORT ?? '3001';
   const protocol = input?.location?.protocol === 'https:' ? 'wss' : 'ws';
   const hostname = input?.location?.hostname || 'localhost';
