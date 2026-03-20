@@ -65,6 +65,10 @@ declare global {
 
 let requestIdCounter = 0;
 
+function isClientOnlyDraftSourceVersion(version: string | null | undefined): boolean {
+    return typeof version === 'string' && version.startsWith('draft:');
+}
+
 export function useFileSync(
     filePath: string | null,
     onFileChange: () => void,
@@ -263,7 +267,8 @@ export function useFileSync(
         const { sourceVersion, sourceVersions, clientId } = useGraphStore.getState();
         const baseVersion = sourceVersions[targetFilePath]
             ?? (targetFilePath === filePath ? sourceVersion : null);
-        if (!baseVersion) {
+        // Client-only draft placeholders must be materialized before mutations run.
+        if (!baseVersion || isClientOnlyDraftSourceVersion(baseVersion)) {
             throw new Error('SOURCE_VERSION_NOT_READY');
         }
         const commandId = crypto.randomUUID();
