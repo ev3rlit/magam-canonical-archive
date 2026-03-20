@@ -36,7 +36,7 @@ Plans:
 - [x] 01-05-PLAN.md — Grouping, z-order, and multi-selection behavior
 - [x] 01-06-PLAN.md — Editable object content surface and markdown-first body entry
 - [x] 01-07-PLAN.md — Untitled document materialization and first-create contract alignment
-- [ ] 01-08-PLAN.md — Selection anchor-space alignment and fresh-group structural continuity
+- [x] 01-08-PLAN.md — Selection anchor-space alignment and fresh-group structural continuity
 
 ### Phase 2: External Agent and Block Body Beta
 **Goal**: Add BYO agent handoff, proposal review, and richer Notion-style object block bodies on top of the stabilized canvas core.
@@ -87,6 +87,6 @@ Phases execute in numeric order: 1 -> 2 -> 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Canvas Core Authoring | 7/8 | In progress | - |
+| 1. Canvas Core Authoring | 8/8 | In progress | - |
 | 2. External Agent and Block Body Beta | 0/7 | Not started | - |
 | 3. Magam 1.0 Fast Path | 0/7 | Not started | - |

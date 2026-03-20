@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: active
-stopped_at: 01-07 complete; execute 01-08 or verify remaining gap closure work
-last_updated: "2026-03-20T00:19:39.425Z"
+stopped_at: 01-08 complete; rerun verifier for Phase 01 acceptance and completion
+last_updated: "2026-03-20T00:34:43Z"
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -19,18 +19,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** AI and humans can reliably create, review, and evolve a shared knowledge canvas through the same canonical mutation backbone.
-**Current focus:** Phase 01 — canvas-core-authoring gap closure wave 7
+**Current focus:** Phase 01 — canvas-core-authoring verification and completion
 
 ## Current Position
 
-Phase: 01 (canvas-core-authoring) — EXECUTING
-Plan: 7 of 8
+Phase: 01 (canvas-core-authoring) — READY FOR VERIFICATION
+Plan: 8 of 8
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: n/a
 - Total execution time: n/a
 
@@ -38,11 +38,11 @@ Plan: 7 of 8
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 7 | n/a | n/a |
+| 01 | 8 | n/a | n/a |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-03, 01-04, 01-05, 01-06, 01-07
+- Last 5 plans: 01-04, 01-05, 01-06, 01-07, 01-08
 - Trend: active
 
 ## Accumulated Context
@@ -67,6 +67,9 @@ Plan: 7 of 8
 - 01-07: Create untitled documents through a server-backed POST /files contract so the first edit sees a real file and sha256 sourceVersion instead of a client-only draft placeholder
 - 01-07: Hydrate the new tab immediately with an empty canvas and the returned sourceVersion, then refresh files and file-tree in the background to keep the no-modal canvas-first UX
 - 01-07: Treat draft-prefixed sourceVersions as invalid mutation bases in useFileSync so stale placeholder tabs cannot re-enter the WS edit path
+- 01-08: Reuse shared screen-space selection bounds for both the shell and floating-menu anchors so contextual controls cannot drift under pan or zoom
+- 01-08: Finish grouping with the existing select-node-group runtime handoff so a fresh group remains structurally selected for immediate group focus
+- 01-08: Keep mutable browser fixtures backed by the same on-disk TSX source and sha256 version they mock through /api/render so structural E2E checks hit the real file contract
 
 ### Pending Todos
 
@@ -75,10 +78,10 @@ None yet.
 ### Blockers/Concerns
 
 - Legacy file-first editing still exists and must remain a compatibility path while canonical DB flows become primary
-- Phase 01 still has one remaining gap-closure plan plus verification before completion routing can begin
+- Phase 01 execution is complete, but verifier rerun and completion routing still need to confirm the gap-closure fixes
 
 ## Session Continuity
 
-Last session: 2026-03-20T00:19:39.421Z
-Stopped at: 01-07 complete; execute 01-08 or verify remaining gap closure work
-Resume file: .planning/phases/01-canvas-core-authoring/01-07-SUMMARY.md
+Last session: 2026-03-20T00:34:43Z
+Stopped at: 01-08 complete; rerun verifier for Phase 01 acceptance and completion
+Resume file: .planning/phases/01-canvas-core-authoring/01-08-SUMMARY.md
