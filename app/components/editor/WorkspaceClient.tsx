@@ -27,7 +27,7 @@ import {
   LazyStickerInspector,
 } from './LazyPanels';
 import { useChatUiStore } from '@/store/chatUi';
-import { TabState, useGraphStore } from '@/store/graph';
+import { TabState, type FileTreeNode, useGraphStore } from '@/store/graph';
 import {
   buildAbsoluteMoveCommand,
   buildReparentCommand,
@@ -66,21 +66,12 @@ import {
   resolveNodeActionRoutingContext,
 } from './workspaceEditUtils';
 import {
-  buildRegisteredWorkspace,
   buildSidebarDocuments,
   readLastActiveDocumentMap,
-  readStoredActiveWorkspaceId,
-  readStoredWorkspaces,
-  removeWorkspace,
   resolveWorkspaceDocumentAbsolutePath,
-  sortWorkspaces,
   type RegisteredWorkspace,
   type WorkspaceProbeResponse,
   updateWorkspaceFromProbe,
-  upsertWorkspace,
-  writeLastActiveDocumentMap,
-  writeStoredActiveWorkspaceId,
-  writeStoredWorkspaces,
 } from './workspaceRegistry';
 import {
   copyTextWithDesktopBridge,
@@ -239,6 +230,24 @@ async function fetchWorkspaceDocuments(
   return data as WorkspaceProbeResponse;
 }
 
+async function fetchWorkspaceFileTree(
+  rootPath: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ tree: FileTreeNode }> {
+  const response = await fetchImpl(`/api/file-tree?rootPath=${encodeURIComponent(rootPath)}`, {
+    cache: 'no-store',
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data?.error && typeof data.error === 'string'
+      ? data.error
+      : '레거시 TSX 트리를 불러오는 데 실패했습니다.';
+    throw new Error(message);
+  }
+
+  return data as { tree: FileTreeNode };
+}
+
 async function triggerWorkspaceFileBrowserAction(
   input: {
     rootPath: string;
@@ -267,11 +276,16 @@ declare global {
 }
 
 export function WorkspaceClient() {
+  // Workspace-document-shell migration anchor:
+  // workspace registry/session state now lives in the graph store instead of local component state.
   const {
     setFiles,
     setGraph,
     currentFile,
     workspaceRootPath,
+    registeredWorkspaces,
+    activeWorkspaceId,
+    workspaceDocumentsByWorkspaceId,
     sourceVersions,
     files,
     nodes,
@@ -301,6 +315,16 @@ export function WorkspaceClient() {
     draftDocuments,
     setFileTree,
     setWorkspaceSession,
+    hydrateWorkspaceRegistry,
+    replaceRegisteredWorkspaces,
+    upsertWorkspaceFromProbe,
+    reconnectWorkspaceFromProbe,
+    setActiveWorkspaceId: setGraphActiveWorkspaceId,
+    removeRegisteredWorkspace,
+    setWorkspaceDocuments,
+    registerWorkspaceDocument,
+    setWorkspacePathStatus,
+    rememberLastActiveDocumentForWorkspace,
   } = useGraphStore();
   const isChatOpen = useChatUiStore((state) => state.isOpen);
   const toggleChat = useChatUiStore((state) => state.toggleOpen);
@@ -317,14 +341,15 @@ export function WorkspaceClient() {
   const tabContextMenuRef = useRef<HTMLDivElement>(null);
   const pendingSelectionNodeIdRef = useRef<string | null>(null);
   const pendingCreateEditRef = useRef<PendingCreateEdit | null>(null);
-  const [registeredWorkspaces, setRegisteredWorkspaces] = useState<RegisteredWorkspace[]>([]);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
-  const [workspaceDocuments, setWorkspaceDocuments] = useState<SidebarDocumentEntry[]>([]);
   const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
 
   const activeWorkspace = useMemo(
     () => registeredWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
     [activeWorkspaceId, registeredWorkspaces],
+  );
+  const workspaceDocuments = useMemo<SidebarDocumentEntry[]>(
+    () => (activeWorkspaceId ? workspaceDocumentsByWorkspaceId[activeWorkspaceId] ?? [] : []),
+    [activeWorkspaceId, workspaceDocumentsByWorkspaceId],
   );
 
   useEffect(() => {
@@ -348,28 +373,6 @@ export function WorkspaceClient() {
       },
     };
   }, [activeTabId, markTabDirty, openTab, openTabs]);
-
-  const persistWorkspaceRegistry = useCallback((nextWorkspaces: RegisteredWorkspace[]) => {
-    const sorted = sortWorkspaces(nextWorkspaces);
-    setRegisteredWorkspaces(sorted);
-    writeStoredWorkspaces(sorted);
-    return sorted;
-  }, []);
-
-  const persistActiveWorkspaceId = useCallback((workspaceId: string | null) => {
-    setActiveWorkspaceId(workspaceId);
-    writeStoredActiveWorkspaceId(workspaceId);
-  }, []);
-
-  const setLastActiveDocumentForWorkspace = useCallback((workspaceId: string, filePath: string | null) => {
-    const current = readLastActiveDocumentMap();
-    if (!filePath) {
-      delete current[workspaceId];
-    } else {
-      current[workspaceId] = filePath;
-    }
-    writeLastActiveDocumentMap(current);
-  }, []);
 
   const resetWorkspaceShellState = useCallback((workspaceId: string | null, rootPath: string | null) => {
     setGraph({
@@ -412,38 +415,16 @@ export function WorkspaceClient() {
   const syncWorkspaceEntry = useCallback((probe: WorkspaceProbeResponse, options?: {
     existingId?: string;
     activate?: boolean;
-  }) => {
-    const existing = options?.existingId
-      ? registeredWorkspaces.find((workspace) => workspace.id === options.existingId) ?? null
-      : registeredWorkspaces.find((workspace) => workspace.rootPath === probe.rootPath) ?? null;
-    const nextWorkspace = existing
-      ? updateWorkspaceFromProbe(existing, probe)
-      : buildRegisteredWorkspace(probe, options?.existingId);
-    nextWorkspace.lastOpenedAt = Date.now();
-    const nextWorkspaces = persistWorkspaceRegistry(
-      upsertWorkspace(registeredWorkspaces, nextWorkspace),
-    );
-
-    if (options?.activate || !activeWorkspaceId) {
-      persistActiveWorkspaceId(nextWorkspace.id);
-    }
-
-    return nextWorkspaces.find((workspace) => workspace.id === nextWorkspace.id) ?? nextWorkspace;
-  }, [activeWorkspaceId, persistActiveWorkspaceId, persistWorkspaceRegistry, registeredWorkspaces]);
+  }) => upsertWorkspaceFromProbe(probe, options), [upsertWorkspaceFromProbe]);
 
   const bootstrapWorkspaceRegistry = useCallback(async () => {
     setIsWorkspaceLoading(true);
     try {
-      const storedWorkspaces = readStoredWorkspaces();
-      const storedActiveId = readStoredActiveWorkspaceId();
+      const { workspaces: storedWorkspaces } = hydrateWorkspaceRegistry();
 
       if (storedWorkspaces.length === 0) {
         const defaultWorkspace = await fetchWorkspaceProbe();
-        const nextWorkspaces = persistWorkspaceRegistry([
-          buildRegisteredWorkspace(defaultWorkspace),
-        ]);
-        const nextActiveId = nextWorkspaces[0]?.id ?? null;
-        persistActiveWorkspaceId(nextActiveId);
+        upsertWorkspaceFromProbe(defaultWorkspace, { activate: true });
         return;
       }
 
@@ -458,11 +439,7 @@ export function WorkspaceClient() {
         }),
       );
 
-      const nextWorkspaces = persistWorkspaceRegistry(refreshed);
-      const nextActiveId = nextWorkspaces.some((workspace) => workspace.id === storedActiveId)
-        ? storedActiveId
-        : nextWorkspaces[0]?.id ?? null;
-      persistActiveWorkspaceId(nextActiveId);
+      replaceRegisteredWorkspaces(refreshed);
     } catch (error) {
       const message = error instanceof Error ? error.message : '워크스페이스를 초기화하는 데 실패했습니다.';
       setGraphError({
@@ -473,7 +450,7 @@ export function WorkspaceClient() {
     } finally {
       setIsWorkspaceLoading(false);
     }
-  }, [persistActiveWorkspaceId, persistWorkspaceRegistry, setGraphError]);
+  }, [hydrateWorkspaceRegistry, replaceRegisteredWorkspaces, setGraphError, upsertWorkspaceFromProbe]);
 
   // File sync - triggers re-render when file changes externally
   const handleFileChange = useCallback(() => {
@@ -487,7 +464,10 @@ export function WorkspaceClient() {
     },
   ) => {
     try {
-      const data = await fetchWorkspaceDocuments(workspace.rootPath);
+      const [data, legacyTree] = await Promise.all([
+        fetchWorkspaceDocuments(workspace.rootPath),
+        fetchWorkspaceFileTree(workspace.rootPath).catch(() => ({ tree: null })),
+      ]);
       const sidebarDocuments = buildSidebarDocuments(workspace.rootPath, data.documents);
       const absoluteFiles = sidebarDocuments.map((document) => document.absolutePath);
       const lastActiveDocuments = readLastActiveDocumentMap();
@@ -499,13 +479,19 @@ export function WorkspaceClient() {
         ? resumeTarget
         : absoluteFiles[0] ?? null;
 
-      setWorkspaceDocuments(sidebarDocuments);
+      setWorkspaceDocuments(workspace.id, sidebarDocuments);
       setFiles(absoluteFiles);
-      setFileTree(null);
+      setFileTree(legacyTree.tree);
       syncWorkspaceEntry(data, { existingId: workspace.id });
+      setWorkspacePathStatus({
+        workspaceId: workspace.id,
+        rootPath: data.rootPath,
+        status: data.health.state,
+        failureReason: data.health.message ?? null,
+      });
       setWorkspaceSession({
         workspaceId: workspace.id,
-        rootPath: workspace.rootPath,
+        rootPath: data.rootPath,
       });
       useGraphStore.setState({
         lastActiveDocumentPath: initialDocument,
@@ -520,10 +506,16 @@ export function WorkspaceClient() {
       try {
         const probe = await fetchWorkspaceProbe(workspace.rootPath);
         syncWorkspaceEntry(probe, { existingId: workspace.id });
+        setWorkspacePathStatus({
+          workspaceId: workspace.id,
+          rootPath: probe.rootPath,
+          status: probe.health.state,
+          failureReason: probe.health.message ?? null,
+        });
       } catch {
         // Ignore probe failures and surface the original error below.
       }
-      setWorkspaceDocuments([]);
+      setWorkspaceDocuments(workspace.id, []);
       setFiles([]);
       setFileTree(null);
       const message = error instanceof Error
@@ -535,7 +527,7 @@ export function WorkspaceClient() {
         details: error,
       });
     }
-  }, [setFileTree, setFiles, setGraphError, setWorkspaceSession, syncWorkspaceEntry]);
+  }, [setFileTree, setFiles, setGraphError, setWorkspaceDocuments, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
 
   const dependencyFiles = useMemo(
     () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentFile),
@@ -567,14 +559,12 @@ export function WorkspaceClient() {
 
   useEffect(() => {
     if (!activeWorkspace) {
-      setWorkspaceDocuments([]);
       resetWorkspaceShellState(null, null);
       return;
     }
 
     resetWorkspaceShellState(activeWorkspace.id, activeWorkspace.rootPath);
     if (activeWorkspace.status !== 'ok') {
-      setWorkspaceDocuments([]);
       return;
     }
     void loadActiveWorkspaceDocuments(activeWorkspace, { restoreInitialDocument: true });
@@ -585,8 +575,8 @@ export function WorkspaceClient() {
       return;
     }
 
-    setLastActiveDocumentForWorkspace(activeWorkspace.id, currentFile);
-  }, [activeWorkspace, currentFile, setLastActiveDocumentForWorkspace]);
+    rememberLastActiveDocumentForWorkspace(activeWorkspace.id, currentFile);
+  }, [activeWorkspace, currentFile, rememberLastActiveDocumentForWorkspace]);
 
   const executeCloseTabs = useCallback(
     (tabIds: string[]) => {
@@ -657,20 +647,8 @@ export function WorkspaceClient() {
   );
 
   const handleSelectWorkspace = useCallback((workspaceId: string) => {
-    const nextWorkspace = registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
-    if (!nextWorkspace) {
-      return;
-    }
-
-    const refreshedWorkspace = {
-      ...nextWorkspace,
-      lastOpenedAt: Date.now(),
-    };
-    persistWorkspaceRegistry(
-      upsertWorkspace(registeredWorkspaces, refreshedWorkspace),
-    );
-    persistActiveWorkspaceId(workspaceId);
-  }, [persistActiveWorkspaceId, persistWorkspaceRegistry, registeredWorkspaces]);
+    setGraphActiveWorkspaceId(workspaceId);
+  }, [setGraphActiveWorkspaceId]);
 
   const handleCreateWorkspace = useCallback(async () => {
     const rootPath = await pickWorkspaceRootPath({
@@ -735,7 +713,7 @@ export function WorkspaceClient() {
 
     try {
       const probe = await fetchWorkspaceProbe(nextRootPath);
-      syncWorkspaceEntry(probe, { existingId: activeWorkspace.id, activate: true });
+      reconnectWorkspaceFromProbe(activeWorkspace.id, probe);
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'workspace를 다시 연결하는 데 실패했습니다.';
@@ -746,7 +724,7 @@ export function WorkspaceClient() {
       });
       return false;
     }
-  }, [activeWorkspace, setGraphError, syncWorkspaceEntry]);
+  }, [activeWorkspace, reconnectWorkspaceFromProbe, setGraphError]);
 
   const handleRemoveWorkspace = useCallback(() => {
     if (!activeWorkspace) {
@@ -758,13 +736,9 @@ export function WorkspaceClient() {
       return false;
     }
 
-    const nextWorkspaces = persistWorkspaceRegistry(
-      removeWorkspace(registeredWorkspaces, activeWorkspace.id),
-    );
-    const nextActiveWorkspaceId = nextWorkspaces[0]?.id ?? null;
-    persistActiveWorkspaceId(nextActiveWorkspaceId);
+    removeRegisteredWorkspace(activeWorkspace.id);
     return true;
-  }, [activeWorkspace, persistActiveWorkspaceId, persistWorkspaceRegistry, registeredWorkspaces]);
+  }, [activeWorkspace, removeRegisteredWorkspace]);
 
   const handleRevealWorkspace = useCallback(async () => {
     if (!activeWorkspace) {
@@ -808,12 +782,18 @@ export function WorkspaceClient() {
   }, [activeWorkspace, setGraphError]);
 
   const refreshActiveWorkspace = useCallback(async () => {
-    if (!activeWorkspace || activeWorkspace.status !== 'ok') {
+    if (!activeWorkspace) {
+      return;
+    }
+
+    if (activeWorkspace.status !== 'ok') {
+      const probe = await fetchWorkspaceProbe(activeWorkspace.rootPath);
+      reconnectWorkspaceFromProbe(activeWorkspace.id, probe);
       return;
     }
 
     await loadActiveWorkspaceDocuments(activeWorkspace);
-  }, [activeWorkspace, loadActiveWorkspaceDocuments]);
+  }, [activeWorkspace, loadActiveWorkspaceDocuments, reconnectWorkspaceFromProbe]);
 
   const handleCreateDocument = useCallback(async () => {
     if (!activeWorkspace) {
@@ -832,6 +812,11 @@ export function WorkspaceClient() {
         absoluteFilePath,
         createdDocument.sourceVersion,
       );
+      registerWorkspaceDocument(activeWorkspace.id, {
+        absolutePath: absoluteFilePath,
+        relativePath: createdDocument.filePath,
+        title: createdDocument.filePath.split('/').filter(Boolean).at(-1) ?? createdDocument.filePath,
+      });
 
       const opened = openTabByPath(absoluteFilePath);
       if (opened) {
@@ -861,7 +846,7 @@ export function WorkspaceClient() {
       });
       return false;
     }
-  }, [activeWorkspace, loadActiveWorkspaceDocuments, openTabByPath, setGraph, setGraphError]);
+  }, [activeWorkspace, loadActiveWorkspaceDocuments, openTabByPath, registerWorkspaceDocument, setGraph, setGraphError]);
 
   const restoreNodeData = useCallback((nodeId: string, previousData: Record<string, unknown> | undefined) => {
     useGraphStore.setState((state) => ({
@@ -2160,6 +2145,7 @@ export function WorkspaceClient() {
         onRevealWorkspace={() => { void handleRevealWorkspace(); }}
         onReconnectWorkspace={() => { void handleReconnectWorkspace(); }}
         onRemoveWorkspace={handleRemoveWorkspace}
+        onOpenLegacyFile={openTabByPath}
       />
 
       <div className="flex flex-1 flex-col h-full overflow-hidden relative">

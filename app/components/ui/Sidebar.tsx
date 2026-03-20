@@ -98,7 +98,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     return `${documents.length} docs`;
   }, [activeWorkspace, documents.length]);
+  const hasLegacyTree = Boolean(fileTree && fileTree.children && fileTree.children.length > 0);
 
+  // Workspace-document-shell migration anchor:
+  // sidebar is presenter-only and keeps legacy TSX access in a compatibility section.
   return (
     <aside
       className={cn(
@@ -319,27 +322,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </section>
           )}
 
-          {fileTree && fileTree.children && fileTree.children.length > 0 && (
+          {activeWorkspace && (
             <section className="px-3 space-y-3">
-              <button
-                type="button"
-                onClick={() => setShowLegacyTree((value) => !value)}
-                className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider"
-              >
-                Legacy Tree {showLegacyTree ? 'Hide' : 'Show'}
-              </button>
-              {showLegacyTree && (
-                <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 py-2">
-                  {fileTree.children.map((child) => (
-                    <FolderTreeItem
-                      key={child.path}
-                      node={child}
-                      depth={0}
-                      onOpenFile={onOpenLegacyFile}
-                    />
-                  ))}
+              <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                Compatibility
+              </div>
+              <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-white/70 dark:bg-slate-950/70 px-3 py-3 space-y-3">
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  Document list가 primary navigation입니다. 레거시 TSX tree는 import/reference 용도로만 여기서 엽니다.
                 </div>
-              )}
+                {hasLegacyTree ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowLegacyTree((value) => !value)}
+                      className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      {showLegacyTree ? 'Hide TSX Tree' : 'Open TSX Tree'}
+                    </button>
+                    {showLegacyTree && fileTree && (
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 py-2">
+                        {fileTree.children?.map((child) => (
+                          <FolderTreeItem
+                            key={child.path}
+                            node={child}
+                            depth={0}
+                            onOpenFile={onOpenLegacyFile}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    표시할 레거시 TSX 항목이 없으면 이 영역은 비어 있습니다.
+                  </div>
+                )}
+              </div>
             </section>
           )}
         </div>

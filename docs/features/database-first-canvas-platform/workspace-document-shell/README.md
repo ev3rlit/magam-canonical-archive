@@ -423,3 +423,21 @@ Reconnect / Remove
 - `docs/reports/excalidraw-vs-magam/README.md`
 - `app/components/ui/Sidebar.tsx`
 - `app/components/editor/WorkspaceClient.tsx`
+
+## 16. 구현 소스 링크
+
+- shell orchestration: `app/components/editor/WorkspaceClient.tsx`
+- presenter sidebar: `app/components/ui/Sidebar.tsx`
+- workspace registry/session store: `app/store/graph.ts`
+- registry/document APIs: `app/app/api/workspaces/route.ts`, `app/app/api/documents/route.ts`
+- render/file-tree proxy routing: `app/app/api/render/route.ts`, `app/app/api/file-tree/route.ts`
+- workspace-aware runtime backends: `app/ws/methods.ts`, `app/ws/server.ts`, `libs/cli/src/server/http.ts`
+- desktop bridge contract + host scaffold: `app/lib/desktop/bridge-contract.ts`, `app/components/editor/desktopBridge.ts`, `desktop/preload.ts`, `desktop/main.ts`
+
+## 17. 구현 완료 메모
+
+- workspace registry는 app-level store와 localStorage restore guard를 통해 multiple entry + single active session으로 동작한다.
+- render/ws mutation/file subscribe 경로는 active workspace root를 요청 단위로 전달받아 single `MAGAM_TARGET_DIR` 가정을 완화했다.
+- sidebar primary IA는 document-first로 유지되고, legacy TSX tree는 compatibility section으로 후퇴했다.
+- Electron/Desktop bridge는 browser fallback abstraction에서 끝나지 않고 preload/main scaffold까지 연결되었다.
+- 자동 검증은 현재 로컬 환경의 dependency/type resolution 문제 때문에 전면 통과하지 못했고, quickstart 결과는 `specs/001-workspace-document-shell/quickstart.md`에 별도 메모로 남긴다.

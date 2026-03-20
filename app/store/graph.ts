@@ -49,7 +49,24 @@ import {
   type OpenSurfaceDescriptor,
 } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 import type { ActionOptimisticLifecycleEvent } from '@/features/editing/actionRoutingBridge.types';
-import { normalizeWorkspaceDocumentPath } from '@/components/editor/workspaceRegistry';
+import {
+  buildRegisteredWorkspace,
+  normalizeWorkspaceDocumentPath,
+  readLastActiveDocumentMap,
+  readStoredActiveWorkspaceId,
+  readStoredWorkspaces,
+  removeWorkspace as removeWorkspaceEntry,
+  type RegisteredWorkspace,
+  sortWorkspaces,
+  updateWorkspaceFromProbe,
+  upsertWorkspace,
+  type WorkspaceHealthState,
+  type WorkspaceProbeResponse,
+  type WorkspaceSidebarDocument,
+  writeLastActiveDocumentMap,
+  writeStoredActiveWorkspaceId,
+  writeStoredWorkspaces,
+} from '@/components/editor/workspaceRegistry';
 
 type SearchActionResult = {
   clearQuery?: boolean;
@@ -177,6 +194,22 @@ export interface LastActiveDocumentSession {
   updatedAt: number;
 }
 
+export interface WorkspacePathHealthRecord {
+  workspaceId: string;
+  rootPath: string;
+  status: WorkspaceHealthState;
+  lastCheckedAt: number;
+  lastKnownRootPath: string;
+  failureReason?: string | null;
+}
+
+export interface WorkspaceRegistryStateSnapshot {
+  registeredWorkspaces: RegisteredWorkspace[];
+  activeWorkspaceId: string | null;
+  workspaceDocumentsByWorkspaceId: Record<string, WorkspaceSidebarDocument[]>;
+  workspacePathHealthByWorkspaceId: Record<string, WorkspacePathHealthRecord>;
+}
+
 export interface GraphState {
   nodes: Node[];
   edges: Edge[];
@@ -184,6 +217,12 @@ export interface GraphState {
   fileTree: FileTreeNode | null;
   expandedFolders: Set<string>;
   currentFile: string | null;
+  // Workspace-document-shell migration anchor:
+  // registry/session/path-health state is owned here so runtime scope follows the active workspace.
+  registeredWorkspaces: RegisteredWorkspace[];
+  activeWorkspaceId: string | null;
+  workspaceDocumentsByWorkspaceId: Record<string, WorkspaceSidebarDocument[]>;
+  workspacePathHealthByWorkspaceId: Record<string, WorkspacePathHealthRecord>;
   workspaceSessionKey: string | null;
   workspaceRootPath: string | null;
   workspaceSessionScopeVersion: number;
@@ -227,11 +266,33 @@ export interface GraphState {
   setSourceVersion: (version: string | null) => void;
   setSourceVersionForFile: (filePath: string, version: string | null) => void;
   setLastAppliedCommandId: (commandId?: string) => void;
+  hydrateWorkspaceRegistry: () => {
+    workspaces: RegisteredWorkspace[];
+    activeWorkspaceId: string | null;
+  };
+  replaceRegisteredWorkspaces: (workspaces: RegisteredWorkspace[]) => RegisteredWorkspace[];
+  upsertWorkspaceFromProbe: (
+    probe: WorkspaceProbeResponse,
+    options?: { existingId?: string; activate?: boolean },
+  ) => RegisteredWorkspace;
+  reconnectWorkspaceFromProbe: (workspaceId: string, probe: WorkspaceProbeResponse) => RegisteredWorkspace | null;
+  setActiveWorkspaceId: (workspaceId: string | null) => boolean;
+  removeRegisteredWorkspace: (workspaceId: string) => string | null;
+  setWorkspaceDocuments: (workspaceId: string, documents: WorkspaceSidebarDocument[]) => void;
+  registerWorkspaceDocument: (workspaceId: string, document: WorkspaceSidebarDocument) => void;
+  setWorkspacePathStatus: (input: {
+    workspaceId: string;
+    rootPath?: string;
+    status: WorkspaceHealthState;
+    failureReason?: string | null;
+    checkedAt?: number;
+  }) => void;
   hydrateDocumentSession: (workspaceKey: string | null, workspaceRootPath?: string | null) => void;
   setWorkspaceSession: (input: {
     workspaceId: string | null;
     rootPath?: string | null;
   }) => void;
+  rememberLastActiveDocumentForWorkspace: (workspaceId: string, documentPath: string | null) => void;
   rememberLastActiveDocument: (documentPath: string | null) => void;
   registerDraftDocument: (filePath: string) => void;
   setFiles: (files: string[]) => void;
@@ -425,6 +486,55 @@ function persistLastActiveDocumentSession(session: LastActiveDocumentSession | n
     LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY,
     JSON.stringify(session),
   );
+}
+
+function buildWorkspacePathHealthRecord(
+  workspace: RegisteredWorkspace,
+  checkedAt: number = Date.now(),
+): WorkspacePathHealthRecord {
+  return {
+    workspaceId: workspace.id,
+    rootPath: workspace.rootPath,
+    status: workspace.status,
+    lastCheckedAt: checkedAt,
+    lastKnownRootPath: workspace.rootPath,
+    failureReason: workspace.status === 'ok' ? null : null,
+  };
+}
+
+function buildWorkspacePathHealthMap(
+  workspaces: RegisteredWorkspace[],
+  existing: Record<string, WorkspacePathHealthRecord> = {},
+): Record<string, WorkspacePathHealthRecord> {
+  const next: Record<string, WorkspacePathHealthRecord> = {};
+  workspaces.forEach((workspace) => {
+    const current = existing[workspace.id];
+    next[workspace.id] = current
+      ? {
+          ...current,
+          rootPath: workspace.rootPath,
+          status: workspace.status,
+          lastKnownRootPath: workspace.rootPath,
+          lastCheckedAt: Date.now(),
+          failureReason: workspace.status === 'ok' ? null : current.failureReason ?? null,
+        }
+      : buildWorkspacePathHealthRecord(workspace);
+  });
+  return next;
+}
+
+function sanitizeLastActiveDocumentMap(
+  map: Record<string, string>,
+  keepWorkspaceIds: string[],
+): Record<string, string> {
+  const keep = new Set(keepWorkspaceIds);
+  return Object.fromEntries(
+    Object.entries(map).filter(([workspaceId]) => keep.has(workspaceId)),
+  );
+}
+
+function writeSanitizedLastActiveDocumentMap(map: Record<string, string>): void {
+  writeLastActiveDocumentMap(map);
 }
 
 function normalizeWorkspaceAwareFilePath(
@@ -698,6 +808,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   fileTree: null,
   expandedFolders: new Set<string>(),
   currentFile: null,
+  registeredWorkspaces: [],
+  activeWorkspaceId: null,
+  workspaceDocumentsByWorkspaceId: {},
+  workspacePathHealthByWorkspaceId: {},
   workspaceSessionKey: null,
   workspaceRootPath: null,
   workspaceSessionScopeVersion: 0,
@@ -805,6 +919,229 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     };
   }),
   setLastAppliedCommandId: (lastAppliedCommandId) => set({ lastAppliedCommandId }),
+  hydrateWorkspaceRegistry: () => {
+    const workspaces = sortWorkspaces(readStoredWorkspaces());
+    const storedActiveWorkspaceId = readStoredActiveWorkspaceId();
+    const activeWorkspaceId = workspaces.some((workspace) => workspace.id === storedActiveWorkspaceId)
+      ? storedActiveWorkspaceId
+      : workspaces[0]?.id ?? null;
+    const workspacePathHealthByWorkspaceId = buildWorkspacePathHealthMap(workspaces);
+
+    set({
+      registeredWorkspaces: workspaces,
+      activeWorkspaceId,
+      workspacePathHealthByWorkspaceId,
+    });
+    writeStoredWorkspaces(workspaces);
+    writeStoredActiveWorkspaceId(activeWorkspaceId);
+    writeSanitizedLastActiveDocumentMap(
+      sanitizeLastActiveDocumentMap(readLastActiveDocumentMap(), workspaces.map((workspace) => workspace.id)),
+    );
+
+    return {
+      workspaces,
+      activeWorkspaceId,
+    };
+  },
+  replaceRegisteredWorkspaces: (workspaces) => {
+    const nextWorkspaces = sortWorkspaces(workspaces);
+    const currentActiveWorkspaceId = get().activeWorkspaceId;
+    const nextActiveWorkspaceId = nextWorkspaces.some((workspace) => workspace.id === currentActiveWorkspaceId)
+      ? currentActiveWorkspaceId
+      : nextWorkspaces[0]?.id ?? null;
+
+    set((state) => ({
+      registeredWorkspaces: nextWorkspaces,
+      activeWorkspaceId: nextActiveWorkspaceId,
+      workspacePathHealthByWorkspaceId: buildWorkspacePathHealthMap(
+        nextWorkspaces,
+        state.workspacePathHealthByWorkspaceId,
+      ),
+      workspaceDocumentsByWorkspaceId: Object.fromEntries(
+        Object.entries(state.workspaceDocumentsByWorkspaceId)
+          .filter(([workspaceId]) => nextWorkspaces.some((workspace) => workspace.id === workspaceId)),
+      ),
+    }));
+
+    writeStoredWorkspaces(nextWorkspaces);
+    writeStoredActiveWorkspaceId(nextActiveWorkspaceId);
+    writeSanitizedLastActiveDocumentMap(
+      sanitizeLastActiveDocumentMap(readLastActiveDocumentMap(), nextWorkspaces.map((workspace) => workspace.id)),
+    );
+
+    return nextWorkspaces;
+  },
+  upsertWorkspaceFromProbe: (probe, options) => {
+    const state = get();
+    const existing = options?.existingId
+      ? state.registeredWorkspaces.find((workspace) => workspace.id === options.existingId) ?? null
+      : state.registeredWorkspaces.find((workspace) => workspace.rootPath === probe.rootPath) ?? null;
+    const baseWorkspace = existing
+      ? updateWorkspaceFromProbe(existing, probe)
+      : buildRegisteredWorkspace(probe, options?.existingId);
+    const nextWorkspace: RegisteredWorkspace = {
+      ...baseWorkspace,
+      lastOpenedAt: (options?.activate || !existing)
+        ? Date.now()
+        : baseWorkspace.lastOpenedAt,
+    };
+    const nextWorkspaces = get().replaceRegisteredWorkspaces(
+      upsertWorkspace(get().registeredWorkspaces, nextWorkspace),
+    );
+
+    if (options?.activate || !get().activeWorkspaceId) {
+      get().setActiveWorkspaceId(nextWorkspace.id);
+    }
+
+    return nextWorkspaces.find((workspace) => workspace.id === nextWorkspace.id) ?? nextWorkspace;
+  },
+  reconnectWorkspaceFromProbe: (workspaceId, probe) => {
+    const current = get().registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
+    if (!current) {
+      return null;
+    }
+
+    const nextWorkspace = get().upsertWorkspaceFromProbe(probe, {
+      existingId: workspaceId,
+      activate: true,
+    });
+    get().setWorkspacePathStatus({
+      workspaceId,
+      rootPath: probe.rootPath,
+      status: probe.health.state,
+      failureReason: probe.health.message ?? null,
+    });
+    return nextWorkspace;
+  },
+  setActiveWorkspaceId: (workspaceId) => {
+    const state = get();
+    if (!workspaceId) {
+      set({ activeWorkspaceId: null });
+      writeStoredActiveWorkspaceId(null);
+      return true;
+    }
+
+    const targetWorkspace = state.registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
+    if (!targetWorkspace) {
+      return false;
+    }
+
+    const nextWorkspaces = sortWorkspaces(
+      state.registeredWorkspaces.map((workspace) => (
+        workspace.id === workspaceId
+          ? { ...workspace, lastOpenedAt: Date.now() }
+          : workspace
+      )),
+    );
+    set((current) => ({
+      registeredWorkspaces: nextWorkspaces,
+      activeWorkspaceId: workspaceId,
+      workspacePathHealthByWorkspaceId: buildWorkspacePathHealthMap(
+        nextWorkspaces,
+        current.workspacePathHealthByWorkspaceId,
+      ),
+    }));
+    writeStoredWorkspaces(nextWorkspaces);
+    writeStoredActiveWorkspaceId(workspaceId);
+    return true;
+  },
+  removeRegisteredWorkspace: (workspaceId) => {
+    const state = get();
+    const nextWorkspaces = removeWorkspaceEntry(state.registeredWorkspaces, workspaceId);
+    const nextActiveWorkspaceId = state.activeWorkspaceId === workspaceId
+      ? nextWorkspaces[0]?.id ?? null
+      : state.activeWorkspaceId;
+
+    set((current) => ({
+      registeredWorkspaces: nextWorkspaces,
+      activeWorkspaceId: nextActiveWorkspaceId,
+      workspaceDocumentsByWorkspaceId: Object.fromEntries(
+        Object.entries(current.workspaceDocumentsByWorkspaceId).filter(([id]) => id !== workspaceId),
+      ),
+      workspacePathHealthByWorkspaceId: Object.fromEntries(
+        Object.entries(current.workspacePathHealthByWorkspaceId).filter(([id]) => id !== workspaceId),
+      ),
+    }));
+
+    writeStoredWorkspaces(nextWorkspaces);
+    writeStoredActiveWorkspaceId(nextActiveWorkspaceId);
+    writeSanitizedLastActiveDocumentMap(
+      sanitizeLastActiveDocumentMap(readLastActiveDocumentMap(), nextWorkspaces.map((workspace) => workspace.id)),
+    );
+
+    return nextActiveWorkspaceId;
+  },
+  setWorkspaceDocuments: (workspaceId, documents) => set((state) => {
+    const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
+      workspace.id === workspaceId
+        ? { ...workspace, documentCount: documents.length }
+        : workspace
+    ));
+    writeStoredWorkspaces(nextWorkspaces);
+
+    return {
+      workspaceDocumentsByWorkspaceId: {
+        ...state.workspaceDocumentsByWorkspaceId,
+        [workspaceId]: [...documents],
+      },
+      registeredWorkspaces: nextWorkspaces,
+    };
+  }),
+  registerWorkspaceDocument: (workspaceId, document) => set((state) => {
+    const currentDocuments = state.workspaceDocumentsByWorkspaceId[workspaceId] ?? [];
+    if (currentDocuments.some((entry) => entry.absolutePath === document.absolutePath)) {
+      return state;
+    }
+
+    const nextDocuments = [document, ...currentDocuments];
+    const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
+      workspace.id === workspaceId
+        ? { ...workspace, documentCount: nextDocuments.length }
+        : workspace
+    ));
+    writeStoredWorkspaces(nextWorkspaces);
+
+    return {
+      workspaceDocumentsByWorkspaceId: {
+        ...state.workspaceDocumentsByWorkspaceId,
+        [workspaceId]: nextDocuments,
+      },
+      registeredWorkspaces: nextWorkspaces,
+    };
+  }),
+  setWorkspacePathStatus: ({ workspaceId, rootPath, status, failureReason, checkedAt }) => set((state) => {
+    const targetWorkspace = state.registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
+    if (!targetWorkspace) {
+      return state;
+    }
+
+    const nextRootPath = rootPath ?? targetWorkspace.rootPath;
+    const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
+      workspace.id === workspaceId
+        ? {
+            ...workspace,
+            rootPath: nextRootPath,
+            status,
+          }
+        : workspace
+    ));
+    writeStoredWorkspaces(nextWorkspaces);
+
+    return {
+      registeredWorkspaces: nextWorkspaces,
+      workspacePathHealthByWorkspaceId: {
+        ...state.workspacePathHealthByWorkspaceId,
+        [workspaceId]: {
+          workspaceId,
+          rootPath: nextRootPath,
+          status,
+          lastCheckedAt: checkedAt ?? Date.now(),
+          lastKnownRootPath: nextRootPath,
+          failureReason: failureReason ?? (status === 'ok' ? null : state.workspacePathHealthByWorkspaceId[workspaceId]?.failureReason ?? null),
+        },
+      },
+    };
+  }),
   hydrateDocumentSession: (workspaceSessionKey, workspaceRootPath) => set((state) => {
     const normalizedWorkspaceKey = workspaceSessionKey && workspaceSessionKey.length > 0
       ? workspaceSessionKey
@@ -860,6 +1197,15 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         : null,
     };
   }),
+  rememberLastActiveDocumentForWorkspace: (workspaceId, documentPath) => {
+    const current = readLastActiveDocumentMap();
+    if (!documentPath) {
+      delete current[workspaceId];
+    } else {
+      current[workspaceId] = documentPath;
+    }
+    writeLastActiveDocumentMap(current);
+  },
   rememberLastActiveDocument: (documentPath) => set((state) => {
     const nextDocumentPath = documentPath && documentPath.length > 0
       ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, documentPath)

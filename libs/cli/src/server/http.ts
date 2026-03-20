@@ -235,7 +235,7 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
       } else if (req.method === 'GET' && url.pathname === '/files') {
         await handleFiles(req, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/file-tree') {
-        await handleFileTree(req, res, config.targetDir);
+        await handleFileTree(url, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/chat/providers') {
         await handleChatProviders(res, chatHandler);
       } else if (req.method === 'GET' && url.pathname === '/chat/sessions') {
@@ -664,10 +664,18 @@ function buildFileTree(entries: FileEntry[], rootName: string = 'root'): FileTre
   return root;
 }
 
-async function handleFileTree(req: http.IncomingMessage, res: http.ServerResponse, targetDir: string) {
+async function handleFileTree(url: URL, res: http.ServerResponse, targetDir: string) {
   try {
+    const rawRootPath = url.searchParams.get('rootPath') || url.searchParams.get('root');
+    if (rawRootPath && !path.isAbsolute(rawRootPath)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'rootPath must be an absolute path', type: 'VALIDATION_ERROR' }));
+      return;
+    }
+
+    const requestTargetDir = rawRootPath ? path.resolve(rawRootPath) : targetDir;
     const rawPaths = await glob(['**/*.tsx', '**/'], {
-      cwd: targetDir,
+      cwd: requestTargetDir,
       onlyFiles: false,
       markDirectories: true,
       ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/build/**']
@@ -681,7 +689,7 @@ async function handleFileTree(req: http.IncomingMessage, res: http.ServerRespons
       };
     });
 
-    const tree = buildFileTree(entries, path.basename(targetDir));
+    const tree = buildFileTree(entries, path.basename(requestTargetDir));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ tree }));
   } catch (error: any) {

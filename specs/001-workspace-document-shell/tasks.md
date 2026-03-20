@@ -17,10 +17,10 @@
 
 **Purpose**: workspace/document shell 변경을 위한 문서/상태 베이스라인을 정리한다.
 
-- [ ] T001 Add feature source linkage notes to `docs/features/database-first-canvas-platform/workspace-document-shell/README.md`
-- [ ] T002 [P] Add workspace/document shell migration anchors in `app/components/editor/WorkspaceClient.tsx`
-- [ ] T003 [P] Add sidebar migration anchors in `app/components/ui/Sidebar.tsx`
-- [ ] T004 [P] Add store migration anchors in `app/store/graph.ts`
+- [x] T001 Add feature source linkage notes to `docs/features/database-first-canvas-platform/workspace-document-shell/README.md`
+- [x] T002 [P] Add workspace/document shell migration anchors in `app/components/editor/WorkspaceClient.tsx`
+- [x] T003 [P] Add sidebar migration anchors in `app/components/ui/Sidebar.tsx`
+- [x] T004 [P] Add store migration anchors in `app/store/graph.ts`
 
 ---
 
@@ -30,12 +30,12 @@
 
 **⚠️ CRITICAL**: 이 단계 완료 전에는 스토리별 UI 구현을 시작하지 않는다.
 
-- [ ] T005 Define `RegisteredWorkspace` and path health state types in `app/store/graph.ts`
-- [ ] T006 Implement workspace registry actions (create/add/remove/list) in `app/store/graph.ts`
+- [x] T005 Define `RegisteredWorkspace` and path health state types in `app/store/graph.ts`
+- [x] T006 Implement workspace registry actions (create/add/remove/list) in `app/store/graph.ts`
 - [x] T007 [P] Implement single active workspace session state and switch action in `app/store/graph.ts`
 - [x] T008 [P] Implement active workspace scoped document-session reset behavior in `app/store/graph.ts`
-- [ ] T009 [P] Implement unavailable path state transitions and reconnect action in `app/store/graph.ts`
-- [ ] T010 Add registry/session persistence wiring and restore guards in `app/store/graph.ts`
+- [x] T009 [P] Implement unavailable path state transitions and reconnect action in `app/store/graph.ts`
+- [x] T010 Add registry/session persistence wiring and restore guards in `app/store/graph.ts`
 - [x] T033 [P] Add workspace registry route and filesystem helpers in `app/app/api/workspaces/route.ts` and `app/app/api/workspaces/_shared.ts`
 - [x] T034 [P] Add document bootstrap route and filesystem helpers in `app/app/api/documents/route.ts` and `app/app/api/workspaces/_shared.ts`
 
@@ -73,7 +73,7 @@
 - [x] T017 [US2] Implement empty-workspace document state and CTA rendering in `app/components/ui/Sidebar.tsx`
 - [x] T018 [US2] Wire sidebar document selection to active workspace scoped open behavior in `app/components/editor/WorkspaceClient.tsx`
 - [x] T019 [US2] Update `new-document` command path to active-workspace persisted bootstrap in `app/components/editor/WorkspaceClient.tsx`
-- [ ] T020 [US2] Sync new document creation result into workspace-scoped store list in `app/store/graph.ts`
+- [x] T020 [US2] Sync new document creation result into workspace-scoped store list in `app/store/graph.ts`
 - [x] T021 [US2] Ensure post-create navigation enters document main canvas in `app/components/editor/WorkspaceClient.tsx`
 
 **Checkpoint**: sidebar의 기본 탐색 단위가 document가 되고 신규 문서 생성/진입이 즉시 동작한다.
@@ -107,9 +107,9 @@
 
 ### Implementation for User Story 4
 
-- [ ] T027 [US4] Move legacy file-tree access out of primary sidebar region in `app/components/ui/Sidebar.tsx`
-- [ ] T028 [US4] Add compatibility/import entrypoint copy and placement in `app/components/ui/Sidebar.tsx`
-- [ ] T029 [US4] Ensure command/open flows prioritize document-first navigation in `app/components/editor/WorkspaceClient.tsx`
+- [x] T027 [US4] Move legacy file-tree access out of primary sidebar region in `app/components/ui/Sidebar.tsx`
+- [x] T028 [US4] Add compatibility/import entrypoint copy and placement in `app/components/ui/Sidebar.tsx`
+- [x] T029 [US4] Ensure command/open flows prioritize document-first navigation in `app/components/editor/WorkspaceClient.tsx`
 
 **Checkpoint**: primary authoring UX는 document-first이며 legacy path는 compatibility 위치로 후퇴한다.
 
@@ -119,8 +119,8 @@
 
 **Purpose**: 문서/검증 경로와 상태 일관성을 정리한다.
 
-- [ ] T030 [P] Update feature PRD completion notes in `docs/features/database-first-canvas-platform/workspace-document-shell/README.md`
-- [ ] T031 [P] Update quickstart validation notes in `specs/001-workspace-document-shell/quickstart.md`
+- [x] T030 [P] Update feature PRD completion notes in `docs/features/database-first-canvas-platform/workspace-document-shell/README.md`
+- [x] T031 [P] Update quickstart validation notes in `specs/001-workspace-document-shell/quickstart.md`
 - [ ] T032 Run quickstart scenario validation and capture outcomes in `specs/001-workspace-document-shell/quickstart.md`
 
 ---

@@ -85,3 +85,13 @@ Expected:
 - Active workspace scope is explicit and stable through switching.
 - Document bootstrap is persisted and immediate.
 - Path failure handling is explicit, actionable, and non-silent.
+
+## Validation Notes
+
+- 2026-03-21: workspace-aware runtime wiring updated so graph store, render proxy/server, and WS mutation/subscription paths all consume the active workspace root.
+- 2026-03-21: desktop bridge scaffold added at `desktop/preload.ts` and `desktop/main.ts`; UI bridge contract remains available in browser fallback mode.
+- Direct logic smoke previously confirmed workspace document bootstrap on absolute roots (`count 0 -> 1`) through `app/app/api/workspaces/_shared.ts`.
+- Automated validation is currently blocked by repo environment issues rather than feature logic:
+  - `bun test app/ws/methods.test.ts` fails before executing cases because `@babel/parser` cannot be resolved from `app/ws/filePatcher.ts`.
+  - `bunx tsc -p app/tsconfig.json --noEmit --pretty false` fails repo-wide on missing Next/React/Node/Bun type resolution.
+- Full UI quickstart rerun is still pending in a working desktop/web runtime environment.
