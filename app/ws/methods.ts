@@ -26,9 +26,11 @@ export interface RpcContext {
     subscriptions: Set<string>;
     notifyFileChanged?: (payload: {
         filePath: string;
+        resolvedFilePath: string;
         version: string;
         originId: string;
         commandId: string;
+        rootPath?: string;
     }) => void;
 }
 
@@ -100,6 +102,23 @@ function ensureOptionalString(value: unknown, fieldName: string): string | undef
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} must be a string` };
     }
     return value;
+}
+
+function ensureOptionalRootPath(value: unknown, fieldName: string): string | undefined {
+    const rootPath = ensureOptionalString(value, fieldName);
+    if (rootPath === undefined) {
+        return undefined;
+    }
+
+    const trimmed = rootPath.trim();
+    if (!trimmed) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} must not be empty` };
+    }
+    if (!isAbsolute(trimmed)) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} must be an absolute path` };
+    }
+
+    return resolve(trimmed);
 }
 
 function ensureOptionalUpdateCommandType(value: unknown): UpdateCommandType | undefined {
@@ -224,9 +243,9 @@ function ensurePluginInstanceInput(value: unknown): {
 }
 
 async function mutatePluginRuntimeWithContract<T>(
-    common: { filePath: string; resolvedFilePath: string; baseVersion: string; originId: string; commandId: string },
+    common: { filePath: string; resolvedFilePath: string; rootPath?: string; baseVersion: string; originId: string; commandId: string },
     mutator: (bucket: Map<string, PluginInstanceRuntimeRecord>) => T,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; data: T }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; resolvedFilePath: string; data: T }> {
     return runWithOptionalFileMutex(common.resolvedFilePath, async () => {
         await ensureBaseVersion(common.resolvedFilePath, common.baseVersion);
         const bucket = getPluginBucket(common.resolvedFilePath);
@@ -237,6 +256,7 @@ async function mutatePluginRuntimeWithContract<T>(
             newVersion,
             commandId: common.commandId,
             filePath: common.filePath,
+            resolvedFilePath: common.resolvedFilePath,
             data,
         };
     });
@@ -301,11 +321,11 @@ export function runWithOptionalFileMutex<T>(filePath: string, task: () => Promis
     return run;
 }
 
-function resolveWorkspaceFilePath(filePath: string): string {
+function resolveWorkspaceFilePath(filePath: string, rootPath?: string): string {
     if (isAbsolute(filePath)) {
         return filePath;
     }
-    const workspaceRoot = resolve(process.env.MAGAM_TARGET_DIR || process.cwd());
+    const workspaceRoot = resolve(rootPath || process.env.MAGAM_TARGET_DIR || process.cwd());
     return resolve(workspaceRoot, filePath);
 }
 
@@ -314,8 +334,9 @@ function ensureCommonParams(params: Record<string, unknown>) {
     const baseVersion = ensureString(params.baseVersion, 'baseVersion');
     const originId = ensureString(params.originId, 'originId');
     const commandId = ensureString(params.commandId, 'commandId');
-    const resolvedFilePath = resolveWorkspaceFilePath(filePath);
-    return { filePath, resolvedFilePath, baseVersion, originId, commandId };
+    const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
+    const resolvedFilePath = resolveWorkspaceFilePath(filePath, rootPath);
+    return { filePath, resolvedFilePath, rootPath, baseVersion, originId, commandId };
 }
 
 async function getFileVersion(filePath: string): Promise<string> {
@@ -336,37 +357,42 @@ async function ensureBaseVersion(filePath: string, baseVersion: string): Promise
 
 async function mutateWithContract(
     ctx: RpcContext,
-    common: { filePath: string; resolvedFilePath: string; baseVersion: string; originId: string; commandId: string },
+    common: { filePath: string; resolvedFilePath: string; rootPath?: string; baseVersion: string; originId: string; commandId: string },
     mutator: () => Promise<void>,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; resolvedFilePath: string }> {
     return runWithOptionalFileMutex(common.resolvedFilePath, async () => {
         await ensureBaseVersion(common.resolvedFilePath, common.baseVersion);
         await mutator();
         const newVersion = await getFileVersion(common.resolvedFilePath);
         ctx.notifyFileChanged?.({
             filePath: common.filePath,
+            resolvedFilePath: common.resolvedFilePath,
             version: newVersion,
             originId: common.originId,
             commandId: common.commandId,
+            ...(common.rootPath ? { rootPath: common.rootPath } : {}),
         });
         return {
             success: true,
             newVersion,
             commandId: common.commandId,
             filePath: common.filePath,
+            resolvedFilePath: common.resolvedFilePath,
         };
     });
 }
 
 async function handleFileSubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
     const filePath = ensureString(params.filePath, 'filePath');
-    ctx.subscriptions.add(filePath);
+    const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
+    ctx.subscriptions.add(resolveWorkspaceFilePath(filePath, rootPath));
     return { success: true };
 }
 
 async function handleFileUnsubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
     const filePath = ensureString(params.filePath, 'filePath');
-    ctx.subscriptions.delete(filePath);
+    const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
+    ctx.subscriptions.delete(resolveWorkspaceFilePath(filePath, rootPath));
     return { success: true };
 }
 
@@ -850,7 +876,8 @@ async function handlePluginInstanceList(
     _ctx: RpcContext,
 ): Promise<{ success: boolean; filePath: string; instances: PluginInstanceRuntimeRecord[] }> {
     const filePath = ensureString(params.filePath, 'filePath');
-    const resolvedFilePath = resolveWorkspaceFilePath(filePath);
+    const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
+    const resolvedFilePath = resolveWorkspaceFilePath(filePath, rootPath);
     const bucket = getPluginBucket(resolvedFilePath);
     const instances = Array.from(bucket.values()).map(toPluginInstanceSnapshot);
     return {

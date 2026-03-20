@@ -13,14 +13,18 @@ import { clsx } from 'clsx';
 
 interface HeaderProps {
   onCreateDocument?: () => void;
+  workspaceLabel?: string | null;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onCreateDocument }) => {
-  const { status, currentFile, fileTree, isSearchOpen, openSearch, closeSearch } = useGraphStore();
+export const Header: React.FC<HeaderProps> = ({
+  onCreateDocument,
+  workspaceLabel: workspaceLabelOverride,
+}) => {
+  const { status, currentFile, isSearchOpen, openSearch, closeSearch } = useGraphStore();
   const { isOpen: isChatOpen, toggleOpen: toggleChatOpen } = useChatUiStore();
 
   const isConnected = status === 'connected';
-  const workspaceLabel = fileTree?.name || 'workspace';
+  const workspaceLabel = workspaceLabelOverride || 'workspace';
   const currentDocumentLabel = currentFile ? currentFile.split('/').at(-1) ?? currentFile : null;
 
   return (

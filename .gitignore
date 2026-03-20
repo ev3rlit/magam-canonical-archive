@@ -56,3 +56,5 @@ notes
 examples/.magam/
 scripts/perf/artifacts/
 scripts/perf/logs/
+.desktop-build/
+test-results/

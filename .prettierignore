@@ -8,6 +8,7 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 bun.lock
+.desktop-build/
 .DS_Store
 Thumbs.db
 *.log

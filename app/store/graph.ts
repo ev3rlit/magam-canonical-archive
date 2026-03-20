@@ -49,6 +49,24 @@ import {
   type OpenSurfaceDescriptor,
 } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 import type { ActionOptimisticLifecycleEvent } from '@/features/editing/actionRoutingBridge.types';
+import {
+  buildRegisteredWorkspace,
+  normalizeWorkspaceDocumentPath,
+  readLastActiveDocumentMap,
+  readStoredActiveWorkspaceId,
+  readStoredWorkspaces,
+  removeWorkspace as removeWorkspaceEntry,
+  type RegisteredWorkspace,
+  sortWorkspaces,
+  updateWorkspaceFromProbe,
+  upsertWorkspace,
+  type WorkspaceHealthState,
+  type WorkspaceProbeResponse,
+  type WorkspaceSidebarDocument,
+  writeLastActiveDocumentMap,
+  writeStoredActiveWorkspaceId,
+  writeStoredWorkspaces,
+} from '@/components/editor/workspaceRegistry';
 
 type SearchActionResult = {
   clearQuery?: boolean;
@@ -176,6 +194,22 @@ export interface LastActiveDocumentSession {
   updatedAt: number;
 }
 
+export interface WorkspacePathHealthRecord {
+  workspaceId: string;
+  rootPath: string;
+  status: WorkspaceHealthState;
+  lastCheckedAt: number;
+  lastKnownRootPath: string;
+  failureReason?: string | null;
+}
+
+export interface WorkspaceRegistryStateSnapshot {
+  registeredWorkspaces: RegisteredWorkspace[];
+  activeWorkspaceId: string | null;
+  workspaceDocumentsByWorkspaceId: Record<string, WorkspaceSidebarDocument[]>;
+  workspacePathHealthByWorkspaceId: Record<string, WorkspacePathHealthRecord>;
+}
+
 export interface GraphState {
   nodes: Node[];
   edges: Edge[];
@@ -183,7 +217,15 @@ export interface GraphState {
   fileTree: FileTreeNode | null;
   expandedFolders: Set<string>;
   currentFile: string | null;
+  // Workspace-document-shell migration anchor:
+  // registry/session/path-health state is owned here so runtime scope follows the active workspace.
+  registeredWorkspaces: RegisteredWorkspace[];
+  activeWorkspaceId: string | null;
+  workspaceDocumentsByWorkspaceId: Record<string, WorkspaceSidebarDocument[]>;
+  workspacePathHealthByWorkspaceId: Record<string, WorkspacePathHealthRecord>;
   workspaceSessionKey: string | null;
+  workspaceRootPath: string | null;
+  workspaceSessionScopeVersion: number;
   lastActiveDocumentPath: string | null;
   draftDocuments: string[];
   graphId: string; // Unique ID for the current graph data version
@@ -224,7 +266,33 @@ export interface GraphState {
   setSourceVersion: (version: string | null) => void;
   setSourceVersionForFile: (filePath: string, version: string | null) => void;
   setLastAppliedCommandId: (commandId?: string) => void;
-  hydrateDocumentSession: (workspaceKey: string | null) => void;
+  hydrateWorkspaceRegistry: () => {
+    workspaces: RegisteredWorkspace[];
+    activeWorkspaceId: string | null;
+  };
+  replaceRegisteredWorkspaces: (workspaces: RegisteredWorkspace[]) => RegisteredWorkspace[];
+  upsertWorkspaceFromProbe: (
+    probe: WorkspaceProbeResponse,
+    options?: { existingId?: string; activate?: boolean },
+  ) => RegisteredWorkspace;
+  reconnectWorkspaceFromProbe: (workspaceId: string, probe: WorkspaceProbeResponse) => RegisteredWorkspace | null;
+  setActiveWorkspaceId: (workspaceId: string | null) => boolean;
+  removeRegisteredWorkspace: (workspaceId: string) => string | null;
+  setWorkspaceDocuments: (workspaceId: string, documents: WorkspaceSidebarDocument[]) => void;
+  registerWorkspaceDocument: (workspaceId: string, document: WorkspaceSidebarDocument) => void;
+  setWorkspacePathStatus: (input: {
+    workspaceId: string;
+    rootPath?: string;
+    status: WorkspaceHealthState;
+    failureReason?: string | null;
+    checkedAt?: number;
+  }) => void;
+  hydrateDocumentSession: (workspaceKey: string | null, workspaceRootPath?: string | null) => void;
+  setWorkspaceSession: (input: {
+    workspaceId: string | null;
+    rootPath?: string | null;
+  }) => void;
+  rememberLastActiveDocumentForWorkspace: (workspaceId: string, documentPath: string | null) => void;
   rememberLastActiveDocument: (documentPath: string | null) => void;
   registerDraftDocument: (filePath: string) => void;
   setFiles: (files: string[]) => void;
@@ -420,14 +488,144 @@ function persistLastActiveDocumentSession(session: LastActiveDocumentSession | n
   );
 }
 
-function insertFileIntoTree(root: FileTreeNode | null, filePath: string): FileTreeNode | null {
-  if (!root) {
-    return root;
+function buildWorkspacePathHealthRecord(
+  workspace: RegisteredWorkspace,
+  checkedAt: number = Date.now(),
+): WorkspacePathHealthRecord {
+  return {
+    workspaceId: workspace.id,
+    rootPath: workspace.rootPath,
+    status: workspace.status,
+    lastCheckedAt: checkedAt,
+    lastKnownRootPath: workspace.rootPath,
+    failureReason: workspace.status === 'ok' ? null : null,
+  };
+}
+
+function buildWorkspacePathHealthMap(
+  workspaces: RegisteredWorkspace[],
+  existing: Record<string, WorkspacePathHealthRecord> = {},
+): Record<string, WorkspacePathHealthRecord> {
+  const next: Record<string, WorkspacePathHealthRecord> = {};
+  workspaces.forEach((workspace) => {
+    const current = existing[workspace.id];
+    next[workspace.id] = current
+      ? {
+          ...current,
+          rootPath: workspace.rootPath,
+          status: workspace.status,
+          lastKnownRootPath: workspace.rootPath,
+          lastCheckedAt: Date.now(),
+          failureReason: workspace.status === 'ok' ? null : current.failureReason ?? null,
+        }
+      : buildWorkspacePathHealthRecord(workspace);
+  });
+  return next;
+}
+
+function sanitizeLastActiveDocumentMap(
+  map: Record<string, string>,
+  keepWorkspaceIds: string[],
+): Record<string, string> {
+  const keep = new Set(keepWorkspaceIds);
+  return Object.fromEntries(
+    Object.entries(map).filter(([workspaceId]) => keep.has(workspaceId)),
+  );
+}
+
+function writeSanitizedLastActiveDocumentMap(map: Record<string, string>): void {
+  writeLastActiveDocumentMap(map);
+}
+
+function normalizeWorkspaceAwareFilePath(
+  workspaceRootPath: string | null | undefined,
+  filePath: string,
+): string {
+  return normalizeWorkspaceDocumentPath(workspaceRootPath, filePath);
+}
+
+function normalizeWorkspaceAwareFileList(
+  workspaceRootPath: string | null | undefined,
+  files: string[],
+): string[] {
+  return [...new Set(
+    files
+      .map((filePath) => normalizeWorkspaceAwareFilePath(workspaceRootPath, filePath))
+      .filter((filePath) => filePath.length > 0),
+  )].sort((left, right) => left.localeCompare(right));
+}
+
+function normalizeWorkspaceAwareSourceVersions(
+  workspaceRootPath: string | null | undefined,
+  sourceVersions: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(sourceVersions)
+      .map(([filePath, version]) => [
+        normalizeWorkspaceAwareFilePath(workspaceRootPath, filePath),
+        version,
+      ] as const)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function attachAbsoluteFilePathToNode(
+  node: Node,
+  workspaceRootPath: string | null | undefined,
+): Node {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const sourceMeta = (
+    data.sourceMeta && typeof data.sourceMeta === 'object'
+      ? data.sourceMeta as Record<string, unknown>
+      : null
+  );
+  const sourceFilePath = typeof sourceMeta?.filePath === 'string'
+    ? sourceMeta.filePath
+    : null;
+  if (!workspaceRootPath || !sourceMeta || !sourceFilePath) {
+    return node;
   }
 
+  const absoluteFilePath = normalizeWorkspaceAwareFilePath(workspaceRootPath, sourceFilePath);
+  if (sourceMeta.absoluteFilePath === absoluteFilePath) {
+    return node;
+  }
+
+  return {
+    ...node,
+    data: {
+      ...data,
+      sourceMeta: {
+        ...sourceMeta,
+        absoluteFilePath,
+      },
+    },
+  };
+}
+
+function attachAbsoluteFilePathsToNodes(
+  nodes: Node[],
+  workspaceRootPath: string | null | undefined,
+): Node[] {
+  if (!workspaceRootPath) {
+    return nodes;
+  }
+  return nodes.map((node) => attachAbsoluteFilePathToNode(node, workspaceRootPath));
+}
+
+function insertFileIntoTree(root: FileTreeNode | null, filePath: string): FileTreeNode | null {
   const segments = filePath.split('/').filter(Boolean);
   if (segments.length === 0) {
     return root;
+  }
+
+  if (!root) {
+    root = {
+      name: 'root',
+      path: '',
+      type: 'directory',
+      children: [],
+    };
   }
 
   const cloneNode = (node: FileTreeNode): FileTreeNode => ({
@@ -615,7 +813,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   fileTree: null,
   expandedFolders: new Set<string>(),
   currentFile: null,
+  registeredWorkspaces: [],
+  activeWorkspaceId: null,
+  workspaceDocumentsByWorkspaceId: {},
+  workspacePathHealthByWorkspaceId: {},
   workspaceSessionKey: null,
+  workspaceRootPath: null,
+  workspaceSessionScopeVersion: 0,
   lastActiveDocumentPath: null,
   draftDocuments: [],
   graphId: uuidv4(),
@@ -665,11 +869,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     sourceVersion,
     sourceVersions,
   }) => set((state) => {
-    const nextSourceVersions = sourceVersions ?? state.sourceVersions;
+    const nextSourceVersions = sourceVersions
+      ? normalizeWorkspaceAwareSourceVersions(state.workspaceRootPath, sourceVersions)
+      : state.sourceVersions;
     const normalizedMindMapGroups = mindMapGroups.map(normalizeMindMapGroup);
     const resolvedLayoutType = layoutType ?? normalizedMindMapGroups[0]?.layoutType ?? 'compact';
     return {
-      nodes,
+      nodes: attachAbsoluteFilePathsToNodes(nodes, state.workspaceRootPath),
       edges,
       needsAutoLayout,
       layoutType: resolvedLayoutType,
@@ -689,20 +895,23 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   }),
   setSourceVersion: (sourceVersion) => set({ sourceVersion }),
   setSourceVersionForFile: (filePath, version) => set((state) => {
-    if (!filePath) {
+    const normalizedFilePath = filePath
+      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, filePath)
+      : '';
+    if (!normalizedFilePath) {
       return state;
     }
 
     const nextSourceVersions = { ...state.sourceVersions };
     if (version) {
-      nextSourceVersions[filePath] = version;
+      nextSourceVersions[normalizedFilePath] = version;
     } else {
-      delete nextSourceVersions[filePath];
+      delete nextSourceVersions[normalizedFilePath];
     }
 
     return {
       sourceVersions: nextSourceVersions,
-      ...(state.currentFile === filePath ? { sourceVersion: version } : {}),
+      ...(state.currentFile === normalizedFilePath ? { sourceVersion: version } : {}),
       entrypointRuntime: {
         ...state.entrypointRuntime,
         hover: {
@@ -715,9 +924,249 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     };
   }),
   setLastAppliedCommandId: (lastAppliedCommandId) => set({ lastAppliedCommandId }),
-  hydrateDocumentSession: (workspaceSessionKey) => set((state) => {
+  hydrateWorkspaceRegistry: () => {
+    const workspaces = sortWorkspaces(readStoredWorkspaces());
+    const storedActiveWorkspaceId = readStoredActiveWorkspaceId();
+    const activeWorkspaceId = workspaces.some((workspace) => workspace.id === storedActiveWorkspaceId)
+      ? storedActiveWorkspaceId
+      : workspaces[0]?.id ?? null;
+    const workspacePathHealthByWorkspaceId = buildWorkspacePathHealthMap(workspaces);
+
+    set({
+      registeredWorkspaces: workspaces,
+      activeWorkspaceId,
+      workspacePathHealthByWorkspaceId,
+    });
+    writeStoredWorkspaces(workspaces);
+    writeStoredActiveWorkspaceId(activeWorkspaceId);
+    writeSanitizedLastActiveDocumentMap(
+      sanitizeLastActiveDocumentMap(readLastActiveDocumentMap(), workspaces.map((workspace) => workspace.id)),
+    );
+
+    return {
+      workspaces,
+      activeWorkspaceId,
+    };
+  },
+  replaceRegisteredWorkspaces: (workspaces) => {
+    const nextWorkspaces = sortWorkspaces(workspaces);
+    const currentActiveWorkspaceId = get().activeWorkspaceId;
+    const nextActiveWorkspaceId = nextWorkspaces.some((workspace) => workspace.id === currentActiveWorkspaceId)
+      ? currentActiveWorkspaceId
+      : nextWorkspaces[0]?.id ?? null;
+
+    set((state) => ({
+      registeredWorkspaces: nextWorkspaces,
+      activeWorkspaceId: nextActiveWorkspaceId,
+      workspacePathHealthByWorkspaceId: buildWorkspacePathHealthMap(
+        nextWorkspaces,
+        state.workspacePathHealthByWorkspaceId,
+      ),
+      workspaceDocumentsByWorkspaceId: Object.fromEntries(
+        Object.entries(state.workspaceDocumentsByWorkspaceId)
+          .filter(([workspaceId]) => nextWorkspaces.some((workspace) => workspace.id === workspaceId)),
+      ),
+    }));
+
+    writeStoredWorkspaces(nextWorkspaces);
+    writeStoredActiveWorkspaceId(nextActiveWorkspaceId);
+    writeSanitizedLastActiveDocumentMap(
+      sanitizeLastActiveDocumentMap(readLastActiveDocumentMap(), nextWorkspaces.map((workspace) => workspace.id)),
+    );
+
+    return nextWorkspaces;
+  },
+  upsertWorkspaceFromProbe: (probe, options) => {
+    const state = get();
+    const existing = options?.existingId
+      ? state.registeredWorkspaces.find((workspace) => workspace.id === options.existingId) ?? null
+      : state.registeredWorkspaces.find((workspace) => workspace.rootPath === probe.rootPath) ?? null;
+    const baseWorkspace = existing
+      ? updateWorkspaceFromProbe(existing, probe)
+      : buildRegisteredWorkspace(probe, options?.existingId);
+    const nextWorkspace: RegisteredWorkspace = {
+      ...baseWorkspace,
+      lastOpenedAt: (options?.activate || !existing)
+        ? Date.now()
+        : baseWorkspace.lastOpenedAt,
+    };
+    const nextWorkspaces = get().replaceRegisteredWorkspaces(
+      upsertWorkspace(get().registeredWorkspaces, nextWorkspace),
+    );
+
+    if (options?.activate || !get().activeWorkspaceId) {
+      get().setActiveWorkspaceId(nextWorkspace.id);
+    }
+
+    return nextWorkspaces.find((workspace) => workspace.id === nextWorkspace.id) ?? nextWorkspace;
+  },
+  reconnectWorkspaceFromProbe: (workspaceId, probe) => {
+    const current = get().registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
+    if (!current) {
+      return null;
+    }
+
+    const nextWorkspace = get().upsertWorkspaceFromProbe(probe, {
+      existingId: workspaceId,
+      activate: true,
+    });
+    get().setWorkspacePathStatus({
+      workspaceId,
+      rootPath: probe.rootPath,
+      status: probe.health.state,
+      failureReason: probe.health.message ?? null,
+    });
+    return nextWorkspace;
+  },
+  setActiveWorkspaceId: (workspaceId) => {
+    const state = get();
+    if (!workspaceId) {
+      set({ activeWorkspaceId: null });
+      writeStoredActiveWorkspaceId(null);
+      return true;
+    }
+
+    const targetWorkspace = state.registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
+    if (!targetWorkspace) {
+      return false;
+    }
+
+    const nextWorkspaces = sortWorkspaces(
+      state.registeredWorkspaces.map((workspace) => (
+        workspace.id === workspaceId
+          ? { ...workspace, lastOpenedAt: Date.now() }
+          : workspace
+      )),
+    );
+    set((current) => ({
+      registeredWorkspaces: nextWorkspaces,
+      activeWorkspaceId: workspaceId,
+      workspacePathHealthByWorkspaceId: buildWorkspacePathHealthMap(
+        nextWorkspaces,
+        current.workspacePathHealthByWorkspaceId,
+      ),
+    }));
+    writeStoredWorkspaces(nextWorkspaces);
+    writeStoredActiveWorkspaceId(workspaceId);
+    return true;
+  },
+  removeRegisteredWorkspace: (workspaceId) => {
+    const state = get();
+    const nextWorkspaces = removeWorkspaceEntry(state.registeredWorkspaces, workspaceId);
+    const nextActiveWorkspaceId = state.activeWorkspaceId === workspaceId
+      ? nextWorkspaces[0]?.id ?? null
+      : state.activeWorkspaceId;
+
+    set((current) => ({
+      registeredWorkspaces: nextWorkspaces,
+      activeWorkspaceId: nextActiveWorkspaceId,
+      workspaceDocumentsByWorkspaceId: Object.fromEntries(
+        Object.entries(current.workspaceDocumentsByWorkspaceId).filter(([id]) => id !== workspaceId),
+      ),
+      workspacePathHealthByWorkspaceId: Object.fromEntries(
+        Object.entries(current.workspacePathHealthByWorkspaceId).filter(([id]) => id !== workspaceId),
+      ),
+    }));
+
+    writeStoredWorkspaces(nextWorkspaces);
+    writeStoredActiveWorkspaceId(nextActiveWorkspaceId);
+    writeSanitizedLastActiveDocumentMap(
+      sanitizeLastActiveDocumentMap(readLastActiveDocumentMap(), nextWorkspaces.map((workspace) => workspace.id)),
+    );
+
+    return nextActiveWorkspaceId;
+  },
+  setWorkspaceDocuments: (workspaceId, documents) => set((state) => {
+    const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
+      workspace.id === workspaceId
+        ? { ...workspace, documentCount: documents.length }
+        : workspace
+    ));
+    writeStoredWorkspaces(nextWorkspaces);
+
+    return {
+      workspaceDocumentsByWorkspaceId: {
+        ...state.workspaceDocumentsByWorkspaceId,
+        [workspaceId]: [...documents],
+      },
+      registeredWorkspaces: nextWorkspaces,
+    };
+  }),
+  registerWorkspaceDocument: (workspaceId, document) => set((state) => {
+    const currentDocuments = state.workspaceDocumentsByWorkspaceId[workspaceId] ?? [];
+    if (currentDocuments.some((entry) => entry.absolutePath === document.absolutePath)) {
+      return state;
+    }
+
+    const normalizedDocumentPath = normalizeWorkspaceAwareFilePath(
+      state.workspaceRootPath,
+      document.absolutePath,
+    );
+    const nextDocuments = [document, ...currentDocuments];
+    const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
+      workspace.id === workspaceId
+        ? { ...workspace, documentCount: nextDocuments.length }
+        : workspace
+    ));
+    const isActiveWorkspace = state.workspaceSessionKey === workspaceId;
+    writeStoredWorkspaces(nextWorkspaces);
+
+    return {
+      workspaceDocumentsByWorkspaceId: {
+        ...state.workspaceDocumentsByWorkspaceId,
+        [workspaceId]: nextDocuments,
+      },
+      registeredWorkspaces: nextWorkspaces,
+      ...(isActiveWorkspace
+        ? {
+            files: normalizeWorkspaceAwareFileList(
+              state.workspaceRootPath,
+              [...state.files, normalizedDocumentPath],
+            ),
+            fileTree: insertFileIntoTree(state.fileTree, normalizedDocumentPath),
+          }
+        : {}),
+    };
+  }),
+  setWorkspacePathStatus: ({ workspaceId, rootPath, status, failureReason, checkedAt }) => set((state) => {
+    const targetWorkspace = state.registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
+    if (!targetWorkspace) {
+      return state;
+    }
+
+    const nextRootPath = rootPath ?? targetWorkspace.rootPath;
+    const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
+      workspace.id === workspaceId
+        ? {
+            ...workspace,
+            rootPath: nextRootPath,
+            status,
+          }
+        : workspace
+    ));
+    writeStoredWorkspaces(nextWorkspaces);
+
+    return {
+      registeredWorkspaces: nextWorkspaces,
+      workspacePathHealthByWorkspaceId: {
+        ...state.workspacePathHealthByWorkspaceId,
+        [workspaceId]: {
+          workspaceId,
+          rootPath: nextRootPath,
+          status,
+          lastCheckedAt: checkedAt ?? Date.now(),
+          lastKnownRootPath: nextRootPath,
+          failureReason: failureReason ?? (status === 'ok' ? null : state.workspacePathHealthByWorkspaceId[workspaceId]?.failureReason ?? null),
+        },
+      },
+    };
+  }),
+  hydrateDocumentSession: (workspaceSessionKey, workspaceRootPath) => set((state) => {
     const normalizedWorkspaceKey = workspaceSessionKey && workspaceSessionKey.length > 0
       ? workspaceSessionKey
+      : null;
+    const normalizedWorkspaceRootPath = workspaceRootPath && workspaceRootPath.length > 0
+      ? workspaceRootPath
       : null;
     const stored = readLastActiveDocumentSession();
     const knownFiles = new Set([...state.files, ...state.draftDocuments]);
@@ -729,15 +1178,56 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     )
       ? stored.documentPath
       : null;
+    const scopeChanged = (
+      state.workspaceSessionKey !== normalizedWorkspaceKey
+      || state.workspaceRootPath !== normalizedWorkspaceRootPath
+    );
 
     return {
       workspaceSessionKey: normalizedWorkspaceKey,
+      workspaceRootPath: normalizedWorkspaceRootPath,
+      ...(scopeChanged
+        ? { workspaceSessionScopeVersion: state.workspaceSessionScopeVersion + 1 }
+        : {}),
       lastActiveDocumentPath,
     };
   }),
+  setWorkspaceSession: ({ workspaceId, rootPath }) => set((state) => {
+    const normalizedWorkspaceId = workspaceId && workspaceId.length > 0
+      ? workspaceId
+      : null;
+    const normalizedWorkspaceRootPath = rootPath && rootPath.length > 0
+      ? rootPath
+      : null;
+    const scopeChanged = (
+      state.workspaceSessionKey !== normalizedWorkspaceId
+      || state.workspaceRootPath !== normalizedWorkspaceRootPath
+    );
+    if (!scopeChanged) {
+      return state;
+    }
+
+    return {
+      workspaceSessionKey: normalizedWorkspaceId,
+      workspaceRootPath: normalizedWorkspaceRootPath,
+      workspaceSessionScopeVersion: state.workspaceSessionScopeVersion + 1,
+      sourceVersion: state.currentFile
+        ? (state.sourceVersions[state.currentFile] ?? null)
+        : null,
+    };
+  }),
+  rememberLastActiveDocumentForWorkspace: (workspaceId, documentPath) => {
+    const current = readLastActiveDocumentMap();
+    if (!documentPath) {
+      delete current[workspaceId];
+    } else {
+      current[workspaceId] = documentPath;
+    }
+    writeLastActiveDocumentMap(current);
+  },
   rememberLastActiveDocument: (documentPath) => set((state) => {
     const nextDocumentPath = documentPath && documentPath.length > 0
-      ? documentPath
+      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, documentPath)
       : state.lastActiveDocumentPath;
     if (!state.workspaceSessionKey || !nextDocumentPath) {
       return state;
@@ -754,18 +1244,24 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     };
   }),
   registerDraftDocument: (filePath) => set((state) => {
-    if (!filePath || state.files.includes(filePath)) {
+    const normalizedFilePath = filePath
+      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, filePath)
+      : '';
+    if (!normalizedFilePath || state.files.includes(normalizedFilePath)) {
       return state;
     }
 
     return {
-      draftDocuments: [...state.draftDocuments, filePath],
-      files: [...state.files, filePath].sort((left, right) => left.localeCompare(right)),
-      fileTree: insertFileIntoTree(state.fileTree, filePath),
+      draftDocuments: [...state.draftDocuments, normalizedFilePath],
+      files: [...state.files, normalizedFilePath].sort((left, right) => left.localeCompare(right)),
+      fileTree: insertFileIntoTree(state.fileTree, normalizedFilePath),
     };
   }),
   setFiles: (files) => set((state) => ({
-    files: [...new Set([...files, ...state.draftDocuments])].sort((left, right) => left.localeCompare(right)),
+    files: normalizeWorkspaceAwareFileList(
+      state.workspaceRootPath,
+      [...files, ...state.draftDocuments],
+    ),
   })),
   setFileTree: (fileTree) => set((state) => ({
     fileTree: state.draftDocuments.reduce<FileTreeNode | null>(
@@ -783,9 +1279,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return { expandedFolders: newExpanded };
   }),
   setCurrentFile: (currentFile) => set((state) => {
+    const normalizedCurrentFile = currentFile
+      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, currentFile)
+      : null;
     return {
-      currentFile,
-      sourceVersion: currentFile ? (state.sourceVersions[currentFile] ?? null) : null,
+      currentFile: normalizedCurrentFile,
+      sourceVersion: normalizedCurrentFile ? (state.sourceVersions[normalizedCurrentFile] ?? null) : null,
       activeGroupFocusGroupId: null,
       entrypointRuntime: resetEntrypointRuntimeState({
         current: state.entrypointRuntime,
@@ -904,8 +1403,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     });
   },
   openTab: (pageId) => {
-    const { openTabs, maxTabs, activeTabId, currentFile } = get();
-    const existingTab = openTabs.find((tab) => tab.pageId === pageId);
+    const { openTabs, maxTabs, activeTabId, currentFile, workspaceRootPath } = get();
+    const normalizedPageId = normalizeWorkspaceAwareFilePath(workspaceRootPath, pageId);
+    const existingTab = openTabs.find((tab) => tab.pageId === normalizedPageId);
     const now = getNow();
 
     if (existingTab) {
@@ -917,10 +1417,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       set({
         openTabs: nextTabs,
         activeTabId: existingTab.tabId,
-        currentFile: pageId,
+        currentFile: normalizedPageId,
       });
-      if (activeTabId !== existingTab.tabId || currentFile !== pageId) {
-        console.debug('[Telemetry] tabs_switched', { tabId: existingTab.tabId, pageId, source: 'openTab' });
+      if (activeTabId !== existingTab.tabId || currentFile !== normalizedPageId) {
+        console.debug('[Telemetry] tabs_switched', { tabId: existingTab.tabId, pageId: normalizedPageId, source: 'openTab' });
       }
       return { status: 'activated', tabId: existingTab.tabId };
     }
@@ -929,7 +1429,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       const replaceTab = selectLeastRecentlyUsedTab(openTabs);
       if (replaceTab) {
         console.debug('[Telemetry] tabs_limit_prompted', {
-          pageId,
+          pageId: normalizedPageId,
           replaceTabId: replaceTab.tabId,
           tabCount: openTabs.length,
         });
@@ -940,8 +1440,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
     const nextTab: TabState = {
       tabId: uuidv4(),
-      pageId,
-      title: getDefaultTabTitle(pageId),
+      pageId: normalizedPageId,
+      title: getDefaultTabTitle(normalizedPageId),
       dirty: false,
       lastViewport: null,
       lastSelection: null,
@@ -952,13 +1452,14 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     set({
       openTabs: [...openTabs, nextTab],
       activeTabId: nextTab.tabId,
-      currentFile: pageId,
+      currentFile: normalizedPageId,
     });
-    console.debug('[Telemetry] tabs_opened', { tabId: nextTab.tabId, pageId, source: 'openTab' });
+    console.debug('[Telemetry] tabs_opened', { tabId: nextTab.tabId, pageId: normalizedPageId, source: 'openTab' });
     return { status: 'opened', tabId: nextTab.tabId };
   },
   replaceLeastRecentlyUsedTab: (pageId, replaceTabId) => {
-    const { openTabs } = get();
+    const { openTabs, workspaceRootPath } = get();
+    const normalizedPageId = normalizeWorkspaceAwareFilePath(workspaceRootPath, pageId);
     const now = getNow();
     const exists = openTabs.some((tab) => tab.tabId === replaceTabId);
     if (!exists) {
@@ -969,8 +1470,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       tab.tabId === replaceTabId
         ? {
             ...tab,
-            pageId,
-            title: getDefaultTabTitle(pageId),
+            pageId: normalizedPageId,
+            title: getDefaultTabTitle(normalizedPageId),
             dirty: false,
             lastViewport: null,
             lastSelection: null,
@@ -983,9 +1484,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     set({
       openTabs: nextTabs,
       activeTabId: replaceTabId,
-      currentFile: pageId,
+      currentFile: normalizedPageId,
     });
-    console.debug('[Telemetry] tabs_limit_replaced', { tabId: replaceTabId, pageId });
+    console.debug('[Telemetry] tabs_limit_replaced', { tabId: replaceTabId, pageId: normalizedPageId });
   },
   activateTab: (tabId) => {
     const { openTabs } = get();
