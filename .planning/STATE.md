@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: active
-stopped_at: 01-06 complete; run gsd-verify-work for Phase 01 acceptance and completion
-last_updated: "2026-03-19T12:29:10Z"
+stopped_at: 01-07 complete; execute 01-08 or verify remaining gap closure work
+last_updated: "2026-03-20T00:19:39.425Z"
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 8
+  completed_plans: 7
 ---
 
 # Project State
@@ -19,31 +19,31 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** AI and humans can reliably create, review, and evolve a shared knowledge canvas through the same canonical mutation backbone.
-**Current focus:** Phase 01 — canvas-core-authoring verification and completion
+**Current focus:** Phase 01 — canvas-core-authoring gap closure wave 7
 
 ## Current Position
 
-Phase: 01 (canvas-core-authoring) — READY FOR VERIFICATION
-Plan: 6 of 6
+Phase: 01 (canvas-core-authoring) — EXECUTING
+Plan: 7 of 8
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 7
 - Average duration: n/a
-- Total execution time: 0.0 hours
+- Total execution time: n/a
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01 | 7 | n/a | n/a |
 
 **Recent Trend:**
 
-- Last 5 plans: none
-- Trend: n/a
+- Last 5 plans: 01-03, 01-04, 01-05, 01-06, 01-07
+- Trend: active
 
 ## Accumulated Context
 
@@ -64,6 +64,9 @@ Plan: 6 of 6
 - 01-05: Keep inner-group focus store-owned and unwind it through desktop double-click entry, explicit enter-group menu actions, and progressive Escape or pane dismissal
 - 01-06: Use markdown-first source entry as the default Phase 1 body-edit mode for text, markdown, and sticky objects while keeping compatibility upgrades on the TSX patch path
 - 01-06: Keep desktop body re-entry on double click and Enter, add explicit narrow/mobile edit affordances, and preserve selection when pane-click commits exit body editing
+- 01-07: Create untitled documents through a server-backed POST /files contract so the first edit sees a real file and sha256 sourceVersion instead of a client-only draft placeholder
+- 01-07: Hydrate the new tab immediately with an empty canvas and the returned sourceVersion, then refresh files and file-tree in the background to keep the no-modal canvas-first UX
+- 01-07: Treat draft-prefixed sourceVersions as invalid mutation bases in useFileSync so stale placeholder tabs cannot re-enter the WS edit path
 
 ### Pending Todos
 
@@ -72,10 +75,10 @@ None yet.
 ### Blockers/Concerns
 
 - Legacy file-first editing still exists and must remain a compatibility path while canonical DB flows become primary
-- Phase 01 execution is complete, but the milestone still needs verification/completion routing before Phase 02 begins
+- Phase 01 still has one remaining gap-closure plan plus verification before completion routing can begin
 
 ## Session Continuity
 
-Last session: 2026-03-19T12:29:10Z
-Stopped at: 01-06 complete; run gsd-verify-work for Phase 01 acceptance and completion
-Resume file: .planning/phases/01-canvas-core-authoring/01-06-SUMMARY.md
+Last session: 2026-03-20T00:19:39.421Z
+Stopped at: 01-07 complete; execute 01-08 or verify remaining gap closure work
+Resume file: .planning/phases/01-canvas-core-authoring/01-07-SUMMARY.md
