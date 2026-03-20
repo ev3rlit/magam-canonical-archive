@@ -1,0 +1,196 @@
+import type {
+  ChatGroupCreateInput,
+  ChatGroupUpdateInput,
+  ChatSessionCreateInput,
+  ChatSessionQuery,
+  ChatSessionUpdateInput,
+  ChatStreamRequest,
+  RendererRpcClient,
+} from '@/features/host/renderer/rpcClient';
+import {
+  CORE_RPC_LOGICAL_METHODS,
+  type RpcAdapterDescriptor,
+} from '@/features/host/contracts';
+
+function createJsonHeaders(extra?: HeadersInit): Headers {
+  const headers = new Headers(extra);
+  headers.set('Content-Type', 'application/json');
+  return headers;
+}
+
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message =
+      typeof (data as { error?: unknown }).error === 'string'
+        ? (data as { error: string }).error
+        : `Request failed (${response.status})`;
+    throw new Error(message);
+  }
+  return data as T;
+}
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    cache: 'no-store',
+    ...init,
+  });
+  return parseJsonResponse<T>(response);
+}
+
+async function requestRenderJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    cache: 'no-store',
+    ...init,
+  });
+  return response.json() as Promise<T>;
+}
+
+function createDescriptor(): RpcAdapterDescriptor {
+  return {
+    hostMode: 'web-secondary',
+    transport: 'http',
+    methods: CORE_RPC_LOGICAL_METHODS,
+    async healthCheck() {
+      try {
+        await requestJson('/api/files');
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  };
+}
+
+function toSearchParams(query?: ChatSessionQuery | { limit?: number }): string {
+  const params = new URLSearchParams();
+  Object.entries(query ?? {}).forEach(([key, rawValue]) => {
+    const value = rawValue as string | number | null | undefined;
+    if (value === undefined || value === null) {
+      return;
+    }
+
+    if (typeof value === 'string' && value.length === 0) {
+      return;
+    }
+
+    params.set(key, String(value));
+  });
+  const serialized = params.toString();
+  return serialized ? `?${serialized}` : '';
+}
+
+export function createWebRpcAdapter(): RendererRpcClient {
+  const descriptor = createDescriptor();
+
+  return {
+    descriptor,
+    healthCheck: descriptor.healthCheck,
+    listFiles: () => requestJson('/api/files'),
+    createFile: (filePath) =>
+      requestJson('/api/files', {
+        method: 'POST',
+        body: JSON.stringify({ filePath }),
+        headers: createJsonHeaders(),
+      }),
+    getFileTree: () => requestJson('/api/file-tree'),
+    renderFile: (filePath) =>
+      requestRenderJson('/api/render', {
+        method: 'POST',
+        body: JSON.stringify({ filePath }),
+        headers: createJsonHeaders(),
+      }),
+    getChatProviders: () => requestJson('/api/chat/providers'),
+    sendChat: (request: ChatStreamRequest, options) =>
+      fetch('/api/chat/send', {
+        method: 'POST',
+        body: JSON.stringify(request),
+        headers: createJsonHeaders(),
+        signal: options?.signal,
+      }),
+    async stopChat(sessionId: string) {
+      await requestJson('/api/chat/stop', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId }),
+        headers: createJsonHeaders(),
+      });
+    },
+    listChatSessions: (query?: ChatSessionQuery) =>
+      requestJson(`/api/chat/sessions${toSearchParams(query)}`),
+    createChatSession: (input: ChatSessionCreateInput) =>
+      requestJson('/api/chat/sessions', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        headers: createJsonHeaders(),
+      }),
+    getChatSession: (sessionId: string) =>
+      requestJson(`/api/chat/sessions/${encodeURIComponent(sessionId)}`),
+    getChatSessionMessages: (sessionId: string, query?: { limit?: number }) =>
+      requestJson(
+        `/api/chat/sessions/${encodeURIComponent(sessionId)}/messages${toSearchParams(query)}`,
+      ),
+    updateChatSession: (sessionId: string, patch: ChatSessionUpdateInput) =>
+      requestJson(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+        headers: createJsonHeaders(),
+      }),
+    async deleteChatSession(sessionId: string) {
+      await requestJson(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE',
+      });
+    },
+    listChatGroups: () => requestJson('/api/chat/groups'),
+    async createChatGroup(input: ChatGroupCreateInput) {
+      await requestJson('/api/chat/groups', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        headers: createJsonHeaders(),
+      });
+    },
+    async updateChatGroup(groupId: string, patch: ChatGroupUpdateInput) {
+      await requestJson(`/api/chat/groups/${encodeURIComponent(groupId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+        headers: createJsonHeaders(),
+      });
+    },
+    async deleteChatGroup(groupId: string) {
+      await requestJson(`/api/chat/groups/${encodeURIComponent(groupId)}`, {
+        method: 'DELETE',
+      });
+    },
+  };
+}
+
+export async function proxyCompatibilityRequest(input: {
+  body?: BodyInit | null;
+  headers?: HeadersInit;
+  method?: string;
+  pathname: string;
+}): Promise<Response> {
+  const httpPort = process.env.MAGAM_HTTP_PORT || '3002';
+
+  try {
+    const upstream = await fetch(`http://127.0.0.1:${httpPort}${input.pathname}`, {
+      method: input.method,
+      body: input.body,
+      headers: input.headers,
+      cache: 'no-store',
+    });
+    const contentType = upstream.headers.get('content-type') ?? 'application/json';
+    const payload = await upstream.text();
+    return new Response(payload, {
+      status: upstream.status,
+      headers: {
+        'Content-Type': contentType,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return Response.json(
+      { error: `Failed to connect to local backend: ${message}` },
+      { status: 502 },
+    );
+  }
+}

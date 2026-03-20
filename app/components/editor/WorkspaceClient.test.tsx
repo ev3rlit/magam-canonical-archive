@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 import { resolveRestoreFocusTarget, restoreFocusForOverlay } from '@/features/overlay-host';
 import { installTestDom } from '@/features/overlay-host/testDom';
 import { createCanvasActionDispatchBinding } from '@/processes/canvas-runtime/bindings/actionDispatch';
@@ -6,6 +6,7 @@ import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
+import { createWorkspaceDocument } from './WorkspaceClient';
 import {
   canCommitTextEdit,
   canRunNodeCommand,
@@ -90,6 +91,51 @@ const canonicalProfileShape: CanonicalObject = {
   alias: 'Shape',
 };
 
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+describe('WorkspaceClient document entry convergence', () => {
+  it.todo('resumes the last active document before showing an idle shell', () => {});
+  it.todo('creates a new document into an empty canvas without a blocking naming modal', () => {});
+  it.todo('switches documents through Quick Open without duplicating the active tab', () => {});
+});
+
+describe('WorkspaceClient document materialization', () => {
+  it('creates untitled documents through the server contract with a real sourceVersion', async () => {
+    const rpcClient = {
+      createFile: mock(async (filePath: string) => {
+        expect(filePath).toBe('docs/untitled-2.graph.tsx');
+        return {
+          filePath: 'docs/untitled-2.graph.tsx',
+          sourceVersion: 'sha256:created-document',
+        };
+      }),
+    };
+
+    await expect(
+      createWorkspaceDocument('docs/untitled-2.graph.tsx', rpcClient as never),
+    ).resolves.toEqual({
+      filePath: 'docs/untitled-2.graph.tsx',
+      sourceVersion: 'sha256:created-document',
+    });
+  });
+
+  it('rejects create-document responses that still expose a draft placeholder version', async () => {
+    const rpcClient = {
+      createFile: mock(async () => ({
+        filePath: 'docs/untitled-2.graph.tsx',
+        sourceVersion: 'draft:empty-canvas',
+      })),
+    };
+
+    await expect(
+      createWorkspaceDocument('docs/untitled-2.graph.tsx', rpcClient as never),
+    ).rejects.toThrow('새 문서 생성 응답이 올바르지 않습니다.');
+  });
+});
 describe('WorkspaceClient text edit isolation', () => {
   it('선택된 activeTextEditNodeId만 커밋 가능하다', () => {
     expect(canCommitTextEdit({
