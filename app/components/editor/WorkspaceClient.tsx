@@ -10,7 +10,11 @@ import React, {
 import { RpcClientError, useFileSync } from '@/hooks/useFileSync';
 import { GraphCanvas } from '@/components/GraphCanvas';
 import type { GraphCanvasSelectionActionIntentInput } from '@/components/GraphCanvas';
-import { Sidebar } from '@/components/ui/Sidebar';
+import {
+  Sidebar,
+  type SidebarDocumentEntry,
+  type SidebarWorkspaceEntry,
+} from '@/components/ui/Sidebar';
 import { Header } from '@/components/ui/Header';
 import { Footer } from '@/components/ui/Footer';
 import { TabBar } from '@/components/ui/TabBar';
@@ -23,7 +27,7 @@ import {
   LazyStickerInspector,
 } from './LazyPanels';
 import { useChatUiStore } from '@/store/chatUi';
-import { TabState, type FileTreeNode, useGraphStore } from '@/store/graph';
+import { TabState, useGraphStore } from '@/store/graph';
 import {
   buildAbsoluteMoveCommand,
   buildReparentCommand,
@@ -61,6 +65,27 @@ import {
   resolveNodeEditTarget,
   resolveNodeActionRoutingContext,
 } from './workspaceEditUtils';
+import {
+  buildRegisteredWorkspace,
+  buildSidebarDocuments,
+  readLastActiveDocumentMap,
+  readStoredActiveWorkspaceId,
+  readStoredWorkspaces,
+  removeWorkspace,
+  resolveWorkspaceDocumentAbsolutePath,
+  sortWorkspaces,
+  type RegisteredWorkspace,
+  type WorkspaceProbeResponse,
+  updateWorkspaceFromProbe,
+  upsertWorkspace,
+  writeLastActiveDocumentMap,
+  writeStoredActiveWorkspaceId,
+  writeStoredWorkspaces,
+} from './workspaceRegistry';
+import {
+  copyTextWithDesktopBridge,
+  pickWorkspaceRootPath,
+} from './desktopBridge';
 
 type PendingTabCloseRequest = {
   tabIds: string[];
@@ -88,26 +113,11 @@ type MagamTestHooks = {
   openFile: (pageId: string) => boolean;
 };
 
+const DEFAULT_ROOT_QUERY = '/api/workspaces';
+
 function getNodeLabel(node: { data?: unknown }): string {
   const data = (node.data || {}) as Record<string, unknown>;
   return typeof data.label === 'string' ? data.label : '';
-}
-
-function createDraftDocumentPath(existingFiles: string[]): string {
-  const baseDir = existingFiles.some((filePath) => filePath.startsWith('docs/'))
-    ? 'docs'
-    : '';
-  const taken = new Set(existingFiles);
-  let counter = 1;
-
-  while (true) {
-    const fileName = `untitled-${counter}.graph.tsx`;
-    const candidate = baseDir ? `${baseDir}/${fileName}` : fileName;
-    if (!taken.has(candidate)) {
-      return candidate;
-    }
-    counter += 1;
-  }
 }
 
 export type CreateWorkspaceDocumentResult = {
@@ -131,13 +141,19 @@ function isCreateWorkspaceDocumentResult(
 }
 
 export async function createWorkspaceDocument(
-  filePath: string,
+  input: {
+    rootPath: string;
+    filePath?: string | null;
+  },
   fetchImpl: typeof fetch = fetch,
 ): Promise<CreateWorkspaceDocumentResult> {
-  const response = await fetchImpl('/api/files', {
+  const response = await fetchImpl('/api/documents', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filePath }),
+    body: JSON.stringify({
+      rootPath: input.rootPath,
+      ...(input.filePath ? { filePath: input.filePath } : {}),
+    }),
   });
 
   let data: unknown = null;
@@ -166,16 +182,82 @@ export async function createWorkspaceDocument(
   return data;
 }
 
-function createWorkspaceSessionKey(input: {
-  files: string[];
-  workspaceName?: string | null;
-}): string | null {
-  if (input.files.length === 0) {
-    return null;
+async function fetchWorkspaceProbe(
+  rootPath?: string | null,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WorkspaceProbeResponse> {
+  const url = rootPath
+    ? `/api/workspaces?rootPath=${encodeURIComponent(rootPath)}`
+    : DEFAULT_ROOT_QUERY;
+  const response = await fetchImpl(url, { cache: 'no-store' });
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data?.error && typeof data.error === 'string'
+      ? data.error
+      : '워크스페이스를 불러오는 데 실패했습니다.';
+    throw new Error(message);
   }
 
-  const workspaceName = input.workspaceName?.trim() || 'workspace';
-  return `${workspaceName}:${input.files.join('|')}`;
+  return data as WorkspaceProbeResponse;
+}
+
+async function ensureWorkspaceProbe(
+  rootPath: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WorkspaceProbeResponse> {
+  const response = await fetchImpl('/api/workspaces', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rootPath, action: 'ensure' }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data?.error && typeof data.error === 'string'
+      ? data.error
+      : '워크스페이스를 준비하는 데 실패했습니다.';
+    throw new Error(message);
+  }
+
+  return data as WorkspaceProbeResponse;
+}
+
+async function fetchWorkspaceDocuments(
+  rootPath: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WorkspaceProbeResponse> {
+  const response = await fetchImpl(`/api/documents?rootPath=${encodeURIComponent(rootPath)}`, {
+    cache: 'no-store',
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data?.error && typeof data.error === 'string'
+      ? data.error
+      : '문서 목록을 불러오는 데 실패했습니다.';
+    throw new Error(message);
+  }
+
+  return data as WorkspaceProbeResponse;
+}
+
+async function triggerWorkspaceFileBrowserAction(
+  input: {
+    rootPath: string;
+    action: 'open' | 'reveal';
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  const response = await fetchImpl('/api/workspaces', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = data?.error && typeof data.error === 'string'
+      ? data.error
+      : '파일 브라우저를 여는 데 실패했습니다.';
+    throw new Error(message);
+  }
 }
 
 declare global {
@@ -216,7 +298,6 @@ export function WorkspaceClient() {
     registerPendingActionRouting,
     clearPendingActionRouting,
     draftDocuments,
-    rememberLastActiveDocument,
     setFileTree,
   } = useGraphStore();
   const isChatOpen = useChatUiStore((state) => state.isOpen);
@@ -234,6 +315,15 @@ export function WorkspaceClient() {
   const tabContextMenuRef = useRef<HTMLDivElement>(null);
   const pendingSelectionNodeIdRef = useRef<string | null>(null);
   const pendingCreateEditRef = useRef<PendingCreateEdit | null>(null);
+  const [registeredWorkspaces, setRegisteredWorkspaces] = useState<RegisteredWorkspace[]>([]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const [workspaceDocuments, setWorkspaceDocuments] = useState<SidebarDocumentEntry[]>([]);
+  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
+
+  const activeWorkspace = useMemo(
+    () => registeredWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
+    [activeWorkspaceId, registeredWorkspaces],
+  );
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') {
@@ -257,52 +347,186 @@ export function WorkspaceClient() {
     };
   }, [activeTabId, markTabDirty, openTab, openTabs]);
 
+  const persistWorkspaceRegistry = useCallback((nextWorkspaces: RegisteredWorkspace[]) => {
+    const sorted = sortWorkspaces(nextWorkspaces);
+    setRegisteredWorkspaces(sorted);
+    writeStoredWorkspaces(sorted);
+    return sorted;
+  }, []);
+
+  const persistActiveWorkspaceId = useCallback((workspaceId: string | null) => {
+    setActiveWorkspaceId(workspaceId);
+    writeStoredActiveWorkspaceId(workspaceId);
+  }, []);
+
+  const setLastActiveDocumentForWorkspace = useCallback((workspaceId: string, filePath: string | null) => {
+    const current = readLastActiveDocumentMap();
+    if (!filePath) {
+      delete current[workspaceId];
+    } else {
+      current[workspaceId] = filePath;
+    }
+    writeLastActiveDocumentMap(current);
+  }, []);
+
+  const resetWorkspaceShellState = useCallback((workspaceId: string | null) => {
+    setGraph({
+      nodes: [],
+      edges: [],
+      sourceVersion: null,
+      sourceVersions: {},
+    });
+    setSelectedNodes([]);
+    clearTextEditSession();
+    clearPendingTextEditAction();
+    closeSearch({ clearQuery: true, clearHighlights: true });
+    setGraphError(null);
+    setFileTree(null);
+    useGraphStore.setState({
+      files: [],
+      currentFile: null,
+      sourceVersion: null,
+      sourceVersions: {},
+      workspaceSessionKey: workspaceId,
+      lastActiveDocumentPath: null,
+      draftDocuments: [],
+      openTabs: [],
+      activeTabId: null,
+    });
+  }, [
+    clearPendingTextEditAction,
+    clearTextEditSession,
+    closeSearch,
+    setFileTree,
+    setGraph,
+    setGraphError,
+    setSelectedNodes,
+  ]);
+
+  const syncWorkspaceEntry = useCallback((probe: WorkspaceProbeResponse, options?: {
+    existingId?: string;
+    activate?: boolean;
+  }) => {
+    const existing = options?.existingId
+      ? registeredWorkspaces.find((workspace) => workspace.id === options.existingId) ?? null
+      : registeredWorkspaces.find((workspace) => workspace.rootPath === probe.rootPath) ?? null;
+    const nextWorkspace = existing
+      ? updateWorkspaceFromProbe(existing, probe)
+      : buildRegisteredWorkspace(probe, options?.existingId);
+    nextWorkspace.lastOpenedAt = Date.now();
+    const nextWorkspaces = persistWorkspaceRegistry(
+      upsertWorkspace(registeredWorkspaces, nextWorkspace),
+    );
+
+    if (options?.activate || !activeWorkspaceId) {
+      persistActiveWorkspaceId(nextWorkspace.id);
+    }
+
+    return nextWorkspaces.find((workspace) => workspace.id === nextWorkspace.id) ?? nextWorkspace;
+  }, [activeWorkspaceId, persistActiveWorkspaceId, persistWorkspaceRegistry, registeredWorkspaces]);
+
+  const bootstrapWorkspaceRegistry = useCallback(async () => {
+    setIsWorkspaceLoading(true);
+    try {
+      const storedWorkspaces = readStoredWorkspaces();
+      const storedActiveId = readStoredActiveWorkspaceId();
+
+      if (storedWorkspaces.length === 0) {
+        const defaultWorkspace = await fetchWorkspaceProbe();
+        const nextWorkspaces = persistWorkspaceRegistry([
+          buildRegisteredWorkspace(defaultWorkspace),
+        ]);
+        const nextActiveId = nextWorkspaces[0]?.id ?? null;
+        persistActiveWorkspaceId(nextActiveId);
+        return;
+      }
+
+      const refreshed = await Promise.all(
+        storedWorkspaces.map(async (workspace) => {
+          try {
+            const probe = await fetchWorkspaceProbe(workspace.rootPath);
+            return updateWorkspaceFromProbe(workspace, probe);
+          } catch {
+            return workspace;
+          }
+        }),
+      );
+
+      const nextWorkspaces = persistWorkspaceRegistry(refreshed);
+      const nextActiveId = nextWorkspaces.some((workspace) => workspace.id === storedActiveId)
+        ? storedActiveId
+        : nextWorkspaces[0]?.id ?? null;
+      persistActiveWorkspaceId(nextActiveId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '워크스페이스를 초기화하는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_BOOTSTRAP_FAILED',
+        details: error,
+      });
+    } finally {
+      setIsWorkspaceLoading(false);
+    }
+  }, [persistActiveWorkspaceId, persistWorkspaceRegistry, setGraphError]);
+
   // File sync - triggers re-render when file changes externally
   const handleFileChange = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  // Load file list from API
-  const loadFiles = useCallback(async () => {
+  const loadActiveWorkspaceDocuments = useCallback(async (
+    workspace: RegisteredWorkspace,
+    options?: {
+      restoreInitialDocument?: boolean;
+    },
+  ) => {
     try {
-      const res = await fetch('/api/files');
-      const data = await res.json();
-      if (data.files) {
-        setFiles(data.files);
-        const runtime = useGraphStore.getState();
-        runtime.hydrateDocumentSession(createWorkspaceSessionKey({
-          files: data.files,
-          workspaceName: runtime.fileTree?.name,
-        }));
-        const resumeTarget = useGraphStore.getState().lastActiveDocumentPath;
-        const initialDocument = (
-          typeof resumeTarget === 'string'
-          && data.files.includes(resumeTarget)
-        )
-          ? resumeTarget
-          : data.files[0] ?? null;
-        if (!runtime.currentFile && runtime.openTabs.length === 0 && initialDocument) {
-          window.setTimeout(() => {
-            useGraphStore.getState().openTab(initialDocument);
-          }, 0);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load files:', error);
-    }
-  }, [setFiles]);
+      const data = await fetchWorkspaceDocuments(workspace.rootPath);
+      const sidebarDocuments = buildSidebarDocuments(workspace.rootPath, data.documents);
+      const absoluteFiles = sidebarDocuments.map((document) => document.absolutePath);
+      const lastActiveDocuments = readLastActiveDocumentMap();
+      const resumeTarget = lastActiveDocuments[workspace.id];
+      const initialDocument = (
+        typeof resumeTarget === 'string'
+        && absoluteFiles.includes(resumeTarget)
+      )
+        ? resumeTarget
+        : absoluteFiles[0] ?? null;
 
-  const loadFileTree = useCallback(async () => {
-    try {
-      const res = await fetch('/api/file-tree');
-      const data = await res.json() as { tree?: FileTreeNode | null };
-      if (data.tree) {
-        setFileTree(data.tree);
+      setWorkspaceDocuments(sidebarDocuments);
+      setFiles(absoluteFiles);
+      setFileTree(null);
+      syncWorkspaceEntry(data, { existingId: workspace.id });
+      useGraphStore.setState({
+        workspaceSessionKey: workspace.id,
+        lastActiveDocumentPath: initialDocument,
+      });
+
+      if (options?.restoreInitialDocument && initialDocument) {
+        window.setTimeout(() => {
+          useGraphStore.getState().openTab(initialDocument);
+        }, 0);
       }
     } catch (error) {
-      console.error('Failed to load file tree:', error);
+      try {
+        const probe = await fetchWorkspaceProbe(workspace.rootPath);
+        syncWorkspaceEntry(probe, { existingId: workspace.id });
+      } catch {
+        // Ignore probe failures and surface the original error below.
+      }
+      setWorkspaceDocuments([]);
+      setFiles([]);
+      setFileTree(null);
+      const message = error instanceof Error
+        ? error.message
+        : '문서 목록을 불러오는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_DOCUMENTS_LOAD_FAILED',
+        details: error,
+      });
     }
-  }, [setFileTree]);
+  }, [setFileTree, setFiles, setGraphError, syncWorkspaceEntry]);
 
   const dependencyFiles = useMemo(
     () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentFile),
@@ -318,20 +542,41 @@ export function WorkspaceClient() {
     reparentNode,
     undoLastEdit,
     redoLastEdit,
-  } = useFileSync(currentFile, handleFileChange, loadFiles, dependencyFiles);
+  } = useFileSync(
+    currentFile,
+    handleFileChange,
+    activeWorkspace ? () => {
+      void loadActiveWorkspaceDocuments(activeWorkspace);
+    } : undefined,
+    dependencyFiles,
+  );
 
-  // Initial file load
   useEffect(() => {
-    loadFiles();
-  }, [loadFiles]);
+    void bootstrapWorkspaceRegistry();
+  }, [bootstrapWorkspaceRegistry]);
 
   useEffect(() => {
-    if (!currentFile) {
+    if (!activeWorkspace) {
+      setWorkspaceDocuments([]);
+      resetWorkspaceShellState(null);
       return;
     }
 
-    rememberLastActiveDocument(currentFile);
-  }, [currentFile, rememberLastActiveDocument]);
+    resetWorkspaceShellState(activeWorkspace.id);
+    if (activeWorkspace.status !== 'ok') {
+      setWorkspaceDocuments([]);
+      return;
+    }
+    void loadActiveWorkspaceDocuments(activeWorkspace, { restoreInitialDocument: true });
+  }, [activeWorkspace?.id, activeWorkspace?.status, loadActiveWorkspaceDocuments, resetWorkspaceShellState]);
+
+  useEffect(() => {
+    if (!activeWorkspace || !currentFile) {
+      return;
+    }
+
+    setLastActiveDocumentForWorkspace(activeWorkspace.id, currentFile);
+  }, [activeWorkspace, currentFile, setLastActiveDocumentForWorkspace]);
 
   const executeCloseTabs = useCallback(
     (tabIds: string[]) => {
@@ -401,22 +646,188 @@ export function WorkspaceClient() {
     [openTab],
   );
 
-  const handleCreateDocument = useCallback(async () => {
-    const nextDocumentPath = createDraftDocumentPath(files);
+  const handleSelectWorkspace = useCallback((workspaceId: string) => {
+    const nextWorkspace = registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
+    if (!nextWorkspace) {
+      return;
+    }
+
+    const refreshedWorkspace = {
+      ...nextWorkspace,
+      lastOpenedAt: Date.now(),
+    };
+    persistWorkspaceRegistry(
+      upsertWorkspace(registeredWorkspaces, refreshedWorkspace),
+    );
+    persistActiveWorkspaceId(workspaceId);
+  }, [persistActiveWorkspaceId, persistWorkspaceRegistry, registeredWorkspaces]);
+
+  const handleCreateWorkspace = useCallback(async () => {
+    const rootPath = await pickWorkspaceRootPath({
+      title: '새 workspace 절대 경로',
+      defaultPath: activeWorkspace?.rootPath ?? '',
+    });
+    if (!rootPath) {
+      return false;
+    }
 
     try {
-      const createdDocument = await createWorkspaceDocument(nextDocumentPath);
-      const runtime = useGraphStore.getState();
-      runtime.setSourceVersionForFile(
+      const probe = await ensureWorkspaceProbe(rootPath);
+      syncWorkspaceEntry(probe, { activate: true });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '새 workspace를 만드는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_CREATE_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace?.rootPath, setGraphError, syncWorkspaceEntry]);
+
+  const handleAddExistingWorkspace = useCallback(async () => {
+    const rootPath = await pickWorkspaceRootPath({
+      title: '기존 workspace 절대 경로',
+      defaultPath: activeWorkspace?.rootPath ?? '',
+    });
+    if (!rootPath) {
+      return false;
+    }
+
+    try {
+      const probe = await fetchWorkspaceProbe(rootPath);
+      syncWorkspaceEntry(probe, { activate: true });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '기존 workspace를 등록하는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_ADD_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace?.rootPath, setGraphError, syncWorkspaceEntry]);
+
+  const handleReconnectWorkspace = useCallback(async () => {
+    if (!activeWorkspace) {
+      return false;
+    }
+
+    const nextRootPath = await pickWorkspaceRootPath({
+      title: '새 workspace 절대 경로',
+      defaultPath: activeWorkspace.rootPath,
+    });
+    if (!nextRootPath) {
+      return false;
+    }
+
+    try {
+      const probe = await fetchWorkspaceProbe(nextRootPath);
+      syncWorkspaceEntry(probe, { existingId: activeWorkspace.id, activate: true });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'workspace를 다시 연결하는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_RECONNECT_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace, setGraphError, syncWorkspaceEntry]);
+
+  const handleRemoveWorkspace = useCallback(() => {
+    if (!activeWorkspace) {
+      return false;
+    }
+
+    const shouldRemove = window.confirm(`"${activeWorkspace.name}" workspace를 제거할까요?`);
+    if (!shouldRemove) {
+      return false;
+    }
+
+    const nextWorkspaces = persistWorkspaceRegistry(
+      removeWorkspace(registeredWorkspaces, activeWorkspace.id),
+    );
+    const nextActiveWorkspaceId = nextWorkspaces[0]?.id ?? null;
+    persistActiveWorkspaceId(nextActiveWorkspaceId);
+    return true;
+  }, [activeWorkspace, persistActiveWorkspaceId, persistWorkspaceRegistry, registeredWorkspaces]);
+
+  const handleRevealWorkspace = useCallback(async () => {
+    if (!activeWorkspace) {
+      return false;
+    }
+
+    try {
+      await triggerWorkspaceFileBrowserAction({
+        rootPath: activeWorkspace.rootPath,
+        action: 'open',
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'workspace 경로를 여는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_REVEAL_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace, setGraphError]);
+
+  const handleCopyWorkspacePath = useCallback(async () => {
+    if (!activeWorkspace) {
+      return false;
+    }
+
+    try {
+      await copyTextWithDesktopBridge(activeWorkspace.rootPath);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'workspace 경로를 복사하는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_COPY_PATH_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace, setGraphError]);
+
+  const refreshActiveWorkspace = useCallback(async () => {
+    if (!activeWorkspace || activeWorkspace.status !== 'ok') {
+      return;
+    }
+
+    await loadActiveWorkspaceDocuments(activeWorkspace);
+  }, [activeWorkspace, loadActiveWorkspaceDocuments]);
+
+  const handleCreateDocument = useCallback(async () => {
+    if (!activeWorkspace) {
+      return false;
+    }
+
+    try {
+      const createdDocument = await createWorkspaceDocument({
+        rootPath: activeWorkspace.rootPath,
+      });
+      const absoluteFilePath = resolveWorkspaceDocumentAbsolutePath(
+        activeWorkspace.rootPath,
         createdDocument.filePath,
+      );
+      useGraphStore.getState().setSourceVersionForFile(
+        absoluteFilePath,
         createdDocument.sourceVersion,
       );
 
-      const opened = openTabByPath(createdDocument.filePath);
+      const opened = openTabByPath(absoluteFilePath);
       if (opened) {
         const nextSourceVersions = {
           ...useGraphStore.getState().sourceVersions,
-          [createdDocument.filePath]: createdDocument.sourceVersion,
+          [absoluteFilePath]: createdDocument.sourceVersion,
         };
         setGraph({
           nodes: [],
@@ -427,8 +838,7 @@ export function WorkspaceClient() {
         setGraphError(null);
       }
 
-      void loadFiles();
-      void loadFileTree();
+      await loadActiveWorkspaceDocuments(activeWorkspace);
       return opened;
     } catch (error) {
       const message = error instanceof Error
@@ -441,7 +851,7 @@ export function WorkspaceClient() {
       });
       return false;
     }
-  }, [files, loadFileTree, loadFiles, openTabByPath, setGraph, setGraphError]);
+  }, [activeWorkspace, loadActiveWorkspaceDocuments, openTabByPath, setGraph, setGraphError]);
 
   const restoreNodeData = useCallback((nodeId: string, previousData: Record<string, unknown> | undefined) => {
     useGraphStore.setState((state) => ({
@@ -1720,10 +2130,28 @@ export function WorkspaceClient() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white text-slate-900">
-      <Sidebar onOpenFile={openTabByPath} />
+      <Sidebar
+        activeWorkspace={activeWorkspace as SidebarWorkspaceEntry | null}
+        workspaces={registeredWorkspaces as SidebarWorkspaceEntry[]}
+        documents={workspaceDocuments}
+        isLoading={isWorkspaceLoading}
+        onRefresh={() => { void refreshActiveWorkspace(); }}
+        onSelectWorkspace={handleSelectWorkspace}
+        onCreateWorkspace={() => { void handleCreateWorkspace(); }}
+        onAddWorkspace={() => { void handleAddExistingWorkspace(); }}
+        onCreateDocument={() => { void handleCreateDocument(); }}
+        onOpenDocument={openTabByPath}
+        onCopyWorkspacePath={() => { void handleCopyWorkspacePath(); }}
+        onRevealWorkspace={() => { void handleRevealWorkspace(); }}
+        onReconnectWorkspace={() => { void handleReconnectWorkspace(); }}
+        onRemoveWorkspace={handleRemoveWorkspace}
+      />
 
       <div className="flex flex-1 flex-col h-full overflow-hidden relative">
-        <Header onCreateDocument={() => { void handleCreateDocument(); }} />
+        <Header
+          onCreateDocument={() => { void handleCreateDocument(); }}
+          workspaceLabel={activeWorkspace?.name ?? null}
+        />
         {isChatOpen && <LazyChatPanel />}
         <TabBar
           tabs={openTabs}

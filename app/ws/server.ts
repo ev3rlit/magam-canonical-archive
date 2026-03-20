@@ -23,6 +23,7 @@ const WATCH_DIR = process.env.MAGAM_TARGET_DIR || './examples';
 
 // Client connections with their subscriptions
 const clients = new Map<unknown, Set<string>>();
+const watchedSubscriptionPaths = new Set<string>();
 
 const COMMAND_EVENT_TTL_MS = 3000;
 const recentCommandEvents = new Map<string, number>();
@@ -90,6 +91,12 @@ const server = Bun.serve({
 
             try {
                 const result = await handler(request.params || {}, ctx);
+                if (request.method === 'file.subscribe') {
+                    const rawFilePath = request.params?.filePath;
+                    if (typeof rawFilePath === 'string' && rawFilePath.length > 0) {
+                        ensureWatchedSubscriptionPath(rawFilePath);
+                    }
+                }
                 ws.send(JSON.stringify(createResponse(request.id, result)));
             } catch (error) {
                 const err = error as { code?: number; message?: string; data?: unknown };
@@ -119,6 +126,20 @@ const watcher = watch(watchPath, {
     ignoreInitial: true,
     ignored: /(^|[\/\\])\../, // ignore dotfiles
 });
+
+function resolveSubscribedWatchPath(filePath: string): string {
+    return resolve(watchPath, filePath);
+}
+
+function ensureWatchedSubscriptionPath(filePath: string): void {
+    const resolvedPath = resolveSubscribedWatchPath(filePath);
+    if (watchedSubscriptionPaths.has(resolvedPath)) {
+        return;
+    }
+
+    watcher.add(resolvedPath);
+    watchedSubscriptionPaths.add(resolvedPath);
+}
 
 /**
  * Broadcast file list update to all connected clients

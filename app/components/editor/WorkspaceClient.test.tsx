@@ -105,9 +105,9 @@ describe('WorkspaceClient document entry convergence', () => {
 describe('WorkspaceClient document materialization', () => {
   it('creates untitled documents through the server contract with a real sourceVersion', async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(input).toBe('/api/files');
+      expect(input).toBe('/api/documents');
       expect(init?.method).toBe('POST');
-      expect(init?.body).toBe(JSON.stringify({ filePath: 'docs/untitled-2.graph.tsx' }));
+      expect(init?.body).toBe(JSON.stringify({ rootPath: '/tmp/workspace' }));
 
       return new Response(JSON.stringify({
         filePath: 'docs/untitled-2.graph.tsx',
@@ -120,7 +120,7 @@ describe('WorkspaceClient document materialization', () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     await expect(
-      createWorkspaceDocument('docs/untitled-2.graph.tsx'),
+      createWorkspaceDocument({ rootPath: '/tmp/workspace' }),
     ).resolves.toEqual({
       filePath: 'docs/untitled-2.graph.tsx',
       sourceVersion: 'sha256:created-document',
@@ -138,7 +138,7 @@ describe('WorkspaceClient document materialization', () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     await expect(
-      createWorkspaceDocument('docs/untitled-2.graph.tsx'),
+      createWorkspaceDocument({ rootPath: '/tmp/workspace' }),
     ).rejects.toThrow('새 문서 생성 응답이 올바르지 않습니다.');
   });
 });
