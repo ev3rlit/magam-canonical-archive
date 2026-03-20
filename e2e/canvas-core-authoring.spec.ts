@@ -93,10 +93,20 @@ function serializeProps(
 function serializeCanvasNode(node: RenderFixtureNode, indent: string): string {
   const props = node.props ?? {};
   const textChild = typeof props.text === 'string' ? `{${JSON.stringify(props.text)}}` : null;
+  const markdownContent = typeof props.content === 'string' ? `{${JSON.stringify(props.content)}}` : null;
   const childrenMarkup = (node.children ?? []).map((child) => serializeCanvasNode(child, `${indent}  `));
 
   if (node.type === 'graph-shape') {
-    return `${indent}<Shape${serializeProps(props, { omitKeys: ['text'] })}>${textChild ?? ''}</Shape>`;
+    if (childrenMarkup.length === 0) {
+      return `${indent}<Shape${serializeProps(props, { omitKeys: ['text'] })}>${textChild ?? ''}</Shape>`;
+    }
+
+    return [
+      `${indent}<Shape${serializeProps(props, { omitKeys: ['text'] })}>`,
+      ...(textChild ? [`${indent}  ${textChild}`] : []),
+      ...childrenMarkup,
+      `${indent}</Shape>`,
+    ].join('\n');
   }
   if (node.type === 'graph-text') {
     return `${indent}<Text${serializeProps(props, { omitKeys: ['text'] })}>${textChild ?? ''}</Text>`;
@@ -108,7 +118,7 @@ function serializeCanvasNode(node: RenderFixtureNode, indent: string): string {
     return `${indent}<Sticky${serializeProps(props, { omitKeys: ['text'] })}>${textChild ?? ''}</Sticky>`;
   }
   if (node.type === 'graph-markdown') {
-    return `${indent}<Markdown>${textChild ?? ''}</Markdown>`;
+    return `${indent}<Markdown>${markdownContent ?? textChild ?? ''}</Markdown>`;
   }
   if (node.type === 'graph-node') {
     if (childrenMarkup.length === 0) {
@@ -493,10 +503,30 @@ test.describe('canvas core authoring entry', () => {
         ],
       },
       {
+        type: 'graph-shape',
+        props: {
+          id: 'shape-body',
+          x: 560,
+          y: 120,
+          type: 'rectangle',
+          size: { width: 180, height: 120 },
+          text: 'Shape fallback',
+        },
+        children: [
+          {
+            type: 'graph-markdown',
+            props: {
+              content: '### Shape body',
+            },
+            children: [],
+          },
+        ],
+      },
+      {
         type: 'graph-sticky',
         props: {
           id: 'sticky-body',
-          x: 620,
+          x: 820,
           y: 120,
           text: 'Sticky body',
         },
@@ -508,10 +538,12 @@ test.describe('canvas core authoring entry', () => {
     const pane = page.locator('.react-flow__pane');
     const textNode = page.locator('.react-flow__node[data-id="text-body"]');
     const markdownNode = page.locator('.react-flow__node[data-id="markdown-body"]');
+    const shapeNode = page.locator('.react-flow__node[data-id="shape-body"]');
     const stickyNode = page.locator('.react-flow__node[data-id="sticky-body"]');
 
     await expect(textNode).toBeVisible();
     await expect(markdownNode).toBeVisible();
+    await expect(shapeNode).toBeVisible();
     await expect(stickyNode).toBeVisible();
 
     await textNode.dblclick();
@@ -532,7 +564,25 @@ test.describe('canvas core authoring entry', () => {
     await page.keyboard.press('Escape');
     await expect(page.locator('textarea')).toHaveCount(0);
 
+    await shapeNode.click();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('textarea')).toBeVisible();
+    await page.locator('textarea').fill('### Updated shape body');
+    await pane.click({ position: { x: 40, y: 40 } });
+    await expect(page.locator('textarea')).toHaveCount(0);
+    await expect(page.getByText('EDIT_REJECTED')).toHaveCount(0);
+    await shapeNode.dblclick();
+    await expect(page.locator('textarea')).toHaveValue('### Updated shape body');
+    await page.keyboard.press('Escape');
+
     await page.setViewportSize({ width: 390, height: 844 });
+    await shapeNode.click();
+    const shapeEditButton = shapeNode.getByRole('button', { name: 'Edit content' });
+    await expect(shapeEditButton).toBeVisible();
+    await shapeEditButton.click();
+    await expect(page.locator('textarea')).toBeVisible();
+    await page.keyboard.press('Escape');
+
     await stickyNode.click();
     const stickyEditButton = stickyNode.getByRole('button', { name: 'Edit content' });
     await expect(stickyEditButton).toBeVisible();

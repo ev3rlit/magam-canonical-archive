@@ -761,6 +761,47 @@ describe('parseRenderGraph canonical object normalization', () => {
     });
   });
 
+  it('preserves markdown-authored child content on graph-shape nodes without collapsing shell type', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'shape-markdown-child',
+              x: 10,
+              y: 20,
+              type: 'diamond',
+              size: { width: 200, height: 160 },
+              fill: '#fef3c7',
+            },
+            children: [
+              {
+                type: 'graph-markdown',
+                props: {
+                  content: '# Shape body',
+                },
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.nodes.find((node) => node.id === 'shape-markdown-child')).toMatchObject({
+      type: 'shape',
+      data: {
+        label: '# Shape body',
+        type: 'diamond',
+        size: { width: 200, height: 160 },
+        fill: '#fef3c7',
+        children: [{ type: 'graph-markdown', content: '# Shape body' }],
+      },
+    });
+  });
+
   it('parses graph-sequence nodes as sequence renderer with canonical sequence content', () => {
     const parsed = parseRenderGraph({
       graph: {

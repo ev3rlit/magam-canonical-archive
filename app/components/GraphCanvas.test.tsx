@@ -432,6 +432,35 @@ describe('GraphCanvas direct manipulation baseline', () => {
         mode: 'markdown-wysiwyg',
       },
     });
+
+    expect(resolveNodeDoubleClickDecision({
+      node: {
+        id: 'shape-1',
+        type: 'shape',
+        data: {
+          label: 'Shape fallback',
+          children: [{ type: 'graph-markdown', content: '### Shape body' }],
+        },
+      },
+      selectedNodeIds: ['shape-1'],
+      nodes: [
+        {
+          id: 'shape-1',
+          type: 'shape',
+          data: {
+            label: 'Shape fallback',
+            children: [{ type: 'graph-markdown', content: '### Shape body' }],
+          },
+        },
+      ],
+    })).toEqual({
+      kind: 'start-body-edit',
+      session: {
+        nodeId: 'shape-1',
+        initialDraft: '### Shape body',
+        mode: 'markdown-wysiwyg',
+      },
+    });
   });
 
   it('starts shell/body entry only for a single selected editable node', () => {
@@ -447,6 +476,24 @@ describe('GraphCanvas direct manipulation baseline', () => {
     })).toEqual({
       nodeId: 'sticky-1',
       initialDraft: '- todo',
+      mode: 'markdown-wysiwyg',
+    });
+
+    expect(resolveSelectionBodyEditSession({
+      selectedNodeIds: ['shape-1'],
+      nodes: [
+        {
+          id: 'shape-1',
+          type: 'shape',
+          data: {
+            label: 'Shape fallback',
+            children: [{ type: 'graph-markdown', content: '### Shape body' }],
+          },
+        },
+      ],
+    })).toEqual({
+      nodeId: 'shape-1',
+      initialDraft: '### Shape body',
       mode: 'markdown-wysiwyg',
     });
 

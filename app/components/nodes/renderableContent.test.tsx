@@ -114,7 +114,7 @@ describe('renderNodeContent', () => {
     expect(html).not.toContain('Fallback text');
   });
 
-  it('resolves markdown-first body sessions for phase-1 content nodes only', () => {
+  it('resolves markdown-first body sessions for phase-1 content nodes including shapes', () => {
     expect(resolveBodyEditSession({
       id: 'text-1',
       type: 'text',
@@ -128,7 +128,24 @@ describe('renderNodeContent', () => {
     expect(resolveBodyEditSession({
       id: 'shape-1',
       type: 'shape',
-      data: { label: 'Shape label' },
-    })).toBeNull();
+      data: {
+        label: 'Shape label',
+        children: [{ type: 'graph-markdown', content: '### Shape body' }],
+      },
+    })).toEqual({
+      nodeId: 'shape-1',
+      initialDraft: '### Shape body',
+      mode: 'markdown-wysiwyg',
+    });
+
+    expect(resolveBodyEditSession({
+      id: 'shape-2',
+      type: 'shape',
+      data: { label: 'Fallback shape label' },
+    })).toEqual({
+      nodeId: 'shape-2',
+      initialDraft: 'Fallback shape label',
+      mode: 'markdown-wysiwyg',
+    });
   });
 });
