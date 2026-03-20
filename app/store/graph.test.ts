@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import type { SearchResult } from '../utils/search';
-import { useGraphStore } from './graph';
+import {
+  LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY,
+  useGraphStore,
+} from './graph';
 import { GLOBAL_FONT_STORAGE_KEY } from '../utils/fontHierarchy';
+
+const initialGraphState = useGraphStore.getState();
 
 const getFixtureResults = (): SearchResult[] => ([
   { type: 'element', key: 'node-a', title: 'A', score: 100, matchKind: 'exact' },
@@ -67,6 +72,198 @@ describe('graph metadata state', () => {
     expect(
       useGraphStore.getState().pendingActionRoutingByKey['selection-floating-menu:selection.style.update:shape-1:sha256:v1'],
     ).toBeUndefined();
+  });
+});
+
+describe('document session persistence', () => {
+  beforeEach(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY);
+    }
+    useGraphStore.setState(initialGraphState);
+  });
+
+  it('re-activates the same document tab instead of duplicating it', () => {
+    const firstOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const secondOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const state = useGraphStore.getState();
+
+    expect(firstOpen.status).toBe('opened');
+    expect(secondOpen).toEqual({
+      status: 'activated',
+      tabId: firstOpen.status === 'opened' ? firstOpen.tabId : secondOpen.tabId,
+    });
+    expect(state.openTabs).toHaveLength(1);
+    expect(state.activeTabId).toBe(firstOpen.status === 'opened' ? firstOpen.tabId : null);
+    expect(state.currentFile).toBe('docs/overview.graph.tsx');
+  });
+
+  it('keeps the stored viewport and selection snapshot when switching away and back', () => {
+    const firstOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const secondOpen = useGraphStore.getState().openTab('docs/guide.graph.tsx');
+
+    expect(firstOpen.status).toBe('opened');
+    expect(secondOpen.status).toBe('opened');
+
+    if (firstOpen.status !== 'opened' || secondOpen.status !== 'opened') {
+      throw new Error('expected tabs to open during snapshot test');
+    }
+
+    useGraphStore.getState().updateTabSnapshot(firstOpen.tabId, {
+      lastViewport: { x: 120, y: 48, zoom: 1.25 },
+      lastSelection: {
+        nodeIds: ['node-a'],
+        edgeIds: ['edge-a'],
+        updatedAt: 100,
+      },
+    });
+
+    useGraphStore.getState().activateTab(secondOpen.tabId);
+    useGraphStore.getState().activateTab(firstOpen.tabId);
+
+    const restoredTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === firstOpen.tabId);
+    expect(restoredTab?.lastViewport).toEqual({ x: 120, y: 48, zoom: 1.25 });
+    expect(restoredTab?.lastSelection).toEqual({
+      nodeIds: ['node-a'],
+      edgeIds: ['edge-a'],
+      updatedAt: 100,
+    });
+  });
+
+  it('treats repeated tab snapshot writes as a no-op when values are unchanged', () => {
+    const opened = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    if (opened.status !== 'opened') {
+      throw new Error('expected tab to open for snapshot no-op test');
+    }
+
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: { x: 12, y: 24, zoom: 1.1 },
+      lastSelection: {
+        nodeIds: ['node-a'],
+        edgeIds: [],
+        updatedAt: 10,
+      },
+    });
+
+    const before = useGraphStore.getState();
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: { x: 12, y: 24, zoom: 1.1 },
+      lastSelection: {
+        nodeIds: ['node-a'],
+        edgeIds: [],
+        updatedAt: 10,
+      },
+    });
+    const after = useGraphStore.getState();
+
+    expect(after).toBe(before);
+  });
+
+  it('updates tab selection snapshots without mutating unrelated tab metadata', () => {
+    const firstOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const secondOpen = useGraphStore.getState().openTab('docs/guide.graph.tsx');
+
+    if (firstOpen.status !== 'opened' || secondOpen.status !== 'opened') {
+      throw new Error('expected tabs to open for selection snapshot test');
+    }
+
+    const beforeSecondTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === secondOpen.tabId);
+    useGraphStore.getState().updateTabSnapshot(firstOpen.tabId, {
+      lastSelection: {
+        nodeIds: ['shape-1', 'shape-2'],
+        edgeIds: [],
+        updatedAt: 42,
+      },
+    });
+
+    const firstTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === firstOpen.tabId);
+    const secondTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === secondOpen.tabId);
+
+    expect(firstTab?.lastSelection).toEqual({
+      nodeIds: ['shape-1', 'shape-2'],
+      edgeIds: [],
+      updatedAt: 42,
+    });
+    expect(secondTab).toEqual(beforeSecondTab);
+  });
+
+  it('allows tab viewport and selection snapshots to be cleared explicitly', () => {
+    const opened = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    if (opened.status !== 'opened') {
+      throw new Error('expected tab to open for snapshot clear test');
+    }
+
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: { x: 20, y: 40, zoom: 1.2 },
+      lastSelection: {
+        nodeIds: ['shape-1'],
+        edgeIds: [],
+        updatedAt: 12,
+      },
+    });
+
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: null,
+      lastSelection: null,
+    });
+
+    const clearedTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === opened.tabId);
+    expect(clearedTab?.lastViewport).toBeNull();
+    expect(clearedTab?.lastSelection).toBeNull();
+  });
+
+  it('persists lastActive document metadata per workspace source', () => {
+    useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
+    useGraphStore.getState().hydrateDocumentSession('workspace:docs/resume.graph.tsx');
+    useGraphStore.getState().rememberLastActiveDocument('docs/resume.graph.tsx');
+
+    expect(useGraphStore.getState().lastActiveDocumentPath).toBe('docs/resume.graph.tsx');
+    if (typeof window !== 'undefined') {
+      expect(
+        window.localStorage.getItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY),
+      ).toContain('docs/resume.graph.tsx');
+    }
+  });
+
+  it('tracks new-document empty-canvas entry state without requiring a pre-open naming gate', () => {
+    useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
+    useGraphStore.getState().setFileTree({
+      name: 'workspace',
+      path: '/',
+      type: 'directory',
+      children: [
+        {
+          name: 'docs',
+          path: 'docs',
+          type: 'directory',
+          children: [
+            {
+              name: 'resume.graph.tsx',
+              path: 'docs/resume.graph.tsx',
+              type: 'file',
+            },
+          ],
+        },
+      ],
+    });
+
+    useGraphStore.getState().registerDraftDocument('docs/untitled-1.graph.tsx');
+
+    expect(useGraphStore.getState().files).toContain('docs/untitled-1.graph.tsx');
+    expect(useGraphStore.getState().draftDocuments).toContain('docs/untitled-1.graph.tsx');
+    expect(useGraphStore.getState().fileTree?.children?.[0]?.children).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'docs/untitled-1.graph.tsx', type: 'file' }),
+      ]),
+    );
+  });
+
+  it('ignores repeated empty selection commits to avoid render loops', () => {
+    const before = useGraphStore.getState();
+    useGraphStore.getState().setSelectedNodes([]);
+    const after = useGraphStore.getState();
+
+    expect(after).toBe(before);
   });
 });
 
@@ -412,6 +609,38 @@ describe('entrypoint runtime state', () => {
     expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
   });
 
+  it('동일한 anchor와 surface 재등록은 runtime state를 다시 만들지 않는다', () => {
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 10, y: 20 },
+    });
+    const afterAnchor = useGraphStore.getState().entrypointRuntime;
+
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 10, y: 20 },
+    });
+    expect(useGraphStore.getState().entrypointRuntime).toBe(afterAnchor);
+
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    const afterOpenSurface = useGraphStore.getState().entrypointRuntime;
+
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    expect(useGraphStore.getState().entrypointRuntime).toBe(afterOpenSurface);
+  });
+
   it('selection 변경 시 selection 의존 surface를 닫고 stale selection anchor를 정리한다', () => {
     useGraphStore.getState().registerEntrypointAnchor({
       anchorId: 'selection-floating-menu:selection-bounds',
@@ -555,6 +784,26 @@ describe('text edit session state', () => {
     expect(state.pendingTextEditAction?.nodeId).toBe('md-1');
   });
 
+  it('cancel 요청은 같은 active node session에만 기록되고 clear로 정리된다', () => {
+    useGraphStore.getState().startTextEditSession({
+      nodeId: 'sticky-1',
+      initialDraft: '- task',
+      mode: 'markdown-wysiwyg',
+    });
+
+    useGraphStore.getState().requestTextEditCancel('sticky-1');
+    expect(useGraphStore.getState().pendingTextEditAction).toMatchObject({
+      type: 'cancel',
+      nodeId: 'sticky-1',
+    });
+
+    useGraphStore.getState().clearTextEditSession();
+    const state = useGraphStore.getState();
+    expect(state.activeTextEditNodeId).toBeNull();
+    expect(state.textEditMode).toBeNull();
+    expect(state.pendingTextEditAction).toBeNull();
+  });
+
   it('선택이 다른 노드로 바뀌면 편집 세션을 정리한다', () => {
     useGraphStore.getState().startTextEditSession({
       nodeId: 'text-1',
@@ -694,5 +943,48 @@ describe('action routing optimistic lifecycle state', () => {
     });
 
     expect(useGraphStore.getState().actionRoutingPendingByToken).toEqual({});
+  });
+});
+
+describe('group focus state', () => {
+  beforeEach(() => {
+    useGraphStore.setState(initialGraphState);
+  });
+
+  it('retains inner group focus only while the selection stays inside a partial grouped subset', () => {
+    useGraphStore.getState().setGraph({
+      nodes: [
+        {
+          id: 'shape-a',
+          type: 'shape',
+          position: { x: 0, y: 0 },
+          data: { groupId: 'group-1' },
+        } as any,
+        {
+          id: 'shape-b',
+          type: 'shape',
+          position: { x: 100, y: 0 },
+          data: { groupId: 'group-1' },
+        } as any,
+        {
+          id: 'shape-c',
+          type: 'shape',
+          position: { x: 200, y: 0 },
+          data: {},
+        } as any,
+      ],
+      edges: [],
+    });
+
+    useGraphStore.getState().setActiveGroupFocusGroupId('group-1');
+    useGraphStore.getState().setSelectedNodes(['shape-a']);
+    expect(useGraphStore.getState().activeGroupFocusGroupId).toBe('group-1');
+
+    useGraphStore.getState().setSelectedNodes(['shape-a', 'shape-b']);
+    expect(useGraphStore.getState().activeGroupFocusGroupId).toBeNull();
+
+    useGraphStore.getState().setActiveGroupFocusGroupId('group-1');
+    useGraphStore.getState().setSelectedNodes(['shape-c']);
+    expect(useGraphStore.getState().activeGroupFocusGroupId).toBeNull();
   });
 });

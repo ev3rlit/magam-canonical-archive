@@ -1,5 +1,5 @@
-import React, { memo, useMemo } from 'react';
-import { NodeProps } from 'reactflow';
+import React, { memo, useCallback, useMemo } from 'react';
+import { NodeProps, useNodeId } from 'reactflow';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import {
@@ -9,7 +9,11 @@ import {
   resolveStickyLikeShapeStyle,
 } from './BaseNode';
 import type { RenderableChild } from '@/utils/childComposition';
-import { renderNodeContent } from './renderableContent';
+import {
+  renderNodeContent,
+  resolveBodyEditSession,
+  useExplicitBodyEntryAffordance,
+} from './renderableContent';
 import { useGraphStore } from '@/store/graph';
 import type {
   FontFamilyPreset,
@@ -18,7 +22,6 @@ import type {
   PaperTextureParams,
 } from '@magam/core';
 import {
-  hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import {
@@ -91,18 +94,22 @@ export function resolveStickySizing(width: unknown, height: unknown): StickySizi
 }
 
 const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
+  const nodeId = useNodeId();
   const raw = (data || {}) as StickyNodeData;
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
-
-  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(raw.className);
-  const resolvedFontFamily = shouldApplyHierarchy
-    ? resolveFontFamilyCssValue({
-      nodeFontFamily: raw.fontFamily,
-      canvasFontFamily,
-      globalFontFamily,
-    })
-    : undefined;
+  const activeTextEditNodeId = useGraphStore((state) => state.activeTextEditNodeId);
+  const textEditDraft = useGraphStore((state) => state.textEditDraft);
+  const startTextEditSession = useGraphStore((state) => state.startTextEditSession);
+  const updateTextEditDraft = useGraphStore((state) => state.updateTextEditDraft);
+  const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
+  const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
+  const explicitBodyEntryEnabled = useExplicitBodyEntryAffordance();
+  const resolvedFontFamily = resolveFontFamilyCssValue({
+    nodeFontFamily: raw.fontFamily,
+    canvasFontFamily,
+    globalFontFamily,
+  });
 
   const normalized = useMemo(
     () => normalizeStickyDefaults(raw as unknown as Record<string, unknown>),
@@ -130,12 +137,18 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     [resolvedObjectSize],
   );
   const isContentDrivenAuto = !sizing.hasWidth && !sizing.hasHeight;
-
-  const legacyColorClassName = (
-    typeof raw.color === 'string'
-    && raw.color.trim() !== ''
-    && !isCssColorLike(raw.color)
-  ) ? raw.color : undefined;
+  const isActiveEditor = Boolean(nodeId && selected && activeTextEditNodeId === nodeId);
+  const bodyEditSession = nodeId ? resolveBodyEditSession({
+    id: nodeId,
+    type: 'sticky',
+    data: raw,
+  }) : null;
+  const shouldRenderExplicitBodyEntry = (
+    selected
+    && !isActiveEditor
+    && explicitBodyEntryEnabled
+    && Boolean(bodyEditSession)
+  );
 
   const paperSurface = useMemo(
     () => resolvePaperSurface({
@@ -172,8 +185,25 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     ...(raw.stroke ? { border: `${raw.strokeWidth ?? 1}px solid ${raw.stroke}` } : {}),
     ...resolveStickyLikeShapeStyle(normalized.shape),
     ...paperSurface.surfaceStyle,
-    backgroundColor: raw.fill ?? paperSurface.surfaceStyle.backgroundColor ?? '#fce588',
+    backgroundColor: raw.fill
+      ?? (typeof raw.color === 'string' && isCssColorLike(raw.color) ? raw.color : undefined)
+      ?? paperSurface.surfaceStyle.backgroundColor
+      ?? '#fce588',
   };
+  const beginEditing = useCallback(() => {
+    if (!selected || !bodyEditSession) return;
+    startTextEditSession(bodyEditSession);
+  }, [bodyEditSession, selected, startTextEditSession]);
+
+  const commitEditing = useCallback(() => {
+    if (!nodeId) return;
+    requestTextEditCommit(nodeId);
+  }, [nodeId, requestTextEditCommit]);
+
+  const cancelEditing = useCallback(() => {
+    if (!nodeId) return;
+    requestTextEditCancel(nodeId);
+  }, [nodeId, requestTextEditCancel]);
 
   return (
     <BaseNode
@@ -181,14 +211,52 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
         clsx(
           'flex flex-col justify-center items-center',
           !selected && 'hover:-translate-y-0.5',
-          legacyColorClassName,
-          raw.className,
         ),
       )}
       style={stickyStyle}
     >
       <NoiseOverlay opacity={paperSurface.noiseOpacity} />
-      {(() => {
+      {shouldRenderExplicitBodyEntry ? (
+        <button
+          type="button"
+          aria-label="Edit content"
+          className="pointer-events-auto absolute right-3 top-3 z-10 rounded-full border border-slate-700/10 bg-white/85 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            beginEditing();
+          }}
+        >
+          Edit
+        </button>
+      ) : null}
+      {isActiveEditor ? (
+        <textarea
+          autoFocus
+          value={textEditDraft}
+          onChange={(event) => updateTextEditDraft(event.currentTarget.value)}
+          onBlur={commitEditing}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              cancelEditing();
+              return;
+            }
+            const isCommitShortcut = (event.metaKey || event.ctrlKey) && event.key === 'Enter';
+            if (isCommitShortcut) {
+              event.preventDefault();
+              commitEditing();
+            }
+          }}
+          placeholder="Write markdown..."
+          className="pointer-events-auto w-[220px] min-h-[120px] rounded border border-slate-300 bg-white/95 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          style={{ fontFamily: resolvedFontFamily, color: textColor }}
+        />
+      ) : (() => {
         const hasMarkdownChildren = Array.isArray(raw.children) &&
           raw.children.some((c) => c.type === 'graph-markdown');
 

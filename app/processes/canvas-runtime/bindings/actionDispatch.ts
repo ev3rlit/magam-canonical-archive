@@ -44,7 +44,11 @@ export type CanvasActionDispatchCompatIntent =
   | 'duplicate-node'
   | 'delete-node'
   | 'toggle-node-lock'
-  | 'select-node-group';
+  | 'select-node-group'
+  | 'group-selection'
+  | 'ungroup-selection'
+  | 'bring-selection-to-front'
+  | 'send-selection-to-back';
 
 export interface CanvasActionDispatchRequest {
   surface: LegacyEntryPointSurface;
@@ -144,6 +148,30 @@ function resolveIntentEnvelopeMeta(
   if (intent === 'select-node-group') {
     return {
       intentId: 'node.group.select',
+      optimistic: false,
+    };
+  }
+  if (intent === 'group-selection') {
+    return {
+      intentId: 'selection.group',
+      optimistic: false,
+    };
+  }
+  if (intent === 'ungroup-selection') {
+    return {
+      intentId: 'selection.ungroup',
+      optimistic: false,
+    };
+  }
+  if (intent === 'bring-selection-to-front') {
+    return {
+      intentId: 'selection.z-order.bring-to-front',
+      optimistic: false,
+    };
+  }
+  if (intent === 'send-selection-to-back') {
+    return {
+      intentId: 'selection.z-order.send-to-back',
       optimistic: false,
     };
   }

@@ -9,7 +9,12 @@ import React, {
 } from 'react';
 import { RpcClientError, useFileSync } from '@/hooks/useFileSync';
 import { GraphCanvas } from '@/components/GraphCanvas';
-import { Sidebar } from '@/components/ui/Sidebar';
+import type { GraphCanvasSelectionActionIntentInput } from '@/components/GraphCanvas';
+import {
+  Sidebar,
+  type SidebarDocumentEntry,
+  type SidebarWorkspaceEntry,
+} from '@/components/ui/Sidebar';
 import { Header } from '@/components/ui/Header';
 import { Footer } from '@/components/ui/Footer';
 import { TabBar } from '@/components/ui/TabBar';
@@ -22,12 +27,13 @@ import {
   LazyStickerInspector,
 } from './LazyPanels';
 import { useChatUiStore } from '@/store/chatUi';
-import { type FileTreeNode, TabState, useGraphStore } from '@/store/graph';
+import { TabState, type FileTreeNode, useGraphStore } from '@/store/graph';
 import {
   buildAbsoluteMoveCommand,
   buildReparentCommand,
   buildRelativeMoveCommand,
   toUpdateNodeProps,
+  type CreatePayload,
 } from '@/features/editing/commands';
 import {
   type ActionRoutingHistoryEffect,
@@ -39,7 +45,6 @@ import {
   getWashiPresetPatternCatalog,
 } from '@/utils/washiTapeDefaults';
 import type { CanvasEntrypointSurface } from '@/features/canvas-ui-entrypoints/contracts';
-import { getHostRuntime } from '@/features/host/renderer';
 import { parseRenderGraph } from '@/features/render/parseRenderGraph';
 import { editDebugLog } from '@/utils/editDebug';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
@@ -54,12 +59,24 @@ import {
   createPaneActionRoutingContext,
   canCommitTextEdit,
   canRunNodeCommand,
-  flattenWorkspaceStyleDiagnostics,
   mapEditRpcErrorToToast,
+  resolveImmediateCreateEditMode,
   resolveNodeEditContext,
   resolveNodeEditTarget,
   resolveNodeActionRoutingContext,
 } from './workspaceEditUtils';
+import {
+  buildSidebarDocuments,
+  readLastActiveDocumentMap,
+  resolveWorkspaceDocumentAbsolutePath,
+  type RegisteredWorkspace,
+  type WorkspaceProbeResponse,
+  updateWorkspaceFromProbe,
+} from './workspaceRegistry';
+import {
+  copyTextWithDesktopBridge,
+  pickWorkspaceRootPath,
+} from './desktopBridge';
 
 type PendingTabCloseRequest = {
   tabIds: string[];
@@ -69,6 +86,11 @@ type TabContextMenuState = {
   tabId: string;
   x: number;
   y: number;
+};
+
+type PendingCreateEdit = {
+  renderedId: string;
+  mode: 'text' | 'markdown-wysiwyg';
 };
 
 type MagamTestHooks = {
@@ -82,39 +104,16 @@ type MagamTestHooks = {
   openFile: (pageId: string) => boolean;
 };
 
+const DEFAULT_ROOT_QUERY = '/api/workspaces';
+
 function getNodeLabel(node: { data?: unknown }): string {
   const data = (node.data || {}) as Record<string, unknown>;
   return typeof data.label === 'string' ? data.label : '';
 }
 
-function createDraftDocumentPath(existingFiles: string[]): string {
-  const baseDir = existingFiles.some((filePath) => filePath.startsWith('docs/'))
-    ? 'docs'
-    : '';
-  const taken = new Set(existingFiles);
-  let counter = 1;
-
-  while (true) {
-    const fileName = `untitled-${counter}.graph.tsx`;
-    const candidate = baseDir ? `${baseDir}/${fileName}` : fileName;
-    if (!taken.has(candidate)) {
-      return candidate;
-    }
-    counter += 1;
-  }
-}
-
 export type CreateWorkspaceDocumentResult = {
   filePath: string;
   sourceVersion: string;
-};
-
-const LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY = 'magam:lastActiveDocumentSession';
-
-type LastActiveDocumentSession = {
-  workspaceKey: string;
-  documentPath: string;
-  updatedAt: number;
 };
 
 function isCreateWorkspaceDocumentResult(
@@ -133,10 +132,39 @@ function isCreateWorkspaceDocumentResult(
 }
 
 export async function createWorkspaceDocument(
-  filePath: string,
-  client = getHostRuntime().rpc,
+  input: {
+    rootPath: string;
+    filePath?: string | null;
+  },
+  fetchImpl: typeof fetch = fetch,
 ): Promise<CreateWorkspaceDocumentResult> {
-  const data = await client.createFile(filePath);
+  const response = await fetchImpl('/api/documents', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      rootPath: input.rootPath,
+      ...(input.filePath ? { filePath: input.filePath } : {}),
+    }),
+  });
+
+  let data: unknown = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const message = (
+      data
+      && typeof data === 'object'
+      && 'error' in data
+      && typeof (data as { error?: unknown }).error === 'string'
+    )
+      ? (data as { error: string }).error
+      : '새 문서를 만드는 데 실패했습니다.';
+    throw new Error(message);
+  }
 
   if (!isCreateWorkspaceDocumentResult(data)) {
     throw new Error('새 문서 생성 응답이 올바르지 않습니다.');
@@ -145,62 +173,100 @@ export async function createWorkspaceDocument(
   return data;
 }
 
-function createWorkspaceSessionKey(input: {
-  files: string[];
-  workspaceName?: string | null;
-}): string | null {
-  if (input.files.length === 0) {
-    return null;
+async function fetchWorkspaceProbe(
+  rootPath?: string | null,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WorkspaceProbeResponse> {
+  const url = rootPath
+    ? `/api/workspaces?rootPath=${encodeURIComponent(rootPath)}`
+    : DEFAULT_ROOT_QUERY;
+  const response = await fetchImpl(url, { cache: 'no-store' });
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data?.error && typeof data.error === 'string'
+      ? data.error
+      : '워크스페이스를 불러오는 데 실패했습니다.';
+    throw new Error(message);
   }
 
-  const workspaceName = input.workspaceName?.trim() || 'workspace';
-  return `${workspaceName}:${input.files.join('|')}`;
+  return data as WorkspaceProbeResponse;
 }
 
-function readLastActiveDocumentPath(
-  workspaceKey: string | null,
-  knownFiles: string[],
-): string | null {
-  if (typeof window === 'undefined' || !workspaceKey) {
-    return null;
+async function ensureWorkspaceProbe(
+  rootPath: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WorkspaceProbeResponse> {
+  const response = await fetchImpl('/api/workspaces', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rootPath, action: 'ensure' }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data?.error && typeof data.error === 'string'
+      ? data.error
+      : '워크스페이스를 준비하는 데 실패했습니다.';
+    throw new Error(message);
   }
 
-  const raw = window.localStorage.getItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY);
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as LastActiveDocumentSession;
-    if (
-      parsed.workspaceKey !== workspaceKey
-      || !knownFiles.includes(parsed.documentPath)
-      || typeof parsed.updatedAt !== 'number'
-    ) {
-      return null;
-    }
-    return parsed.documentPath;
-  } catch {
-    return null;
-  }
+  return data as WorkspaceProbeResponse;
 }
 
-function persistLastActiveDocumentPath(
-  workspaceKey: string | null,
-  documentPath: string | null,
-): void {
-  if (typeof window === 'undefined' || !workspaceKey || !documentPath) {
-    return;
+async function fetchWorkspaceDocuments(
+  rootPath: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<WorkspaceProbeResponse> {
+  const response = await fetchImpl(`/api/documents?rootPath=${encodeURIComponent(rootPath)}`, {
+    cache: 'no-store',
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data?.error && typeof data.error === 'string'
+      ? data.error
+      : '문서 목록을 불러오는 데 실패했습니다.';
+    throw new Error(message);
   }
 
-  window.localStorage.setItem(
-    LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY,
-    JSON.stringify({
-      workspaceKey,
-      documentPath,
-      updatedAt: Date.now(),
-    } satisfies LastActiveDocumentSession),
-  );
+  return data as WorkspaceProbeResponse;
+}
+
+async function fetchWorkspaceFileTree(
+  rootPath: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ tree: FileTreeNode }> {
+  const response = await fetchImpl(`/api/file-tree?rootPath=${encodeURIComponent(rootPath)}`, {
+    cache: 'no-store',
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const message = data?.error && typeof data.error === 'string'
+      ? data.error
+      : '레거시 TSX 트리를 불러오는 데 실패했습니다.';
+    throw new Error(message);
+  }
+
+  return data as { tree: FileTreeNode };
+}
+
+async function triggerWorkspaceFileBrowserAction(
+  input: {
+    rootPath: string;
+    action: 'open' | 'reveal';
+  },
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  const response = await fetchImpl('/api/workspaces', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = data?.error && typeof data.error === 'string'
+      ? data.error
+      : '파일 브라우저를 여는 데 실패했습니다.';
+    throw new Error(message);
+  }
 }
 
 declare global {
@@ -210,11 +276,16 @@ declare global {
 }
 
 export function WorkspaceClient() {
+  // Workspace-document-shell migration anchor:
+  // workspace registry/session state now lives in the graph store instead of local component state.
   const {
     setFiles,
-    fileTree,
     setGraph,
     currentFile,
+    workspaceRootPath,
+    registeredWorkspaces,
+    activeWorkspaceId,
+    workspaceDocumentsByWorkspaceId,
     sourceVersions,
     files,
     nodes,
@@ -241,12 +312,20 @@ export function WorkspaceClient() {
     pushEditCompletionEvent,
     registerPendingActionRouting,
     clearPendingActionRouting,
-    refreshWorkspaceStyles,
+    draftDocuments,
     setFileTree,
-    workspaceStyleDiagnosticsByNodeId,
+    setWorkspaceSession,
+    hydrateWorkspaceRegistry,
+    replaceRegisteredWorkspaces,
+    upsertWorkspaceFromProbe,
+    reconnectWorkspaceFromProbe,
+    setActiveWorkspaceId: setGraphActiveWorkspaceId,
+    removeRegisteredWorkspace,
+    setWorkspaceDocuments,
+    registerWorkspaceDocument,
+    setWorkspacePathStatus,
+    rememberLastActiveDocumentForWorkspace,
   } = useGraphStore();
-  const hostRuntime = useMemo(() => getHostRuntime(), []);
-  const rpcClient = hostRuntime.rpc;
   const isChatOpen = useChatUiStore((state) => state.isOpen);
   const toggleChat = useChatUiStore((state) => state.toggleOpen);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -261,10 +340,17 @@ export function WorkspaceClient() {
     useState<TabContextMenuState | null>(null);
   const tabContextMenuRef = useRef<HTMLDivElement>(null);
   const pendingSelectionNodeIdRef = useRef<string | null>(null);
-  const workspaceSessionKey = useMemo(() => createWorkspaceSessionKey({
-    files,
-    workspaceName: fileTree?.name,
-  }), [fileTree?.name, files]);
+  const pendingCreateEditRef = useRef<PendingCreateEdit | null>(null);
+  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
+
+  const activeWorkspace = useMemo(
+    () => registeredWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
+    [activeWorkspaceId, registeredWorkspaces],
+  );
+  const workspaceDocuments = useMemo<SidebarDocumentEntry[]>(
+    () => (activeWorkspaceId ? workspaceDocumentsByWorkspaceId[activeWorkspaceId] ?? [] : []),
+    [activeWorkspaceId, workspaceDocumentsByWorkspaceId],
+  );
 
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') {
@@ -288,64 +374,162 @@ export function WorkspaceClient() {
     };
   }, [activeTabId, markTabDirty, openTab, openTabs]);
 
+  const resetWorkspaceShellState = useCallback((workspaceId: string | null, rootPath: string | null) => {
+    setGraph({
+      nodes: [],
+      edges: [],
+      sourceVersion: null,
+      sourceVersions: {},
+    });
+    setSelectedNodes([]);
+    clearTextEditSession();
+    clearPendingTextEditAction();
+    closeSearch({ clearQuery: true, clearHighlights: true });
+    setGraphError(null);
+    setFileTree(null);
+    setWorkspaceSession({
+      workspaceId,
+      rootPath,
+    });
+    useGraphStore.setState({
+      files: [],
+      currentFile: null,
+      sourceVersion: null,
+      sourceVersions: {},
+      lastActiveDocumentPath: null,
+      draftDocuments: [],
+      openTabs: [],
+      activeTabId: null,
+    });
+  }, [
+    clearPendingTextEditAction,
+    clearTextEditSession,
+    closeSearch,
+    setFileTree,
+    setGraph,
+    setGraphError,
+    setSelectedNodes,
+    setWorkspaceSession,
+  ]);
+
+  const syncWorkspaceEntry = useCallback((probe: WorkspaceProbeResponse, options?: {
+    existingId?: string;
+    activate?: boolean;
+  }) => upsertWorkspaceFromProbe(probe, options), [upsertWorkspaceFromProbe]);
+
+  const bootstrapWorkspaceRegistry = useCallback(async () => {
+    setIsWorkspaceLoading(true);
+    try {
+      const { workspaces: storedWorkspaces } = hydrateWorkspaceRegistry();
+
+      if (storedWorkspaces.length === 0) {
+        return;
+      }
+
+      const refreshed = await Promise.all(
+        storedWorkspaces.map(async (workspace) => {
+          try {
+            const probe = await fetchWorkspaceProbe(workspace.rootPath);
+            return updateWorkspaceFromProbe(workspace, probe);
+          } catch {
+            return workspace;
+          }
+        }),
+      );
+
+      replaceRegisteredWorkspaces(refreshed);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '워크스페이스를 초기화하는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_BOOTSTRAP_FAILED',
+        details: error,
+      });
+    } finally {
+      setIsWorkspaceLoading(false);
+    }
+  }, [hydrateWorkspaceRegistry, replaceRegisteredWorkspaces, setGraphError, upsertWorkspaceFromProbe]);
+
   // File sync - triggers re-render when file changes externally
   const handleFileChange = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  // Load file list from API
-  const loadFiles = useCallback(async () => {
+  const loadActiveWorkspaceDocuments = useCallback(async (
+    workspace: RegisteredWorkspace,
+    options?: {
+      restoreInitialDocument?: boolean;
+    },
+  ) => {
     try {
-      const data = await rpcClient.listFiles();
-      if (data.files) {
-        setFiles(data.files);
-        const runtime = useGraphStore.getState();
-        const resumeTarget = readLastActiveDocumentPath(createWorkspaceSessionKey({
-          files: data.files,
-          workspaceName: runtime.fileTree?.name,
-        }), data.files);
-        const initialDocument = (
-          typeof resumeTarget === 'string'
-          && data.files.includes(resumeTarget)
-        )
-          ? resumeTarget
-          : data.files[0] ?? null;
-        if (!runtime.currentFile && runtime.openTabs.length === 0 && initialDocument) {
-          window.setTimeout(() => {
-            useGraphStore.getState().openTab(initialDocument);
-          }, 0);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load files:', error);
-      void hostRuntime.bootstrap.markFailed({
-        code: 'DESKTOP_BOOT_WORKSPACE_RESOLVE_FAILED',
-        message: error instanceof Error ? error.message : 'Failed to load files.',
-      });
-    }
-  }, [hostRuntime.bootstrap, rpcClient, setFiles]);
+      const [data, legacyTree] = await Promise.all([
+        fetchWorkspaceDocuments(workspace.rootPath),
+        fetchWorkspaceFileTree(workspace.rootPath).catch(() => ({ tree: null })),
+      ]);
+      const sidebarDocuments = buildSidebarDocuments(workspace.rootPath, data.documents);
+      const absoluteFiles = sidebarDocuments.map((document) => document.absolutePath);
+      const lastActiveDocuments = readLastActiveDocumentMap();
+      const resumeTarget = lastActiveDocuments[workspace.id];
+      const initialDocument = (
+        typeof resumeTarget === 'string'
+        && absoluteFiles.includes(resumeTarget)
+      )
+        ? resumeTarget
+        : absoluteFiles[0] ?? null;
 
-  const loadFileTree = useCallback(async () => {
-    try {
-      const data = await rpcClient.getFileTree() as { tree?: FileTreeNode | null };
-      if (data.tree) {
-        setFileTree(data.tree);
+      setWorkspaceDocuments(workspace.id, sidebarDocuments);
+      setFiles(absoluteFiles);
+      setFileTree(legacyTree.tree);
+      syncWorkspaceEntry(data, { existingId: workspace.id });
+      setWorkspacePathStatus({
+        workspaceId: workspace.id,
+        rootPath: data.rootPath,
+        status: data.health.state,
+        failureReason: data.health.message ?? null,
+      });
+      setWorkspaceSession({
+        workspaceId: workspace.id,
+        rootPath: data.rootPath,
+      });
+      useGraphStore.setState({
+        lastActiveDocumentPath: initialDocument,
+      });
+
+      if (options?.restoreInitialDocument && initialDocument) {
+        window.setTimeout(() => {
+          useGraphStore.getState().openTab(initialDocument);
+        }, 0);
       }
     } catch (error) {
-      console.error('Failed to load file tree:', error);
-      void hostRuntime.bootstrap.markFailed({
-        code: 'DESKTOP_BOOT_WORKSPACE_RESOLVE_FAILED',
-        message: error instanceof Error ? error.message : 'Failed to load file tree.',
+      try {
+        const probe = await fetchWorkspaceProbe(workspace.rootPath);
+        syncWorkspaceEntry(probe, { existingId: workspace.id });
+        setWorkspacePathStatus({
+          workspaceId: workspace.id,
+          rootPath: probe.rootPath,
+          status: probe.health.state,
+          failureReason: probe.health.message ?? null,
+        });
+      } catch {
+        // Ignore probe failures and surface the original error below.
+      }
+      setWorkspaceDocuments(workspace.id, []);
+      setFiles([]);
+      setFileTree(null);
+      const message = error instanceof Error
+        ? error.message
+        : '문서 목록을 불러오는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_DOCUMENTS_LOAD_FAILED',
+        details: error,
       });
     }
-  }, [hostRuntime.bootstrap, rpcClient, setFileTree]);
+  }, [setFileTree, setFiles, setGraphError, setWorkspaceDocuments, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
+
   const dependencyFiles = useMemo(
     () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentFile),
     [currentFile, sourceVersions],
-  );
-  const workspaceStyleDiagnostics = useMemo(
-    () => flattenWorkspaceStyleDiagnostics(workspaceStyleDiagnosticsByNodeId),
-    [workspaceStyleDiagnosticsByNodeId],
   );
 
   // File sync with reload callback for file list changes
@@ -357,39 +541,40 @@ export function WorkspaceClient() {
     reparentNode,
     undoLastEdit,
     redoLastEdit,
-  } = useFileSync(currentFile, handleFileChange, loadFiles, dependencyFiles);
+  } = useFileSync(
+    currentFile,
+    activeWorkspace?.rootPath ?? workspaceRootPath,
+    handleFileChange,
+    activeWorkspace ? () => {
+      void loadActiveWorkspaceDocuments(activeWorkspace);
+    } : undefined,
+    dependencyFiles,
+  );
 
-  // Initial file load
   useEffect(() => {
-    loadFiles();
-  }, [loadFiles]);
+    void bootstrapWorkspaceRegistry();
+  }, [bootstrapWorkspaceRegistry]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof document === 'undefined') {
+    if (!activeWorkspace) {
+      resetWorkspaceShellState(null, null);
       return;
     }
 
-    const handleRuntimeStyleContextChange = () => {
-      refreshWorkspaceStyles();
-    };
+    resetWorkspaceShellState(activeWorkspace.id, activeWorkspace.rootPath);
+    if (activeWorkspace.status !== 'ok') {
+      return;
+    }
+    void loadActiveWorkspaceDocuments(activeWorkspace, { restoreInitialDocument: true });
+  }, [activeWorkspace?.id, activeWorkspace?.rootPath, activeWorkspace?.status, loadActiveWorkspaceDocuments, resetWorkspaceShellState]);
 
-    window.addEventListener('resize', handleRuntimeStyleContextChange);
-    const observer = new MutationObserver((mutations) => {
-      const classMutation = mutations.some((mutation) => mutation.attributeName === 'class');
-      if (classMutation) {
-        handleRuntimeStyleContextChange();
-      }
-    });
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class'],
-    });
+  useEffect(() => {
+    if (!activeWorkspace || !currentFile) {
+      return;
+    }
 
-    return () => {
-      window.removeEventListener('resize', handleRuntimeStyleContextChange);
-      observer.disconnect();
-    };
-  }, [refreshWorkspaceStyles]);
+    rememberLastActiveDocumentForWorkspace(activeWorkspace.id, currentFile);
+  }, [activeWorkspace, currentFile, rememberLastActiveDocumentForWorkspace]);
 
   const executeCloseTabs = useCallback(
     (tabIds: string[]) => {
@@ -459,11 +644,217 @@ export function WorkspaceClient() {
     [openTab],
   );
 
+  const handleSelectWorkspace = useCallback((workspaceId: string) => {
+    setGraphActiveWorkspaceId(workspaceId);
+  }, [setGraphActiveWorkspaceId]);
+
+  const handleCreateWorkspace = useCallback(async () => {
+    const rootPath = await pickWorkspaceRootPath({
+      title: '새 workspace 절대 경로',
+      defaultPath: activeWorkspace?.rootPath ?? '',
+    });
+    if (!rootPath) {
+      return false;
+    }
+
+    try {
+      const probe = await ensureWorkspaceProbe(rootPath);
+      syncWorkspaceEntry(probe, { activate: true });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '새 workspace를 만드는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_CREATE_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace?.rootPath, setGraphError, syncWorkspaceEntry]);
+
+  const handleAddExistingWorkspace = useCallback(async () => {
+    const rootPath = await pickWorkspaceRootPath({
+      title: '기존 workspace 절대 경로',
+      defaultPath: activeWorkspace?.rootPath ?? '',
+    });
+    if (!rootPath) {
+      return false;
+    }
+
+    try {
+      const probe = await fetchWorkspaceProbe(rootPath);
+      syncWorkspaceEntry(probe, { activate: true });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '기존 workspace를 등록하는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_ADD_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace?.rootPath, setGraphError, syncWorkspaceEntry]);
+
+  const handleReconnectWorkspace = useCallback(async () => {
+    if (!activeWorkspace) {
+      return false;
+    }
+
+    const nextRootPath = await pickWorkspaceRootPath({
+      title: '새 workspace 절대 경로',
+      defaultPath: activeWorkspace.rootPath,
+    });
+    if (!nextRootPath) {
+      return false;
+    }
+
+    try {
+      const probe = await fetchWorkspaceProbe(nextRootPath);
+      reconnectWorkspaceFromProbe(activeWorkspace.id, probe);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'workspace를 다시 연결하는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_RECONNECT_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace, reconnectWorkspaceFromProbe, setGraphError]);
+
+  const handleRemoveWorkspace = useCallback(() => {
+    if (!activeWorkspace) {
+      return false;
+    }
+
+    const shouldRemove = window.confirm(`"${activeWorkspace.name}" workspace를 제거할까요?`);
+    if (!shouldRemove) {
+      return false;
+    }
+
+    removeRegisteredWorkspace(activeWorkspace.id);
+    return true;
+  }, [activeWorkspace, removeRegisteredWorkspace]);
+
+  const handleRevealWorkspace = useCallback(async () => {
+    if (!activeWorkspace) {
+      return false;
+    }
+
+    try {
+      await triggerWorkspaceFileBrowserAction({
+        rootPath: activeWorkspace.rootPath,
+        action: 'open',
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'workspace 경로를 여는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_REVEAL_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace, setGraphError]);
+
+  const handleCopyWorkspacePath = useCallback(async () => {
+    if (!activeWorkspace) {
+      return false;
+    }
+
+    try {
+      await copyTextWithDesktopBridge(activeWorkspace.rootPath);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'workspace 경로를 복사하는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'WORKSPACE_COPY_PATH_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace, setGraphError]);
+
+  const refreshActiveWorkspace = useCallback(async () => {
+    if (!activeWorkspace) {
+      return;
+    }
+
+    if (activeWorkspace.status !== 'ok') {
+      const probe = await fetchWorkspaceProbe(activeWorkspace.rootPath);
+      reconnectWorkspaceFromProbe(activeWorkspace.id, probe);
+      return;
+    }
+
+    await loadActiveWorkspaceDocuments(activeWorkspace);
+  }, [activeWorkspace, loadActiveWorkspaceDocuments, reconnectWorkspaceFromProbe]);
+
+  const handleCreateDocument = useCallback(async () => {
+    if (!activeWorkspace) {
+      return false;
+    }
+
+    try {
+      const createdDocument = await createWorkspaceDocument({
+        rootPath: activeWorkspace.rootPath,
+      });
+      const absoluteFilePath = resolveWorkspaceDocumentAbsolutePath(
+        activeWorkspace.rootPath,
+        createdDocument.filePath,
+      );
+      useGraphStore.getState().setSourceVersionForFile(
+        absoluteFilePath,
+        createdDocument.sourceVersion,
+      );
+      registerWorkspaceDocument(activeWorkspace.id, {
+        absolutePath: absoluteFilePath,
+        relativePath: createdDocument.filePath,
+        title: createdDocument.filePath.split('/').filter(Boolean).at(-1) ?? createdDocument.filePath,
+      });
+
+      const opened = openTabByPath(absoluteFilePath);
+      if (opened) {
+        const nextSourceVersions = {
+          ...useGraphStore.getState().sourceVersions,
+          [absoluteFilePath]: createdDocument.sourceVersion,
+        };
+        setGraph({
+          nodes: [],
+          edges: [],
+          sourceVersion: createdDocument.sourceVersion,
+          sourceVersions: nextSourceVersions,
+        });
+        setGraphError(null);
+      }
+
+      await loadActiveWorkspaceDocuments(activeWorkspace);
+      return opened;
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : '새 문서를 만드는 데 실패했습니다.';
+      setGraphError({
+        message,
+        type: 'DOCUMENT_CREATE_FAILED',
+        details: error,
+      });
+      return false;
+    }
+  }, [activeWorkspace, loadActiveWorkspaceDocuments, openTabByPath, registerWorkspaceDocument, setGraph, setGraphError]);
+
   const restoreNodeData = useCallback((nodeId: string, previousData: Record<string, unknown> | undefined) => {
     useGraphStore.setState((state) => ({
       nodes: state.nodes.map((node) => (
         node.id === nodeId
-          ? { ...node, data: previousData || {} }
+          ? {
+              ...node,
+              zIndex: typeof previousData?.zIndex === 'number' ? previousData.zIndex : undefined,
+              data: previousData || {},
+            }
           : node
       )),
     }));
@@ -482,11 +873,19 @@ export function WorkspaceClient() {
       const groupNodeIds = runtime.nodes
         .filter((node) => node.data?.groupId === descriptor.payload.groupId)
         .map((node) => node.id);
-      runtime.setSelectedNodes(
-        groupNodeIds.length > 0
-          ? groupNodeIds
-          : (descriptor.payload.anchorNodeId ? [descriptor.payload.anchorNodeId] : []),
-      );
+      const nextSelectedNodeIds = groupNodeIds.length > 0
+        ? groupNodeIds
+        : (descriptor.payload.anchorNodeId ? [descriptor.payload.anchorNodeId] : []);
+      useGraphStore.setState((state) => ({
+        nodes: state.nodes.map((node) => {
+          const selected = nextSelectedNodeIds.includes(node.id);
+          return node.selected === selected
+            ? node
+            : { ...node, selected };
+        }),
+        selectedNodeIds: nextSelectedNodeIds,
+        activeGroupFocusGroupId: null,
+      }));
     }
   }, [restoreNodeData]);
 
@@ -514,6 +913,22 @@ export function WorkspaceClient() {
 
     if (effect.pendingSelectionRenderedId) {
       pendingSelectionNodeIdRef.current = effect.pendingSelectionRenderedId;
+      const createdNode = (
+        effect.after
+        && typeof effect.after === 'object'
+        && 'create' in (effect.after as Record<string, unknown>)
+      )
+        ? (effect.after as { create?: { type?: string } }).create
+        : undefined;
+      if (
+        createdNode?.type
+        && resolveImmediateCreateEditMode(createdNode.type as CreatePayload['nodeType'])
+      ) {
+        pendingCreateEditRef.current = {
+          renderedId: effect.pendingSelectionRenderedId,
+          mode: resolveImmediateCreateEditMode(createdNode.type as CreatePayload['nodeType']) as PendingCreateEdit['mode'],
+        };
+      }
     }
     if (effect.reloadGraphOnSuccess) {
       handleFileChange();
@@ -542,6 +957,22 @@ export function WorkspaceClient() {
         descriptor.payload.nodeId,
         descriptor.payload.newParentId,
         descriptor.payload.filePath,
+      );
+    }
+    if (descriptor.actionId === 'node.group-membership.update') {
+      return updateNode(
+        descriptor.payload.nodeId,
+        { groupId: descriptor.payload.groupId },
+        descriptor.payload.filePath,
+        { commandType: 'node.group.update' },
+      );
+    }
+    if (descriptor.actionId === 'node.z-order.update') {
+      return updateNode(
+        descriptor.payload.nodeId,
+        { zIndex: descriptor.payload.zIndex },
+        descriptor.payload.filePath,
+        { commandType: 'node.z-order.update' },
       );
     }
     throw new RpcClientError(RPC_ERRORS.INVALID_PARAMS.code, RPC_ERRORS.INVALID_PARAMS.message, {
@@ -679,7 +1110,7 @@ export function WorkspaceClient() {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-    trigger?: { source: 'menu' };
+    trigger?: { source: 'menu' | 'hotkey' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -736,7 +1167,7 @@ export function WorkspaceClient() {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-    trigger?: { source: 'menu' };
+    trigger?: { source: 'menu' | 'hotkey' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -774,7 +1205,7 @@ export function WorkspaceClient() {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-    trigger?: { source: 'menu' };
+    trigger?: { source: 'menu' | 'hotkey' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -812,7 +1243,7 @@ export function WorkspaceClient() {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-    trigger?: { source: 'menu' };
+    trigger?: { source: 'menu' | 'hotkey' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -850,7 +1281,7 @@ export function WorkspaceClient() {
     nodeId: string;
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-    trigger?: { source: 'menu' };
+    trigger?: { source: 'menu' | 'hotkey' };
   }) => {
     const runtime = useGraphStore.getState();
     const targetNode = runtime.nodes.find((node) => node.id === input.nodeId);
@@ -884,15 +1315,89 @@ export function WorkspaceClient() {
     }
   }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
 
+  const handleSelectionStructuralCommit = useCallback(async (input: GraphCanvasSelectionActionIntentInput & {
+    intent: 'group-selection' | 'ungroup-selection' | 'bring-selection-to-front' | 'send-selection-to-back';
+    fallbackMessage: string;
+  }) => {
+    const runtime = useGraphStore.getState();
+    const anchorNodeId = input.anchorNodeId ?? runtime.selectedNodeIds[0];
+    if (!anchorNodeId) {
+      return;
+    }
+
+    const anchorNode = runtime.nodes.find((node) => node.id === anchorNodeId);
+    if (!anchorNode) {
+      throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId: anchorNodeId });
+    }
+
+    try {
+      await dispatchActionRoutingIntentOrThrow({
+        surface: resolveLegacyEntrypointSurface({
+          surfaceId: input.surfaceId,
+          surface: input.surface,
+        }),
+        intent: input.intent,
+        resolvedContext: resolveNodeActionRoutingContext(
+          anchorNode,
+          runtime.currentFile,
+          runtime.selectedNodeIds,
+        ),
+        uiPayload: {},
+        trigger: input.trigger ?? { source: 'menu' },
+      });
+    } catch (error) {
+      const message = mapEditRpcErrorToToast(error) ?? input.fallbackMessage;
+      setGraphError({
+        message,
+        type: 'EDIT_REJECTED',
+        details: error,
+      });
+      throw error;
+    }
+  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
+
+  const handleGroupSelectionCommit = useCallback((input: GraphCanvasSelectionActionIntentInput) => (
+    handleSelectionStructuralCommit({
+      ...input,
+      intent: 'group-selection',
+      fallbackMessage: '선택 항목 그룹화에 실패했습니다.',
+    })
+  ), [handleSelectionStructuralCommit]);
+
+  const handleUngroupSelectionCommit = useCallback((input: GraphCanvasSelectionActionIntentInput) => (
+    handleSelectionStructuralCommit({
+      ...input,
+      intent: 'ungroup-selection',
+      fallbackMessage: '그룹 해제에 실패했습니다.',
+    })
+  ), [handleSelectionStructuralCommit]);
+
+  const handleBringSelectionToFrontCommit = useCallback((input: GraphCanvasSelectionActionIntentInput) => (
+    handleSelectionStructuralCommit({
+      ...input,
+      intent: 'bring-selection-to-front',
+      fallbackMessage: '맨 앞으로 이동에 실패했습니다.',
+    })
+  ), [handleSelectionStructuralCommit]);
+
+  const handleSendSelectionToBackCommit = useCallback((input: GraphCanvasSelectionActionIntentInput) => (
+    handleSelectionStructuralCommit({
+      ...input,
+      intent: 'send-selection-to-back',
+      fallbackMessage: '맨 뒤로 이동에 실패했습니다.',
+    })
+  ), [handleSelectionStructuralCommit]);
+
   const handleCreateNodeCommit = useCallback(async (input: {
     surfaceId?: ActionRoutingSurfaceId;
     surface?: Exclude<CanvasEntrypointSurface, 'selection-floating-menu'>;
     trigger?: { source: 'click' | 'menu' };
-    nodeType: 'shape' | 'text' | 'markdown' | 'sticky' | 'sticker' | 'washi-tape';
+    nodeType: CreatePayload['nodeType'];
     placement:
       | { mode: 'canvas-absolute'; x: number; y: number }
       | { mode: 'mindmap-child'; parentId: string }
       | { mode: 'mindmap-sibling'; siblingOf: string; parentId: string | null };
+    initialProps?: Record<string, unknown>;
     targetRenderedNodeId?: string;
     filePath?: string;
     scopeId?: string;
@@ -936,6 +1441,7 @@ export function WorkspaceClient() {
         uiPayload: {
           nodeType: input.nodeType,
           placement: input.placement,
+          ...(input.initialProps ? { initialProps: input.initialProps } : {}),
           filePath: input.filePath,
           scopeId: input.scopeId,
           frameScope: input.frameScope,
@@ -1191,6 +1697,10 @@ export function WorkspaceClient() {
 
   const runQuickOpenCommand = useCallback(
     async (commandId: string) => {
+      if (commandId === 'new-document') {
+        return handleCreateDocument();
+      }
+
       if (commandId === 'washi:select-all') {
         return selectNodesByType('washi-tape').length > 0;
       }
@@ -1218,6 +1728,7 @@ export function WorkspaceClient() {
     },
     [
       focusNextNodeByType,
+      handleCreateDocument,
       handleWashiPresetChange,
       selectNodesByType,
       selectedWashiNodeIds,
@@ -1229,6 +1740,12 @@ export function WorkspaceClient() {
     const hasWashiSelection = selectedWashiNodeIds.length > 0;
 
     const baseCommands: QuickOpenCommand[] = [
+      {
+        id: 'new-document',
+        label: 'New document',
+        hint: 'Empty canvas',
+        keywords: ['new', 'document', 'canvas', 'empty', '새 문서'],
+      },
       {
         id: 'washi:select-all',
         label: 'Washi: 전체 선택',
@@ -1515,26 +2032,40 @@ export function WorkspaceClient() {
   ]);
 
   useEffect(() => {
-    loadFiles();
-  }, [loadFiles]);
-
-  useEffect(() => {
-    if (!currentFile) {
-      return;
-    }
-
-    persistLastActiveDocumentPath(workspaceSessionKey, currentFile);
-  }, [currentFile, workspaceSessionKey]);
-
-  useEffect(() => {
     async function renderFile() {
       if (!currentFile) return;
+
+      if (draftDocuments.includes(currentFile)) {
+        setGraph({
+          nodes: [],
+          edges: [],
+          sourceVersion: null,
+          sourceVersions: {
+            ...useGraphStore.getState().sourceVersions,
+            [currentFile]: 'draft:empty-canvas',
+          },
+        });
+        setGraphError(null);
+        return;
+      }
+
       try {
         setGraphError(null); // Clear previous errors
 
-        const data = await rpcClient.renderFile(currentFile);
+        const response = await fetch('/api/render', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filePath: currentFile,
+            ...(activeWorkspace?.rootPath ?? workspaceRootPath
+              ? { rootPath: activeWorkspace?.rootPath ?? workspaceRootPath }
+              : {}),
+          }),
+        });
 
-        if (data.error) {
+        const data = await response.json();
+
+        if (!response.ok) {
           // Handle structured error from backend
           const errorMessage = data.error || 'Unknown rendering error';
 
@@ -1563,54 +2094,63 @@ export function WorkspaceClient() {
             details: data.details,
             location,
           });
-          void hostRuntime.bootstrap.markFailed({
-            code: 'DESKTOP_BOOT_RENDERER_READY_FAILED',
-            message: errorMessage,
-          });
           return;
         }
 
-        const parsed = parseRenderGraph(
-          data as Parameters<typeof parseRenderGraph>[0],
-        );
+        const parsed = parseRenderGraph(data);
         if (parsed) {
           setGraph(parsed);
-          void hostRuntime.bootstrap.markReady({ currentFile });
           if (pendingSelectionNodeIdRef.current) {
             const createdNodeId = pendingSelectionNodeIdRef.current;
-            const createdNodeExists = parsed.nodes.some((node) => node.id === createdNodeId);
-            if (createdNodeExists) {
+            const createdNode = parsed.nodes.find((node) => node.id === createdNodeId);
+            if (createdNode) {
               setSelectedNodes([createdNodeId]);
               pendingSelectionNodeIdRef.current = null;
+              if (pendingCreateEditRef.current?.renderedId === createdNodeId) {
+                const data = (createdNode.data || {}) as Record<string, unknown>;
+                useGraphStore.getState().startTextEditSession({
+                  nodeId: createdNodeId,
+                  initialDraft: typeof data.label === 'string' ? data.label : '',
+                  mode: pendingCreateEditRef.current.mode,
+                });
+                pendingCreateEditRef.current = null;
+              }
             }
           }
         }
       } catch (error) {
         console.error('Failed to render file:', error);
-        void hostRuntime.bootstrap.markFailed({
-          code: 'DESKTOP_BOOT_RENDERER_READY_FAILED',
-          message: error instanceof Error ? error.message : 'Failed to render file.',
-        });
       }
     }
 
     renderFile();
-  }, [
-    currentFile,
-    hostRuntime.bootstrap,
-    refreshKey,
-    rpcClient,
-    setGraph,
-    setGraphError,
-    setSelectedNodes,
-  ]); // refreshKey triggers re-render on file changes
+  }, [activeWorkspace?.rootPath, currentFile, draftDocuments, refreshKey, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on file changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-white text-slate-900">
-      <Sidebar onOpenFile={openTabByPath} />
+      <Sidebar
+        activeWorkspace={activeWorkspace as SidebarWorkspaceEntry | null}
+        workspaces={registeredWorkspaces as SidebarWorkspaceEntry[]}
+        documents={workspaceDocuments}
+        isLoading={isWorkspaceLoading}
+        onRefresh={() => { void refreshActiveWorkspace(); }}
+        onSelectWorkspace={handleSelectWorkspace}
+        onCreateWorkspace={() => { void handleCreateWorkspace(); }}
+        onAddWorkspace={() => { void handleAddExistingWorkspace(); }}
+        onCreateDocument={() => { void handleCreateDocument(); }}
+        onOpenDocument={openTabByPath}
+        onCopyWorkspacePath={() => { void handleCopyWorkspacePath(); }}
+        onRevealWorkspace={() => { void handleRevealWorkspace(); }}
+        onReconnectWorkspace={() => { void handleReconnectWorkspace(); }}
+        onRemoveWorkspace={handleRemoveWorkspace}
+        onOpenLegacyFile={openTabByPath}
+      />
 
       <div className="flex flex-1 flex-col h-full overflow-hidden relative">
-        <Header />
+        <Header
+          onCreateDocument={() => { void handleCreateDocument(); }}
+          workspaceLabel={activeWorkspace?.name ?? null}
+        />
         {isChatOpen && <LazyChatPanel />}
         <TabBar
           tabs={openTabs}
@@ -1633,23 +2173,15 @@ export function WorkspaceClient() {
             onDeleteNode={handleNodeDeleteCommit}
             onToggleNodeLock={handleNodeLockToggleCommit}
             onSelectNodeGroup={handleNodeGroupSelectCommit}
+            onGroupSelection={handleGroupSelectionCommit}
+            onUngroupSelection={handleUngroupSelectionCommit}
+            onBringSelectionToFront={handleBringSelectionToFrontCommit}
+            onSendSelectionToBack={handleSendSelectionToBackCommit}
             onCreateNode={handleCreateNodeCommit}
             onApplySelectionStyle={handleSelectionStyleCommit}
             onCommitSelectionContent={handleSelectionContentCommit}
           />
           <LazyStickerInspector onApplyStylePatch={handleNodeStyleCommit} />
-          {process.env.NODE_ENV !== 'production' && workspaceStyleDiagnostics.length > 0 ? (
-            <div className="absolute bottom-4 left-4 z-40 max-w-sm rounded-lg border border-amber-200 bg-amber-50/95 px-3 py-2 text-xs text-amber-950 shadow-lg backdrop-blur">
-              <div className="font-semibold">Workspace Style Diagnostics</div>
-              <ul className="mt-1 space-y-1">
-                {workspaceStyleDiagnostics.map((message, index) => (
-                  <li key={`${message}-${index}`}>
-                    {message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
         </main>
 
         <Footer />

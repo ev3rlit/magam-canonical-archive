@@ -64,6 +64,7 @@ describe('graphCanvasHost selection floating menu binding', () => {
       nodes: [node],
       selectedNodeIds: ['text-1'],
       currentFile: 'examples/bridge.tsx',
+      activeTextEditNodeId: null,
       runtimeState: {
         ...DEFAULT_ENTRYPOINT_RUNTIME_STATE,
         anchorsById: {
@@ -90,6 +91,51 @@ describe('graphCanvasHost selection floating menu binding', () => {
       width: 120,
       height: 40,
     });
+  });
+
+  it('suppresses the floating menu contribution while body editing is active', () => {
+    const node = makeSelectionNode({
+      id: 'text-1',
+      type: 'text',
+      data: {
+        label: 'Hello',
+        color: '#111827',
+        fontSize: 'm',
+        fontFamily: 'sans-inter',
+      },
+      editMeta: {
+        family: 'rich-content',
+        contentCarrier: 'text-child',
+        styleEditableKeys: ['color', 'fontSize', 'fontFamily', 'bold'],
+      },
+    });
+
+    const contribution = createGraphCanvasSelectionFloatingMenuContribution({
+      runtime: canvasRuntime,
+      toolbarSlot: canvasRuntime.slots.canvasToolbar,
+      selectionFloatingMenuSlot: canvasRuntime.slots.selectionFloatingMenu,
+      nodes: [node],
+      selectedNodeIds: ['text-1'],
+      currentFile: 'examples/bridge.tsx',
+      activeTextEditNodeId: 'text-1',
+      runtimeState: {
+        ...DEFAULT_ENTRYPOINT_RUNTIME_STATE,
+        anchorsById: {
+          'selection-floating-menu:selection-bounds': createEntrypointAnchor({
+            anchorId: 'selection-floating-menu:selection-bounds',
+            kind: 'selection-bounds',
+            nodeIds: ['text-1'],
+            screen: { x: 32, y: 48, width: 120, height: 40 },
+          }),
+        },
+      },
+      pendingActionRoutingByKey: {},
+      washiPresets: [],
+      onApplyStylePatch: () => {},
+      onCommitContent: () => {},
+    });
+
+    expect(contribution).toBeNull();
   });
 
   it('opens, replaces, and closes the selection floating overlay without touching unrelated surfaces', () => {

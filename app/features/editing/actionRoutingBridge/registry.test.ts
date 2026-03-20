@@ -4,6 +4,7 @@ import {
   createContentIntentEnvelope,
   createNodeChildIntentEnvelope,
   createPaneCreateIntentEnvelope,
+  createSelectionStructuralIntentEnvelope,
   createStyleIntentEnvelope,
 } from '@/features/editing/actionRoutingBridge/__fixtures__/intentEnvelopes';
 import {
@@ -64,6 +65,41 @@ describe('action routing bridge registry', () => {
     });
 
     expect(result).toEqual({ ok: true, value: true });
+  });
+
+  it('merges drag-sized rectangle create props into the node.create payload', () => {
+    const normalized = registry['node.create']?.normalizePayload({
+      envelope: createPaneCreateIntentEnvelope({
+        rawPayload: {
+          nodeType: 'rectangle',
+          placement: {
+            mode: 'canvas-absolute',
+            x: 120,
+            y: 160,
+          },
+          initialProps: {
+            size: {
+              width: 240,
+              height: 140,
+            },
+          },
+        },
+      }),
+      context: makeActionRoutingContext(),
+    });
+
+    expect(normalized?.ok).toBe(true);
+    if (!normalized || !normalized.ok) return;
+    expect(normalized.value.createInput).toMatchObject({
+      type: 'rectangle',
+      props: {
+        type: 'rectangle',
+        size: {
+          width: 240,
+          height: 140,
+        },
+      },
+    });
   });
 
   it('normalizes content updates against canonical content carriers', () => {
@@ -244,6 +280,159 @@ describe('action routing bridge registry', () => {
         anchorNodeId: 'mind-1',
       },
     });
+  });
+
+  it('builds selection.group as structural group-membership updates for the selected canvas nodes', () => {
+    const first = makeCanonicalNode({
+      id: 'shape-a',
+      type: 'shape',
+      sourceKind: 'canvas',
+    });
+    const second = makeCanonicalNode({
+      id: 'shape-b',
+      type: 'shape',
+      sourceKind: 'canvas',
+    });
+    const envelope = createSelectionStructuralIntentEnvelope({
+      intentId: 'selection.group',
+      selectedNodeIds: ['shape-a', 'shape-b'],
+      renderedNodeId: 'shape-a',
+    });
+
+    const normalized = registry['selection.group']?.normalizePayload({
+      envelope,
+      context: makeActionRoutingContext({
+        nodes: [first, second],
+      }),
+    });
+
+    expect(normalized?.ok).toBe(true);
+    if (!normalized || !normalized.ok) return;
+    expect(normalized.value.nextGroupId).toBe('group-1');
+
+    const plan = registry['selection.group']?.buildDispatch({
+      envelope,
+      context: makeActionRoutingContext({
+        nodes: [first, second],
+      }),
+      normalized: normalized.value,
+    });
+
+    expect(plan?.ok).toBe(true);
+    if (!plan || !plan.ok) return;
+    expect(plan.value.steps[0]).toMatchObject({
+      kind: 'runtime-only-action',
+      actionId: 'apply-node-data-patch',
+      payload: {
+        nodeId: 'shape-a',
+        patch: {
+          groupId: 'group-1',
+        },
+      },
+    });
+    expect(plan.value.steps[1]).toMatchObject({
+      kind: 'canonical-mutation',
+      actionId: 'node.group-membership.update',
+      payload: {
+        nodeId: 'shape-a',
+        groupId: 'group-1',
+      },
+    });
+    expect(plan.value.steps.at(-1)).toMatchObject({
+      kind: 'runtime-only-action',
+      actionId: 'select-node-group',
+      payload: {
+        groupId: 'group-1',
+        anchorNodeId: 'shape-a',
+      },
+    });
+  });
+
+  it('builds selection.ungroup from grouped canvas nodes without treating them as mindmap members', () => {
+    const first = makeCanonicalNode({
+      id: 'shape-a',
+      type: 'shape',
+      groupId: 'canvas-group',
+      sourceKind: 'canvas',
+    });
+    const second = makeCanonicalNode({
+      id: 'shape-b',
+      type: 'shape',
+      groupId: 'canvas-group',
+      sourceKind: 'canvas',
+    });
+    const envelope = createSelectionStructuralIntentEnvelope({
+      intentId: 'selection.ungroup',
+      selectedNodeIds: ['shape-a', 'shape-b'],
+      renderedNodeId: 'shape-a',
+    });
+
+    const normalized = registry['selection.ungroup']?.normalizePayload({
+      envelope,
+      context: makeActionRoutingContext({
+        nodes: [first, second],
+      }),
+    });
+
+    expect(normalized?.ok).toBe(true);
+    if (!normalized || !normalized.ok) return;
+
+    const plan = registry['selection.ungroup']?.buildDispatch({
+      envelope,
+      context: makeActionRoutingContext({
+        nodes: [first, second],
+      }),
+      normalized: normalized.value,
+    });
+
+    expect(plan?.ok).toBe(true);
+    if (!plan || !plan.ok) return;
+    expect(plan.value.steps[1]).toMatchObject({
+      kind: 'canonical-mutation',
+      actionId: 'node.group-membership.update',
+      payload: {
+        nodeId: 'shape-a',
+        groupId: null,
+      },
+    });
+  });
+
+  it('builds selection z-order updates against only the selected set', () => {
+    const backNode = makeCanonicalNode({
+      id: 'shape-back',
+      type: 'shape',
+      sourceKind: 'canvas',
+      data: { zIndex: 5 },
+    });
+    const first = makeCanonicalNode({
+      id: 'shape-a',
+      type: 'shape',
+      sourceKind: 'canvas',
+      data: { zIndex: 10 },
+    });
+    const second = makeCanonicalNode({
+      id: 'shape-b',
+      type: 'shape',
+      sourceKind: 'canvas',
+      data: { zIndex: 11 },
+    });
+    const envelope = createSelectionStructuralIntentEnvelope({
+      intentId: 'selection.z-order.bring-to-front',
+      selectedNodeIds: ['shape-a', 'shape-b'],
+      renderedNodeId: 'shape-a',
+    });
+
+    const normalized = registry['selection.z-order.bring-to-front']?.normalizePayload({
+      envelope,
+      context: makeActionRoutingContext({
+        nodes: [backNode, first, second],
+      }),
+    });
+
+    expect(normalized?.ok).toBe(true);
+    if (!normalized || !normalized.ok) return;
+    const normalizedTargets = normalized.value.targets as Array<{ nextZIndex: number }>;
+    expect(normalizedTargets.map((target) => target.nextZIndex)).toEqual([12, 13]);
   });
 
   it('allows node.lock.toggle to unlock locked nodes', () => {

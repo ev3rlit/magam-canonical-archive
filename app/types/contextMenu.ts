@@ -15,6 +15,11 @@ export interface ContextMenuActionsContext {
     deleteNode?: (nodeId: string) => Promise<void> | void;
     toggleNodeLock?: (nodeId: string) => Promise<void> | void;
     selectNodeGroup?: (nodeId: string) => Promise<void> | void;
+    enterNodeGroup?: (nodeId: string) => Promise<void> | void;
+    groupSelection?: (nodeId: string) => Promise<void> | void;
+    ungroupSelection?: (nodeId: string) => Promise<void> | void;
+    bringSelectionToFront?: (nodeId: string) => Promise<void> | void;
+    sendSelectionToBack?: (nodeId: string) => Promise<void> | void;
     createCanvasNode?: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => Promise<void> | void;
     createMindMapChild?: (nodeId: string) => Promise<void> | void;
     createMindMapSibling?: (nodeId: string) => Promise<void> | void;

@@ -1,8 +1,12 @@
 import {
+  Circle,
+  Diamond,
   Download,
   FileText,
   Maximize,
+  Minus,
   Square,
+  StickyNote,
   Type,
 } from 'lucide-react';
 import type { ContextMenuContext, ContextMenuItem } from '@/types/contextMenu';
@@ -26,12 +30,30 @@ function canFitViewFromPane(ctx: ContextMenuContext): boolean {
 export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
-    id: 'create-shape',
-    label: '도형 생성',
+    id: 'create-rectangle',
+    label: '사각형 생성',
     icon: Square,
     when: canCreateFromPane,
-    handler: (ctx) => ctx.actions?.createCanvasNode?.('shape', ctx.position),
+    handler: (ctx) => ctx.actions?.createCanvasNode?.('rectangle', ctx.position),
     order: 1,
+  },
+  {
+    type: 'action',
+    id: 'create-ellipse',
+    label: '타원 생성',
+    icon: Circle,
+    when: canCreateFromPane,
+    handler: (ctx) => ctx.actions?.createCanvasNode?.('ellipse', ctx.position),
+    order: 2,
+  },
+  {
+    type: 'action',
+    id: 'create-diamond',
+    label: '다이아몬드 생성',
+    icon: Diamond,
+    when: canCreateFromPane,
+    handler: (ctx) => ctx.actions?.createCanvasNode?.('diamond', ctx.position),
+    order: 3,
   },
   {
     type: 'action',
@@ -40,7 +62,7 @@ export const paneMenuItems: ContextMenuItem[] = [
     icon: Type,
     when: canCreateFromPane,
     handler: (ctx) => ctx.actions?.createCanvasNode?.('text', ctx.position),
-    order: 2,
+    order: 4,
   },
   {
     type: 'action',
@@ -49,7 +71,25 @@ export const paneMenuItems: ContextMenuItem[] = [
     icon: FileText,
     when: canCreateFromPane,
     handler: (ctx) => ctx.actions?.createCanvasNode?.('markdown', ctx.position),
-    order: 3,
+    order: 5,
+  },
+  {
+    type: 'action',
+    id: 'create-line',
+    label: '선 생성',
+    icon: Minus,
+    when: canCreateFromPane,
+    handler: (ctx) => ctx.actions?.createCanvasNode?.('line', ctx.position),
+    order: 6,
+  },
+  {
+    type: 'action',
+    id: 'create-sticky',
+    label: '스티키 생성',
+    icon: StickyNote,
+    when: canCreateFromPane,
+    handler: (ctx) => ctx.actions?.createCanvasNode?.('sticky', ctx.position),
+    order: 7,
   },
   { type: 'separator' },
   {

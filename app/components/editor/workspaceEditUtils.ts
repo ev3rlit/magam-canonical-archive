@@ -1,8 +1,11 @@
 import type { Node } from 'reactflow';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
 import type { ActionRoutingResolvedContext } from '@/features/editing/actionRoutingBridge.types';
-import type { WorkspaceStyleInput } from '@/features/workspace-styling';
-import { buildContentDraftPatch } from '@/features/editing/commands';
+import {
+  buildContentDraftPatch,
+  type CreatePayload,
+} from '@/features/editing/commands';
+import { isImmediateEditCreateNodeType } from '@/features/editing/createDefaults';
 import {
   EDIT_COMMAND_TYPES,
   getNodeEditMeta,
@@ -21,9 +24,16 @@ type RpcLikeError = {
 type NodeSourceMeta = {
   sourceId?: unknown;
   filePath?: unknown;
+  absoluteFilePath?: unknown;
   kind?: unknown;
   frameScope?: unknown;
 };
+
+export function resolveImmediateCreateEditMode(
+  nodeType: CreatePayload['nodeType'],
+): 'text' | 'markdown-wysiwyg' | null {
+  return isImmediateEditCreateNodeType(nodeType) ? 'markdown-wysiwyg' : null;
+}
 
 export interface ResolvedNodeEditContext {
   target: {
@@ -82,8 +92,10 @@ export function resolveNodeEditTarget(
   const sourceId = typeof sourceMeta?.sourceId === 'string' && sourceMeta.sourceId.length > 0
     ? sourceMeta.sourceId
     : deriveLocalSourceId(node.id, sourceMeta?.frameScope);
-  const filePath = typeof sourceMeta?.filePath === 'string' && sourceMeta.filePath.length > 0
-    ? sourceMeta.filePath
+  const filePath = typeof sourceMeta?.absoluteFilePath === 'string' && sourceMeta.absoluteFilePath.length > 0
+    ? sourceMeta.absoluteFilePath
+    : typeof sourceMeta?.filePath === 'string' && sourceMeta.filePath.length > 0
+      ? sourceMeta.filePath
     : currentFile;
 
   return {
@@ -154,7 +166,7 @@ export function resolveNodeActionRoutingContext(
       ...(frameScope ? { frameScope } : {}),
       hasParentRelation: Boolean(parentSourceId),
       isGroupMember: Boolean(groupId),
-      isMindmapMember: sourceKind === 'mindmap' || Boolean(groupId),
+      isMindmapMember: sourceKind === 'mindmap',
       isFrameScoped: Boolean(frameScope),
     },
     editability: {
@@ -325,44 +337,4 @@ export function canCommitTextEdit(input: {
 
 export function buildTextDraftPatch(nodeType: string | undefined, draft: string): Record<string, unknown> {
   return buildContentDraftPatch(nodeType, draft);
-}
-
-export function extractWorkspaceStyleInput(
-  node: Pick<Node, 'id' | 'data'>,
-  input: {
-    currentFile: string | null;
-    sourceVersions: Record<string, string>;
-    fallbackRevision?: string;
-    timestamp?: number;
-  },
-): WorkspaceStyleInput | null {
-  const data = (node.data || {}) as Record<string, unknown>;
-  if (typeof data.className !== 'string') {
-    return null;
-  }
-
-  const sourceMeta = (data.sourceMeta || {}) as { filePath?: unknown };
-  const filePath = typeof sourceMeta.filePath === 'string' && sourceMeta.filePath.length > 0
-    ? sourceMeta.filePath
-    : input.currentFile;
-  const sourceRevision = filePath
-    ? (input.sourceVersions[filePath] ?? input.fallbackRevision ?? 'workspace-style:pending')
-    : (input.fallbackRevision ?? 'workspace-style:pending');
-
-  return {
-    objectId: node.id,
-    className: data.className,
-    sourceRevision,
-    timestamp: input.timestamp ?? Date.now(),
-  };
-}
-
-export function flattenWorkspaceStyleDiagnostics<T extends { objectId: string; message: string }>(
-  diagnosticsByNodeId: Record<string, T[]>,
-  limit = 4,
-): string[] {
-  return Object.values(diagnosticsByNodeId)
-    .flat()
-    .slice(0, limit)
-    .map((diagnostic) => `[${diagnostic.objectId}] ${diagnostic.message}`);
 }

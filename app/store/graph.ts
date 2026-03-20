@@ -25,18 +25,6 @@ import type {
 } from '@/features/plugin-runtime';
 import type { ActionRoutingPendingRecord } from '@/features/editing/actionRoutingBridge/types';
 import {
-  applySessionUpdate,
-  createStaleUpdateDiagnostic,
-  createWorkspaceStyleSessionState,
-  interpretWorkspaceStyle,
-  resolveEligibleObjectProfileForNode,
-  type InterpretedStyleResult,
-  type StylingDiagnostic,
-  type WorkspaceStyleInput,
-  type WorkspaceStyleRuntimeContext,
-  type WorkspaceStyleSessionState,
-} from '@/features/workspace-styling';
-import {
   DEFAULT_ENTRYPOINT_RUNTIME_STATE,
   beginPendingUiAction as beginPendingUiActionReducer,
   clearEntrypointAnchor as clearEntrypointAnchorReducer,
@@ -61,6 +49,24 @@ import {
   type OpenSurfaceDescriptor,
 } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 import type { ActionOptimisticLifecycleEvent } from '@/features/editing/actionRoutingBridge.types';
+import {
+  buildRegisteredWorkspace,
+  normalizeWorkspaceDocumentPath,
+  readLastActiveDocumentMap,
+  readStoredActiveWorkspaceId,
+  readStoredWorkspaces,
+  removeWorkspace as removeWorkspaceEntry,
+  type RegisteredWorkspace,
+  sortWorkspaces,
+  updateWorkspaceFromProbe,
+  upsertWorkspace,
+  type WorkspaceHealthState,
+  type WorkspaceProbeResponse,
+  type WorkspaceSidebarDocument,
+  writeLastActiveDocumentMap,
+  writeStoredActiveWorkspaceId,
+  writeStoredWorkspaces,
+} from '@/components/editor/workspaceRegistry';
 
 type SearchActionResult = {
   clearQuery?: boolean;
@@ -74,11 +80,13 @@ export type EditCompletionEventType =
   | 'RELATIVE_MOVE_COMMITTED'
   | 'CONTENT_UPDATED'
   | 'STYLE_UPDATED'
+  | 'NODE_GROUP_MEMBERSHIP_UPDATED'
   | 'NODE_RENAMED'
   | 'NODE_CREATED'
   | 'NODE_DELETED'
   | 'NODE_LOCK_TOGGLED'
-  | 'NODE_REPARENTED';
+  | 'NODE_REPARENTED'
+  | 'NODE_Z_ORDER_UPDATED';
 
 export interface EditCompletionEvent {
   eventId: string;
@@ -178,6 +186,30 @@ export interface FileTreeNode {
   children?: FileTreeNode[];
 }
 
+export const LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY = 'magam:lastActiveDocumentSession';
+
+export interface LastActiveDocumentSession {
+  workspaceKey: string;
+  documentPath: string;
+  updatedAt: number;
+}
+
+export interface WorkspacePathHealthRecord {
+  workspaceId: string;
+  rootPath: string;
+  status: WorkspaceHealthState;
+  lastCheckedAt: number;
+  lastKnownRootPath: string;
+  failureReason?: string | null;
+}
+
+export interface WorkspaceRegistryStateSnapshot {
+  registeredWorkspaces: RegisteredWorkspace[];
+  activeWorkspaceId: string | null;
+  workspaceDocumentsByWorkspaceId: Record<string, WorkspaceSidebarDocument[]>;
+  workspacePathHealthByWorkspaceId: Record<string, WorkspacePathHealthRecord>;
+}
+
 export interface GraphState {
   nodes: Node[];
   edges: Edge[];
@@ -185,6 +217,17 @@ export interface GraphState {
   fileTree: FileTreeNode | null;
   expandedFolders: Set<string>;
   currentFile: string | null;
+  // Workspace-document-shell migration anchor:
+  // registry/session/path-health state is owned here so runtime scope follows the active workspace.
+  registeredWorkspaces: RegisteredWorkspace[];
+  activeWorkspaceId: string | null;
+  workspaceDocumentsByWorkspaceId: Record<string, WorkspaceSidebarDocument[]>;
+  workspacePathHealthByWorkspaceId: Record<string, WorkspacePathHealthRecord>;
+  workspaceSessionKey: string | null;
+  workspaceRootPath: string | null;
+  workspaceSessionScopeVersion: number;
+  lastActiveDocumentPath: string | null;
+  draftDocuments: string[];
   graphId: string; // Unique ID for the current graph data version
   sourceVersion: string | null;
   sourceVersions: Record<string, string>;
@@ -193,6 +236,7 @@ export interface GraphState {
   status: 'idle' | 'loading' | 'error' | 'success' | 'connected';
   error: AppError | null;
   selectedNodeIds: string[];
+  activeGroupFocusGroupId: string | null;
   needsAutoLayout: boolean; // true for MindMap, false for Canvas with explicit positions
   layoutType: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; // Layout algorithm type (legacy, for single MindMap)
   mindMapGroups: MindMapGroup[]; // Multiple MindMap support
@@ -216,15 +260,41 @@ export interface GraphState {
   editHistoryMaxSize: number;
   entrypointRuntime: EntrypointRuntimeState;
   hoveredNodeIdsByGroupId: Record<string, string[]>;
-  workspaceStyleSession: WorkspaceStyleSessionState;
-  workspaceStyleByNodeId: Record<string, InterpretedStyleResult>;
-  workspaceStyleDiagnosticsByNodeId: Record<string, StylingDiagnostic[]>;
   pendingActionRoutingByKey: Record<string, ActionRoutingPendingRecord>;
   actionRoutingPendingByToken: Record<string, ActionOptimisticLifecycleEvent>;
   setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null; sourceVersions?: Record<string, string> }) => void;
   setSourceVersion: (version: string | null) => void;
   setSourceVersionForFile: (filePath: string, version: string | null) => void;
   setLastAppliedCommandId: (commandId?: string) => void;
+  hydrateWorkspaceRegistry: () => {
+    workspaces: RegisteredWorkspace[];
+    activeWorkspaceId: string | null;
+  };
+  replaceRegisteredWorkspaces: (workspaces: RegisteredWorkspace[]) => RegisteredWorkspace[];
+  upsertWorkspaceFromProbe: (
+    probe: WorkspaceProbeResponse,
+    options?: { existingId?: string; activate?: boolean },
+  ) => RegisteredWorkspace;
+  reconnectWorkspaceFromProbe: (workspaceId: string, probe: WorkspaceProbeResponse) => RegisteredWorkspace | null;
+  setActiveWorkspaceId: (workspaceId: string | null) => boolean;
+  removeRegisteredWorkspace: (workspaceId: string) => string | null;
+  setWorkspaceDocuments: (workspaceId: string, documents: WorkspaceSidebarDocument[]) => void;
+  registerWorkspaceDocument: (workspaceId: string, document: WorkspaceSidebarDocument) => void;
+  setWorkspacePathStatus: (input: {
+    workspaceId: string;
+    rootPath?: string;
+    status: WorkspaceHealthState;
+    failureReason?: string | null;
+    checkedAt?: number;
+  }) => void;
+  hydrateDocumentSession: (workspaceKey: string | null, workspaceRootPath?: string | null) => void;
+  setWorkspaceSession: (input: {
+    workspaceId: string | null;
+    rootPath?: string | null;
+  }) => void;
+  rememberLastActiveDocumentForWorkspace: (workspaceId: string, documentPath: string | null) => void;
+  rememberLastActiveDocument: (documentPath: string | null) => void;
+  registerDraftDocument: (filePath: string) => void;
   setFiles: (files: string[]) => void;
   setFileTree: (tree: FileTreeNode | null) => void;
   toggleFolder: (path: string) => void;
@@ -232,6 +302,7 @@ export interface GraphState {
   setStatus: (status: GraphState['status']) => void;
   setError: (error: AppError | null) => void;
   setSelectedNodes: (selectedNodeIds: string[]) => void;
+  setActiveGroupFocusGroupId: (groupId: string | null) => void;
   selectNodesByType: (nodeType: string) => string[];
   focusNextNodeByType: (nodeType: string) => string | null;
   updateNodeData: (nodeId: string, partialData: Record<string, unknown>) => void;
@@ -288,7 +359,6 @@ export interface GraphState {
   peekRedoEditEvent: () => EditCompletionEvent | null;
   commitUndoEventSuccess: (eventId: string) => void;
   commitRedoEventSuccess: (eventId: string) => void;
-  refreshWorkspaceStyles: () => void;
   registerPendingActionRouting: (record: ActionRoutingPendingRecord) => void;
   clearPendingActionRouting: (pendingKey: string) => void;
 }
@@ -303,6 +373,55 @@ export function getNodeCanonicalObject(
 ): CanonicalObject | undefined {
   const data = node?.data as CanonicalNodeData | undefined;
   return data?.canonicalObject;
+}
+
+export function getNodeGroupId(
+  node: Pick<Node, 'data'> | null | undefined,
+): string | null {
+  const groupId = (node?.data as { groupId?: unknown } | undefined)?.groupId;
+  return typeof groupId === 'string' && groupId.length > 0 ? groupId : null;
+}
+
+export function resolveGroupedNodeIds(
+  nodes: Array<Pick<Node, 'id' | 'data'>>,
+  groupId: string | null | undefined,
+): string[] {
+  if (!groupId) {
+    return [];
+  }
+
+  return nodes
+    .filter((node) => getNodeGroupId(node) === groupId)
+    .map((node) => node.id);
+}
+
+function resolveRetainedGroupFocusGroupId(input: {
+  nodes: Array<Pick<Node, 'id' | 'data'>>;
+  selectedNodeIds: string[];
+  activeGroupFocusGroupId: string | null;
+}): string | null {
+  const { activeGroupFocusGroupId } = input;
+  if (!activeGroupFocusGroupId) {
+    return null;
+  }
+
+  if (input.selectedNodeIds.length === 0) {
+    return activeGroupFocusGroupId;
+  }
+
+  const groupedNodeIds = resolveGroupedNodeIds(input.nodes, activeGroupFocusGroupId);
+  if (groupedNodeIds.length <= 1) {
+    return null;
+  }
+
+  const isSubset = input.selectedNodeIds.every((nodeId) => groupedNodeIds.includes(nodeId));
+  if (!isSubset) {
+    return null;
+  }
+
+  return groupedNodeIds.length === input.selectedNodeIds.length
+    ? null
+    : activeGroupFocusGroupId;
 }
 
 export function getNodeCanonicalValidation(
@@ -328,123 +447,246 @@ export function getNodePluginRuntimeDiagnostic(
 
 const DEFAULT_MINDMAP_SPACING = 50;
 
-type WorkspaceStyleStateSnapshot = {
-  workspaceStyleSession: WorkspaceStyleSessionState;
-  workspaceStyleByNodeId: Record<string, InterpretedStyleResult>;
-  workspaceStyleDiagnosticsByNodeId: Record<string, StylingDiagnostic[]>;
-};
-
-type NodeSourceMeta = {
-  filePath?: unknown;
-};
-
-function resolveStyleInputForNode(input: {
-  node: Node;
-  sourceVersions: Record<string, string>;
-  currentFile: string | null;
-  previousResult?: InterpretedStyleResult;
-}): WorkspaceStyleInput | null {
-  const data = ((input.node.data || {}) as Record<string, unknown>);
-  const hasClassNameSurface = typeof data.className === 'string';
-  if (!hasClassNameSurface && !input.previousResult) {
+function readLastActiveDocumentSession(): LastActiveDocumentSession | null {
+  if (typeof window === 'undefined') {
     return null;
   }
 
-  const sourceMeta = (data.sourceMeta || {}) as NodeSourceMeta;
-  const filePath = typeof sourceMeta.filePath === 'string' && sourceMeta.filePath.length > 0
-    ? sourceMeta.filePath
-    : input.currentFile;
-  const sourceRevision = filePath
-    ? (input.sourceVersions[filePath] ?? 'workspace-style:pending')
-    : 'workspace-style:pending';
+  const raw = window.localStorage.getItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
 
+  try {
+    const parsed = JSON.parse(raw) as LastActiveDocumentSession;
+    if (
+      typeof parsed.workspaceKey !== 'string'
+      || typeof parsed.documentPath !== 'string'
+      || typeof parsed.updatedAt !== 'number'
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function persistLastActiveDocumentSession(session: LastActiveDocumentSession | null): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (!session) {
+    window.localStorage.removeItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY);
+    return;
+  }
+
+  window.localStorage.setItem(
+    LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY,
+    JSON.stringify(session),
+  );
+}
+
+function buildWorkspacePathHealthRecord(
+  workspace: RegisteredWorkspace,
+  checkedAt: number = Date.now(),
+): WorkspacePathHealthRecord {
   return {
-    objectId: input.node.id,
-    className: hasClassNameSurface ? String(data.className || '') : '',
-    sourceRevision,
-    timestamp: Date.now(),
-    groupId: typeof data.groupId === 'string' && data.groupId.length > 0 ? data.groupId : undefined,
+    workspaceId: workspace.id,
+    rootPath: workspace.rootPath,
+    status: workspace.status,
+    lastCheckedAt: checkedAt,
+    lastKnownRootPath: workspace.rootPath,
+    failureReason: workspace.status === 'ok' ? null : null,
   };
 }
 
-function buildWorkspaceStyleSnapshot(input: {
-  nodes: Node[];
-  sourceVersions: Record<string, string>;
-  currentFile: string | null;
-  previousSession: WorkspaceStyleSessionState;
-  previousResults: Record<string, InterpretedStyleResult>;
-  runtimeContext: WorkspaceStyleRuntimeContext;
-}): WorkspaceStyleStateSnapshot {
-  let workspaceStyleSession = input.previousSession;
-  const workspaceStyleByNodeId: Record<string, InterpretedStyleResult> = {};
-  const workspaceStyleDiagnosticsByNodeId: Record<string, StylingDiagnostic[]> = {};
-
-  input.nodes.forEach((node) => {
-    const previousResult = input.previousResults[node.id];
-    const styleInput = resolveStyleInputForNode({
-      node,
-      sourceVersions: input.sourceVersions,
-      currentFile: input.currentFile,
-      previousResult,
-    });
-    if (!styleInput) {
-      return;
-    }
-
-    const sessionUpdate = applySessionUpdate(workspaceStyleSession, {
-      objectId: styleInput.objectId,
-      sourceRevision: styleInput.sourceRevision,
-      timestamp: styleInput.timestamp,
-    });
-
-    if (sessionUpdate.stale) {
-      if (previousResult) {
-        workspaceStyleByNodeId[node.id] = previousResult;
-      }
-      workspaceStyleDiagnosticsByNodeId[node.id] = [
-        createStaleUpdateDiagnostic({
-          objectId: styleInput.objectId,
-          revision: styleInput.sourceRevision,
-          latestAcceptedRevision: workspaceStyleSession.byObjectId[styleInput.objectId]?.latestAcceptedRevision ?? styleInput.sourceRevision,
-        }),
-      ];
-      return;
-    }
-
-    workspaceStyleSession = sessionUpdate.state;
-    const interpreted = interpretWorkspaceStyle({
-      styleInput,
-      eligibleProfile: resolveEligibleObjectProfileForNode(node),
-      runtimeContext: input.runtimeContext,
-    });
-
-    if (styleInput.className.trim().length > 0 || previousResult) {
-      workspaceStyleByNodeId[node.id] = interpreted.result;
-    }
-    if (interpreted.diagnostics.length > 0) {
-      workspaceStyleDiagnosticsByNodeId[node.id] = interpreted.diagnostics;
-    }
+function buildWorkspacePathHealthMap(
+  workspaces: RegisteredWorkspace[],
+  existing: Record<string, WorkspacePathHealthRecord> = {},
+): Record<string, WorkspacePathHealthRecord> {
+  const next: Record<string, WorkspacePathHealthRecord> = {};
+  workspaces.forEach((workspace) => {
+    const current = existing[workspace.id];
+    next[workspace.id] = current
+      ? {
+          ...current,
+          rootPath: workspace.rootPath,
+          status: workspace.status,
+          lastKnownRootPath: workspace.rootPath,
+          lastCheckedAt: Date.now(),
+          failureReason: workspace.status === 'ok' ? null : current.failureReason ?? null,
+        }
+      : buildWorkspacePathHealthRecord(workspace);
   });
-
-  return {
-    workspaceStyleSession,
-    workspaceStyleByNodeId,
-    workspaceStyleDiagnosticsByNodeId,
-  };
+  return next;
 }
 
-function resolveWorkspaceStyleRuntimeContext(): WorkspaceStyleRuntimeContext {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return {
-      colorScheme: 'light',
-      viewportWidth: 0,
-    };
+function sanitizeLastActiveDocumentMap(
+  map: Record<string, string>,
+  keepWorkspaceIds: string[],
+): Record<string, string> {
+  const keep = new Set(keepWorkspaceIds);
+  return Object.fromEntries(
+    Object.entries(map).filter(([workspaceId]) => keep.has(workspaceId)),
+  );
+}
+
+function writeSanitizedLastActiveDocumentMap(map: Record<string, string>): void {
+  writeLastActiveDocumentMap(map);
+}
+
+function normalizeWorkspaceAwareFilePath(
+  workspaceRootPath: string | null | undefined,
+  filePath: string,
+): string {
+  return normalizeWorkspaceDocumentPath(workspaceRootPath, filePath);
+}
+
+function normalizeWorkspaceAwareFileList(
+  workspaceRootPath: string | null | undefined,
+  files: string[],
+): string[] {
+  return [...new Set(
+    files
+      .map((filePath) => normalizeWorkspaceAwareFilePath(workspaceRootPath, filePath))
+      .filter((filePath) => filePath.length > 0),
+  )].sort((left, right) => left.localeCompare(right));
+}
+
+function normalizeWorkspaceAwareSourceVersions(
+  workspaceRootPath: string | null | undefined,
+  sourceVersions: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(sourceVersions)
+      .map(([filePath, version]) => [
+        normalizeWorkspaceAwareFilePath(workspaceRootPath, filePath),
+        version,
+      ] as const)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
+function attachAbsoluteFilePathToNode(
+  node: Node,
+  workspaceRootPath: string | null | undefined,
+): Node {
+  const data = (node.data ?? {}) as Record<string, unknown>;
+  const sourceMeta = (
+    data.sourceMeta && typeof data.sourceMeta === 'object'
+      ? data.sourceMeta as Record<string, unknown>
+      : null
+  );
+  const sourceFilePath = typeof sourceMeta?.filePath === 'string'
+    ? sourceMeta.filePath
+    : null;
+  if (!workspaceRootPath || !sourceMeta || !sourceFilePath) {
+    return node;
+  }
+
+  const absoluteFilePath = normalizeWorkspaceAwareFilePath(workspaceRootPath, sourceFilePath);
+  if (sourceMeta.absoluteFilePath === absoluteFilePath) {
+    return node;
   }
 
   return {
-    colorScheme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
-    viewportWidth: window.innerWidth,
+    ...node,
+    data: {
+      ...data,
+      sourceMeta: {
+        ...sourceMeta,
+        absoluteFilePath,
+      },
+    },
   };
+}
+
+function attachAbsoluteFilePathsToNodes(
+  nodes: Node[],
+  workspaceRootPath: string | null | undefined,
+): Node[] {
+  if (!workspaceRootPath) {
+    return nodes;
+  }
+  return nodes.map((node) => attachAbsoluteFilePathToNode(node, workspaceRootPath));
+}
+
+function insertFileIntoTree(root: FileTreeNode | null, filePath: string): FileTreeNode | null {
+  const segments = filePath.split('/').filter(Boolean);
+  if (segments.length === 0) {
+    return root;
+  }
+
+  if (!root) {
+    root = {
+      name: 'root',
+      path: '',
+      type: 'directory',
+      children: [],
+    };
+  }
+
+  const cloneNode = (node: FileTreeNode): FileTreeNode => ({
+    ...node,
+    children: node.children ? node.children.map(cloneNode) : undefined,
+  });
+
+  const nextRoot = cloneNode(root);
+  let current = nextRoot;
+  let currentPath = '';
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    const nextPath = currentPath ? `${currentPath}/${segment}` : segment;
+    const isLeaf = index === segments.length - 1;
+    const children = current.children ? [...current.children] : [];
+    const existingIndex = children.findIndex((child) => child.path === nextPath);
+
+    if (isLeaf) {
+      if (existingIndex === -1) {
+        children.push({
+          name: segment,
+          path: nextPath,
+          type: 'file',
+        });
+        children.sort((left, right) => left.path.localeCompare(right.path));
+      }
+      current.children = children;
+      break;
+    }
+
+    let nextNode: FileTreeNode;
+    if (existingIndex === -1) {
+      nextNode = {
+        name: segment,
+        path: nextPath,
+        type: 'directory',
+        children: [],
+      };
+      children.push(nextNode);
+      children.sort((left, right) => left.path.localeCompare(right.path));
+      current.children = children;
+    } else {
+      const existing = children[existingIndex];
+      nextNode = existing.type === 'directory'
+        ? existing
+        : {
+            name: segment,
+            path: nextPath,
+            type: 'directory',
+            children: [],
+          };
+      children[existingIndex] = nextNode;
+      current.children = children;
+    }
+
+    current = nextNode;
+    currentPath = nextPath;
+  }
+
+  return nextRoot;
 }
 
 const normalizeMindMapGroup = (group: MindMapGroup): MindMapGroup => ({
@@ -460,6 +702,43 @@ const selectLeastRecentlyUsedTab = (tabs: TabState[]): TabState | null => {
 };
 
 const getNow = () => Date.now();
+
+function areTabViewportStatesEqual(
+  left: TabViewportState | null | undefined,
+  right: TabViewportState | null | undefined,
+): boolean {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.x === right.x && left.y === right.y && left.zoom === right.zoom;
+}
+
+function areTabSelectionStatesEqual(
+  left: TabSelectionState | null | undefined,
+  right: TabSelectionState | null | undefined,
+): boolean {
+  if (!left && !right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  if (left.updatedAt !== right.updatedAt) {
+    return false;
+  }
+  if (left.nodeIds.length !== right.nodeIds.length || left.edgeIds.length !== right.edgeIds.length) {
+    return false;
+  }
+
+  return (
+    left.nodeIds.every((nodeId) => right.nodeIds.includes(nodeId))
+    && left.edgeIds.every((edgeId) => right.edgeIds.includes(edgeId))
+  );
+}
 
 function resetEntrypointRuntimeState(input: {
   current: EntrypointRuntimeState;
@@ -534,6 +813,15 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   fileTree: null,
   expandedFolders: new Set<string>(),
   currentFile: null,
+  registeredWorkspaces: [],
+  activeWorkspaceId: null,
+  workspaceDocumentsByWorkspaceId: {},
+  workspacePathHealthByWorkspaceId: {},
+  workspaceSessionKey: null,
+  workspaceRootPath: null,
+  workspaceSessionScopeVersion: 0,
+  lastActiveDocumentPath: null,
+  draftDocuments: [],
   graphId: uuidv4(),
   sourceVersion: null,
   sourceVersions: {},
@@ -542,6 +830,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   status: 'idle',
   error: null,
   selectedNodeIds: [],
+  activeGroupFocusGroupId: null,
   needsAutoLayout: false,
   layoutType: 'compact',
   canvasBackground: 'dots',
@@ -567,9 +856,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   editHistoryMaxSize: 200,
   entrypointRuntime: DEFAULT_ENTRYPOINT_RUNTIME_STATE,
   hoveredNodeIdsByGroupId: {},
-  workspaceStyleSession: createWorkspaceStyleSessionState(),
-  workspaceStyleByNodeId: {},
-  workspaceStyleDiagnosticsByNodeId: {},
   pendingActionRoutingByKey: {},
   actionRoutingPendingByToken: {},
   setGraph: ({
@@ -583,19 +869,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     sourceVersion,
     sourceVersions,
   }) => set((state) => {
-    const nextSourceVersions = sourceVersions ?? state.sourceVersions;
+    const nextSourceVersions = sourceVersions
+      ? normalizeWorkspaceAwareSourceVersions(state.workspaceRootPath, sourceVersions)
+      : state.sourceVersions;
     const normalizedMindMapGroups = mindMapGroups.map(normalizeMindMapGroup);
     const resolvedLayoutType = layoutType ?? normalizedMindMapGroups[0]?.layoutType ?? 'compact';
-    const workspaceStyleState = buildWorkspaceStyleSnapshot({
-      nodes,
-      sourceVersions: nextSourceVersions,
-      currentFile: state.currentFile,
-      previousSession: state.workspaceStyleSession,
-      previousResults: state.workspaceStyleByNodeId,
-      runtimeContext: resolveWorkspaceStyleRuntimeContext(),
-    });
     return {
-      nodes,
+      nodes: attachAbsoluteFilePathsToNodes(nodes, state.workspaceRootPath),
       edges,
       needsAutoLayout,
       layoutType: resolvedLayoutType,
@@ -605,39 +885,33 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       ...(isFontFamilyPreset(canvasFontFamily) ? { canvasFontFamily } : { canvasFontFamily: undefined }),
       ...(sourceVersion !== undefined ? { sourceVersion } : {}),
       sourceVersions: nextSourceVersions,
+      activeGroupFocusGroupId: null,
       entrypointRuntime: resetEntrypointRuntimeState({
         current: state.entrypointRuntime,
         preserveActiveTool: true,
       }),
       hoveredNodeIdsByGroupId: {},
-      ...workspaceStyleState,
     };
   }),
   setSourceVersion: (sourceVersion) => set({ sourceVersion }),
   setSourceVersionForFile: (filePath, version) => set((state) => {
-    if (!filePath) {
+    const normalizedFilePath = filePath
+      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, filePath)
+      : '';
+    if (!normalizedFilePath) {
       return state;
     }
 
     const nextSourceVersions = { ...state.sourceVersions };
     if (version) {
-      nextSourceVersions[filePath] = version;
+      nextSourceVersions[normalizedFilePath] = version;
     } else {
-      delete nextSourceVersions[filePath];
+      delete nextSourceVersions[normalizedFilePath];
     }
-
-    const workspaceStyleState = buildWorkspaceStyleSnapshot({
-      nodes: state.nodes,
-      sourceVersions: nextSourceVersions,
-      currentFile: state.currentFile,
-      previousSession: state.workspaceStyleSession,
-      previousResults: state.workspaceStyleByNodeId,
-      runtimeContext: resolveWorkspaceStyleRuntimeContext(),
-    });
 
     return {
       sourceVersions: nextSourceVersions,
-      ...(state.currentFile === filePath ? { sourceVersion: version } : {}),
+      ...(state.currentFile === normalizedFilePath ? { sourceVersion: version } : {}),
       entrypointRuntime: {
         ...state.entrypointRuntime,
         hover: {
@@ -647,12 +921,354 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         },
       },
       hoveredNodeIdsByGroupId: {},
-      ...workspaceStyleState,
     };
   }),
   setLastAppliedCommandId: (lastAppliedCommandId) => set({ lastAppliedCommandId }),
-  setFiles: (files) => set({ files }),
-  setFileTree: (fileTree) => set({ fileTree }),
+  hydrateWorkspaceRegistry: () => {
+    const workspaces = sortWorkspaces(readStoredWorkspaces());
+    const storedActiveWorkspaceId = readStoredActiveWorkspaceId();
+    const activeWorkspaceId = workspaces.some((workspace) => workspace.id === storedActiveWorkspaceId)
+      ? storedActiveWorkspaceId
+      : workspaces[0]?.id ?? null;
+    const workspacePathHealthByWorkspaceId = buildWorkspacePathHealthMap(workspaces);
+
+    set({
+      registeredWorkspaces: workspaces,
+      activeWorkspaceId,
+      workspacePathHealthByWorkspaceId,
+    });
+    writeStoredWorkspaces(workspaces);
+    writeStoredActiveWorkspaceId(activeWorkspaceId);
+    writeSanitizedLastActiveDocumentMap(
+      sanitizeLastActiveDocumentMap(readLastActiveDocumentMap(), workspaces.map((workspace) => workspace.id)),
+    );
+
+    return {
+      workspaces,
+      activeWorkspaceId,
+    };
+  },
+  replaceRegisteredWorkspaces: (workspaces) => {
+    const nextWorkspaces = sortWorkspaces(workspaces);
+    const currentActiveWorkspaceId = get().activeWorkspaceId;
+    const nextActiveWorkspaceId = nextWorkspaces.some((workspace) => workspace.id === currentActiveWorkspaceId)
+      ? currentActiveWorkspaceId
+      : nextWorkspaces[0]?.id ?? null;
+
+    set((state) => ({
+      registeredWorkspaces: nextWorkspaces,
+      activeWorkspaceId: nextActiveWorkspaceId,
+      workspacePathHealthByWorkspaceId: buildWorkspacePathHealthMap(
+        nextWorkspaces,
+        state.workspacePathHealthByWorkspaceId,
+      ),
+      workspaceDocumentsByWorkspaceId: Object.fromEntries(
+        Object.entries(state.workspaceDocumentsByWorkspaceId)
+          .filter(([workspaceId]) => nextWorkspaces.some((workspace) => workspace.id === workspaceId)),
+      ),
+    }));
+
+    writeStoredWorkspaces(nextWorkspaces);
+    writeStoredActiveWorkspaceId(nextActiveWorkspaceId);
+    writeSanitizedLastActiveDocumentMap(
+      sanitizeLastActiveDocumentMap(readLastActiveDocumentMap(), nextWorkspaces.map((workspace) => workspace.id)),
+    );
+
+    return nextWorkspaces;
+  },
+  upsertWorkspaceFromProbe: (probe, options) => {
+    const state = get();
+    const existing = options?.existingId
+      ? state.registeredWorkspaces.find((workspace) => workspace.id === options.existingId) ?? null
+      : state.registeredWorkspaces.find((workspace) => workspace.rootPath === probe.rootPath) ?? null;
+    const baseWorkspace = existing
+      ? updateWorkspaceFromProbe(existing, probe)
+      : buildRegisteredWorkspace(probe, options?.existingId);
+    const nextWorkspace: RegisteredWorkspace = {
+      ...baseWorkspace,
+      lastOpenedAt: (options?.activate || !existing)
+        ? Date.now()
+        : baseWorkspace.lastOpenedAt,
+    };
+    const nextWorkspaces = get().replaceRegisteredWorkspaces(
+      upsertWorkspace(get().registeredWorkspaces, nextWorkspace),
+    );
+
+    if (options?.activate || !get().activeWorkspaceId) {
+      get().setActiveWorkspaceId(nextWorkspace.id);
+    }
+
+    return nextWorkspaces.find((workspace) => workspace.id === nextWorkspace.id) ?? nextWorkspace;
+  },
+  reconnectWorkspaceFromProbe: (workspaceId, probe) => {
+    const current = get().registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
+    if (!current) {
+      return null;
+    }
+
+    const nextWorkspace = get().upsertWorkspaceFromProbe(probe, {
+      existingId: workspaceId,
+      activate: true,
+    });
+    get().setWorkspacePathStatus({
+      workspaceId,
+      rootPath: probe.rootPath,
+      status: probe.health.state,
+      failureReason: probe.health.message ?? null,
+    });
+    return nextWorkspace;
+  },
+  setActiveWorkspaceId: (workspaceId) => {
+    const state = get();
+    if (!workspaceId) {
+      set({ activeWorkspaceId: null });
+      writeStoredActiveWorkspaceId(null);
+      return true;
+    }
+
+    const targetWorkspace = state.registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
+    if (!targetWorkspace) {
+      return false;
+    }
+
+    const nextWorkspaces = sortWorkspaces(
+      state.registeredWorkspaces.map((workspace) => (
+        workspace.id === workspaceId
+          ? { ...workspace, lastOpenedAt: Date.now() }
+          : workspace
+      )),
+    );
+    set((current) => ({
+      registeredWorkspaces: nextWorkspaces,
+      activeWorkspaceId: workspaceId,
+      workspacePathHealthByWorkspaceId: buildWorkspacePathHealthMap(
+        nextWorkspaces,
+        current.workspacePathHealthByWorkspaceId,
+      ),
+    }));
+    writeStoredWorkspaces(nextWorkspaces);
+    writeStoredActiveWorkspaceId(workspaceId);
+    return true;
+  },
+  removeRegisteredWorkspace: (workspaceId) => {
+    const state = get();
+    const nextWorkspaces = removeWorkspaceEntry(state.registeredWorkspaces, workspaceId);
+    const nextActiveWorkspaceId = state.activeWorkspaceId === workspaceId
+      ? nextWorkspaces[0]?.id ?? null
+      : state.activeWorkspaceId;
+
+    set((current) => ({
+      registeredWorkspaces: nextWorkspaces,
+      activeWorkspaceId: nextActiveWorkspaceId,
+      workspaceDocumentsByWorkspaceId: Object.fromEntries(
+        Object.entries(current.workspaceDocumentsByWorkspaceId).filter(([id]) => id !== workspaceId),
+      ),
+      workspacePathHealthByWorkspaceId: Object.fromEntries(
+        Object.entries(current.workspacePathHealthByWorkspaceId).filter(([id]) => id !== workspaceId),
+      ),
+    }));
+
+    writeStoredWorkspaces(nextWorkspaces);
+    writeStoredActiveWorkspaceId(nextActiveWorkspaceId);
+    writeSanitizedLastActiveDocumentMap(
+      sanitizeLastActiveDocumentMap(readLastActiveDocumentMap(), nextWorkspaces.map((workspace) => workspace.id)),
+    );
+
+    return nextActiveWorkspaceId;
+  },
+  setWorkspaceDocuments: (workspaceId, documents) => set((state) => {
+    const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
+      workspace.id === workspaceId
+        ? { ...workspace, documentCount: documents.length }
+        : workspace
+    ));
+    writeStoredWorkspaces(nextWorkspaces);
+
+    return {
+      workspaceDocumentsByWorkspaceId: {
+        ...state.workspaceDocumentsByWorkspaceId,
+        [workspaceId]: [...documents],
+      },
+      registeredWorkspaces: nextWorkspaces,
+    };
+  }),
+  registerWorkspaceDocument: (workspaceId, document) => set((state) => {
+    const currentDocuments = state.workspaceDocumentsByWorkspaceId[workspaceId] ?? [];
+    if (currentDocuments.some((entry) => entry.absolutePath === document.absolutePath)) {
+      return state;
+    }
+
+    const normalizedDocumentPath = normalizeWorkspaceAwareFilePath(
+      state.workspaceRootPath,
+      document.absolutePath,
+    );
+    const nextDocuments = [document, ...currentDocuments];
+    const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
+      workspace.id === workspaceId
+        ? { ...workspace, documentCount: nextDocuments.length }
+        : workspace
+    ));
+    const isActiveWorkspace = state.workspaceSessionKey === workspaceId;
+    writeStoredWorkspaces(nextWorkspaces);
+
+    return {
+      workspaceDocumentsByWorkspaceId: {
+        ...state.workspaceDocumentsByWorkspaceId,
+        [workspaceId]: nextDocuments,
+      },
+      registeredWorkspaces: nextWorkspaces,
+      ...(isActiveWorkspace
+        ? {
+            files: normalizeWorkspaceAwareFileList(
+              state.workspaceRootPath,
+              [...state.files, normalizedDocumentPath],
+            ),
+            fileTree: insertFileIntoTree(state.fileTree, normalizedDocumentPath),
+          }
+        : {}),
+    };
+  }),
+  setWorkspacePathStatus: ({ workspaceId, rootPath, status, failureReason, checkedAt }) => set((state) => {
+    const targetWorkspace = state.registeredWorkspaces.find((workspace) => workspace.id === workspaceId);
+    if (!targetWorkspace) {
+      return state;
+    }
+
+    const nextRootPath = rootPath ?? targetWorkspace.rootPath;
+    const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
+      workspace.id === workspaceId
+        ? {
+            ...workspace,
+            rootPath: nextRootPath,
+            status,
+          }
+        : workspace
+    ));
+    writeStoredWorkspaces(nextWorkspaces);
+
+    return {
+      registeredWorkspaces: nextWorkspaces,
+      workspacePathHealthByWorkspaceId: {
+        ...state.workspacePathHealthByWorkspaceId,
+        [workspaceId]: {
+          workspaceId,
+          rootPath: nextRootPath,
+          status,
+          lastCheckedAt: checkedAt ?? Date.now(),
+          lastKnownRootPath: nextRootPath,
+          failureReason: failureReason ?? (status === 'ok' ? null : state.workspacePathHealthByWorkspaceId[workspaceId]?.failureReason ?? null),
+        },
+      },
+    };
+  }),
+  hydrateDocumentSession: (workspaceSessionKey, workspaceRootPath) => set((state) => {
+    const normalizedWorkspaceKey = workspaceSessionKey && workspaceSessionKey.length > 0
+      ? workspaceSessionKey
+      : null;
+    const normalizedWorkspaceRootPath = workspaceRootPath && workspaceRootPath.length > 0
+      ? workspaceRootPath
+      : null;
+    const stored = readLastActiveDocumentSession();
+    const knownFiles = new Set([...state.files, ...state.draftDocuments]);
+    const lastActiveDocumentPath = (
+      normalizedWorkspaceKey
+      && stored
+      && stored.workspaceKey === normalizedWorkspaceKey
+      && knownFiles.has(stored.documentPath)
+    )
+      ? stored.documentPath
+      : null;
+    const scopeChanged = (
+      state.workspaceSessionKey !== normalizedWorkspaceKey
+      || state.workspaceRootPath !== normalizedWorkspaceRootPath
+    );
+
+    return {
+      workspaceSessionKey: normalizedWorkspaceKey,
+      workspaceRootPath: normalizedWorkspaceRootPath,
+      ...(scopeChanged
+        ? { workspaceSessionScopeVersion: state.workspaceSessionScopeVersion + 1 }
+        : {}),
+      lastActiveDocumentPath,
+    };
+  }),
+  setWorkspaceSession: ({ workspaceId, rootPath }) => set((state) => {
+    const normalizedWorkspaceId = workspaceId && workspaceId.length > 0
+      ? workspaceId
+      : null;
+    const normalizedWorkspaceRootPath = rootPath && rootPath.length > 0
+      ? rootPath
+      : null;
+    const scopeChanged = (
+      state.workspaceSessionKey !== normalizedWorkspaceId
+      || state.workspaceRootPath !== normalizedWorkspaceRootPath
+    );
+    if (!scopeChanged) {
+      return state;
+    }
+
+    return {
+      workspaceSessionKey: normalizedWorkspaceId,
+      workspaceRootPath: normalizedWorkspaceRootPath,
+      workspaceSessionScopeVersion: state.workspaceSessionScopeVersion + 1,
+      sourceVersion: state.currentFile
+        ? (state.sourceVersions[state.currentFile] ?? null)
+        : null,
+    };
+  }),
+  rememberLastActiveDocumentForWorkspace: (workspaceId, documentPath) => {
+    const current = readLastActiveDocumentMap();
+    if (!documentPath) {
+      delete current[workspaceId];
+    } else {
+      current[workspaceId] = documentPath;
+    }
+    writeLastActiveDocumentMap(current);
+  },
+  rememberLastActiveDocument: (documentPath) => set((state) => {
+    const nextDocumentPath = documentPath && documentPath.length > 0
+      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, documentPath)
+      : state.lastActiveDocumentPath;
+    if (!state.workspaceSessionKey || !nextDocumentPath) {
+      return state;
+    }
+
+    persistLastActiveDocumentSession({
+      workspaceKey: state.workspaceSessionKey,
+      documentPath: nextDocumentPath,
+      updatedAt: Date.now(),
+    });
+
+    return {
+      lastActiveDocumentPath: nextDocumentPath,
+    };
+  }),
+  registerDraftDocument: (filePath) => set((state) => {
+    const normalizedFilePath = filePath
+      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, filePath)
+      : '';
+    if (!normalizedFilePath || state.files.includes(normalizedFilePath)) {
+      return state;
+    }
+
+    return {
+      draftDocuments: [...state.draftDocuments, normalizedFilePath],
+      files: [...state.files, normalizedFilePath].sort((left, right) => left.localeCompare(right)),
+      fileTree: insertFileIntoTree(state.fileTree, normalizedFilePath),
+    };
+  }),
+  setFiles: (files) => set((state) => ({
+    files: normalizeWorkspaceAwareFileList(
+      state.workspaceRootPath,
+      [...files, ...state.draftDocuments],
+    ),
+  })),
+  setFileTree: (fileTree) => set((state) => ({
+    fileTree: state.draftDocuments.reduce<FileTreeNode | null>(
+      (tree, draftPath) => insertFileIntoTree(tree, draftPath),
+      fileTree,
+    ),
+  })),
   toggleFolder: (path) => set((state) => {
     const newExpanded = new Set(state.expandedFolders);
     if (newExpanded.has(path)) {
@@ -663,23 +1279,18 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return { expandedFolders: newExpanded };
   }),
   setCurrentFile: (currentFile) => set((state) => {
-    const workspaceStyleState = buildWorkspaceStyleSnapshot({
-      nodes: state.nodes,
-      sourceVersions: state.sourceVersions,
-      currentFile,
-      previousSession: state.workspaceStyleSession,
-      previousResults: state.workspaceStyleByNodeId,
-      runtimeContext: resolveWorkspaceStyleRuntimeContext(),
-    });
+    const normalizedCurrentFile = currentFile
+      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, currentFile)
+      : null;
     return {
-      currentFile,
-      sourceVersion: currentFile ? (state.sourceVersions[currentFile] ?? null) : null,
+      currentFile: normalizedCurrentFile,
+      sourceVersion: normalizedCurrentFile ? (state.sourceVersions[normalizedCurrentFile] ?? null) : null,
+      activeGroupFocusGroupId: null,
       entrypointRuntime: resetEntrypointRuntimeState({
         current: state.entrypointRuntime,
         preserveActiveTool: true,
       }),
       hoveredNodeIdsByGroupId: {},
-      ...workspaceStyleState,
     };
   }),
   setStatus: (status) => set({ status }),
@@ -696,12 +1307,26 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const shouldClearTextEdit =
       Boolean(state.activeTextEditNodeId)
       && !selectedNodeIds.includes(state.activeTextEditNodeId as string);
+    const hasSameSelection = (
+      state.selectedNodeIds.length === selectedNodeIds.length
+      && state.selectedNodeIds.every((nodeId) => selectedNodeIds.includes(nodeId))
+    );
+    if (hasSameSelection && !shouldClearTextEdit) {
+      return state;
+    }
+
+    const nextActiveGroupFocusGroupId = resolveRetainedGroupFocusGroupId({
+      nodes: state.nodes,
+      selectedNodeIds,
+      activeGroupFocusGroupId: state.activeGroupFocusGroupId,
+    });
     const nextRuntime = clearEntrypointAnchorsForSelectionReducer(
       dismissEntrypointSurfaceOnSelectionChangeReducer(state.entrypointRuntime),
       selectedNodeIds,
     );
     return {
       selectedNodeIds,
+      activeGroupFocusGroupId: nextActiveGroupFocusGroupId,
       entrypointRuntime: nextRuntime,
       ...(shouldClearTextEdit
         ? {
@@ -714,11 +1339,17 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         : {}),
     };
   }),
+  setActiveGroupFocusGroupId: (groupId) => set({
+    activeGroupFocusGroupId: groupId && groupId.length > 0 ? groupId : null,
+  }),
   selectNodesByType: (nodeType) => {
     const ids = get().nodes
       .filter((node) => node.type === nodeType)
       .map((node) => node.id);
-    set({ selectedNodeIds: ids });
+    set({
+      selectedNodeIds: ids,
+      activeGroupFocusGroupId: null,
+    });
     return ids;
   },
   focusNextNodeByType: (nodeType) => {
@@ -734,7 +1365,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const currentSelectedId = selectedNodeIds.find((id) => ids.includes(id));
     const currentIndex = currentSelectedId ? ids.indexOf(currentSelectedId) : -1;
     const nextId = ids[(currentIndex + 1) % ids.length];
-    set({ selectedNodeIds: [nextId] });
+    set({
+      selectedNodeIds: [nextId],
+      activeGroupFocusGroupId: null,
+    });
     return nextId;
   },
   updateNodeData: (nodeId, partialData) => set((state) => {
@@ -742,8 +1376,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       if (node.id !== nodeId) {
         return node;
       }
+      const nextZIndex = Object.prototype.hasOwnProperty.call(partialData, 'zIndex')
+        ? (typeof partialData.zIndex === 'number' ? partialData.zIndex : undefined)
+        : node.zIndex;
       return {
         ...node,
+        zIndex: nextZIndex,
         data: {
           ...(node.data || {}),
           ...partialData,
@@ -752,14 +1390,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     });
     return {
       nodes,
-      ...buildWorkspaceStyleSnapshot({
-        nodes,
-        sourceVersions: state.sourceVersions,
-        currentFile: state.currentFile,
-        previousSession: state.workspaceStyleSession,
-        previousResults: state.workspaceStyleByNodeId,
-        runtimeContext: resolveWorkspaceStyleRuntimeContext(),
-      }),
     };
   }),
   onNodesChange: (changes) => {
@@ -773,8 +1403,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     });
   },
   openTab: (pageId) => {
-    const { openTabs, maxTabs, activeTabId, currentFile } = get();
-    const existingTab = openTabs.find((tab) => tab.pageId === pageId);
+    const { openTabs, maxTabs, activeTabId, currentFile, workspaceRootPath } = get();
+    const normalizedPageId = normalizeWorkspaceAwareFilePath(workspaceRootPath, pageId);
+    const existingTab = openTabs.find((tab) => tab.pageId === normalizedPageId);
     const now = getNow();
 
     if (existingTab) {
@@ -786,10 +1417,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       set({
         openTabs: nextTabs,
         activeTabId: existingTab.tabId,
-        currentFile: pageId,
+        currentFile: normalizedPageId,
       });
-      if (activeTabId !== existingTab.tabId || currentFile !== pageId) {
-        console.debug('[Telemetry] tabs_switched', { tabId: existingTab.tabId, pageId, source: 'openTab' });
+      if (activeTabId !== existingTab.tabId || currentFile !== normalizedPageId) {
+        console.debug('[Telemetry] tabs_switched', { tabId: existingTab.tabId, pageId: normalizedPageId, source: 'openTab' });
       }
       return { status: 'activated', tabId: existingTab.tabId };
     }
@@ -798,7 +1429,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       const replaceTab = selectLeastRecentlyUsedTab(openTabs);
       if (replaceTab) {
         console.debug('[Telemetry] tabs_limit_prompted', {
-          pageId,
+          pageId: normalizedPageId,
           replaceTabId: replaceTab.tabId,
           tabCount: openTabs.length,
         });
@@ -809,8 +1440,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
     const nextTab: TabState = {
       tabId: uuidv4(),
-      pageId,
-      title: getDefaultTabTitle(pageId),
+      pageId: normalizedPageId,
+      title: getDefaultTabTitle(normalizedPageId),
       dirty: false,
       lastViewport: null,
       lastSelection: null,
@@ -821,13 +1452,14 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     set({
       openTabs: [...openTabs, nextTab],
       activeTabId: nextTab.tabId,
-      currentFile: pageId,
+      currentFile: normalizedPageId,
     });
-    console.debug('[Telemetry] tabs_opened', { tabId: nextTab.tabId, pageId, source: 'openTab' });
+    console.debug('[Telemetry] tabs_opened', { tabId: nextTab.tabId, pageId: normalizedPageId, source: 'openTab' });
     return { status: 'opened', tabId: nextTab.tabId };
   },
   replaceLeastRecentlyUsedTab: (pageId, replaceTabId) => {
-    const { openTabs } = get();
+    const { openTabs, workspaceRootPath } = get();
+    const normalizedPageId = normalizeWorkspaceAwareFilePath(workspaceRootPath, pageId);
     const now = getNow();
     const exists = openTabs.some((tab) => tab.tabId === replaceTabId);
     if (!exists) {
@@ -838,8 +1470,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       tab.tabId === replaceTabId
         ? {
             ...tab,
-            pageId,
-            title: getDefaultTabTitle(pageId),
+            pageId: normalizedPageId,
+            title: getDefaultTabTitle(normalizedPageId),
             dirty: false,
             lastViewport: null,
             lastSelection: null,
@@ -852,9 +1484,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     set({
       openTabs: nextTabs,
       activeTabId: replaceTabId,
-      currentFile: pageId,
+      currentFile: normalizedPageId,
     });
-    console.debug('[Telemetry] tabs_limit_replaced', { tabId: replaceTabId, pageId });
+    console.debug('[Telemetry] tabs_limit_replaced', { tabId: replaceTabId, pageId: normalizedPageId });
   },
   activateTab: (tabId) => {
     const { openTabs } = get();
@@ -939,19 +1571,37 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     }));
   },
   updateTabSnapshot: (tabId, snapshot) => {
-    set((state) => ({
-      openTabs: state.openTabs.map((tab) => {
+    set((state) => {
+      let changed = false;
+      const openTabs = state.openTabs.map((tab) => {
         if (tab.tabId !== tabId) {
           return tab;
         }
+
+        const nextViewport = Object.prototype.hasOwnProperty.call(snapshot, 'lastViewport')
+          ? (snapshot.lastViewport ?? null)
+          : tab.lastViewport;
+        const nextSelection = Object.prototype.hasOwnProperty.call(snapshot, 'lastSelection')
+          ? (snapshot.lastSelection ?? null)
+          : tab.lastSelection;
+        if (
+          areTabViewportStatesEqual(nextViewport, tab.lastViewport)
+          && areTabSelectionStatesEqual(nextSelection, tab.lastSelection)
+        ) {
+          return tab;
+        }
+
+        changed = true;
         return {
           ...tab,
           lastAccessedAt: getNow(),
-          lastViewport: snapshot.lastViewport ?? tab.lastViewport,
-          lastSelection: snapshot.lastSelection ?? tab.lastSelection,
+          lastViewport: nextViewport,
+          lastSelection: nextSelection,
         };
-      }),
-    }));
+      });
+
+      return changed ? { openTabs } : state;
+    });
   },
   openSearch: () => {
     set({ isSearchOpen: true });
@@ -1233,12 +1883,4 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       pendingActionRoutingByKey: next,
     };
   }),
-  refreshWorkspaceStyles: () => set((state) => buildWorkspaceStyleSnapshot({
-    nodes: state.nodes,
-    sourceVersions: state.sourceVersions,
-    currentFile: state.currentFile,
-    previousSession: state.workspaceStyleSession,
-    previousResults: state.workspaceStyleByNodeId,
-    runtimeContext: resolveWorkspaceStyleRuntimeContext(),
-  })),
 }));

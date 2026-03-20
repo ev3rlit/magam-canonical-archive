@@ -37,7 +37,10 @@ export type SelectionFloatingMenuStylePatchKey =
   | 'labelBold'
   | 'fill'
   | 'color'
-  | 'pattern';
+  | 'pattern'
+  | 'width'
+  | 'height'
+  | 'rotation';
 
 export type SelectionFloatingMenuPatchValue =
   | string

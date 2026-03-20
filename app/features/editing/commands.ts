@@ -43,6 +43,11 @@ export interface StyleUpdatePayload {
   patch: Record<string, unknown>;
 }
 
+export interface GroupMembershipUpdatePayload {
+  previous: { groupId: string | null };
+  next: { groupId: string | null };
+}
+
 export interface RenamePayload {
   previous: { id: string };
   next: { id: string };
@@ -50,7 +55,18 @@ export interface RenamePayload {
 }
 
 export interface CreatePayload {
-  nodeType: 'shape' | 'text' | 'markdown' | 'sticky' | 'sticker' | 'washi-tape' | 'image';
+  nodeType:
+    | 'shape'
+    | 'rectangle'
+    | 'ellipse'
+    | 'diamond'
+    | 'line'
+    | 'text'
+    | 'markdown'
+    | 'sticky'
+    | 'sticker'
+    | 'washi-tape'
+    | 'image';
   id: string;
   initialProps?: Record<string, unknown>;
   initialContent?: string;
@@ -63,6 +79,11 @@ export interface CreatePayload {
 export interface ReparentPayload {
   previous: { parentId: string | null };
   next: { parentId: string | null };
+}
+
+export interface ZOrderUpdatePayload {
+  previous: { zIndex: number | null };
+  next: { zIndex: number | null };
 }
 
 export type PluginInstanceCommandType =
@@ -114,9 +135,11 @@ export type AbsoluteMoveCommand = EditCommandEnvelope<'node.move.absolute', Abso
 export type RelativeMoveCommand = EditCommandEnvelope<'node.move.relative', RelativeMovePayload>;
 export type ContentUpdateCommand = EditCommandEnvelope<'node.content.update', ContentUpdatePayload>;
 export type StyleUpdateCommand = EditCommandEnvelope<'node.style.update', StyleUpdatePayload>;
+export type GroupMembershipUpdateCommand = EditCommandEnvelope<'node.group.update', GroupMembershipUpdatePayload>;
 export type RenameCommand = EditCommandEnvelope<'node.rename', RenamePayload>;
 export type CreateCommand = EditCommandEnvelope<'node.create' | 'mindmap.child.create' | 'mindmap.sibling.create', CreatePayload>;
 export type ReparentCommand = EditCommandEnvelope<'node.reparent', ReparentPayload>;
+export type ZOrderUpdateCommand = EditCommandEnvelope<'node.z-order.update', ZOrderUpdatePayload>;
 
 export type UpdateCommand =
   | RelativeMoveCommand
@@ -129,9 +152,11 @@ export type AnyEditCommand =
   | RelativeMoveCommand
   | ContentUpdateCommand
   | StyleUpdateCommand
+  | GroupMembershipUpdateCommand
   | RenameCommand
   | CreateCommand
-  | ReparentCommand;
+  | ReparentCommand
+  | ZOrderUpdateCommand;
 
 export type AnyPluginCommand =
   | PluginCommandEnvelope<'plugin-instance.create', PluginInstanceCreatePayload>
@@ -222,6 +247,21 @@ export function buildStyleUpdateCommand(input: {
   };
 }
 
+export function buildGroupMembershipUpdateCommand(input: {
+  target: EditTarget;
+  previousGroupId: string | null;
+  nextGroupId: string | null;
+}): GroupMembershipUpdateCommand {
+  return {
+    type: 'node.group.update',
+    target: input.target,
+    payload: {
+      previous: { groupId: input.previousGroupId },
+      next: { groupId: input.nextGroupId },
+    },
+  };
+}
+
 export function buildRenameCommand(input: {
   target: EditTarget;
   previousId: string;
@@ -293,6 +333,21 @@ export function buildReparentCommand(input: {
     payload: {
       previous: { parentId: input.previousParentId },
       next: { parentId: input.nextParentId },
+    },
+  };
+}
+
+export function buildZOrderUpdateCommand(input: {
+  target: EditTarget;
+  previousZIndex: number | null;
+  nextZIndex: number | null;
+}): ZOrderUpdateCommand {
+  return {
+    type: 'node.z-order.update',
+    target: input.target,
+    payload: {
+      previous: { zIndex: input.previousZIndex },
+      next: { zIndex: input.nextZIndex },
     },
   };
 }
@@ -407,7 +462,7 @@ export function buildContentDraftPatch(
   nodeType: string | undefined,
   draft: string,
 ): Record<string, unknown> {
-  if (nodeType === 'markdown') {
+  if (nodeType === 'markdown' || nodeType === 'text' || nodeType === 'sticky') {
     return {
       label: draft,
       children: [{ type: 'graph-markdown', content: draft }],

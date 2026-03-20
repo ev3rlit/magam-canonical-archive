@@ -60,6 +60,7 @@ import {
 import type { CanvasEntrypointSurface } from '@/features/canvas-ui-entrypoints/contracts';
 import {
   resolveMindMapDragFeedback,
+  resolvePointerTypeFromEvent,
   shouldCommitDragStop,
   shouldHandlePaneCreate,
   shouldSuppressDragStopErrorToast,
@@ -68,8 +69,11 @@ import {
 import type { ActionRoutingSurfaceId } from '@/features/editing/actionRoutingBridge/types';
 import { createPendingRequestIdForCommand } from '@/features/editing/commands';
 import type { CreatePayload } from '@/features/editing/commands';
+import {
+  isDragCreateNodeType,
+  isDragRequiredCreateNodeType,
+} from '@/features/editing/createDefaults';
 import { resolveNodeEditContext } from '@/components/editor/workspaceEditUtils';
-import type { CreatableNodeType } from '@/types/contextMenu';
 import {
   OverlayHostProvider,
   useOverlayHost,
@@ -84,8 +88,12 @@ import {
   createGraphCanvasToolbarContribution,
   syncGraphCanvasSelectionFloatingMenuOverlay,
 } from '@/processes/canvas-runtime/bindings/graphCanvasHost';
-import { createGraphCanvasKeyboardHost } from '@/processes/canvas-runtime/bindings/keyboardHost';
+import {
+  createGraphCanvasKeyboardHost,
+  isCanvasKeyboardTextInputFocused,
+} from '@/processes/canvas-runtime/bindings/keyboardHost';
 import type { SelectionFloatingMenuStylePatchKey } from '@/features/canvas-ui-entrypoints/selection-floating-menu/types';
+import { resolveBodyEditSession } from './nodes/renderableContent';
 
 type GraphCanvasProps = {
   onNodeDragStop?: (payload: {
@@ -103,6 +111,10 @@ type GraphCanvasProps = {
   onDeleteNode?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
   onToggleNodeLock?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
   onSelectNodeGroup?: (input: GraphCanvasNodeMenuIntentInput) => Promise<void> | void;
+  onGroupSelection?: (input: GraphCanvasSelectionActionIntentInput) => Promise<void> | void;
+  onUngroupSelection?: (input: GraphCanvasSelectionActionIntentInput) => Promise<void> | void;
+  onBringSelectionToFront?: (input: GraphCanvasSelectionActionIntentInput) => Promise<void> | void;
+  onSendSelectionToBack?: (input: GraphCanvasSelectionActionIntentInput) => Promise<void> | void;
   onCreateNode?: (input: GraphCanvasCreateIntentInput) => Promise<void> | void;
   onApplySelectionStyle?: (input: {
     nodeIds: string[];
@@ -119,17 +131,25 @@ export interface GraphCanvasNodeMenuIntentInput {
   nodeId: string;
   surfaceId: ActionRoutingSurfaceId;
   surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
-  trigger?: { source: 'menu' };
+  trigger?: { source: 'menu' | 'hotkey' };
 }
 
 export type GraphCanvasRenameIntentInput = GraphCanvasNodeMenuIntentInput;
+
+export interface GraphCanvasSelectionActionIntentInput {
+  anchorNodeId?: string;
+  surfaceId: ActionRoutingSurfaceId;
+  surface?: Extract<CanvasEntrypointSurface, 'node-context-menu'>;
+  trigger?: { source: 'menu' | 'hotkey' };
+}
 
 export interface GraphCanvasCreateIntentInput {
   surfaceId: Exclude<ActionRoutingSurfaceId, 'selection-floating-menu'>;
   surface?: Exclude<CanvasEntrypointSurface, 'selection-floating-menu'>;
   trigger?: { source: 'click' | 'menu' };
-  nodeType: CreatableNodeType;
+  nodeType: CreatePayload['nodeType'];
   placement: CreatePayload['placement'];
+  initialProps?: Record<string, unknown>;
   targetRenderedNodeId?: string;
   targetNodeId?: string;
   filePath?: string;
@@ -150,6 +170,17 @@ export function buildGraphCanvasRenameIntent(nodeId: string): GraphCanvasRenameI
   return buildGraphCanvasNodeMenuIntent(nodeId);
 }
 
+export function buildGraphCanvasSelectionActionIntent(
+  input: Partial<GraphCanvasSelectionActionIntentInput> = {},
+): GraphCanvasSelectionActionIntentInput {
+  return {
+    anchorNodeId: input.anchorNodeId,
+    surfaceId: input.surfaceId ?? 'node-context-menu',
+    surface: input.surface ?? 'node-context-menu',
+    trigger: input.trigger ?? { source: 'menu' },
+  };
+}
+
 export function buildGraphCanvasCreateIntent(
   input: GraphCanvasCreateIntentInput,
 ): GraphCanvasCreateIntentInput {
@@ -168,10 +199,13 @@ export function buildGraphCanvasCreateIntent(
   };
 }
 
+type GraphCanvasActiveCreateMode = Exclude<GraphCanvasCreateMode, null>;
+
 type DragOriginState = {
   x: number;
   y: number;
   generation: number;
+  pointerType: 'mouse' | 'pen' | 'touch' | 'unknown';
 };
 
 type DragFeedbackState =
@@ -192,24 +226,97 @@ function getCanvasNodeLabel(node: Pick<FlowNode, 'id' | 'data'> | null | undefin
   return label.length > 24 ? `${label.slice(0, 24)}...` : label;
 }
 
-type SelectionAnchorNode = Pick<FlowNode, 'id' | 'position' | 'width' | 'height'> & {
+type SelectionAnchorNode = Pick<FlowNode, 'id' | 'position' | 'width' | 'height' | 'data'> & {
   measured?: {
     width?: number;
     height?: number;
   };
 };
 
-export function buildSelectionBoundsAnchor(input: {
+type CanvasDismissNode = Pick<FlowNode, 'id' | 'data'>;
+type SelectionShellNode = SelectionAnchorNode & Pick<FlowNode, 'type' | 'data'>;
+
+type SelectionShellGestureState = 'move' | 'resize' | 'rotate' | null;
+
+type SelectionShellGestureSession =
+  | {
+      kind: 'resize';
+      nodeId: string;
+      originScreen: { x: number; y: number };
+      originalData: Record<string, unknown>;
+      zoom: number;
+      lastPatch: Record<string, unknown> | null;
+    }
+  | {
+      kind: 'rotate';
+      nodeId: string;
+      originalData: Record<string, unknown>;
+      screenBounds: NonNullable<GraphCanvasSelectionShellState['screenBounds']>;
+      lastPatch: Record<string, unknown> | null;
+    };
+
+type GraphCanvasCreateGesture = {
+  nodeType: GraphCanvasActiveCreateMode;
+  startScreen: { x: number; y: number };
+  currentScreen: { x: number; y: number };
+};
+
+const DRAG_CREATE_THRESHOLD_PX = 6;
+
+export type GraphCanvasDismissalKind =
+  | 'commit-text-edit'
+  | 'cancel-text-edit'
+  | 'expand-group-selection'
+  | 'clear-selection'
+  | 'noop';
+
+export interface GraphCanvasDismissalDecision {
+  kind: GraphCanvasDismissalKind;
+  nodeIds?: string[];
+  activeTextEditNodeId?: string;
+}
+
+export interface GraphCanvasSelectionShellState {
+  visible: boolean;
+  canResize: boolean;
+  canRotate: boolean;
+  activeGesture: 'move' | 'resize' | 'rotate' | null;
+  screenBounds: {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null;
+}
+
+function readFiniteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function resolveSelectionNodeDimensions(
+  node: Pick<SelectionAnchorNode, 'width' | 'height' | 'measured' | 'data'>,
+) {
+  const nodeData = (node.data || {}) as Record<string, unknown>;
+  const width = node.width
+    ?? node.measured?.width
+    ?? readFiniteNumber(nodeData.width)
+    ?? 0;
+  const height = node.height
+    ?? node.measured?.height
+    ?? readFiniteNumber(nodeData.height)
+    ?? 0;
+  return { width, height };
+}
+
+function resolveSelectionBounds(input: {
   selectedNodes: SelectionAnchorNode[];
-  viewport: { x: number; y: number; zoom: number };
 }) {
   if (input.selectedNodes.length === 0) {
     return null;
   }
 
-  const bounds = input.selectedNodes.reduce((acc, node) => {
-    const width = node.width ?? node.measured?.width ?? 0;
-    const height = node.height ?? node.measured?.height ?? 0;
+  return input.selectedNodes.reduce((acc, node) => {
+    const { width, height } = resolveSelectionNodeDimensions(node);
     const minX = Math.min(acc.minX, node.position.x);
     const minY = Math.min(acc.minY, node.position.y);
     const maxX = Math.max(acc.maxX, node.position.x + width);
@@ -221,6 +328,225 @@ export function buildSelectionBoundsAnchor(input: {
     maxX: Number.NEGATIVE_INFINITY,
     maxY: Number.NEGATIVE_INFINITY,
   });
+}
+
+function resolveSelectionScreenBounds(input: {
+  bounds: NonNullable<ReturnType<typeof resolveSelectionBounds>>;
+  viewport: { x: number; y: number; zoom: number };
+}) {
+  const zoom = input.viewport.zoom || 1;
+  return {
+    left: input.bounds.minX * zoom + input.viewport.x,
+    top: input.bounds.minY * zoom + input.viewport.y,
+    width: Math.max((input.bounds.maxX - input.bounds.minX) * zoom, 0),
+    height: Math.max((input.bounds.maxY - input.bounds.minY) * zoom, 0),
+  };
+}
+
+function resolveNodeGroupSelection(nodeIds: string[], nodes: CanvasDismissNode[]): string[] | null {
+  if (nodeIds.length === 0) {
+    return null;
+  }
+
+  const selectedNodes = nodes.filter((node) => nodeIds.includes(node.id));
+  if (selectedNodes.length !== nodeIds.length) {
+    return null;
+  }
+
+  const groupIds = selectedNodes.map((node) => {
+    const data = (node.data || {}) as Record<string, unknown>;
+    return typeof data.groupId === 'string' && data.groupId.length > 0
+      ? data.groupId
+      : null;
+  });
+
+  const primaryGroupId = groupIds[0];
+  if (!primaryGroupId || groupIds.some((groupId) => groupId !== primaryGroupId)) {
+    return null;
+  }
+
+  const groupedNodeIds = nodes
+    .filter((node) => {
+      const data = (node.data || {}) as Record<string, unknown>;
+      return data.groupId === primaryGroupId;
+    })
+    .map((node) => node.id);
+
+  if (groupedNodeIds.length <= nodeIds.length) {
+    return null;
+  }
+
+  return groupedNodeIds;
+}
+
+function resolveGroupNodeIdsForNode(nodeId: string, nodes: CanvasDismissNode[]): {
+  groupId: string;
+  nodeIds: string[];
+} | null {
+  const targetNode = nodes.find((node) => node.id === nodeId);
+  if (!targetNode) {
+    return null;
+  }
+
+  const targetGroupId = (() => {
+    const data = (targetNode.data || {}) as Record<string, unknown>;
+    return typeof data.groupId === 'string' && data.groupId.length > 0
+      ? data.groupId
+      : null;
+  })();
+  if (!targetGroupId) {
+    return null;
+  }
+
+  const groupedNodeIds = nodes
+    .filter((node) => {
+      const data = (node.data || {}) as Record<string, unknown>;
+      return data.groupId === targetGroupId;
+    })
+    .map((node) => node.id);
+
+  if (groupedNodeIds.length <= 1) {
+    return null;
+  }
+
+  return {
+    groupId: targetGroupId,
+    nodeIds: groupedNodeIds,
+  };
+}
+
+export function resolveGroupFocusEntry(input: {
+  clickedNodeId: string;
+  selectedNodeIds: string[];
+  nodes: CanvasDismissNode[];
+}): { groupId: string; nodeIds: string[] } | null {
+  const groupSelection = resolveGroupNodeIdsForNode(input.clickedNodeId, input.nodes);
+  if (!groupSelection) {
+    return null;
+  }
+
+  const hasFullGroupSelection = (
+    input.selectedNodeIds.length === groupSelection.nodeIds.length
+    && groupSelection.nodeIds.every((nodeId) => input.selectedNodeIds.includes(nodeId))
+  );
+
+  if (!hasFullGroupSelection) {
+    return null;
+  }
+
+  return {
+    groupId: groupSelection.groupId,
+    nodeIds: [input.clickedNodeId],
+  };
+}
+
+type BodyEditableFlowNode = Pick<FlowNode, 'id' | 'type' | 'data'>;
+
+export type GraphCanvasNodeDoubleClickDecision =
+  | {
+    kind: 'enter-group';
+    groupId: string;
+    nodeIds: string[];
+  }
+  | {
+    kind: 'start-body-edit';
+    session: NonNullable<ReturnType<typeof resolveBodyEditSession>>;
+  }
+  | {
+    kind: 'none';
+  };
+
+export function resolveNodeDoubleClickDecision(input: {
+  node: BodyEditableFlowNode;
+  selectedNodeIds: string[];
+  nodes: CanvasDismissNode[];
+}): GraphCanvasNodeDoubleClickDecision {
+  const nextFocus = resolveGroupFocusEntry({
+    clickedNodeId: input.node.id,
+    selectedNodeIds: input.selectedNodeIds,
+    nodes: input.nodes,
+  });
+  if (nextFocus) {
+    return {
+      kind: 'enter-group',
+      groupId: nextFocus.groupId,
+      nodeIds: nextFocus.nodeIds,
+    };
+  }
+
+  const session = resolveBodyEditSession(input.node);
+  if (session) {
+    return {
+      kind: 'start-body-edit',
+      session,
+    };
+  }
+
+  return { kind: 'none' };
+}
+
+export function resolveSelectionBodyEditSession(input: {
+  selectedNodeIds: string[];
+  nodes: BodyEditableFlowNode[];
+}): ReturnType<typeof resolveBodyEditSession> {
+  if (input.selectedNodeIds.length !== 1) {
+    return null;
+  }
+
+  const selectedNode = input.nodes.find((node) => node.id === input.selectedNodeIds[0]);
+  return resolveBodyEditSession(selectedNode);
+}
+
+function resolveSelectionShellCapabilities(node: SelectionShellNode | undefined) {
+  if (!node) {
+    return {
+      canResize: false,
+      canRotate: false,
+    };
+  }
+
+  const nodeData = (node.data || {}) as Record<string, unknown>;
+  const editMeta = (
+    nodeData.editMeta && typeof nodeData.editMeta === 'object'
+      ? nodeData.editMeta as { styleEditableKeys?: unknown }
+      : null
+  );
+  const styleEditableKeys = Array.isArray(editMeta?.styleEditableKeys)
+    ? editMeta.styleEditableKeys.filter((value): value is string => typeof value === 'string')
+    : [];
+  const canResize = (
+    styleEditableKeys.includes('width')
+    && styleEditableKeys.includes('height')
+  ) || node.type === 'image' || node.type === 'sticker';
+  const canRotate = styleEditableKeys.includes('rotation')
+    || node.type === 'sticker'
+    || (typeof nodeData.rotation === 'number' && Number.isFinite(nodeData.rotation));
+
+  return {
+    canResize,
+    canRotate,
+  };
+}
+
+export function buildSelectionBoundsAnchor(input: {
+  selectedNodes: SelectionAnchorNode[];
+  viewport: { x: number; y: number; zoom: number };
+}) {
+  if (input.selectedNodes.length === 0) {
+    return null;
+  }
+
+  const bounds = resolveSelectionBounds({
+    selectedNodes: input.selectedNodes,
+  });
+  if (!bounds) {
+    return null;
+  }
+
+  const screenBounds = resolveSelectionScreenBounds({
+    bounds,
+    viewport: input.viewport,
+  });
 
   return createEntrypointAnchor({
     anchorId: 'selection-floating-menu:selection-bounds',
@@ -228,13 +554,143 @@ export function buildSelectionBoundsAnchor(input: {
     nodeIds: input.selectedNodes.map((node) => node.id),
     flow: { x: bounds.minX, y: bounds.minY },
     screen: {
-      x: bounds.minX,
-      y: bounds.minY,
-      width: Math.max(bounds.maxX - bounds.minX, 0),
-      height: Math.max(bounds.maxY - bounds.minY, 0),
+      x: screenBounds.left,
+      y: screenBounds.top,
+      width: screenBounds.width,
+      height: screenBounds.height,
     },
     viewport: input.viewport,
   });
+}
+
+export function resolveCanvasDismissal(input: {
+  reason: 'escape' | 'pane';
+  activeTextEditNodeId: string | null;
+  activeGroupFocusGroupId?: string | null;
+  selectedNodeIds: string[];
+  nodes: CanvasDismissNode[];
+}): GraphCanvasDismissalDecision {
+  if (input.activeTextEditNodeId) {
+    return {
+      kind: input.reason === 'pane' ? 'commit-text-edit' : 'cancel-text-edit',
+      activeTextEditNodeId: input.activeTextEditNodeId,
+    };
+  }
+
+  if (input.activeGroupFocusGroupId) {
+    const groupedNodeIds = input.nodes
+      .filter((node) => {
+        const data = (node.data || {}) as Record<string, unknown>;
+        return data.groupId === input.activeGroupFocusGroupId;
+      })
+      .map((node) => node.id);
+    if (groupedNodeIds.length > 1) {
+      return {
+        kind: 'expand-group-selection',
+        nodeIds: groupedNodeIds,
+      };
+    }
+  }
+
+  const groupedSelection = resolveNodeGroupSelection(input.selectedNodeIds, input.nodes);
+  if (groupedSelection) {
+    return {
+      kind: 'expand-group-selection',
+      nodeIds: groupedSelection,
+    };
+  }
+
+  if (input.selectedNodeIds.length > 0) {
+    return {
+      kind: 'clear-selection',
+    };
+  }
+
+  return {
+    kind: 'noop',
+  };
+}
+
+export function resolveSelectionShellState(input: {
+  selectedNodes: SelectionShellNode[];
+  viewport: { x: number; y: number; zoom: number };
+  activeGesture?: 'move' | 'resize' | 'rotate' | null;
+}): GraphCanvasSelectionShellState {
+  const bounds = resolveSelectionBounds({
+    selectedNodes: input.selectedNodes,
+  });
+  if (!bounds) {
+    return {
+      visible: false,
+      canResize: false,
+      canRotate: false,
+      activeGesture: input.activeGesture ?? null,
+      screenBounds: null,
+    };
+  }
+
+  const primaryNode = input.selectedNodes.length === 1
+    ? input.selectedNodes[0]
+    : undefined;
+  const capabilities = resolveSelectionShellCapabilities(primaryNode);
+  const screenBounds = resolveSelectionScreenBounds({
+    bounds,
+    viewport: input.viewport,
+  });
+
+  return {
+    visible: true,
+    canResize: capabilities.canResize,
+    canRotate: capabilities.canRotate,
+    activeGesture: input.activeGesture ?? null,
+    screenBounds,
+  };
+}
+
+export function resolveSelectionResizePatch(input: {
+  node: SelectionShellNode;
+  deltaScreen: { x: number; y: number };
+  zoom: number;
+}): Record<string, unknown> | null {
+  const capabilities = resolveSelectionShellCapabilities(input.node);
+  if (!capabilities.canResize) {
+    return null;
+  }
+
+  const { width, height } = resolveSelectionNodeDimensions(input.node);
+  const zoom = input.zoom > 0 ? input.zoom : 1;
+  return {
+    width: Math.max(48, Math.round(width + (input.deltaScreen.x / zoom))),
+    height: Math.max(48, Math.round(height + (input.deltaScreen.y / zoom))),
+  };
+}
+
+export function resolveSelectionRotation(input: {
+  node: SelectionShellNode;
+  screenBounds: NonNullable<GraphCanvasSelectionShellState['screenBounds']>;
+  pointerScreen: { x: number; y: number };
+}): number | null {
+  const capabilities = resolveSelectionShellCapabilities(input.node);
+  if (!capabilities.canRotate) {
+    return null;
+  }
+
+  const centerX = input.screenBounds.left + (input.screenBounds.width / 2);
+  const centerY = input.screenBounds.top + (input.screenBounds.height / 2);
+  const angle = (Math.atan2(
+    input.pointerScreen.y - centerY,
+    input.pointerScreen.x - centerX,
+  ) * 180) / Math.PI;
+  return Math.round((angle + 450) % 360);
+}
+
+function areSelectionIdsEqual(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const leftSet = new Set(left);
+  return right.every((value) => leftSet.has(value));
 }
 
 export function shouldHandleRuntimePaneCreate(input: {
@@ -252,6 +708,60 @@ export function shouldHandleRuntimePaneCreate(input: {
   });
 }
 
+function resolveCreateGestureDistance(input: GraphCanvasCreateGesture): number {
+  return Math.hypot(
+    input.currentScreen.x - input.startScreen.x,
+    input.currentScreen.y - input.startScreen.y,
+  );
+}
+
+function resolveCreateGestureScreenBounds(input: GraphCanvasCreateGesture) {
+  return {
+    left: Math.min(input.startScreen.x, input.currentScreen.x),
+    top: Math.min(input.startScreen.y, input.currentScreen.y),
+    width: Math.abs(input.currentScreen.x - input.startScreen.x),
+    height: Math.abs(input.currentScreen.y - input.startScreen.y),
+  };
+}
+
+export function resolveCreateGestureInitialProps(input: {
+  nodeType: GraphCanvasCreateMode;
+  startFlow: { x: number; y: number };
+  endFlow: { x: number; y: number };
+}): Record<string, unknown> | null {
+  const width = Math.abs(input.endFlow.x - input.startFlow.x);
+  const height = Math.abs(input.endFlow.y - input.startFlow.y);
+
+  switch (input.nodeType) {
+    case 'rectangle':
+    case 'ellipse':
+    case 'diamond':
+      return {
+        size: {
+          width: Math.max(width, 64),
+          height: Math.max(height, 64),
+        },
+      };
+    case 'sticky':
+      return {
+        size: {
+          width: Math.max(width, 160),
+          height: Math.max(height, 96),
+        },
+      };
+    case 'line':
+      return {
+        size: {
+          width: Math.max(width, 24),
+          height: Math.max(height, 24),
+        },
+        lineDirection: input.endFlow.y < input.startFlow.y ? 'up' : 'down',
+      };
+    default:
+      return null;
+  }
+}
+
 function GraphCanvasContent({
   onNodeDragStop,
   onUndoEditStep,
@@ -262,6 +772,10 @@ function GraphCanvasContent({
   onDeleteNode,
   onToggleNodeLock,
   onSelectNodeGroup,
+  onGroupSelection,
+  onUngroupSelection,
+  onBringSelectionToFront,
+  onSendSelectionToBack,
   onCreateNode,
   onApplySelectionStyle,
   onCommitSelectionContent,
@@ -294,9 +808,12 @@ function GraphCanvasContent({
     nodes,
     edges,
     selectedNodeIds,
+    activeGroupFocusGroupId,
+    activeTextEditNodeId,
     onNodesChange,
     onEdgesChange,
     setSelectedNodes,
+    setActiveGroupFocusGroupId,
     selectNodesByType,
     focusNextNodeByType,
     currentFile,
@@ -310,6 +827,9 @@ function GraphCanvasContent({
     activeTabId,
     openTabs,
     updateTabSnapshot,
+    requestTextEditCommit,
+    requestTextEditCancel,
+    startTextEditSession,
     entrypointRuntime,
     setEntrypointInteractionMode,
     setEntrypointCreateMode,
@@ -345,7 +865,7 @@ function GraphCanvasContent({
     close: closeOverlayHost,
     getActive: getActiveOverlays,
   } = useOverlayHost();
-  const { openMenu, handleSelectionChange } = useContextMenu();
+  const { openMenu, closeMenu, handleSelectionChange } = useContextMenu();
   const { copyImageToClipboard } = useExportImage();
   const [exportDialog, setExportDialog] = useState<{
     isOpen: boolean;
@@ -358,6 +878,8 @@ function GraphCanvasContent({
   const [isGraphVisible, setIsGraphVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dragFeedback, setDragFeedback] = useState<DragFeedbackState>(null);
+  const [selectionShellGesture, setSelectionShellGesture] = useState<SelectionShellGestureState>(null);
+  const [createGesture, setCreateGesture] = useState<GraphCanvasCreateGesture | null>(null);
   const hasLayouted = useRef(false);
   const lastLayoutedGraphId = useRef<string | null>(null);
   const lastSizeSignaturesRef = useRef<Map<string, string>>(new Map());
@@ -377,6 +899,11 @@ function GraphCanvasContent({
   const previousNodeIdsRef = useRef<Set<string>>(new Set());
   const toolbarOverlayIdRef = useRef<string | null>(null);
   const selectionFloatingMenuOverlayIdRef = useRef<string | null>(null);
+  const selectionShellGestureRef = useRef<SelectionShellGestureSession | null>(null);
+  const createGestureRef = useRef<GraphCanvasCreateGesture | null>(null);
+  const preserveSelectionOnNextPaneDismissRef = useRef<string[] | null>(null);
+  const suppressNextPaneClickRef = useRef(false);
+  const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
 
   const activeTab = useMemo(
@@ -384,10 +911,77 @@ function GraphCanvasContent({
     [activeTabId, openTabs],
   );
 
-  const showToast = (message: string) => {
+  const showToast = useCallback((message: string) => {
     setToastMessage(message);
     setTimeout(() => setToastMessage(null), 2000);
-  };
+  }, []);
+  const createGestureBounds = useMemo(
+    () => createGesture ? resolveCreateGestureScreenBounds(createGesture) : null,
+    [createGesture],
+  );
+  const shouldRenderCreateGesture = Boolean(
+    createGesture && resolveCreateGestureDistance(createGesture) >= DRAG_CREATE_THRESHOLD_PX,
+  );
+
+  const selectionNodes = useMemo(
+    () => nodes.filter((node) => selectedNodeIds.includes(node.id)) as SelectionShellNode[],
+    [nodes, selectedNodeIds],
+  );
+  const selectionShell = resolveSelectionShellState({
+    selectedNodes: selectionNodes,
+    viewport: getViewport(),
+    activeGesture: selectionShellGesture,
+  });
+
+  const syncControlledSelection = useCallback((nodeIds: string[]) => {
+    setNodes((prev) => prev.map((node) => {
+      const shouldSelect = nodeIds.includes(node.id);
+      return node.selected === shouldSelect
+        ? node
+        : { ...node, selected: shouldSelect };
+    }));
+    setSelectedNodes(nodeIds);
+    if (!activeTabId) {
+      return;
+    }
+    updateTabSnapshot(activeTabId, {
+      lastSelection: nodeIds.length > 0
+        ? {
+            nodeIds,
+            edgeIds: [],
+            updatedAt: Date.now(),
+          }
+        : null,
+    });
+  }, [activeTabId, setNodes, setSelectedNodes, updateTabSnapshot]);
+
+  const enterGroupFocusForNode = useCallback((nodeId: string) => {
+    const groupSelection = resolveGroupNodeIdsForNode(
+      nodeId,
+      useGraphStore.getState().nodes as CanvasDismissNode[],
+    );
+    if (!groupSelection) {
+      return;
+    }
+
+    setActiveGroupFocusGroupId(groupSelection.groupId);
+    syncControlledSelection([nodeId]);
+  }, [setActiveGroupFocusGroupId, syncControlledSelection]);
+
+  const restoreSelectionNodePreview = useCallback((nodeId: string, originalData: Record<string, unknown>) => {
+    useGraphStore.setState((state) => ({
+      nodes: state.nodes.map((node) => (
+        node.id === nodeId
+          ? { ...node, data: originalData }
+          : node
+      )),
+    }));
+  }, []);
+
+  const clearSelectionShellGesture = useCallback(() => {
+    selectionShellGestureRef.current = null;
+    setSelectionShellGesture(null);
+  }, []);
 
   const handleSelectionStylePatch = useCallback(async (input: {
     nodeIds: string[];
@@ -466,6 +1060,107 @@ function GraphCanvasContent({
     clearPendingRelayout();
   }, [clearPendingRelayout]);
 
+  useEffect(() => {
+    if (activeTextEditNodeId) {
+      closeMenu('programmatic-close');
+    }
+  }, [activeTextEditNodeId, closeMenu]);
+
+  useEffect(() => {
+    createGestureRef.current = createGesture;
+  }, [createGesture]);
+
+  useEffect(() => {
+    if (!createGesture) {
+      return;
+    }
+
+    const handlePointerMove = (event: MouseEvent) => {
+      setCreateGesture((current) => (
+        current
+          ? {
+              ...current,
+              currentScreen: { x: event.clientX, y: event.clientY },
+            }
+          : current
+      ));
+    };
+
+    const handlePointerUp = (event: MouseEvent) => {
+      const session = createGestureRef.current;
+      createGestureRef.current = null;
+      setCreateGesture(null);
+
+      if (!session || !onCreateNode) {
+        return;
+      }
+
+      const completedGesture: GraphCanvasCreateGesture = {
+        ...session,
+        currentScreen: { x: event.clientX, y: event.clientY },
+      };
+      const distance = resolveCreateGestureDistance(completedGesture);
+
+      if (distance < DRAG_CREATE_THRESHOLD_PX) {
+        if (isDragRequiredCreateNodeType(session.nodeType)) {
+          showToast('선을 만들려면 드래그하세요.');
+        }
+        return;
+      }
+
+      const startFlow = screenToFlowPosition(completedGesture.startScreen);
+      const endFlow = screenToFlowPosition(completedGesture.currentScreen);
+      const initialProps = resolveCreateGestureInitialProps({
+        nodeType: completedGesture.nodeType,
+        startFlow,
+        endFlow,
+      });
+
+      if (!initialProps) {
+        return;
+      }
+
+      suppressNextPaneClickRef.current = true;
+      void runPendingUiAction({
+        actionType: 'node.create',
+        targetIds: [completedGesture.nodeType],
+        execute: () => Promise.resolve(onCreateNode(buildGraphCanvasCreateIntent({
+          surfaceId: 'toolbar',
+          surface: 'canvas-toolbar',
+          trigger: { source: 'click' },
+          nodeType: completedGesture.nodeType,
+          placement: {
+            mode: 'canvas-absolute',
+            x: Math.min(startFlow.x, endFlow.x),
+            y: Math.min(startFlow.y, endFlow.y),
+          },
+          initialProps,
+        }))),
+      }).then(() => {
+        setEntrypointCreateMode(null);
+        showToast('새 오브젝트를 생성했습니다.');
+      }).catch((error) => {
+        const mapped = mapEditErrorToToast?.(error);
+        showToast(mapped ?? '오브젝트 생성에 실패했습니다.');
+      });
+    };
+
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+    };
+  }, [
+    createGesture,
+    mapEditErrorToToast,
+    onCreateNode,
+    runPendingUiAction,
+    screenToFlowPosition,
+    setEntrypointCreateMode,
+    showToast,
+  ]);
+
   const persistActiveTabViewport = useCallback((viewport: { x: number; y: number; zoom: number }) => {
     if (!activeTabId) {
       return;
@@ -493,29 +1188,29 @@ function GraphCanvasContent({
     return true;
   }, [persistActiveTabViewport, setViewport]);
 
-  const handleZoomIn = () => {
+  const handleZoomIn = useCallback(() => {
     zoomIn({ duration: 300 });
     setTimeout(() => {
       persistActiveTabViewport(getViewport());
       showToast(`Zoom: ${Math.round(getZoom() * 100)}%`);
     }, 350);
-  };
+  }, [getViewport, getZoom, persistActiveTabViewport, showToast, zoomIn]);
 
-  const handleZoomOut = () => {
+  const handleZoomOut = useCallback(() => {
     zoomOut({ duration: 300 });
     setTimeout(() => {
       persistActiveTabViewport(getViewport());
       showToast(`Zoom: ${Math.round(getZoom() * 100)}%`);
     }, 350);
-  };
+  }, [getViewport, getZoom, persistActiveTabViewport, showToast, zoomOut]);
 
-  const handleFitView = () => {
+  const handleFitView = useCallback(() => {
     fitView({ duration: 300 });
     setTimeout(() => {
       persistActiveTabViewport(getViewport());
       showToast('Fit to view');
     }, 350);
-  };
+  }, [fitView, getViewport, persistActiveTabViewport, showToast]);
 
   const contextMenuActions = useMemo(() => createGraphCanvasContextMenuActions({
     copyImageToClipboard,
@@ -538,24 +1233,38 @@ function GraphCanvasContent({
     onDeleteNode,
     onToggleNodeLock,
     onSelectNodeGroup,
+    onEnterNodeGroup: enterGroupFocusForNode,
+    onGroupSelection,
+    onUngroupSelection,
+    onBringSelectionToFront,
+    onSendSelectionToBack,
     onCreateNode,
     buildRenameIntent: buildGraphCanvasRenameIntent,
     buildNodeMenuIntent: buildGraphCanvasNodeMenuIntent,
+    buildSelectionActionIntent: buildGraphCanvasSelectionActionIntent,
     buildCreateIntent: buildGraphCanvasCreateIntent,
   }), [
     copyImageToClipboard,
+    enterGroupFocusForNode,
+    onBringSelectionToFront,
     handleFitView,
     onCreateNode,
     onDeleteNode,
     onDuplicateNode,
+    onGroupSelection,
     onRenameNode,
     onSelectNodeGroup,
     onToggleNodeLock,
+    onSendSelectionToBack,
+    onUngroupSelection,
     screenToFlowPosition,
   ]);
 
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: FlowNode) => {
+      if (activeTextEditNodeId) {
+        return;
+      }
       event.preventDefault();
       const runtime = useGraphStore.getState();
       openMenu(createGraphCanvasNodeContextMenu({
@@ -570,11 +1279,38 @@ function GraphCanvasContent({
         triggerElement: event.currentTarget as HTMLElement,
       });
     },
-    [openMenu, contextMenuActions],
+    [activeTextEditNodeId, openMenu, contextMenuActions],
+  );
+
+  const onNodeDoubleClick = useCallback(
+    (_event: React.MouseEvent, node: FlowNode) => {
+      if (activeTextEditNodeId) {
+        return;
+      }
+
+      const runtime = useGraphStore.getState();
+      const decision = resolveNodeDoubleClickDecision({
+        node,
+        selectedNodeIds: runtime.selectedNodeIds,
+        nodes: runtime.nodes as CanvasDismissNode[],
+      });
+      if (decision.kind === 'enter-group') {
+        setActiveGroupFocusGroupId(decision.groupId);
+        syncControlledSelection(decision.nodeIds);
+        return;
+      }
+      if (decision.kind === 'start-body-edit') {
+        startTextEditSession(decision.session);
+      }
+    },
+    [activeTextEditNodeId, setActiveGroupFocusGroupId, startTextEditSession, syncControlledSelection],
   );
 
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
+      if (activeTextEditNodeId) {
+        return;
+      }
       event.preventDefault();
       const runtime = useGraphStore.getState();
       openMenu(createGraphCanvasPaneContextMenu({
@@ -586,15 +1322,122 @@ function GraphCanvasContent({
         triggerElement: event.currentTarget as HTMLElement,
       });
     },
-    [contextMenuActions, openMenu],
+    [activeTextEditNodeId, contextMenuActions, openMenu],
   );
+
+  const onCanvasMouseDownCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      activeTextEditNodeId
+      && event.button === 0
+      && event.target instanceof Element
+      && event.target.closest('.react-flow__pane')
+    ) {
+      suppressNextPaneClickRef.current = true;
+      requestTextEditCommit(activeTextEditNodeId);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if (
+      event.button !== 0
+      || !createMode
+      || !onCreateNode
+      || !shouldHandleRuntimePaneCreate({ interactionMode, createMode, hasPendingUiActions })
+      || !isDragCreateNodeType(createMode)
+    ) {
+      return;
+    }
+
+    if (!(event.target instanceof Element) || !event.target.closest('.react-flow__pane')) {
+      return;
+    }
+
+    const session: GraphCanvasCreateGesture = {
+      nodeType: createMode as GraphCanvasActiveCreateMode,
+      startScreen: { x: event.clientX, y: event.clientY },
+      currentScreen: { x: event.clientX, y: event.clientY },
+    };
+    createGestureRef.current = session;
+    setCreateGesture(session);
+  }, [activeTextEditNodeId, createMode, hasPendingUiActions, interactionMode, onCreateNode, requestTextEditCommit]);
+
+  const applyCanvasDismissal = useCallback((reason: 'escape' | 'pane') => {
+    const dismissal = resolveCanvasDismissal({
+      reason,
+      activeTextEditNodeId,
+      activeGroupFocusGroupId,
+      selectedNodeIds,
+      nodes: useGraphStore.getState().nodes,
+    });
+
+    if (dismissal.kind === 'commit-text-edit' && dismissal.activeTextEditNodeId) {
+      if (reason === 'pane' && selectedNodeIds.length > 0) {
+        preserveSelectionOnNextPaneDismissRef.current = [...selectedNodeIds];
+      }
+      requestTextEditCommit(dismissal.activeTextEditNodeId);
+      return true;
+    }
+    if (dismissal.kind === 'cancel-text-edit' && dismissal.activeTextEditNodeId) {
+      requestTextEditCancel(dismissal.activeTextEditNodeId);
+      return true;
+    }
+    if (dismissal.kind === 'expand-group-selection' && dismissal.nodeIds) {
+      syncControlledSelection(dismissal.nodeIds);
+      return true;
+    }
+    if (dismissal.kind === 'clear-selection') {
+      setActiveGroupFocusGroupId(null);
+      syncControlledSelection([]);
+      return true;
+    }
+
+    return false;
+  }, [
+    activeGroupFocusGroupId,
+    activeTextEditNodeId,
+    requestTextEditCancel,
+    requestTextEditCommit,
+    selectedNodeIds,
+    syncControlledSelection,
+  ]);
+
+  const startSelectionBodyEdit = useCallback(() => {
+    if (activeTextEditNodeId) {
+      return false;
+    }
+
+    const runtime = useGraphStore.getState();
+    const session = resolveSelectionBodyEditSession({
+      selectedNodeIds: runtime.selectedNodeIds,
+      nodes: runtime.nodes,
+    });
+    if (!session) {
+      return false;
+    }
+
+    startTextEditSession(session);
+    return true;
+  }, [activeTextEditNodeId, startTextEditSession]);
 
   const onPaneClick = useCallback(
     async (event: React.MouseEvent) => {
-      if (!shouldHandleRuntimePaneCreate({ interactionMode, createMode, hasPendingUiActions }) || !onCreateNode) {
+      if (suppressNextPaneClickRef.current) {
+        suppressNextPaneClickRef.current = false;
         return;
       }
-      if (createMode === null) {
+
+      if (!shouldHandleRuntimePaneCreate({ interactionMode, createMode, hasPendingUiActions }) || !onCreateNode) {
+        applyCanvasDismissal('pane');
+        return;
+      }
+
+      if (createMode && isDragRequiredCreateNodeType(createMode)) {
+        return;
+      }
+
+      const activeCreateMode = createMode;
+      if (!activeCreateMode) {
         return;
       }
 
@@ -602,12 +1445,12 @@ function GraphCanvasContent({
       try {
         await runPendingUiAction({
           actionType: 'node.create',
-          targetIds: [createMode],
+          targetIds: [activeCreateMode],
           execute: () => Promise.resolve(onCreateNode(buildGraphCanvasCreateIntent({
             surfaceId: 'toolbar',
             surface: 'canvas-toolbar',
             trigger: { source: 'click' },
-            nodeType: createMode,
+            nodeType: activeCreateMode,
             placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
           }))),
         });
@@ -619,6 +1462,7 @@ function GraphCanvasContent({
       }
     },
     [
+      applyCanvasDismissal,
       createMode,
       hasPendingUiActions,
       interactionMode,
@@ -819,8 +1663,31 @@ function GraphCanvasContent({
   const onSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams) => {
       const selectedIds = selectedNodes.map((node) => node.id);
+      if (preserveSelectionOnNextPaneDismissRef.current && selectedIds.length === 0) {
+        const preservedSelection = preserveSelectionOnNextPaneDismissRef.current;
+        preserveSelectionOnNextPaneDismissRef.current = null;
+        syncControlledSelection(preservedSelection);
+        return;
+      }
+
+      const currentSelectedIds = useGraphStore.getState().selectedNodeIds;
+      if (areSelectionIdsEqual(currentSelectedIds, selectedIds)) {
+        return;
+      }
+
       setSelectedNodes(selectedIds);
       handleSelectionChange(selectedIds);
+      if (activeTabId) {
+        updateTabSnapshot(activeTabId, {
+          lastSelection: selectedIds.length > 0
+            ? {
+                nodeIds: selectedIds,
+                edgeIds: [],
+                updatedAt: Date.now(),
+              }
+            : null,
+        });
+      }
       if (selectedIds.length === 0) {
         clearEntrypointAnchor('selection-floating-menu:selection-bounds');
         return;
@@ -834,7 +1701,7 @@ function GraphCanvasContent({
         registerEntrypointAnchor(selectionAnchor);
       }
     },
-    [clearEntrypointAnchor, getViewport, handleSelectionChange, registerEntrypointAnchor, setSelectedNodes],
+    [activeTabId, clearEntrypointAnchor, getViewport, handleSelectionChange, registerEntrypointAnchor, setSelectedNodes, syncControlledSelection, updateTabSnapshot],
   );
 
   useEffect(() => {
@@ -872,16 +1739,20 @@ function GraphCanvasContent({
   }, [clearEntrypointAnchorsForNode, nodes]);
 
   const onHandleNodeDragStart = useCallback(
-    (_event: React.MouseEvent, node: FlowNode) => {
+    (event: React.MouseEvent, node: FlowNode) => {
       const nextGeneration = (dragGenerationRef.current.get(node.id) ?? 0) + 1;
       dragGenerationRef.current.set(node.id, nextGeneration);
       dragOriginPositions.current.set(node.id, {
         x: node.position.x,
         y: node.position.y,
         generation: nextGeneration,
+        pointerType: resolvePointerTypeFromEvent(event),
       });
+      if (selectedNodeIds.includes(node.id)) {
+        setSelectionShellGesture('move');
+      }
     },
-    [],
+    [selectedNodeIds],
   );
 
   const updateDragFeedback = useCallback((node: FlowNode) => {
@@ -927,10 +1798,12 @@ function GraphCanvasContent({
       if (!shouldCommitDragStop({
         origin: original ? { x: original.x, y: original.y } : undefined,
         current: { x: node.position.x, y: node.position.y },
+        pointerType: original?.pointerType,
       })) {
         if (isLatestDragAttempt()) {
           dragOriginPositions.current.delete(node.id);
           setDragFeedback(null);
+          setSelectionShellGesture(null);
         }
         return;
       }
@@ -1010,11 +1883,148 @@ function GraphCanvasContent({
       } finally {
         if (isLatestDragAttempt()) {
           dragOriginPositions.current.delete(node.id);
+          setSelectionShellGesture(null);
         }
       }
     },
     [getNodes, hasPendingUiActions, mapEditErrorToToast, onNodeDragStop, runPendingUiAction, setNodes],
   );
+
+  const beginSelectionResizeGesture = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!onApplySelectionStyle || selectionNodes.length !== 1) {
+      return;
+    }
+
+    const [targetNode] = selectionNodes;
+    selectionShellGestureRef.current = {
+      kind: 'resize',
+      nodeId: targetNode.id,
+      originScreen: { x: event.clientX, y: event.clientY },
+      originalData: { ...((targetNode.data || {}) as Record<string, unknown>) },
+      zoom: Math.max(getViewport().zoom, 0.1),
+      lastPatch: null,
+    };
+    setSelectionShellGesture('resize');
+    event.preventDefault();
+    event.stopPropagation();
+  }, [getViewport, onApplySelectionStyle, selectionNodes]);
+
+  const beginSelectionRotateGesture = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!onApplySelectionStyle || selectionNodes.length !== 1 || !selectionShell.screenBounds) {
+      return;
+    }
+
+    const [targetNode] = selectionNodes;
+    selectionShellGestureRef.current = {
+      kind: 'rotate',
+      nodeId: targetNode.id,
+      originalData: { ...((targetNode.data || {}) as Record<string, unknown>) },
+      screenBounds: selectionShell.screenBounds,
+      lastPatch: null,
+    };
+    setSelectionShellGesture('rotate');
+    event.preventDefault();
+    event.stopPropagation();
+  }, [onApplySelectionStyle, selectionNodes, selectionShell.screenBounds]);
+
+  useEffect(() => {
+    if (!selectionShellGesture) {
+      return;
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const gesture = selectionShellGestureRef.current;
+      if (!gesture) {
+        return;
+      }
+
+      const runtimeNode = useGraphStore.getState().nodes.find((node) => node.id === gesture.nodeId);
+      if (!runtimeNode) {
+        clearSelectionShellGesture();
+        return;
+      }
+
+      if (gesture.kind === 'resize') {
+        const patch = resolveSelectionResizePatch({
+          node: runtimeNode as SelectionShellNode,
+          deltaScreen: {
+            x: event.clientX - gesture.originScreen.x,
+            y: event.clientY - gesture.originScreen.y,
+          },
+          zoom: gesture.zoom,
+        });
+        if (!patch) {
+          return;
+        }
+        gesture.lastPatch = patch;
+        useGraphStore.getState().updateNodeData(gesture.nodeId, patch);
+        event.preventDefault();
+        return;
+      }
+
+      const rotation = resolveSelectionRotation({
+        node: runtimeNode as SelectionShellNode,
+        screenBounds: gesture.screenBounds,
+        pointerScreen: { x: event.clientX, y: event.clientY },
+      });
+      if (rotation === null) {
+        return;
+      }
+      gesture.lastPatch = { rotation };
+      useGraphStore.getState().updateNodeData(gesture.nodeId, { rotation });
+      event.preventDefault();
+    };
+
+    const finishGesture = async () => {
+      const gesture = selectionShellGestureRef.current;
+      clearSelectionShellGesture();
+      if (!gesture) {
+        return;
+      }
+
+      if (!gesture.lastPatch || !onApplySelectionStyle) {
+        restoreSelectionNodePreview(gesture.nodeId, gesture.originalData);
+        return;
+      }
+
+      try {
+        await Promise.resolve(onApplySelectionStyle({
+          nodeIds: [gesture.nodeId],
+          patch: gesture.lastPatch,
+          patchKey: gesture.kind === 'rotate' ? 'rotation' : 'width',
+        }));
+      } catch (error) {
+        restoreSelectionNodePreview(gesture.nodeId, gesture.originalData);
+        const mapped = mapEditErrorToToast?.(error);
+        showToast(mapped ?? '직접 조작 변경을 저장하지 못했습니다.');
+      }
+    };
+
+    const cancelGesture = () => {
+      const gesture = selectionShellGestureRef.current;
+      clearSelectionShellGesture();
+      if (!gesture) {
+        return;
+      }
+      restoreSelectionNodePreview(gesture.nodeId, gesture.originalData);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', finishGesture);
+    window.addEventListener('pointercancel', cancelGesture);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finishGesture);
+      window.removeEventListener('pointercancel', cancelGesture);
+    };
+  }, [
+    clearSelectionShellGesture,
+    mapEditErrorToToast,
+    onApplySelectionStyle,
+    restoreSelectionNodePreview,
+    selectionShellGesture,
+    showToast,
+  ]);
 
   const selectionFloatingMenuContribution = useMemo(() => createGraphCanvasSelectionFloatingMenuContribution({
     runtime: canvasRuntime,
@@ -1023,6 +2033,7 @@ function GraphCanvasContent({
     nodes,
     selectedNodeIds,
     currentFile,
+    activeTextEditNodeId,
     runtimeState: entrypointRuntime,
     pendingActionRoutingByKey,
     washiPresets,
@@ -1030,6 +2041,7 @@ function GraphCanvasContent({
     onCommitContent: handleSelectionContentCommit,
   }), [
     currentFile,
+    activeTextEditNodeId,
     entrypointRuntime,
     handleSelectionContentCommit,
     handleSelectionStylePatch,
@@ -1057,6 +2069,8 @@ function GraphCanvasContent({
   }), [
     createMode,
     handleFitView,
+    handleZoomIn,
+    handleZoomOut,
     interactionMode,
     setEntrypointCreateMode,
     setEntrypointInteractionMode,
@@ -1122,6 +2136,45 @@ function GraphCanvasContent({
       graphClipboardRef,
       focusNextNodeByType,
       selectNodesByType,
+      selectAllNodeIds: () => {
+        const ids = getNodes().map((node) => node.id);
+        syncControlledSelection(ids);
+        return ids;
+      },
+      deleteSelectedNodes: async () => {
+        if (!onDeleteNode) {
+          return [];
+        }
+
+        const ids = [...useGraphStore.getState().selectedNodeIds];
+        for (const nodeId of ids) {
+          await Promise.resolve(onDeleteNode(buildGraphCanvasNodeMenuIntent(nodeId)));
+        }
+        return ids;
+      },
+      duplicateSelectedNodes: async () => {
+        if (!onDuplicateNode) {
+          return [];
+        }
+
+        const ids = [...useGraphStore.getState().selectedNodeIds];
+        for (const nodeId of ids) {
+          await Promise.resolve(onDuplicateNode(buildGraphCanvasNodeMenuIntent(nodeId)));
+        }
+        return ids;
+      },
+      groupSelection: async () => {
+        const ids = [...useGraphStore.getState().selectedNodeIds];
+        if (ids.length === 0 || !onGroupSelection) {
+          return [];
+        }
+
+        await Promise.resolve(onGroupSelection(buildGraphCanvasSelectionActionIntent({
+          anchorNodeId: ids[0],
+          trigger: { source: 'hotkey' },
+        })));
+        return ids;
+      },
       showToast,
       getGraphState: () => {
         const state = useGraphStore.getState();
@@ -1141,18 +2194,76 @@ function GraphCanvasContent({
       mapEditErrorToToast,
       onUndoEditStep,
       onRedoEditStep,
+      isEditorFocusActive: () => Boolean(useGraphStore.getState().activeTextEditNodeId),
       getClipboard: () => (
         typeof navigator !== 'undefined' ? navigator.clipboard : null
       ),
+      ungroupSelection: async () => {
+        const ids = [...useGraphStore.getState().selectedNodeIds];
+        if (ids.length === 0 || !onUngroupSelection) {
+          return [];
+        }
+
+        await Promise.resolve(onUngroupSelection(buildGraphCanvasSelectionActionIntent({
+          anchorNodeId: ids[0],
+          trigger: { source: 'hotkey' },
+        })));
+        return ids;
+      },
+      zoomIn: () => {
+        handleZoomIn();
+        return null;
+      },
+      zoomOut: () => {
+        handleZoomOut();
+        return null;
+      },
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        if (applyCanvasDismissal('escape')) {
+          event.preventDefault();
+        }
+        return;
+      }
+      if (
+        event.key === 'Enter'
+        && !event.repeat
+        && !event.altKey
+        && !event.ctrlKey
+        && !event.metaKey
+        && !event.shiftKey
+        && !isCanvasKeyboardTextInputFocused(event.target as Element | null)
+      ) {
+        if (startSelectionBodyEdit()) {
+          event.preventDefault();
+          return;
+        }
+      }
       void keyboardHost.handleKeyDown(event);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [focusNextNodeByType, mapEditErrorToToast, onRedoEditStep, onUndoEditStep, selectNodesByType, showToast]);
+  }, [
+    focusNextNodeByType,
+    getNodes,
+    handleZoomIn,
+    handleZoomOut,
+    applyCanvasDismissal,
+    mapEditErrorToToast,
+    onDeleteNode,
+    onDuplicateNode,
+    onGroupSelection,
+    onRedoEditStep,
+    onUndoEditStep,
+    selectNodesByType,
+    showToast,
+    startSelectionBodyEdit,
+    syncControlledSelection,
+    onUngroupSelection,
+  ]);
 
   return (
     <>
@@ -1170,7 +2281,9 @@ function GraphCanvasContent({
          We wait until isGraphVisible is true.
       */}
       <div
+        ref={canvasWrapperRef}
         className="w-full h-full min-h-[500px] flex-1 bg-white transition-opacity duration-300"
+        onMouseDownCapture={onCanvasMouseDownCapture}
         style={{
           opacity: isGraphVisible ? 1 : 0,
           fontFamily: canvasResolvedFontFamily,
@@ -1185,6 +2298,7 @@ function GraphCanvasContent({
           onNodeDragStart={onHandleNodeDragStart}
           onNodeDrag={onHandleNodeDrag}
           onNodeDragStop={onHandleNodeDragStop}
+          onNodeDoubleClick={onNodeDoubleClick}
           onNodeContextMenu={onNodeContextMenu}
           onPaneClick={onPaneClick}
           onPaneContextMenu={onPaneContextMenu}
@@ -1209,12 +2323,11 @@ function GraphCanvasContent({
           nodesConnectable={false}
           zoomOnScroll={true}
           panOnScroll={true}
-          panOnDrag={interactionMode === 'hand'}
-          selectionOnDrag={interactionMode === 'pointer'}
+          panOnDrag={interactionMode === 'hand' && createMode === null}
+          selectionOnDrag={interactionMode === 'pointer' && createMode === null}
           panOnScrollMode={undefined} // Allow pan on scroll
           minZoom={0.1}
           maxZoom={2}
-          fitView
           defaultEdgeOptions={{
             type: 'floating',
             animated: false,
@@ -1234,6 +2347,85 @@ function GraphCanvasContent({
             <CustomBackground svg={canvasBackground.svg} gap={canvasBackground.gap} />
           )}
         </ReactFlow>
+
+        {shouldRenderCreateGesture && createGestureBounds ? (
+          <div className="pointer-events-none absolute inset-0 z-[92]">
+            {createGesture?.nodeType === 'line' ? (
+              <svg className="absolute inset-0 h-full w-full overflow-visible">
+                <line
+                  x1={createGesture.startScreen.x - (canvasWrapperRef.current?.getBoundingClientRect().left ?? 0)}
+                  y1={createGesture.startScreen.y - (canvasWrapperRef.current?.getBoundingClientRect().top ?? 0)}
+                  x2={createGesture.currentScreen.x - (canvasWrapperRef.current?.getBoundingClientRect().left ?? 0)}
+                  y2={createGesture.currentScreen.y - (canvasWrapperRef.current?.getBoundingClientRect().top ?? 0)}
+                  stroke="#0f172a"
+                  strokeWidth={3}
+                  strokeLinecap="round"
+                  strokeDasharray="8 6"
+                />
+              </svg>
+            ) : (
+              <div
+                className={[
+                  'absolute border-2 border-sky-500/80 bg-sky-200/20',
+                  createGesture?.nodeType === 'ellipse' ? 'rounded-full' : '',
+                ].join(' ')}
+                style={{
+                  left: createGestureBounds.left - (canvasWrapperRef.current?.getBoundingClientRect().left ?? 0),
+                  top: createGestureBounds.top - (canvasWrapperRef.current?.getBoundingClientRect().top ?? 0),
+                  width: createGestureBounds.width,
+                  height: createGestureBounds.height,
+                  clipPath: createGesture?.nodeType === 'diamond'
+                    ? 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)'
+                    : undefined,
+                  backgroundColor: createGesture?.nodeType === 'sticky'
+                    ? 'rgba(252, 229, 136, 0.35)'
+                    : undefined,
+                }}
+              />
+            )}
+          </div>
+        ) : null}
+
+        {!activeTextEditNodeId && selectionShell.visible && selectionShell.screenBounds ? (
+          <div className="pointer-events-none absolute inset-0 z-[95]">
+            <div
+              data-testid="graph-canvas-selection-shell"
+              className={[
+                'absolute rounded-2xl border border-sky-500/80 bg-sky-500/5 shadow-[0_0_0_1px_rgba(255,255,255,0.7)] transition-colors',
+                selectionShell.activeGesture ? 'border-sky-600 bg-sky-500/10' : '',
+              ].join(' ')}
+              style={{
+                left: selectionShell.screenBounds.left,
+                top: selectionShell.screenBounds.top,
+                width: selectionShell.screenBounds.width,
+                height: selectionShell.screenBounds.height,
+              }}
+            >
+              {selectionShell.canRotate && selectionNodes.length === 1 ? (
+                <button
+                  type="button"
+                  data-testid="graph-canvas-rotate-handle"
+                  aria-label="Rotate selection"
+                  className="pointer-events-auto absolute left-1/2 top-0 h-4 w-4 -translate-x-1/2 -translate-y-6 rounded-full border border-sky-500 bg-white shadow-sm"
+                  onPointerDown={beginSelectionRotateGesture}
+                >
+                  <span className="sr-only">Rotate selection</span>
+                </button>
+              ) : null}
+              {selectionShell.canResize && selectionNodes.length === 1 ? (
+                <button
+                  type="button"
+                  data-testid="graph-canvas-resize-handle"
+                  aria-label="Resize selection"
+                  className="pointer-events-auto absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 rounded-full border border-sky-500 bg-white shadow-sm cursor-se-resize"
+                  onPointerDown={beginSelectionResizeGesture}
+                >
+                  <span className="sr-only">Resize selection</span>
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         <ExportDialog
           isOpen={exportDialog.isOpen}
@@ -1284,6 +2476,10 @@ export function GraphCanvas({
   onDeleteNode,
   onToggleNodeLock,
   onSelectNodeGroup,
+  onGroupSelection,
+  onUngroupSelection,
+  onBringSelectionToFront,
+  onSendSelectionToBack,
   onCreateNode,
   onApplySelectionStyle,
   onCommitSelectionContent,
@@ -1306,6 +2502,10 @@ export function GraphCanvas({
                     onDeleteNode={onDeleteNode}
                     onToggleNodeLock={onToggleNodeLock}
                     onSelectNodeGroup={onSelectNodeGroup}
+                    onGroupSelection={onGroupSelection}
+                    onUngroupSelection={onUngroupSelection}
+                    onBringSelectionToFront={onBringSelectionToFront}
+                    onSendSelectionToBack={onSendSelectionToBack}
                     onCreateNode={onCreateNode}
                     onApplySelectionStyle={onApplySelectionStyle}
                     onCommitSelectionContent={onCommitSelectionContent}

@@ -1,24 +1,50 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const mockGlob = vi.fn();
-const mockTranspileWithMetadata = vi.fn();
-const mockExecute = vi.fn();
-const mockExistsSync = vi.fn();
-const mockReadFileSync = vi.fn();
-const mockChatGetProviders = vi.fn();
-const mockChatSend = vi.fn();
-const mockChatStop = vi.fn();
-const mockChatListSessions = vi.fn();
-const mockChatGetSession = vi.fn();
-const mockChatCreateSession = vi.fn();
-const mockChatUpdateSession = vi.fn();
-const mockChatDeleteSession = vi.fn();
-const mockChatListMessages = vi.fn();
-const mockChatListGroups = vi.fn();
-const mockChatCreateGroup = vi.fn();
-const mockChatUpdateGroup = vi.fn();
-const mockChatDeleteGroup = vi.fn();
-const mockChatAppendSystemMessage = vi.fn();
+const {
+  mockGlob,
+  mockTranspileWithMetadata,
+  mockExecute,
+  mockExistsSync,
+  mockReadFileSync,
+  mockMkdirSync,
+  mockWriteFileSync,
+  mockChatGetProviders,
+  mockChatSend,
+  mockChatStop,
+  mockChatListSessions,
+  mockChatGetSession,
+  mockChatCreateSession,
+  mockChatUpdateSession,
+  mockChatDeleteSession,
+  mockChatListMessages,
+  mockChatListGroups,
+  mockChatCreateGroup,
+  mockChatUpdateGroup,
+  mockChatDeleteGroup,
+  mockChatAppendSystemMessage,
+} = vi.hoisted(() => ({
+  mockGlob: vi.fn(),
+  mockTranspileWithMetadata: vi.fn(),
+  mockExecute: vi.fn(),
+  mockExistsSync: vi.fn(),
+  mockReadFileSync: vi.fn(),
+  mockMkdirSync: vi.fn(),
+  mockWriteFileSync: vi.fn(),
+  mockChatGetProviders: vi.fn(),
+  mockChatSend: vi.fn(),
+  mockChatStop: vi.fn(),
+  mockChatListSessions: vi.fn(),
+  mockChatGetSession: vi.fn(),
+  mockChatCreateSession: vi.fn(),
+  mockChatUpdateSession: vi.fn(),
+  mockChatDeleteSession: vi.fn(),
+  mockChatListMessages: vi.fn(),
+  mockChatListGroups: vi.fn(),
+  mockChatCreateGroup: vi.fn(),
+  mockChatUpdateGroup: vi.fn(),
+  mockChatDeleteGroup: vi.fn(),
+  mockChatAppendSystemMessage: vi.fn(),
+}));
 
 // Mock fast-glob
 vi.mock('fast-glob', () => ({
@@ -38,6 +64,8 @@ vi.mock('../core/executor', () => ({
 vi.mock('fs', () => ({
   existsSync: mockExistsSync,
   readFileSync: mockReadFileSync,
+  mkdirSync: mockMkdirSync,
+  writeFileSync: mockWriteFileSync,
 }));
 
 vi.mock('../chat/handler', () => ({
@@ -176,6 +204,52 @@ describe('HTTP Render Server', () => {
 
       expect(response.status).toBe(500);
       expect(body.type).toBe('FILES_ERROR');
+    });
+  });
+
+  describe('POST /files', () => {
+    it('should return 400 if filePath is missing', async () => {
+      const response = await fetch(`${baseUrl}/files`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(body.type).toBe('VALIDATION_ERROR');
+    });
+
+    it('should create a new empty canvas document and return its source version', async () => {
+      mockExistsSync.mockReturnValue(false);
+
+      const response = await fetch(`${baseUrl}/files`, {
+        method: 'POST',
+        body: JSON.stringify({ filePath: 'docs/untitled-2.graph.tsx' }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(201);
+      expect(body.filePath).toBe('docs/untitled-2.graph.tsx');
+      expect(body.sourceVersion.startsWith('sha256:')).toBe(true);
+      expect(mockMkdirSync).toHaveBeenCalledWith(`${targetDir}/docs`, { recursive: true });
+      expect(mockWriteFileSync).toHaveBeenCalledWith(
+        `${targetDir}/docs/untitled-2.graph.tsx`,
+        expect.stringContaining('<Canvas></Canvas>'),
+        'utf-8',
+      );
+    });
+
+    it('should reject when the target file already exists', async () => {
+      mockExistsSync.mockReturnValue(true);
+
+      const response = await fetch(`${baseUrl}/files`, {
+        method: 'POST',
+        body: JSON.stringify({ filePath: 'docs/untitled-2.graph.tsx' }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(body.type).toBe('FILE_EXISTS');
     });
   });
 

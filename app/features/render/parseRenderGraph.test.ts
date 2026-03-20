@@ -177,7 +177,131 @@ describe('parseRenderGraph mindmap roots', () => {
   });
 });
 
+describe('parseRenderGraph structural canvas metadata', () => {
+  it('preserves explicit groupId and zIndex props on canvas nodes', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'shape-a',
+              x: 40,
+              y: 80,
+              groupId: 'group-1',
+              zIndex: 12,
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.nodes[0]).toMatchObject({
+      id: 'shape-a',
+      zIndex: 12,
+      data: {
+        groupId: 'group-1',
+        zIndex: 12,
+      },
+    });
+  });
+});
+
 describe('parseRenderGraph canonical object normalization', () => {
+  it('preserves minimal phase-1 shape variants on graph-shape nodes', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'ellipse-shape',
+              x: 20,
+              y: 30,
+              type: 'ellipse',
+              size: { width: 220, height: 140 },
+            },
+            children: [],
+          },
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'diamond-shape',
+              x: 60,
+              y: 80,
+              type: 'diamond',
+              size: { width: 160, height: 160 },
+            },
+            children: [],
+          },
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'line-shape',
+              x: 90,
+              y: 140,
+              type: 'line',
+              lineDirection: 'up',
+              size: { width: 180, height: 48 },
+            },
+            children: [],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    const ellipseNode = parsed!.nodes.find((node) => node.id === 'ellipse-shape');
+    const diamondNode = parsed!.nodes.find((node) => node.id === 'diamond-shape');
+    const lineNode = parsed!.nodes.find((node) => node.id === 'line-shape');
+
+    expect(ellipseNode?.type).toBe('shape');
+    expect((ellipseNode?.data as Record<string, unknown>)?.type).toBe('ellipse');
+    assertCanonicalMatch(
+      (ellipseNode?.data as Record<string, unknown>)?.canonicalObject,
+      {
+        semanticRole: 'shape',
+        alias: 'Shape',
+        capabilities: {
+          frame: {
+            shape: 'ellipse',
+          },
+        },
+      },
+    );
+
+    expect((diamondNode?.data as Record<string, unknown>)?.type).toBe('diamond');
+    assertCanonicalMatch(
+      (diamondNode?.data as Record<string, unknown>)?.canonicalObject,
+      {
+        semanticRole: 'shape',
+        alias: 'Shape',
+        capabilities: {
+          frame: {
+            shape: 'diamond',
+          },
+        },
+      },
+    );
+
+    expect((lineNode?.data as Record<string, unknown>)?.type).toBe('line');
+    expect((lineNode?.data as Record<string, unknown>)?.lineDirection).toBe('up');
+    assertCanonicalMatch(
+      (lineNode?.data as Record<string, unknown>)?.canonicalObject,
+      {
+        semanticRole: 'shape',
+        alias: 'Shape',
+        capabilities: {
+          frame: {
+            shape: 'line',
+          },
+        },
+      },
+    );
+  });
+
   it('normalizes legacy node aliases into canonical text content', () => {
     const fixture = CANONICAL_OBJECT_FIXTURE_SETS.legacyAliasInference;
     const parsed = parseRenderGraph({
@@ -578,6 +702,106 @@ describe('parseRenderGraph canonical object normalization', () => {
     );
   });
 
+  it('preserves markdown-authored child content on graph-text and graph-sticky nodes without collapsing shell type', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-text',
+            props: {
+              id: 'text-markdown-child',
+              x: 10,
+              y: 20,
+            },
+            children: [
+              {
+                type: 'graph-markdown',
+                props: {
+                  content: '# Text body',
+                },
+                children: [],
+              },
+            ],
+          },
+          {
+            type: 'graph-sticky',
+            props: {
+              id: 'sticky-markdown-child',
+              x: 30,
+              y: 40,
+            },
+            children: [
+              {
+                type: 'graph-markdown',
+                props: {
+                  content: '## Sticky body',
+                },
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.nodes.find((node) => node.id === 'text-markdown-child')).toMatchObject({
+      type: 'text',
+      data: {
+        label: '# Text body',
+        children: [{ type: 'graph-markdown', content: '# Text body' }],
+      },
+    });
+    expect(parsed?.nodes.find((node) => node.id === 'sticky-markdown-child')).toMatchObject({
+      type: 'sticky',
+      data: {
+        label: '## Sticky body',
+        children: [{ type: 'graph-markdown', content: '## Sticky body' }],
+      },
+    });
+  });
+
+  it('preserves markdown-authored child content on graph-shape nodes without collapsing shell type', () => {
+    const parsed = parseRenderGraph({
+      graph: {
+        children: [
+          {
+            type: 'graph-shape',
+            props: {
+              id: 'shape-markdown-child',
+              x: 10,
+              y: 20,
+              type: 'diamond',
+              size: { width: 200, height: 160 },
+              fill: '#fef3c7',
+            },
+            children: [
+              {
+                type: 'graph-markdown',
+                props: {
+                  content: '# Shape body',
+                },
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(parsed).not.toBeNull();
+    expect(parsed?.nodes.find((node) => node.id === 'shape-markdown-child')).toMatchObject({
+      type: 'shape',
+      data: {
+        label: '# Shape body',
+        type: 'diamond',
+        size: { width: 200, height: 160 },
+        fill: '#fef3c7',
+        children: [{ type: 'graph-markdown', content: '# Shape body' }],
+      },
+    });
+  });
+
   it('parses graph-sequence nodes as sequence renderer with canonical sequence content', () => {
     const parsed = parseRenderGraph({
       graph: {
@@ -616,8 +840,8 @@ describe('parseRenderGraph canonical object normalization', () => {
       participantSpacing: 190,
       messageSpacing: 70,
       participants: [
-        { id: 'alice', label: 'Alice', className: undefined },
-        { id: 'bob', label: 'Bob', className: undefined },
+        { id: 'alice', label: 'Alice' },
+        { id: 'bob', label: 'Bob' },
       ],
       messages: [
         {
@@ -953,7 +1177,7 @@ describe('parseRenderGraph standardized sizes', () => {
     });
   });
 
-  it('preserves className surfaces for image and washi runtime styling targets', () => {
+  it('drops legacy node className surfaces from parsed runtime data', () => {
     const parsed = parseRenderGraph({
       graph: {
         children: [
@@ -983,7 +1207,7 @@ describe('parseRenderGraph standardized sizes', () => {
     const imageNode = parsed!.nodes.find((node) => node.id === 'image-1');
     const washiNode = parsed!.nodes.find((node) => node.id === 'washi-1');
 
-    expect(imageNode?.data?.className).toBe('rounded-2xl shadow-xl group-hover:ring-2');
-    expect(washiNode?.data?.className).toBe('bg-cyan-200 group-hover:bg-cyan-300');
+    expect(imageNode?.data?.className).toBeUndefined();
+    expect(washiNode?.data?.className).toBeUndefined();
   });
 });

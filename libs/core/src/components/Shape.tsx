@@ -12,7 +12,7 @@ export type AnchorPosition =
 
 export interface ShapeProps {
   id?: string;
-  type?: 'rectangle' | 'circle' | 'triangle' | string;
+  type?: 'rectangle' | 'circle' | 'ellipse' | 'triangle' | 'diamond' | 'line' | string;
   // Position: either x/y or anchor/position
   x?: number;
   y?: number;
@@ -31,6 +31,7 @@ export interface ShapeProps {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  lineDirection?: 'up' | 'down';
   // Text styles
   label?: string;
   labelColor?: string;

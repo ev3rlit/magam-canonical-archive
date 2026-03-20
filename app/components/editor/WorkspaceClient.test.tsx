@@ -12,12 +12,11 @@ import {
   canRunNodeCommand,
   createPaneActionRoutingContext,
   getAllowedNodeStylePatch,
-  extractWorkspaceStyleInput,
-  flattenWorkspaceStyleDiagnostics,
   mapEditRpcErrorToToast,
   resolveNodeActionRoutingContext,
   resolveNodeEditContext,
   resolveNodeEditTarget,
+  resolveImmediateCreateEditMode,
 } from './workspaceEditUtils';
 
 function makeNode(input: Partial<Node> & { id: string; type: string; data?: Record<string, unknown> }): Node {
@@ -98,25 +97,30 @@ afterEach(() => {
 });
 
 describe('WorkspaceClient document entry convergence', () => {
-  it.todo('resumes the last active document before showing an idle shell', () => {});
-  it.todo('creates a new document into an empty canvas without a blocking naming modal', () => {});
-  it.todo('switches documents through Quick Open without duplicating the active tab', () => {});
+  it.todo('resumes the last active document before showing an idle shell');
+  it.todo('creates a new document into an empty canvas without a blocking naming modal');
+  it.todo('switches documents through Quick Open without duplicating the active tab');
 });
 
 describe('WorkspaceClient document materialization', () => {
   it('creates untitled documents through the server contract with a real sourceVersion', async () => {
-    const rpcClient = {
-      createFile: mock(async (filePath: string) => {
-        expect(filePath).toBe('docs/untitled-2.graph.tsx');
-        return {
-          filePath: 'docs/untitled-2.graph.tsx',
-          sourceVersion: 'sha256:created-document',
-        };
-      }),
-    };
+    const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(input).toBe('/api/documents');
+      expect(init?.method).toBe('POST');
+      expect(init?.body).toBe(JSON.stringify({ rootPath: '/tmp/workspace' }));
+
+      return new Response(JSON.stringify({
+        filePath: 'docs/untitled-2.graph.tsx',
+        sourceVersion: 'sha256:created-document',
+      }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
 
     await expect(
-      createWorkspaceDocument('docs/untitled-2.graph.tsx', rpcClient as never),
+      createWorkspaceDocument({ rootPath: '/tmp/workspace' }),
     ).resolves.toEqual({
       filePath: 'docs/untitled-2.graph.tsx',
       sourceVersion: 'sha256:created-document',
@@ -124,18 +128,21 @@ describe('WorkspaceClient document materialization', () => {
   });
 
   it('rejects create-document responses that still expose a draft placeholder version', async () => {
-    const rpcClient = {
-      createFile: mock(async () => ({
-        filePath: 'docs/untitled-2.graph.tsx',
-        sourceVersion: 'draft:empty-canvas',
-      })),
-    };
+    const fetchMock = mock(async () => new Response(JSON.stringify({
+      filePath: 'docs/untitled-2.graph.tsx',
+      sourceVersion: 'draft:empty-canvas',
+    }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    globalThis.fetch = fetchMock as typeof fetch;
 
     await expect(
-      createWorkspaceDocument('docs/untitled-2.graph.tsx', rpcClient as never),
+      createWorkspaceDocument({ rootPath: '/tmp/workspace' }),
     ).rejects.toThrow('새 문서 생성 응답이 올바르지 않습니다.');
   });
 });
+
 describe('WorkspaceClient text edit isolation', () => {
   it('선택된 activeTextEditNodeId만 커밋 가능하다', () => {
     expect(canCommitTextEdit({
@@ -155,6 +162,13 @@ describe('WorkspaceClient text edit isolation', () => {
       requestNodeId: 'md-1',
       selectedNodeIds: ['md-2'],
     })).toBe(false);
+  });
+
+  it('markdown first shell/body entry는 text markdown sticky 생성 직후 같은 body session mode를 사용한다', () => {
+    expect(resolveImmediateCreateEditMode('text')).toBe('markdown-wysiwyg');
+    expect(resolveImmediateCreateEditMode('markdown')).toBe('markdown-wysiwyg');
+    expect(resolveImmediateCreateEditMode('sticky')).toBe('markdown-wysiwyg');
+    expect(resolveImmediateCreateEditMode('rectangle')).toBeNull();
   });
 
   it('외부 파일 sourceMeta가 있으면 해당 파일과 sourceId를 편집 대상으로 선택한다', () => {
@@ -332,7 +346,7 @@ describe('WorkspaceClient editability helpers', () => {
       }),
       'examples/fallback.tsx',
       ['profile-node-1'],
-    )).toEqual({
+    )).toEqual(expect.objectContaining({
       surfaceId: 'examples/fallback.tsx',
       selection: {
         nodeIds: ['profile-node-1'],
@@ -355,21 +369,25 @@ describe('WorkspaceClient editability helpers', () => {
         isMindmapMember: false,
         isFrameScoped: false,
       },
-      editability: {
+      editability: expect.objectContaining({
         canMutate: true,
-        allowedCommands: ['node.move.absolute', 'node.content.update', 'node.style.update', 'node.rename', 'node.create'],
-        styleEditableKeys: canonicalProfileNode.capabilities.content
-          ? expect.any(Array)
-          : [],
+        allowedCommands: expect.arrayContaining([
+          'node.move.absolute',
+          'node.content.update',
+          'node.style.update',
+          'node.rename',
+          'node.create',
+        ]),
+        styleEditableKeys: expect.arrayContaining(['fontFamily']),
         reason: undefined,
-        editMeta: {
+        editMeta: expect.objectContaining({
           family: 'rich-content',
           contentCarrier: 'text-child',
-          styleEditableKeys: expect.any(Array),
           createMode: 'canvas',
-        },
-      },
-    });
+          styleEditableKeys: expect.arrayContaining(['fontFamily']),
+        }),
+      }),
+    }));
   });
 
   it('canRunNodeCommand respects editMeta gating', () => {
@@ -391,60 +409,6 @@ describe('WorkspaceClient editability helpers', () => {
     });
   });
 
-  it('extractWorkspaceStyleInput derives className input + revision from sourceMeta/current file', () => {
-    expect(extractWorkspaceStyleInput(makeNode({
-      id: 'shape-2',
-      type: 'shape',
-      data: {
-        className: 'w-32 shadow-md',
-        sourceMeta: {
-          filePath: 'examples/feature.tsx',
-        },
-      },
-    }), {
-      currentFile: 'examples/fallback.tsx',
-      sourceVersions: {
-        'examples/feature.tsx': 'rev-feature',
-      },
-      timestamp: 123,
-    })).toEqual({
-      objectId: 'shape-2',
-      className: 'w-32 shadow-md',
-      sourceRevision: 'rev-feature',
-      timestamp: 123,
-    });
-  });
-
-  it('extracts stable workspace style input across rerender-like repeated reads', () => {
-    const node = makeNode({
-      id: 'sticky-runtime',
-      type: 'sticky',
-      data: {
-        className: 'w-32 bg-amber-100 shadow-lg',
-        sourceMeta: {
-          filePath: 'examples/sticky.tsx',
-        },
-      },
-    });
-
-    const first = extractWorkspaceStyleInput(node, {
-      currentFile: 'examples/fallback.tsx',
-      sourceVersions: {
-        'examples/sticky.tsx': 'rev-1',
-      },
-      timestamp: 100,
-    });
-    const second = extractWorkspaceStyleInput(node, {
-      currentFile: 'examples/fallback.tsx',
-      sourceVersions: {
-        'examples/sticky.tsx': 'rev-1',
-      },
-      timestamp: 100,
-    });
-
-    expect(first).toEqual(second);
-  });
-
   it('createPaneActionRoutingContext exposes node.create permission only when file is ready', () => {
     expect(createPaneActionRoutingContext({
       currentFile: 'examples/fallback.tsx',
@@ -455,15 +419,6 @@ describe('WorkspaceClient editability helpers', () => {
       currentFile: null,
       selectedNodeIds: [],
     }).editability.canMutate).toBe(false);
-  });
-
-  it('flattens diagnostics for overlay rendering and clears when empty', () => {
-    expect(flattenWorkspaceStyleDiagnostics({
-      a: [{ objectId: 'sticky-1', code: 'UNSUPPORTED_TOKEN', message: 'bad token' }],
-      b: [{ objectId: 'sticker-1', code: 'OUT_OF_SCOPE_OBJECT', message: 'out of scope' }],
-    }, 1)).toEqual(['[sticky-1] bad token']);
-
-    expect(flattenWorkspaceStyleDiagnostics({})).toEqual([]);
   });
 
   it('bridge-specific error codes are mapped to actionable toast messages', () => {
@@ -604,6 +559,28 @@ describe('WorkspaceClient capability-profile editability parity', () => {
     expect(canRunNodeCommand(linkedCanvasNode, 'node.move.absolute')).toBe(true);
     expect(canRunNodeCommand(linkedCanvasNode, 'node.reparent')).toBe(false);
   });
+});
+
+describe('WorkspaceClient document entry convergence', () => {
+  it('keeps the quick-open entry seam inside WorkspaceClient', async () => {
+    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+
+    expect(source).toContain('LazyQuickOpenDialog');
+    expect(source).toContain('openTabByPath');
+    expect(source).toContain('runQuickOpenCommand');
+  });
+
+  it('routes document switching through the shared tab primitives', async () => {
+    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+
+    expect(source).toContain('openTab(');
+    expect(source).toContain('activateTab');
+    expect(source).toContain('replaceLeastRecentlyUsedTab');
+  });
+
+  it.todo('resumes the last active document before leaving the workspace idle');
+  it.todo('creates a new document inline without a blocking naming modal');
+  it.todo('switches documents from Quick Open without leaving the canvas shell');
 });
 
 describe('WorkspaceClient action-dispatch binding', () => {

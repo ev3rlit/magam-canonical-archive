@@ -45,6 +45,255 @@ function resolveFailureFeedback(input: {
 
 export function createCanvasKeyboardCommands(): CanvasKeyboardCommandRegistry {
   return {
+    [CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DELETE]: {
+      commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DELETE,
+      execute: async (context) => {
+        const deleted = await context.deleteSelection();
+        if (deleted.nodeIds.length === 0) {
+          return {
+            outcome: 'skipped',
+            preventDefault: false,
+            trace: [
+              createTraceEvent({
+                event: 'selection.delete.skipped',
+                commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DELETE,
+                outcome: 'skipped',
+              }),
+            ],
+          };
+        }
+
+        return {
+          outcome: 'executed',
+          preventDefault: true,
+          feedback: {
+            kind: 'info',
+            messageKey: 'selection.delete.success',
+            params: {
+              count: deleted.nodeIds.length,
+            },
+          },
+          trace: [
+            createTraceEvent({
+              event: 'selection.delete',
+              commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DELETE,
+              outcome: 'executed',
+              payload: {
+                count: deleted.nodeIds.length,
+              },
+            }),
+          ],
+        };
+      },
+      onFailure: (error, context) => ({
+        outcome: 'failed',
+        preventDefault: true,
+        feedback: resolveFailureFeedback({
+          context,
+          commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DELETE,
+          error,
+          fallbackMessageKey: 'selection.delete.failure',
+          fallbackDefaultMessage: 'Failed to delete the current selection.',
+        }),
+      }),
+    },
+    [CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DUPLICATE]: {
+      commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DUPLICATE,
+      execute: async (context) => {
+        const duplicated = await context.duplicateSelection();
+        if (duplicated.nodeIds.length === 0) {
+          return {
+            outcome: 'skipped',
+            preventDefault: false,
+            trace: [
+              createTraceEvent({
+                event: 'selection.duplicate.skipped',
+                commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DUPLICATE,
+                outcome: 'skipped',
+              }),
+            ],
+          };
+        }
+
+        return {
+          outcome: 'executed',
+          preventDefault: true,
+          feedback: {
+            kind: 'info',
+            messageKey: 'selection.duplicate.success',
+            params: {
+              count: duplicated.nodeIds.length,
+            },
+          },
+          trace: [
+            createTraceEvent({
+              event: 'selection.duplicate',
+              commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DUPLICATE,
+              outcome: 'executed',
+              payload: {
+                count: duplicated.nodeIds.length,
+              },
+            }),
+          ],
+        };
+      },
+      onFailure: (error, context) => ({
+        outcome: 'failed',
+        preventDefault: true,
+        feedback: resolveFailureFeedback({
+          context,
+          commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_DUPLICATE,
+          error,
+          fallbackMessageKey: 'selection.duplicate.failure',
+          fallbackDefaultMessage: 'Failed to duplicate the current selection.',
+        }),
+      }),
+    },
+    [CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP]: {
+      commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP,
+      execute: async (context) => {
+        const grouped = await context.groupSelection();
+        if (grouped.nodeIds.length === 0) {
+          return {
+            outcome: 'skipped',
+            preventDefault: false,
+            trace: [
+              createTraceEvent({
+                event: 'selection.group.skipped',
+                commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP,
+                outcome: 'skipped',
+              }),
+            ],
+          };
+        }
+
+        return {
+          outcome: 'executed',
+          preventDefault: true,
+          feedback: {
+            kind: 'info',
+            messageKey: 'selection.group.success',
+            params: {
+              count: grouped.nodeIds.length,
+            },
+          },
+          trace: [
+            createTraceEvent({
+              event: 'selection.group',
+              commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP,
+              outcome: 'executed',
+              payload: {
+                count: grouped.nodeIds.length,
+              },
+            }),
+          ],
+        };
+      },
+      onFailure: (error, context) => ({
+        outcome: 'failed',
+        preventDefault: true,
+        feedback: resolveFailureFeedback({
+          context,
+          commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_GROUP,
+          error,
+          fallbackMessageKey: 'selection.group.failure',
+          fallbackDefaultMessage: 'Failed to group the current selection.',
+        }),
+      }),
+    },
+    [CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL]: {
+      commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL,
+      execute: (context): CanvasKeyboardResult => {
+        const selectedNodeIds = context.selectAllNodes();
+        if (selectedNodeIds.length === 0) {
+          return {
+            outcome: 'skipped',
+            preventDefault: false,
+            trace: [
+              createTraceEvent({
+                event: 'selection.select-all.skipped',
+                commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL,
+                outcome: 'skipped',
+              }),
+            ],
+          };
+        }
+
+        return {
+          outcome: 'executed',
+          preventDefault: true,
+          feedback: {
+            kind: 'info',
+            messageKey: 'selection.select-all.success',
+            params: {
+              count: selectedNodeIds.length,
+            },
+          },
+          trace: [
+            createTraceEvent({
+              event: 'selection.select-all',
+              commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_SELECT_ALL,
+              outcome: 'executed',
+              payload: {
+                count: selectedNodeIds.length,
+              },
+            }),
+          ],
+        };
+      },
+    },
+    [CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP]: {
+      commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP,
+      execute: async (context) => {
+        const ungrouped = await context.ungroupSelection();
+        if (ungrouped.nodeIds.length === 0) {
+          return {
+            outcome: 'skipped',
+            preventDefault: false,
+            trace: [
+              createTraceEvent({
+                event: 'selection.ungroup.skipped',
+                commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP,
+                outcome: 'skipped',
+              }),
+            ],
+          };
+        }
+
+        return {
+          outcome: 'executed',
+          preventDefault: true,
+          feedback: {
+            kind: 'info',
+            messageKey: 'selection.ungroup.success',
+            params: {
+              count: ungrouped.nodeIds.length,
+            },
+          },
+          trace: [
+            createTraceEvent({
+              event: 'selection.ungroup',
+              commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP,
+              outcome: 'executed',
+              payload: {
+                count: ungrouped.nodeIds.length,
+              },
+            }),
+          ],
+        };
+      },
+      onFailure: (error, context) => ({
+        outcome: 'failed',
+        preventDefault: true,
+        feedback: resolveFailureFeedback({
+          context,
+          commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_UNGROUP,
+          error,
+          fallbackMessageKey: 'selection.ungroup.failure',
+          fallbackDefaultMessage: 'Failed to ungroup the current selection.',
+        }),
+      }),
+    },
     [CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_FOCUS_NEXT_WASHI]: {
       commandId: CANVAS_KEYBOARD_COMMAND_IDS.SELECTION_FOCUS_NEXT_WASHI,
       execute: (context): CanvasKeyboardResult => {
@@ -272,6 +521,48 @@ export function createCanvasKeyboardCommands(): CanvasKeyboardCommandRegistry {
           fallbackDefaultMessage: 'Failed to redo the latest edit step.',
         }),
       }),
+    },
+    [CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_IN]: {
+      commandId: CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_IN,
+      allowInTextInput: true,
+      execute: async (context) => {
+        const result = await context.zoomIn();
+        return {
+          outcome: 'executed',
+          preventDefault: true,
+          trace: [
+            createTraceEvent({
+              event: 'viewport.zoom-in',
+              commandId: CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_IN,
+              outcome: 'executed',
+              payload: {
+                zoom: result.zoom,
+              },
+            }),
+          ],
+        };
+      },
+    },
+    [CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_OUT]: {
+      commandId: CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_OUT,
+      allowInTextInput: true,
+      execute: async (context) => {
+        const result = await context.zoomOut();
+        return {
+          outcome: 'executed',
+          preventDefault: true,
+          trace: [
+            createTraceEvent({
+              event: 'viewport.zoom-out',
+              commandId: CANVAS_KEYBOARD_COMMAND_IDS.VIEWPORT_ZOOM_OUT,
+              outcome: 'executed',
+              payload: {
+                zoom: result.zoom,
+              },
+            }),
+          ],
+        };
+      },
     },
   };
 }

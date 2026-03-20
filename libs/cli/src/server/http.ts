@@ -110,6 +110,17 @@ function hashSourceContent(content: string): string {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
 
+function createEmptyCanvasDocumentSource(): string {
+  return [
+    "import { Canvas } from '@magam/core';",
+    '',
+    'export default function UntitledDocument() {',
+    '  return <Canvas></Canvas>;',
+    '}',
+    '',
+  ].join('\n');
+}
+
 function listWorkspaceRelativeCandidates(
   targetDir: string,
   candidatePath: string | undefined,
@@ -219,10 +230,12 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
     try {
       if (req.method === 'POST' && url.pathname === '/render') {
         await handleRender(req, res, config.targetDir);
+      } else if (req.method === 'POST' && url.pathname === '/files') {
+        await handleCreateFile(req, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/files') {
         await handleFiles(req, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/file-tree') {
-        await handleFileTree(req, res, config.targetDir);
+        await handleFileTree(url, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/chat/providers') {
         await handleChatProviders(res, chatHandler);
       } else if (req.method === 'GET' && url.pathname === '/chat/sessions') {
@@ -284,13 +297,26 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
 
 async function handleRender(req: http.IncomingMessage, res: http.ServerResponse, targetDir: string) {
   const body = await parseBody(req);
-  if (!body || !body.filePath) {
+  const requestedFilePath = typeof body?.filePath === 'string' ? body.filePath.trim() : '';
+  if (!requestedFilePath) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'Missing filePath in body', type: 'VALIDATION_ERROR' }));
     return;
   }
 
-  const resolvedRequest = resolveWorkspaceFilePath(targetDir, body.filePath);
+  const rawRootPath = typeof body?.rootPath === 'string'
+    ? body.rootPath.trim()
+    : typeof body?.root === 'string'
+      ? body.root.trim()
+      : '';
+  if (rawRootPath && !path.isAbsolute(rawRootPath)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'rootPath must be an absolute path', type: 'VALIDATION_ERROR' }));
+    return;
+  }
+
+  const requestTargetDir = rawRootPath ? path.resolve(rawRootPath) : targetDir;
+  const resolvedRequest = resolveWorkspaceFilePath(requestTargetDir, requestedFilePath);
   const absolutePath = resolvedRequest.absolutePath;
   if (!fs.existsSync(absolutePath)) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -302,7 +328,7 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
     const pipelineResult = await runRenderPipeline({
       absolutePath,
       requestedFilePath: resolvedRequest.workspacePath,
-      targetDir,
+      targetDir: requestTargetDir,
       requestStart: performance.now(),
     });
 
@@ -327,6 +353,41 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
       details: error.details || error.stack
     }));
   }
+}
+
+async function handleCreateFile(req: http.IncomingMessage, res: http.ServerResponse, targetDir: string) {
+  const body = await parseBody(req);
+  const requestedFilePath = typeof body?.filePath === 'string' ? body.filePath : '';
+
+  if (!requestedFilePath) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing filePath in body', type: 'VALIDATION_ERROR' }));
+    return;
+  }
+
+  const workspacePath = normalizeWorkspacePath(targetDir, requestedFilePath, requestedFilePath);
+  if (!workspacePath.endsWith('.tsx')) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'filePath must point to a .tsx document', type: 'VALIDATION_ERROR' }));
+    return;
+  }
+
+  const absolutePath = path.resolve(targetDir, workspacePath);
+  if (fs.existsSync(absolutePath)) {
+    res.writeHead(409, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: `File already exists: ${workspacePath}`, type: 'FILE_EXISTS' }));
+    return;
+  }
+
+  const content = createEmptyCanvasDocumentSource();
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  fs.writeFileSync(absolutePath, content, 'utf-8');
+
+  res.writeHead(201, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    filePath: workspacePath,
+    sourceVersion: hashSourceContent(content),
+  }));
 }
 
 async function runRenderPipeline(input: {
@@ -603,10 +664,18 @@ function buildFileTree(entries: FileEntry[], rootName: string = 'root'): FileTre
   return root;
 }
 
-async function handleFileTree(req: http.IncomingMessage, res: http.ServerResponse, targetDir: string) {
+async function handleFileTree(url: URL, res: http.ServerResponse, targetDir: string) {
   try {
+    const rawRootPath = url.searchParams.get('rootPath') || url.searchParams.get('root');
+    if (rawRootPath && !path.isAbsolute(rawRootPath)) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'rootPath must be an absolute path', type: 'VALIDATION_ERROR' }));
+      return;
+    }
+
+    const requestTargetDir = rawRootPath ? path.resolve(rawRootPath) : targetDir;
     const rawPaths = await glob(['**/*.tsx', '**/'], {
-      cwd: targetDir,
+      cwd: requestTargetDir,
       onlyFiles: false,
       markDirectories: true,
       ignore: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/build/**']
@@ -620,7 +689,7 @@ async function handleFileTree(req: http.IncomingMessage, res: http.ServerRespons
       };
     });
 
-    const tree = buildFileTree(entries, path.basename(targetDir));
+    const tree = buildFileTree(entries, path.basename(requestTargetDir));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ tree }));
   } catch (error: any) {

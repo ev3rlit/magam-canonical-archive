@@ -4,11 +4,12 @@ import {
   mindmapBridgeNodeFixture,
   stickerBridgeNodeFixture,
 } from '@/features/editing/__fixtures__/actionRoutingBridgeFixtures';
+import { makeCanonicalNode } from '@/features/editing/actionRoutingBridge/testUtils';
 import { buildNodeContextMenuModel } from './buildNodeContextMenuModel';
 import type { NodeContextSnapshot } from './types';
 
 function makeSnapshot(input: {
-  node: typeof stickerBridgeNodeFixture;
+  node: Parameters<typeof resolveNodeActionRoutingContext>[0];
   currentFile: string | null;
   selectedNodeIds: string[];
   nodeFamily?: string;
@@ -38,6 +39,18 @@ describe('buildNodeContextMenuModel', () => {
     expect(model['mindmap-add-child'].visibility).toBe('hidden');
     expect(model['mindmap-add-sibling'].visibility).toBe('hidden');
     expect(model['select-group'].visibility).toBe('hidden');
+    expect(model['duplicate-node'].visibility).toBe('enabled');
+    expect(model['delete-node'].visibility).toBe('enabled');
+    expect(model['lock-node'].visibility).toBe('enabled');
+  });
+
+  it('keeps structural actions in the node context menu for mutable single-node selections', () => {
+    const model = buildNodeContextMenuModel(makeSnapshot({
+      node: stickerBridgeNodeFixture,
+      currentFile: 'examples/bridge.tsx',
+      selectedNodeIds: ['sticker-1'],
+    }));
+
     expect(model['duplicate-node'].visibility).toBe('enabled');
     expect(model['delete-node'].visibility).toBe('enabled');
     expect(model['lock-node'].visibility).toBe('enabled');
@@ -95,5 +108,26 @@ describe('buildNodeContextMenuModel', () => {
         code: 'SELECTION_NOT_SINGULAR',
       },
     });
+  });
+
+  it('shows grouping and z-order actions for structural multi-selection on canvas nodes', () => {
+    const groupedCanvasNode = makeCanonicalNode({
+      id: 'shape-a',
+      type: 'shape',
+      groupId: 'canvas-group',
+      sourceKind: 'canvas',
+    });
+
+    const model = buildNodeContextMenuModel(makeSnapshot({
+      node: groupedCanvasNode,
+      currentFile: 'examples/bridge.tsx',
+      selectedNodeIds: ['shape-a', 'shape-b'],
+    }));
+
+    expect(model['enter-group'].visibility).toBe('enabled');
+    expect(model['group-selection'].visibility).toBe('enabled');
+    expect(model['ungroup-selection'].visibility).toBe('enabled');
+    expect(model['bring-to-front'].visibility).toBe('enabled');
+    expect(model['send-to-back'].visibility).toBe('enabled');
   });
 });

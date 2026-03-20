@@ -3,11 +3,14 @@ import { NodeProps, useNodeId } from 'reactflow';
 import { twMerge } from 'tailwind-merge';
 import { BaseNode } from './BaseNode';
 import type { RenderableChild } from '@/utils/childComposition';
-import { renderNodeContent } from './renderableContent';
+import {
+    renderNodeContent,
+    resolveBodyEditSession,
+    useExplicitBodyEntryAffordance,
+} from './renderableContent';
 import { useGraphStore } from '@/store/graph';
 import type { FontFamilyPreset, FontSizeInput } from '@magam/core';
 import {
-    hasExplicitFontFamilyClass,
     resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import { useZoom } from '@/contexts/ZoomContext';
@@ -35,28 +38,33 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
     const updateTextEditDraft = useGraphStore((state) => state.updateTextEditDraft);
     const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
     const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
-    const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
-    const resolvedFontFamily = shouldApplyHierarchy
-        ? resolveFontFamilyCssValue({
-            nodeFontFamily: data.fontFamily,
-            canvasFontFamily,
-            globalFontFamily,
-        })
-        : undefined;
+    const explicitBodyEntryEnabled = useExplicitBodyEntryAffordance();
+    const resolvedFontFamily = resolveFontFamilyCssValue({
+        nodeFontFamily: data.fontFamily,
+        canvasFontFamily,
+        globalFontFamily,
+    });
     const isActiveEditor = Boolean(nodeId && selected && activeTextEditNodeId === nodeId);
     const typography = resolveTypography(data.fontSize, {
         component: 'TextNode',
         inputPath: 'fontSize',
     });
+    const bodyEditSession = nodeId ? resolveBodyEditSession({
+        id: nodeId,
+        type: 'text',
+        data,
+    }) : null;
+    const shouldRenderExplicitBodyEntry = (
+        selected
+        && !isActiveEditor
+        && explicitBodyEntryEnabled
+        && Boolean(bodyEditSession)
+    );
 
     const beginEditing = useCallback(() => {
-        if (!nodeId || !selected) return;
-        startTextEditSession({
-            nodeId,
-            initialDraft: data.label || '',
-            mode: 'text',
-        });
-    }, [data.label, nodeId, selected, startTextEditSession]);
+        if (!selected || !bodyEditSession) return;
+        startTextEditSession(bodyEditSession);
+    }, [bodyEditSession, selected, startTextEditSession]);
 
     const commitEditing = useCallback(() => {
         if (!nodeId) return;
@@ -73,13 +81,30 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
             className={twMerge(
                 "p-2 min-w-[50px] text-center select-none",
                 selected && "ring-1 ring-brand-500/50 rounded bg-brand-50/50",
-                data.className
             )}
             style={{ pointerEvents: 'auto' }}
-            onDoubleClick={beginEditing}
         >
+            {shouldRenderExplicitBodyEntry ? (
+                <button
+                    type="button"
+                    aria-label="Edit content"
+                    className="pointer-events-auto absolute right-2 top-2 z-10 rounded-full border border-slate-300 bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur"
+                    onPointerDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        beginEditing();
+                    }}
+                >
+                    Edit
+                </button>
+            ) : null}
             {isActiveEditor ? (
                 <textarea
+                    autoFocus
                     value={textEditDraft}
                     onChange={(event) => updateTextEditDraft(event.currentTarget.value)}
                     onBlur={commitEditing}
@@ -95,6 +120,7 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
                             commitEditing();
                         }
                     }}
+                    placeholder="Write markdown..."
                     className="w-[220px] min-h-[72px] rounded border border-slate-300 px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
             ) : (

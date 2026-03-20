@@ -7,6 +7,11 @@ export type NodeContextMenuActionId =
   | 'mindmap-add-child'
   | 'mindmap-add-sibling'
   | 'select-group'
+  | 'enter-group'
+  | 'group-selection'
+  | 'ungroup-selection'
+  | 'bring-to-front'
+  | 'send-to-back'
   | 'duplicate-node'
   | 'delete-node'
   | 'lock-node';
@@ -24,6 +29,7 @@ export interface NodeContextSnapshot {
 export type NodeContextMenuDisabledReasonCode =
   | 'NODE_CONTEXT_MISSING'
   | 'SELECTION_NOT_SINGULAR'
+  | 'SELECTION_TOO_SMALL'
   | 'READ_ONLY'
   | 'COMMAND_NOT_ALLOWED'
   | 'GROUP_CONTEXT_REQUIRED'

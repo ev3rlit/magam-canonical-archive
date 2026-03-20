@@ -137,7 +137,6 @@ function ReadyPluginNodeFrame({
       className={twMerge(
         'min-w-[280px] rounded-xl border-2 border-slate-200 bg-white p-2 shadow-node',
         selected ? 'ring-2 ring-brand-500/25 border-brand-400' : '',
-        data.className,
       )}
       selected={selected}
       bubble={false}
@@ -237,7 +236,6 @@ const PluginNode = ({ data, selected }: NodeProps<PluginNodeData>) => {
 
   const fallbackData = useMemo(() => ({
     label: data.label,
-    className: data.className,
     pluginRuntime: hydration && !hydration.ok
       ? toPluginRuntimeState({
         status: hydration.diagnostic.code === 'PLUGIN_INSTANCE_INVALID' ? 'invalid' : 'missing',
@@ -249,15 +247,12 @@ const PluginNode = ({ data, selected }: NodeProps<PluginNodeData>) => {
       version: typeof data.plugin?.version === 'string' ? data.plugin.version : undefined,
       exportName: typeof data.plugin?.exportName === 'string' ? data.plugin.exportName : undefined,
     },
-  }), [data.className, data.label, data.plugin?.exportName, data.plugin?.packageName, data.plugin?.version, data.pluginRuntime, hydration]);
+  }), [data.label, data.plugin?.exportName, data.plugin?.packageName, data.plugin?.version, data.pluginRuntime, hydration]);
 
   if (!hydration) {
     return (
       <BaseNode
-        className={twMerge(
-          'min-w-[280px] rounded-xl border-2 border-slate-200 bg-white p-3 shadow-node',
-          data.className,
-        )}
+        className="min-w-[280px] rounded-xl border-2 border-slate-200 bg-white p-3 shadow-node"
         selected={selected}
         bubble={false}
         startHandle={false}

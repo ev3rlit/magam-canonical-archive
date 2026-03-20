@@ -2,8 +2,10 @@ import {
   buildContentDraftPatch,
   buildContentUpdateCommand,
   buildCreateCommand,
+  buildGroupMembershipUpdateCommand,
   buildRenameCommand,
   buildStyleUpdateCommand,
+  buildZOrderUpdateCommand,
   toCreateNodeInput,
   toUpdateNodeProps,
   type CreatePayload,
@@ -25,6 +27,8 @@ import {
   fail,
   ok,
   type ActionRoutingContext,
+  type DispatchDescriptor,
+  type ActionRoutingResult,
   type ActionRoutingRegistryEntry,
   type MutationActionPayloadMap,
   type OrderedDispatchPlan,
@@ -104,6 +108,35 @@ type LockToggleNormalized = {
 type GroupSelectNormalized = {
   target: ResolvedTarget;
   groupId: string;
+};
+
+type SelectionStructuralTarget = {
+  target: ResolvedTarget;
+  previousData: Record<string, unknown>;
+  previousGroupId: string | null;
+  previousZIndex: number | null;
+};
+
+type GroupSelectionNormalized = {
+  targets: SelectionStructuralTarget[];
+  nextGroupId: string;
+  baseVersion: string;
+  filePath: string;
+};
+
+type UngroupSelectionNormalized = {
+  targets: SelectionStructuralTarget[];
+  baseVersion: string;
+  filePath: string;
+};
+
+type ZOrderDirection = 'bring-to-front' | 'send-to-back';
+
+type ZOrderSelectionNormalized = {
+  targets: Array<SelectionStructuralTarget & { nextZIndex: number }>;
+  direction: ZOrderDirection;
+  baseVersion: string;
+  filePath: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -215,15 +248,22 @@ function requireNextId(rawPayload: Record<string, unknown>) {
 function requireCreatePlacement(rawPayload: Record<string, unknown>): ReturnType<typeof ok<{
   nodeType: CreatePayload['nodeType'];
   placement: CreatePayload['placement'];
+  initialProps?: Record<string, unknown>;
 }>> | ReturnType<typeof fail<{
   nodeType: CreatePayload['nodeType'];
   placement: CreatePayload['placement'];
+  initialProps?: Record<string, unknown>;
 }>> {
   const nodeType = rawPayload.nodeType;
   const placement = rawPayload.placement;
+  const initialProps = isRecord(rawPayload.initialProps) ? rawPayload.initialProps : undefined;
 
   if (
     nodeType !== 'shape'
+    && nodeType !== 'rectangle'
+    && nodeType !== 'ellipse'
+    && nodeType !== 'diamond'
+    && nodeType !== 'line'
     && nodeType !== 'text'
     && nodeType !== 'markdown'
     && nodeType !== 'sticky'
@@ -249,6 +289,7 @@ function requireCreatePlacement(rawPayload: Record<string, unknown>): ReturnType
   if (casted.mode === 'canvas-absolute' && typeof casted.x === 'number' && typeof casted.y === 'number') {
     return ok({
       nodeType: validNodeType,
+      ...(initialProps ? { initialProps } : {}),
       placement: {
         mode: 'canvas-absolute',
         x: casted.x,
@@ -260,6 +301,7 @@ function requireCreatePlacement(rawPayload: Record<string, unknown>): ReturnType
   if (casted.mode === 'mindmap-child' && typeof casted.parentId === 'string') {
     return ok({
       nodeType: validNodeType,
+      ...(initialProps ? { initialProps } : {}),
       placement: {
         mode: 'mindmap-child',
         parentId: casted.parentId,
@@ -270,6 +312,7 @@ function requireCreatePlacement(rawPayload: Record<string, unknown>): ReturnType
   if (casted.mode === 'mindmap-sibling' && typeof casted.siblingOf === 'string') {
     return ok({
       nodeType: validNodeType,
+      ...(initialProps ? { initialProps } : {}),
       placement: {
         mode: 'mindmap-sibling',
         siblingOf: casted.siblingOf,
@@ -300,6 +343,10 @@ function buildRenderedNodeId(input: {
 
 function isSupportedCreateNodeType(value: unknown): value is CreatePayload['nodeType'] {
   return value === 'shape'
+    || value === 'rectangle'
+    || value === 'ellipse'
+    || value === 'diamond'
+    || value === 'line'
     || value === 'text'
     || value === 'markdown'
     || value === 'sticky'
@@ -333,7 +380,6 @@ function clonePersistedNodeProps(node: Node): Record<string, unknown> {
     'canonicalObject',
     'canonicalValidation',
     'editMeta',
-    'groupId',
     'children',
     'resolvedGeometry',
     'seed',
@@ -425,6 +471,103 @@ function getExistingSourceIds(nodes: Node[]): string[] {
     return typeof sourceMeta.sourceId === 'string' && sourceMeta.sourceId.length > 0
       ? sourceMeta.sourceId
       : node.id;
+  });
+}
+
+function resolveNodeGroupId(node: Node): string | null {
+  const groupId = ((node.data || {}) as Record<string, unknown>).groupId;
+  return typeof groupId === 'string' && groupId.length > 0
+    ? groupId
+    : null;
+}
+
+function resolveNodeZIndex(node: Node): number | null {
+  if (typeof node.zIndex === 'number' && Number.isFinite(node.zIndex)) {
+    return node.zIndex;
+  }
+
+  const zIndex = ((node.data || {}) as Record<string, unknown>).zIndex;
+  return typeof zIndex === 'number' && Number.isFinite(zIndex)
+    ? zIndex
+    : null;
+}
+
+function createUniqueGroupId(nodes: Node[]): string {
+  const taken = new Set(
+    nodes
+      .map((node) => resolveNodeGroupId(node))
+      .filter((groupId): groupId is string => typeof groupId === 'string' && groupId.length > 0),
+  );
+
+  let counter = 1;
+  while (taken.has(`group-${counter}`)) {
+    counter += 1;
+  }
+  return `group-${counter}`;
+}
+
+function resolveSelectionTargets(
+  context: ActionRoutingContext,
+  envelope: UIIntentEnvelope,
+): ActionRoutingResult<{
+  targets: SelectionStructuralTarget[];
+  filePath: string;
+  baseVersion: string;
+}> {
+  const selectedNodeIds = envelope.selectionRef.selectedNodeIds;
+  if (selectedNodeIds.length === 0) {
+    return fail('INTENT_GATING_DENIED', 'selection is required');
+  }
+
+  const targetRecords = selectedNodeIds.map((selectedNodeId) => {
+    const node = context.nodes.find((candidate) => candidate.id === selectedNodeId);
+    if (!node) {
+      return null;
+    }
+
+    const syntheticEnvelope: UIIntentEnvelope = {
+      ...envelope,
+      targetRef: {
+        ...envelope.targetRef,
+        renderedNodeId: selectedNodeId,
+      },
+    };
+    const target = resolveTarget(context, syntheticEnvelope);
+    if (!target) {
+      return null;
+    }
+
+    return {
+      target,
+      previousData: ((target.node.data || {}) as Record<string, unknown>),
+      previousGroupId: resolveNodeGroupId(target.node),
+      previousZIndex: resolveNodeZIndex(target.node),
+    };
+  });
+
+  if (targetRecords.some((record) => record === null)) {
+    return fail('INTENT_GATING_DENIED', 'all selected nodes must resolve to mutable targets');
+  }
+
+  const targets = targetRecords as SelectionStructuralTarget[];
+  const [firstTarget] = targets;
+  if (!firstTarget) {
+    return fail('INTENT_GATING_DENIED', 'selection is required');
+  }
+
+  if (targets.some(({ target }) => target.filePath !== firstTarget.target.filePath)) {
+    return fail('INTENT_GATING_DENIED', 'selection must belong to a single file');
+  }
+
+  const versionResult = requireBaseVersion(context, firstTarget.target.filePath);
+  if (!versionResult.ok) {
+    return versionResult;
+  }
+
+  return ok({
+    targets,
+    filePath: firstTarget.target.filePath,
+    baseVersion: versionResult.value,
   });
 }
 
@@ -751,6 +894,189 @@ function buildGroupSelectPlan(input: {
   };
 }
 
+function buildGroupSelectionPlan(input: {
+  envelope: UIIntentEnvelope;
+  normalized: GroupSelectionNormalized;
+}): OrderedDispatchPlan {
+  const rollbackSteps = input.normalized.targets.map(({ target, previousData }) => (
+    createRestoreNodeDataStep({
+      nodeId: target.renderedNodeId,
+      previousData,
+    })
+  ));
+
+  const steps: DispatchDescriptor[] = input.normalized.targets.flatMap(({ target, previousData, previousGroupId }) => {
+    const command = buildGroupMembershipUpdateCommand({
+      target: {
+        sourceId: target.sourceId,
+        filePath: target.filePath,
+        renderedId: target.renderedNodeId,
+        editMeta: target.editMeta,
+      },
+      previousGroupId,
+      nextGroupId: input.normalized.nextGroupId,
+    });
+
+    return [
+      createApplyNodePatchStep({
+        nodeId: target.renderedNodeId,
+        patch: {
+          groupId: input.normalized.nextGroupId,
+        },
+      }),
+      {
+        kind: 'canonical-mutation' as const,
+        actionId: 'node.group-membership.update' as const,
+        payload: {
+          nodeId: command.target.sourceId,
+          filePath: command.target.filePath,
+          groupId: command.payload.next.groupId,
+        },
+        historyEffect: {
+          eventType: 'NODE_GROUP_MEMBERSHIP_UPDATED' as const,
+          nodeId: command.target.sourceId,
+          filePath: command.target.filePath,
+          baseVersion: input.normalized.baseVersion,
+          before: command.payload.previous,
+          after: command.payload.next,
+        },
+      },
+    ];
+  });
+
+  const anchorNodeId = input.normalized.targets[0]?.target.renderedNodeId;
+  if (anchorNodeId) {
+    steps.push({
+      kind: 'runtime-only-action',
+      actionId: 'select-node-group',
+      payload: {
+        groupId: input.normalized.nextGroupId,
+        anchorNodeId,
+      },
+    });
+  }
+
+  return {
+    intentId: input.envelope.intentId,
+    steps,
+    rollbackSteps,
+  };
+}
+
+function buildUngroupSelectionPlan(input: {
+  envelope: UIIntentEnvelope;
+  normalized: UngroupSelectionNormalized;
+}): OrderedDispatchPlan {
+  const rollbackSteps = input.normalized.targets.map(({ target, previousData }) => (
+    createRestoreNodeDataStep({
+      nodeId: target.renderedNodeId,
+      previousData,
+    })
+  ));
+
+  const steps = input.normalized.targets.flatMap(({ target, previousData, previousGroupId }) => {
+    const command = buildGroupMembershipUpdateCommand({
+      target: {
+        sourceId: target.sourceId,
+        filePath: target.filePath,
+        renderedId: target.renderedNodeId,
+        editMeta: target.editMeta,
+      },
+      previousGroupId,
+      nextGroupId: null,
+    });
+
+    return [
+      createApplyNodePatchStep({
+        nodeId: target.renderedNodeId,
+        patch: {
+          groupId: null,
+        },
+      }),
+      {
+        kind: 'canonical-mutation' as const,
+        actionId: 'node.group-membership.update' as const,
+        payload: {
+          nodeId: command.target.sourceId,
+          filePath: command.target.filePath,
+          groupId: command.payload.next.groupId,
+        },
+        historyEffect: {
+          eventType: 'NODE_GROUP_MEMBERSHIP_UPDATED' as const,
+          nodeId: command.target.sourceId,
+          filePath: command.target.filePath,
+          baseVersion: input.normalized.baseVersion,
+          before: command.payload.previous,
+          after: command.payload.next,
+        },
+      },
+    ];
+  });
+
+  return {
+    intentId: input.envelope.intentId,
+    steps,
+    rollbackSteps,
+  };
+}
+
+function buildZOrderSelectionPlan(input: {
+  envelope: UIIntentEnvelope;
+  normalized: ZOrderSelectionNormalized;
+}): OrderedDispatchPlan {
+  const rollbackSteps = input.normalized.targets.map(({ target, previousData }) => (
+    createRestoreNodeDataStep({
+      nodeId: target.renderedNodeId,
+      previousData,
+    })
+  ));
+
+  const steps = input.normalized.targets.flatMap(({ target, previousData, previousZIndex, nextZIndex }) => {
+    const command = buildZOrderUpdateCommand({
+      target: {
+        sourceId: target.sourceId,
+        filePath: target.filePath,
+        renderedId: target.renderedNodeId,
+        editMeta: target.editMeta,
+      },
+      previousZIndex,
+      nextZIndex,
+    });
+
+    return [
+      createApplyNodePatchStep({
+        nodeId: target.renderedNodeId,
+        patch: {
+          zIndex: nextZIndex,
+        },
+      }),
+      {
+        kind: 'canonical-mutation' as const,
+        actionId: 'node.z-order.update' as const,
+        payload: {
+          nodeId: command.target.sourceId,
+          filePath: command.target.filePath,
+          zIndex: command.payload.next.zIndex,
+        },
+        historyEffect: {
+          eventType: 'NODE_Z_ORDER_UPDATED' as const,
+          nodeId: command.target.sourceId,
+          filePath: command.target.filePath,
+          baseVersion: input.normalized.baseVersion,
+          before: command.payload.previous,
+          after: command.payload.next,
+        },
+      },
+    ];
+  });
+
+  return {
+    intentId: input.envelope.intentId,
+    steps,
+    rollbackSteps,
+  };
+}
+
 const styleUpdateEntry: ActionRoutingRegistryEntry<StyleNormalized> = {
   intentId: 'selection.style.update',
   supportedSurfaces: ['selection-floating-menu'],
@@ -953,7 +1279,10 @@ const createEntry: ActionRoutingRegistryEntry<CreateNormalized> = {
       payload: {
         nodeType: createResult.value.nodeType,
         id: nextId,
-        initialProps: defaults.initialProps,
+        initialProps: {
+          ...defaults.initialProps,
+          ...(createResult.value.initialProps ?? {}),
+        },
         initialContent: defaults.initialContent,
         placement: createResult.value.placement,
       },
@@ -1189,6 +1518,145 @@ const groupSelectEntry: ActionRoutingRegistryEntry<GroupSelectNormalized> = {
   buildDispatch: ({ envelope, normalized }) => ok(buildGroupSelectPlan({ envelope, normalized })),
 };
 
+const groupSelectionEntry: ActionRoutingRegistryEntry<GroupSelectionNormalized> = {
+  intentId: 'selection.group',
+  supportedSurfaces: ['node-context-menu'],
+  isEnabled: ({ envelope, context }) => {
+    const selectionResult = resolveSelectionTargets(context, envelope);
+    if (!selectionResult.ok) {
+      return selectionResult;
+    }
+    if (selectionResult.value.targets.length < 2) {
+      return fail('INTENT_GATING_DENIED', 'grouping requires multiple selected nodes');
+    }
+    const disallowedTarget = selectionResult.value.targets.find(({ target }: SelectionStructuralTarget) => (
+      !isCommandAllowed(target.editMeta, 'node.group.update')
+    ));
+    if (disallowedTarget) {
+      return fail('INTENT_GATING_DENIED', 'grouping is not allowed for the current selection', {
+        nodeId: disallowedTarget.target.renderedNodeId,
+      });
+    }
+    return ok(true);
+  },
+  normalizePayload: ({ envelope, context }) => {
+    const selectionResult = resolveSelectionTargets(context, envelope);
+    if (!selectionResult.ok) {
+      return selectionResult;
+    }
+    if (selectionResult.value.targets.length < 2) {
+      return fail('INTENT_PAYLOAD_INVALID', 'grouping requires multiple selected nodes');
+    }
+    return ok({
+      targets: selectionResult.value.targets,
+      nextGroupId: createUniqueGroupId(context.nodes),
+      baseVersion: selectionResult.value.baseVersion,
+      filePath: selectionResult.value.filePath,
+    });
+  },
+  buildDispatch: ({ envelope, normalized }) => ok(buildGroupSelectionPlan({ envelope, normalized })),
+};
+
+const ungroupSelectionEntry: ActionRoutingRegistryEntry<UngroupSelectionNormalized> = {
+  intentId: 'selection.ungroup',
+  supportedSurfaces: ['node-context-menu'],
+  isEnabled: ({ envelope, context }) => {
+    const selectionResult = resolveSelectionTargets(context, envelope);
+    if (!selectionResult.ok) {
+      return selectionResult;
+    }
+    const hasGroupedTarget = selectionResult.value.targets.some(
+      ({ previousGroupId }: SelectionStructuralTarget) => previousGroupId !== null,
+    );
+    if (!hasGroupedTarget) {
+      return fail('INTENT_GATING_DENIED', 'ungroup requires grouped nodes in the selection');
+    }
+    return ok(true);
+  },
+  normalizePayload: ({ envelope, context }) => {
+    const selectionResult = resolveSelectionTargets(context, envelope);
+    if (!selectionResult.ok) {
+      return selectionResult;
+    }
+    const targets = selectionResult.value.targets.filter(
+      ({ previousGroupId }: SelectionStructuralTarget) => previousGroupId !== null,
+    );
+    if (targets.length === 0) {
+      return fail('INTENT_PAYLOAD_INVALID', 'ungroup requires grouped nodes in the selection');
+    }
+    return ok({
+      targets,
+      baseVersion: selectionResult.value.baseVersion,
+      filePath: selectionResult.value.filePath,
+    });
+  },
+  buildDispatch: ({ envelope, normalized }) => ok(buildUngroupSelectionPlan({ envelope, normalized })),
+};
+
+function resolveNextZOrderTargets(input: {
+  context: ActionRoutingContext;
+  targets: SelectionStructuralTarget[];
+  direction: ZOrderDirection;
+}): Array<SelectionStructuralTarget & { nextZIndex: number }> {
+  const allKnownZIndices = input.context.nodes
+    .map((node) => resolveNodeZIndex(node))
+    .filter((zIndex): zIndex is number => typeof zIndex === 'number');
+  const base = allKnownZIndices.length > 0
+    ? (input.direction === 'bring-to-front' ? Math.max(...allKnownZIndices) : Math.min(...allKnownZIndices))
+    : 0;
+
+  return input.targets.map((target, index) => ({
+    ...target,
+    nextZIndex: input.direction === 'bring-to-front'
+      ? base + index + 1
+      : base - input.targets.length + index,
+  }));
+}
+
+function createZOrderEntry(direction: ZOrderDirection): ActionRoutingRegistryEntry<ZOrderSelectionNormalized> {
+  return {
+    intentId: direction === 'bring-to-front'
+      ? 'selection.z-order.bring-to-front'
+      : 'selection.z-order.send-to-back',
+    supportedSurfaces: ['node-context-menu'],
+    isEnabled: ({ envelope, context }) => {
+      const selectionResult = resolveSelectionTargets(context, envelope);
+      if (!selectionResult.ok) {
+        return selectionResult;
+      }
+      const disallowedTarget = selectionResult.value.targets.find(({ target }: SelectionStructuralTarget) => (
+        !isCommandAllowed(target.editMeta, 'node.z-order.update')
+      ));
+      if (disallowedTarget) {
+        return fail('INTENT_GATING_DENIED', 'z-order update is not allowed for the current selection', {
+          nodeId: disallowedTarget.target.renderedNodeId,
+        });
+      }
+      return ok(true);
+    },
+    normalizePayload: ({ envelope, context }) => {
+      const selectionResult = resolveSelectionTargets(context, envelope);
+      if (!selectionResult.ok) {
+        return selectionResult;
+      }
+      return ok({
+        targets: resolveNextZOrderTargets({
+          context,
+          targets: selectionResult.value.targets,
+          direction,
+        }),
+        direction,
+        baseVersion: selectionResult.value.baseVersion,
+        filePath: selectionResult.value.filePath,
+      });
+    },
+    buildDispatch: ({ envelope, normalized }) => ok(buildZOrderSelectionPlan({ envelope, normalized })),
+  };
+}
+
+const bringSelectionToFrontEntry = createZOrderEntry('bring-to-front');
+const sendSelectionToBackEntry = createZOrderEntry('send-to-back');
+
 export function createActionRoutingRegistry(): Record<string, ActionRoutingRegistryEntry> {
   return {
     [styleUpdateEntry.intentId]: styleUpdateEntry,
@@ -1199,6 +1667,10 @@ export function createActionRoutingRegistry(): Record<string, ActionRoutingRegis
     [deleteEntry.intentId]: deleteEntry,
     [lockToggleEntry.intentId]: lockToggleEntry,
     [groupSelectEntry.intentId]: groupSelectEntry,
+    [groupSelectionEntry.intentId]: groupSelectionEntry,
+    [ungroupSelectionEntry.intentId]: ungroupSelectionEntry,
+    [bringSelectionToFrontEntry.intentId]: bringSelectionToFrontEntry,
+    [sendSelectionToBackEntry.intentId]: sendSelectionToBackEntry,
     [fitViewEntry.intentId]: fitViewEntry,
   };
 }

@@ -10,22 +10,26 @@ export type EditCommandType =
   | 'node.move.relative'
   | 'node.content.update'
   | 'node.style.update'
+  | 'node.group.update'
   | 'node.rename'
   | 'node.create'
   | 'mindmap.child.create'
   | 'mindmap.sibling.create'
-  | 'node.reparent';
+  | 'node.reparent'
+  | 'node.z-order.update';
 
 export const EDIT_COMMAND_TYPES: EditCommandType[] = [
   'node.move.absolute',
   'node.move.relative',
   'node.content.update',
   'node.style.update',
+  'node.group.update',
   'node.rename',
   'node.create',
   'mindmap.child.create',
   'mindmap.sibling.create',
   'node.reparent',
+  'node.z-order.update',
 ];
 
 export type EditFamily =
@@ -91,7 +95,6 @@ const SHAPE_STYLE_KEYS = [
   'labelFontSize',
   'labelBold',
   'fontFamily',
-  'className',
 ] as const;
 
 const TEXT_STYLE_KEYS = [
@@ -99,7 +102,6 @@ const TEXT_STYLE_KEYS = [
   'fontSize',
   'bold',
   'fontFamily',
-  'className',
 ] as const;
 
 const MARKDOWN_STYLE_KEYS = [
@@ -108,7 +110,6 @@ const MARKDOWN_STYLE_KEYS = [
   'stroke',
   'fontSize',
   'fontFamily',
-  'className',
   'size',
 ] as const;
 
@@ -121,11 +122,20 @@ const STICKER_STYLE_KEYS = [
   'fontFamily',
 ] as const;
 
+const STICKER_GEOMETRY_KEYS = [
+  'width',
+  'height',
+] as const;
+
+const STICKER_EDITABLE_KEYS = [
+  ...STICKER_STYLE_KEYS,
+  ...STICKER_GEOMETRY_KEYS,
+] as const;
+
 const STICKY_STYLE_KEYS = [
   'pattern',
   'shape',
   'fontFamily',
-  'className',
 ] as const;
 
 const WASHI_STYLE_KEYS = [
@@ -135,13 +145,13 @@ const WASHI_STYLE_KEYS = [
 ] as const;
 
 const IMAGE_STYLE_KEYS = ['width', 'height', 'fit'] as const;
-const SEQUENCE_STYLE_KEYS = ['fontFamily', 'className'] as const;
+const SEQUENCE_STYLE_KEYS = ['fontFamily'] as const;
 
 const SEMANTIC_ROLE_STYLE_KEYS: Record<string, readonly string[]> = {
   topic: SHAPE_STYLE_KEYS,
   shape: SHAPE_STYLE_KEYS,
   'sticky-note': STICKY_STYLE_KEYS,
-  sticker: STICKER_STYLE_KEYS,
+  sticker: STICKER_EDITABLE_KEYS,
   image: IMAGE_STYLE_KEYS,
   sequence: SEQUENCE_STYLE_KEYS,
 };
@@ -150,7 +160,7 @@ const NODE_TYPE_STYLE_KEYS: Record<string, readonly string[]> = {
   shape: SHAPE_STYLE_KEYS,
   text: TEXT_STYLE_KEYS,
   markdown: MARKDOWN_STYLE_KEYS,
-  sticker: STICKER_STYLE_KEYS,
+  sticker: STICKER_EDITABLE_KEYS,
   sticky: STICKY_STYLE_KEYS,
   'washi-tape': WASHI_STYLE_KEYS,
   image: IMAGE_STYLE_KEYS,
@@ -162,7 +172,7 @@ const JSX_TAG_STYLE_KEYS: Record<string, readonly string[]> = {
   Shape: SHAPE_STYLE_KEYS,
   Text: TEXT_STYLE_KEYS,
   Sticky: [...STICKY_STYLE_KEYS, ...STICKER_STYLE_KEYS],
-  Sticker: STICKER_STYLE_KEYS,
+  Sticker: STICKER_EDITABLE_KEYS,
   WashiTape: WASHI_STYLE_KEYS,
   Image: IMAGE_STYLE_KEYS,
   Sequence: SEQUENCE_STYLE_KEYS,
@@ -321,6 +331,10 @@ export function isCommandAllowed(editMeta: EditMeta | undefined, commandType: Ed
 
   if (commandType === 'node.style.update') {
     return editMeta.styleEditableKeys.length > 0;
+  }
+
+  if (commandType === 'node.group.update' || commandType === 'node.z-order.update') {
+    return editMeta.family !== 'mindmap-member';
   }
 
   if (commandType === 'node.rename') {

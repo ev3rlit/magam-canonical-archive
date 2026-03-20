@@ -3,10 +3,14 @@ import { describe, expect, it, mock } from 'bun:test';
 const iconStub = () => null;
 
 mock.module('lucide-react', () => ({
+  Circle: iconStub,
+  Diamond: iconStub,
   Download: iconStub,
   FileText: iconStub,
   Maximize: iconStub,
+  Minus: iconStub,
   Square: iconStub,
+  StickyNote: iconStub,
   Type: iconStub,
 }));
 
@@ -35,9 +39,13 @@ describe('paneMenuItems', () => {
       canCreateNode: true,
       actions: baseActions,
     })).toEqual([
-      'create-shape',
+      'create-rectangle',
+      'create-ellipse',
+      'create-diamond',
       'create-text',
       'create-markdown',
+      'create-line',
+      'create-sticky',
       'export-all',
       'fit-view',
     ]);
@@ -86,11 +94,11 @@ describe('paneMenuItems', () => {
     });
 
     const actions = paneMenuItems.filter((item) => item.type === 'action');
-    await actions[0]?.handler(context);
-    await actions[3]?.handler(context);
-    await actions[4]?.handler(context);
+    await actions.find((item) => item.id === 'create-rectangle')?.handler(context);
+    await actions.find((item) => item.id === 'export-all')?.handler(context);
+    await actions.find((item) => item.id === 'fit-view')?.handler(context);
 
-    expect(createCalls).toEqual([['shape', { x: 10, y: 20 }]]);
+    expect(createCalls).toEqual([['rectangle', { x: 10, y: 20 }]]);
     expect(exportCalls).toEqual(['full']);
     expect(fitViewCalls).toBe(1);
   });

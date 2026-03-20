@@ -1,11 +1,94 @@
 import type { CanvasEntrypointCreateMode } from '@/features/canvas-ui-entrypoints/contracts';
 
+export type GraphCanvasPointerType = 'mouse' | 'pen' | 'touch' | 'unknown';
+export type GraphCanvasGestureKind = 'move' | 'resize' | 'rotate';
+
+const DRAG_COMMIT_DISTANCE_PX: Record<GraphCanvasPointerType, number> = {
+  mouse: 2,
+  pen: 4,
+  touch: 12,
+  unknown: 4,
+};
+
+const AUTO_PAN_POLICY_BY_GESTURE: Record<GraphCanvasGestureKind, {
+  enabled: boolean;
+  speed: number;
+  strength: 'aggressive' | 'conservative';
+}> = {
+  move: {
+    enabled: true,
+    speed: 1,
+    strength: 'aggressive',
+  },
+  resize: {
+    enabled: true,
+    speed: 0.45,
+    strength: 'conservative',
+  },
+  rotate: {
+    enabled: true,
+    speed: 0.35,
+    strength: 'conservative',
+  },
+};
+
+export function normalizePointerType(pointerType: unknown): GraphCanvasPointerType {
+  if (pointerType === 'mouse' || pointerType === 'pen' || pointerType === 'touch') {
+    return pointerType;
+  }
+
+  return 'unknown';
+}
+
+export function resolvePointerTypeFromEvent(event: unknown): GraphCanvasPointerType {
+  if (!event || typeof event !== 'object') {
+    return 'unknown';
+  }
+
+  const candidate = event as {
+    pointerType?: unknown;
+    nativeEvent?: { pointerType?: unknown };
+    touches?: { length?: unknown };
+    changedTouches?: { length?: unknown };
+  };
+
+  const nativePointerType = candidate.nativeEvent?.pointerType;
+  if (nativePointerType !== undefined) {
+    return normalizePointerType(nativePointerType);
+  }
+
+  if (candidate.pointerType !== undefined) {
+    return normalizePointerType(candidate.pointerType);
+  }
+
+  if (
+    (typeof candidate.touches?.length === 'number' && candidate.touches.length > 0)
+    || (typeof candidate.changedTouches?.length === 'number' && candidate.changedTouches.length > 0)
+  ) {
+    return 'touch';
+  }
+
+  return 'unknown';
+}
+
+export function resolveDragCommitDistance(pointerType: unknown): number {
+  return DRAG_COMMIT_DISTANCE_PX[normalizePointerType(pointerType)];
+}
+
+export function resolveAutoPanPolicy(gesture: GraphCanvasGestureKind) {
+  return AUTO_PAN_POLICY_BY_GESTURE[gesture];
+}
+
 export function shouldCommitDragStop(input: {
   origin?: { x: number; y: number };
   current: { x: number; y: number };
+  pointerType?: GraphCanvasPointerType;
 }): boolean {
   if (!input.origin) return true;
-  return input.origin.x !== input.current.x || input.origin.y !== input.current.y;
+
+  const deltaX = input.current.x - input.origin.x;
+  const deltaY = input.current.y - input.origin.y;
+  return Math.hypot(deltaX, deltaY) >= resolveDragCommitDistance(input.pointerType);
 }
 
 export type GraphCanvasCreateMode = CanvasEntrypointCreateMode;

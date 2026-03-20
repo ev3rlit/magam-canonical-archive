@@ -4,7 +4,6 @@ import { BaseNode } from './BaseNode';
 import { useGraphStore } from '@/store/graph';
 import type { FontFamilyPreset } from '@magam/core';
 import {
-  hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import { emitSizeWarning } from '@/utils/sizeWarnings';
@@ -41,14 +40,11 @@ const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>)
   const { participants, messages, participantSpacing, messageSpacing } = data;
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
-  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
-  const resolvedFontFamily = shouldApplyHierarchy
-    ? resolveFontFamilyCssValue({
-      nodeFontFamily: data.fontFamily,
-      canvasFontFamily,
-      globalFontFamily,
-    })
-    : undefined;
+  const resolvedFontFamily = resolveFontFamilyCssValue({
+    nodeFontFamily: data.fontFamily,
+    canvasFontFamily,
+    globalFontFamily,
+  });
   useEffect(() => {
     const sizeInput = (data as { size?: unknown }).size;
     if (sizeInput === undefined) return;
@@ -75,7 +71,6 @@ const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>)
 
   return (
     <BaseNode
-      className={data.className || ''}
       selected={selected}
       startHandle={false}
       endHandle={false}
@@ -91,7 +86,7 @@ const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>)
           <React.Fragment key={p.id}>
             {/* Top box */}
             <div
-              className={`flex items-center justify-center border-2 border-slate-300 bg-white rounded-md shadow-sm ${p.className || ''}`}
+              className="flex items-center justify-center border-2 border-slate-300 bg-white rounded-md shadow-sm"
               style={{
                 position: 'absolute',
                 left: x,
@@ -122,7 +117,7 @@ const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>)
 
             {/* Bottom box */}
             <div
-              className={`flex items-center justify-center border-2 border-slate-300 bg-white rounded-md shadow-sm ${p.className || ''}`}
+              className="flex items-center justify-center border-2 border-slate-300 bg-white rounded-md shadow-sm"
               style={{
                 position: 'absolute',
                 left: x,

@@ -8,18 +8,20 @@ export function makeCanonicalNode(input: {
   filePath?: string;
   sourceId?: string;
   groupId?: string;
+  sourceKind?: 'canvas' | 'mindmap';
   canonical?: CanonicalObject;
   data?: Record<string, unknown>;
 }): Node {
+  const sourceKind = input.sourceKind ?? (input.groupId ? 'mindmap' : 'canvas');
   const canonical = input.canonical ?? {
     core: {
       id: input.sourceId ?? input.id,
       sourceMeta: {
         sourceId: input.sourceId ?? input.id,
         filePath: input.filePath ?? 'examples/bridge.tsx',
-        kind: input.groupId ? 'mindmap' : 'canvas',
+        kind: sourceKind,
       },
-      relations: input.groupId ? { from: 'map.root' } : undefined,
+      relations: input.groupId && sourceKind === 'mindmap' ? { from: 'map.root' } : undefined,
     },
     semanticRole: 'topic',
     alias: input.type === 'markdown' ? 'Markdown' : 'Node',
@@ -57,7 +59,7 @@ export function makeCanonicalNode(input: {
       sourceMeta: {
         sourceId: input.sourceId ?? input.id,
         filePath: input.filePath ?? 'examples/bridge.tsx',
-        kind: input.groupId ? 'mindmap' : 'canvas',
+        kind: sourceKind,
       },
       canonicalObject: canonical,
       ...(input.data ?? {}),
