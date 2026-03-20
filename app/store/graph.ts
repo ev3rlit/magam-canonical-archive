@@ -614,13 +614,18 @@ function attachAbsoluteFilePathsToNodes(
 }
 
 function insertFileIntoTree(root: FileTreeNode | null, filePath: string): FileTreeNode | null {
-  if (!root) {
-    return root;
-  }
-
   const segments = filePath.split('/').filter(Boolean);
   if (segments.length === 0) {
     return root;
+  }
+
+  if (!root) {
+    root = {
+      name: 'root',
+      path: '',
+      type: 'directory',
+      children: [],
+    };
   }
 
   const cloneNode = (node: FileTreeNode): FileTreeNode => ({
@@ -1093,12 +1098,17 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       return state;
     }
 
+    const normalizedDocumentPath = normalizeWorkspaceAwareFilePath(
+      state.workspaceRootPath,
+      document.absolutePath,
+    );
     const nextDocuments = [document, ...currentDocuments];
     const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
       workspace.id === workspaceId
         ? { ...workspace, documentCount: nextDocuments.length }
         : workspace
     ));
+    const isActiveWorkspace = state.workspaceSessionKey === workspaceId;
     writeStoredWorkspaces(nextWorkspaces);
 
     return {
@@ -1107,6 +1117,15 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         [workspaceId]: nextDocuments,
       },
       registeredWorkspaces: nextWorkspaces,
+      ...(isActiveWorkspace
+        ? {
+            files: normalizeWorkspaceAwareFileList(
+              state.workspaceRootPath,
+              [...state.files, normalizedDocumentPath],
+            ),
+            fileTree: insertFileIntoTree(state.fileTree, normalizedDocumentPath),
+          }
+        : {}),
     };
   }),
   setWorkspacePathStatus: ({ workspaceId, rootPath, status, failureReason, checkedAt }) => set((state) => {

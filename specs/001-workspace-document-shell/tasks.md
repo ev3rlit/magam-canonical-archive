@@ -121,7 +121,7 @@
 
 - [x] T030 [P] Update feature PRD completion notes in `docs/features/database-first-canvas-platform/workspace-document-shell/README.md`
 - [x] T031 [P] Update quickstart validation notes in `specs/001-workspace-document-shell/quickstart.md`
-- [ ] T032 Run quickstart scenario validation and capture outcomes in `specs/001-workspace-document-shell/quickstart.md`
+- [x] T032 Run quickstart scenario validation and capture outcomes in `specs/001-workspace-document-shell/quickstart.md`
 
 ---
 

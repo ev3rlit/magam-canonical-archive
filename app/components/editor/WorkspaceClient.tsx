@@ -423,8 +423,6 @@ export function WorkspaceClient() {
       const { workspaces: storedWorkspaces } = hydrateWorkspaceRegistry();
 
       if (storedWorkspaces.length === 0) {
-        const defaultWorkspace = await fetchWorkspaceProbe();
-        upsertWorkspaceFromProbe(defaultWorkspace, { activate: true });
         return;
       }
 

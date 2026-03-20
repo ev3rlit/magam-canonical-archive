@@ -88,10 +88,15 @@ Expected:
 
 ## Validation Notes
 
+- 2026-03-21: `CI=1 PLAYWRIGHT_APP_PORT=4273 PLAYWRIGHT_WS_PORT=3023 bunx playwright test e2e/workspace-document-shell.spec.ts` passed (`3/3`).
+- Playwright validation covered first-run empty state, multi-workspace switch, new document bootstrap, unavailable workspace recovery, and compatibility-section placement.
+- Compatibility validation in the mocked shell run confirmed the sidebar `Compatibility` section and explanatory copy; the legacy TSX toggle was not exposed in this run, which is acceptable for Scenario 6's `if exposed` condition.
+- 2026-03-21: `bun run desktop:build` passed after wiring `desktop:dev`/`desktop:build` and adding bundled Electron host outputs under `.desktop-build/`.
+- 2026-03-21: `.specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks` now resolves `specs/001-workspace-document-shell` directly without the duplicate `001-*` warning.
 - 2026-03-21: workspace-aware runtime wiring updated so graph store, render proxy/server, and WS mutation/subscription paths all consume the active workspace root.
 - 2026-03-21: desktop bridge scaffold added at `desktop/preload.ts` and `desktop/main.ts`; UI bridge contract remains available in browser fallback mode.
 - Direct logic smoke previously confirmed workspace document bootstrap on absolute roots (`count 0 -> 1`) through `app/app/api/workspaces/_shared.ts`.
 - Automated validation is currently blocked by repo environment issues rather than feature logic:
   - `bun test app/ws/methods.test.ts` fails before executing cases because `@babel/parser` cannot be resolved from `app/ws/filePatcher.ts`.
   - `bunx tsc -p app/tsconfig.json --noEmit --pretty false` fails repo-wide on missing Next/React/Node/Bun type resolution.
-- Full UI quickstart rerun is still pending in a working desktop/web runtime environment.
+- Full UI quickstart rerun is no longer pending; remaining blockers are limited to the broader repo test/typecheck environment.
