@@ -338,6 +338,14 @@ describe('action routing bridge registry', () => {
         groupId: 'group-1',
       },
     });
+    expect(plan.value.steps.at(-1)).toMatchObject({
+      kind: 'runtime-only-action',
+      actionId: 'select-node-group',
+      payload: {
+        groupId: 'group-1',
+        anchorNodeId: 'shape-a',
+      },
+    });
   });
 
   it('builds selection.ungroup from grouped canvas nodes without treating them as mindmap members', () => {

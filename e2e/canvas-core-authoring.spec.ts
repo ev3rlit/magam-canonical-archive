@@ -316,7 +316,6 @@ test.describe('canvas core authoring entry', () => {
           y: 140,
           type: 'rectangle',
           text: 'A',
-          groupId: 'group-1',
           size: { width: 140, height: 100 },
         },
         children: [],
@@ -329,7 +328,6 @@ test.describe('canvas core authoring entry', () => {
           y: 140,
           type: 'rectangle',
           text: 'B',
-          groupId: 'group-1',
           size: { width: 140, height: 100 },
         },
         children: [],
@@ -355,6 +353,15 @@ test.describe('canvas core authoring entry', () => {
     await expect(shapeA).toBeVisible();
     await expect(shapeB).toBeVisible();
     await expect(shapeC).toBeVisible();
+
+    await page.keyboard.press('Meta+A');
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(3);
+
+    await shapeA.click({ button: 'right' });
+    await expect(page.getByText('그룹 만들기')).toBeVisible();
+    await page.getByText('그룹 만들기').click();
+
+    await expect(page.locator('.react-flow__node.selected')).toHaveCount(3);
 
     await shapeA.click({ button: 'right' });
     await expect(page.getByText('그룹 선택')).toBeVisible();

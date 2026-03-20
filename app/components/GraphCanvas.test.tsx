@@ -673,6 +673,36 @@ describe('GraphCanvas selection anchor helpers', () => {
     });
     expect(anchor && 'selection' in anchor).toBe(false);
   });
+
+  it('selection bounds anchor는 viewport transform이 적용된 screen-space bounds를 사용한다', () => {
+    const selectedNodes: Parameters<typeof buildSelectionBoundsAnchor>[0]['selectedNodes'] = [
+      {
+        id: 'node-a',
+        position: { x: 10, y: 20 },
+        width: 100,
+        height: 40,
+      },
+      {
+        id: 'node-b',
+        position: { x: 140, y: 90 },
+        width: 60,
+        height: 30,
+      },
+    ];
+    const anchor = buildSelectionBoundsAnchor({
+      selectedNodes,
+      viewport: { x: 48, y: -24, zoom: 1.5 },
+    });
+
+    expect(anchor).toMatchObject({
+      anchorId: 'selection-floating-menu:selection-bounds',
+      kind: 'selection-bounds',
+      nodeIds: ['node-a', 'node-b'],
+      flow: { x: 10, y: 20 },
+      screen: { x: 63, y: 6, width: 285, height: 150 },
+      viewport: { x: 48, y: -24, zoom: 1.5 },
+    });
+  });
 });
 
 describe('GraphCanvas runtime surface integration', () => {
