@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: active
-stopped_at: 01-09 planned for BODY-01/BODY-02 gap; run gsd-execute-phase 01 --gaps-only
-last_updated: "2026-03-20T00:39:42Z"
+stopped_at: 01-09 complete; rerun verifier for Phase 01 acceptance and completion
+last_updated: "2026-03-20T03:56:04Z"
 progress:
   total_phases: 3
   completed_phases: 0
@@ -19,18 +19,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** AI and humans can reliably create, review, and evolve a shared knowledge canvas through the same canonical mutation backbone.
-**Current focus:** Phase 01 — execute shape markdown body-entry gap closure
+**Current focus:** Phase 01 — canvas-core-authoring verification and completion
 
 ## Current Position
 
-Phase: 01 (canvas-core-authoring) — GAP PLAN READY
-Plan: 8 of 9
+Phase: 01 (canvas-core-authoring) — READY FOR VERIFICATION
+Plan: 9 of 9
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 8
+- Total plans completed: 9
 - Average duration: n/a
 - Total execution time: n/a
 
@@ -38,11 +38,11 @@ Plan: 8 of 9
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01 | 8 | n/a | n/a |
+| 01 | 9 | n/a | n/a |
 
 **Recent Trend:**
 
-- Last 5 plans: 01-04, 01-05, 01-06, 01-07, 01-08
+- Last 5 plans: 01-05, 01-06, 01-07, 01-08, 01-09
 - Trend: active
 
 ## Accumulated Context
@@ -70,6 +70,8 @@ Plan: 8 of 9
 - 01-08: Reuse shared screen-space selection bounds for both the shell and floating-menu anchors so contextual controls cannot drift under pan or zoom
 - 01-08: Finish grouping with the existing select-node-group runtime handoff so a fresh group remains structurally selected for immediate group focus
 - 01-08: Keep mutable browser fixtures backed by the same on-disk TSX source and sha256 version they mock through /api/render so structural E2E checks hit the real file contract
+- 01-09: Reuse the shared markdown-first body session for shape nodes instead of creating a shape-only edit mode
+- 01-09: Treat Shape as a Markdown child carrier in the TSX patch path so create and update keep the shape shell intact after reload
 
 ### Pending Todos
 
@@ -78,10 +80,10 @@ None yet.
 ### Blockers/Concerns
 
 - Legacy file-first editing still exists and must remain a compatibility path while canonical DB flows become primary
-- Phase 01 verification still fails BODY-01 and BODY-02 until 01-09 lands shape markdown-first body entry and shape-shell persistence
+- Phase 01 execution is complete, but verifier rerun and completion routing still need to confirm the final shape body-entry gap closure
 
 ## Session Continuity
 
-Last session: 2026-03-20T00:39:42Z
-Stopped at: 01-09 planned for BODY-01/BODY-02 gap; run gsd-execute-phase 01 --gaps-only
-Resume file: .planning/phases/01-canvas-core-authoring/01-09-PLAN.md
+Last session: 2026-03-20T03:56:04Z
+Stopped at: 01-09 complete; rerun verifier for Phase 01 acceptance and completion
+Resume file: .planning/phases/01-canvas-core-authoring/01-09-SUMMARY.md
