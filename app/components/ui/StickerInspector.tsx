@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import type { Node } from 'reactflow';
 import { useGraphStore } from '@/store/graph';
+import { getUiCopy } from '@/components/ui/copy';
 
 function coerceNumber(value: string, fallback: number) {
   const parsed = Number(value);
@@ -19,6 +20,7 @@ interface StickerInspectorProps {
 }
 
 export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
+  const copy = getUiCopy().stickerInspector;
   const nodes = useGraphStore((state) => state.nodes);
   const selectedNodeIds = useGraphStore((state) => state.selectedNodeIds);
 
@@ -58,7 +60,7 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
 
   return (
     <aside className="absolute right-3 top-3 z-40 w-80 max-h-[calc(100%-1.5rem)] overflow-auto rounded-xl border border-slate-200 bg-white/95 backdrop-blur p-3 shadow-xl">
-      <h3 className="text-sm font-semibold text-slate-800 mb-2">Sticker Inspector</h3>
+      <h3 className="text-sm font-semibold text-slate-800 mb-2">{copy.title}</h3>
 
       <div className="space-y-2 text-xs">
         <button
@@ -66,11 +68,11 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
           className="w-full rounded border border-slate-300 bg-slate-50 px-2 py-1 text-left text-slate-700 hover:bg-slate-100"
           onClick={applyRealStickerPreset}
         >
-          Apply real sticker preset
+          {copy.applyPreset}
         </button>
 
         <label className="block">
-          <span className="text-slate-500">outlineColor</span>
+          <span className="text-slate-500">{copy.outlineColor}</span>
           <input
             className="mt-1 w-full rounded border px-2 py-1"
             value={outlineColor}
@@ -80,7 +82,7 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
 
         <div className="grid grid-cols-2 gap-2">
           <label className="block">
-            <span className="text-slate-500">outlineWidth</span>
+            <span className="text-slate-500">{copy.outlineWidth}</span>
             <input
               type="number"
               className="mt-1 w-full rounded border px-2 py-1"
@@ -96,7 +98,7 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
           </label>
 
           <label className="block">
-            <span className="text-slate-500">padding</span>
+            <span className="text-slate-500">{copy.padding}</span>
             <input
               type="number"
               className="mt-1 w-full rounded border px-2 py-1"
@@ -111,7 +113,7 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
           </label>
 
           <label className="block">
-            <span className="text-slate-500">rotation</span>
+            <span className="text-slate-500">{copy.rotation}</span>
             <input
               type="number"
               className="mt-1 w-full rounded border px-2 py-1"
@@ -125,7 +127,7 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
           </label>
 
           <label className="block">
-            <span className="text-slate-500">shadow</span>
+            <span className="text-slate-500">{copy.shadow}</span>
             <select
               className="mt-1 w-full rounded border px-2 py-1"
               value={shadow}
@@ -133,10 +135,10 @@ export function StickerInspector({ onApplyStylePatch }: StickerInspectorProps) {
                 applyStylePatch({ shadow: e.target.value })
               }
             >
-              <option value="none">none</option>
-              <option value="sm">sm</option>
-              <option value="md">md</option>
-              <option value="lg">lg</option>
+              <option value="none">{copy.shadowOptions.none}</option>
+              <option value="sm">{copy.shadowOptions.sm}</option>
+              <option value="md">{copy.shadowOptions.md}</option>
+              <option value="lg">{copy.shadowOptions.lg}</option>
             </select>
           </label>
         </div>

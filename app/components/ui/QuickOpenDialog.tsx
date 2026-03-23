@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { clsx } from 'clsx';
+import { getUiCopy } from '@/components/ui/copy';
 import { getInputClassName } from './Input';
 
 export interface QuickOpenCommand {
@@ -83,6 +84,7 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
   onRunCommand,
   onClose,
 }) => {
+  const copy = getUiCopy().quickOpen;
   const [query, setQuery] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(0);
 
@@ -173,7 +175,7 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="파일/명령 검색... (명령은 > 로 시작)"
+            placeholder={copy.placeholder}
             autoFocus
             className={getInputClassName({ className: 'w-full' })}
           />
@@ -181,7 +183,7 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
 
         <div className="max-h-96 overflow-y-auto">
           {filteredEntries.length === 0 ? (
-            <div className="p-3 text-sm text-foreground/52">검색 결과가 없습니다.</div>
+            <div className="p-3 text-sm text-foreground/52">{copy.noResults}</div>
           ) : (
             filteredEntries.map((entry, index) => (
               <button
@@ -205,7 +207,7 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
                   <>
                     <span className="truncate">{entry.command.label}</span>
                     <span className="shrink-0 text-xs text-foreground/48">
-                      {entry.command.hint || 'command'}
+                      {entry.command.hint || copy.commandHint}
                     </span>
                   </>
                 )}
@@ -215,13 +217,13 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
         </div>
 
         <div className="flex items-center justify-between px-3 py-2 text-xs text-foreground/48 shadow-[inset_0_1px_0_rgb(var(--color-border)/0.08)]">
-          <span>Enter: open/run</span>
+          <span>{copy.footer.enter}</span>
           <button
             type="button"
             onClick={onClose}
             className="rounded-md px-2 py-1 transition-colors duration-fast hover:bg-card hover:text-foreground"
           >
-            Esc
+            {copy.footer.esc}
           </button>
         </div>
       </div>

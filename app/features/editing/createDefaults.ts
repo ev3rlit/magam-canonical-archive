@@ -1,22 +1,12 @@
 import type { CreatePayload } from './commands';
 import { DEFAULT_WASHI_PRESET_ID } from '@/utils/washiTapeDefaults';
 import { getDefaultStickerCreateProps } from '@/utils/stickerDefaults';
-
-const DEFAULT_NODE_LABEL_BY_TYPE: Record<CreatePayload['nodeType'], string> = {
-  shape: 'shape',
-  rectangle: 'rectangle',
-  ellipse: 'ellipse',
-  diamond: 'diamond',
-  line: 'line',
-  text: 'New text',
-  markdown: '# New note',
-  sticky: 'New sticky',
-  sticker: 'sticker',
-  'washi-tape': 'washi-tape',
-  image: 'https://placehold.co/640x360',
-};
-
-const DEFAULT_PLUGIN_INSTANCE_DISPLAY_NAME = 'New plugin widget';
+import {
+  getDefaultImageSource,
+  getDefaultNodeContent,
+  getDefaultNodeIdSeed,
+  getDefaultPluginInstanceDisplayName,
+} from './defaultContent';
 
 function slugify(input: string): string {
   return input
@@ -27,7 +17,7 @@ function slugify(input: string): string {
 }
 
 export function createSuggestedNodeId(nodeType: CreatePayload['nodeType'], seed?: string): string {
-  const base = slugify(seed || DEFAULT_NODE_LABEL_BY_TYPE[nodeType]) || nodeType;
+  const base = slugify(seed || getDefaultNodeIdSeed(nodeType)) || nodeType;
   return `${nodeType}-${base}`;
 }
 
@@ -57,7 +47,7 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
   switch (nodeType) {
     case 'shape':
       return {
-        initialContent: 'New shape',
+        initialContent: getDefaultNodeContent('shape'),
         initialProps: {
           type: 'rectangle',
           size: {
@@ -112,17 +102,17 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
       };
     case 'text':
       return {
-        initialContent: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
+        initialContent: getDefaultNodeContent(nodeType),
         initialProps: {},
       };
     case 'markdown':
       return {
-        initialContent: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
+        initialContent: getDefaultNodeContent(nodeType),
         initialProps: {},
       };
     case 'sticker':
       return {
-        initialContent: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
+        initialContent: getDefaultNodeContent(nodeType),
         initialProps: {
           outlineColor: stickerDefaults.outlineColor,
           outlineWidth: stickerDefaults.outlineWidth,
@@ -140,13 +130,13 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
     case 'image':
       return {
         initialProps: {
-          src: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
+          src: getDefaultImageSource(),
           fit: 'cover',
         },
       };
     default:
       return {
-        initialContent: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
+        initialContent: getDefaultNodeContent(nodeType),
         initialProps: {},
       };
   }
@@ -191,7 +181,7 @@ export function getPluginInstanceCreateDefaults(input: {
 } {
   return {
     id: createSuggestedPluginInstanceId(input.pluginExportId, input.displayName),
-    displayName: input.displayName?.trim() || DEFAULT_PLUGIN_INSTANCE_DISPLAY_NAME,
+    displayName: input.displayName?.trim() || getDefaultPluginInstanceDisplayName(),
     initialProps: {},
     initialBindingConfig: {},
     initialPersistedState: {},

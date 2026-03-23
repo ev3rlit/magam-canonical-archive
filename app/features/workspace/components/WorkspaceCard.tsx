@@ -1,5 +1,6 @@
 import React from 'react';
 import type { SidebarWorkspaceEntry } from '@/components/ui/Sidebar';
+import { getWorkspaceCopy } from '../copy';
 
 interface WorkspaceCardProps {
   workspace: SidebarWorkspaceEntry;
@@ -8,6 +9,7 @@ interface WorkspaceCardProps {
 
 export function WorkspaceCard({ workspace, onClick }: WorkspaceCardProps) {
   const isOk = workspace.status === 'ok';
+  const copy = getWorkspaceCopy();
 
   return (
     <div
@@ -23,7 +25,7 @@ export function WorkspaceCard({ workspace, onClick }: WorkspaceCardProps) {
           {workspace.name.charAt(0).toUpperCase()}
         </div>
         {!isOk && (
-          <span className="text-[10px] uppercase font-bold text-red-600 bg-red-100 px-2 py-1 rounded-md">Error</span>
+          <span className="text-[10px] uppercase font-bold text-red-600 bg-red-100 px-2 py-1 rounded-md">{copy.sidebar.errorBadge}</span>
         )}
       </div>
 

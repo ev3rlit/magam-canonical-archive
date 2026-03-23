@@ -15,8 +15,10 @@ import { CanvasListItem } from '../components/CanvasListItem';
 import type { SidebarCanvasEntry } from '@/components/ui/Sidebar';
 import { Button } from '@/components/ui/Button';
 import { ArrowLeft } from 'lucide-react';
+import { getWorkspaceCopy } from '../copy';
 
 export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
+  const copy = getWorkspaceCopy();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState('');
   const [isCanvasListLoading, setIsCanvasListLoading] = useState(false);
@@ -59,7 +61,7 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
         error,
       });
       setError({
-        message: '캔버스 목록을 불러오지 못했습니다.',
+        message: copy.detail.loadCanvasesError,
         type: 'WORKSPACE_CANVASES_LOAD_FAILED',
         details: error,
       });
@@ -78,7 +80,7 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
       const result = await hostRpc.createWorkspaceCanvas({ rootPath: activeWorkspace.rootPath });
       navigateToCanvas(result.canvasId);
     } catch {
-      setError({ message: '캔버스 생성 실패' });
+      setError({ message: copy.detail.createCanvasError });
     }
   };
 
@@ -113,8 +115,8 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-surface text-on-surface">
         <div className="text-center space-y-4">
-          <p>Workspace not found.</p>
-          <Button onClick={handleGoBack}>Return to Dashboard</Button>
+          <p>{copy.detail.workspaceNotFound}</p>
+          <Button onClick={handleGoBack}>{copy.detail.returnToDashboard}</Button>
         </div>
       </div>
     );
@@ -137,7 +139,7 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
             onClick={handleGoBack}
             className="flex items-center text-sm font-medium text-on-surface-variant hover:text-primary transition-colors mb-2"
           >
-            <ArrowLeft size={16} className="mr-1" /> Back to Workspaces
+            <ArrowLeft size={16} className="mr-1" /> {copy.detail.backToWorkspaces}
           </button>
 
           <DashboardHeader
@@ -146,21 +148,21 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             onAddAction={handleCreateCanvas}
-            addLabel="New Canvas"
+            addLabel={copy.detail.addCanvasLabel}
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
           />
 
           {isCanvasListLoading ? (
             <div className="py-24 text-center">
-              <p className="text-on-surface-variant">캔버스 목록을 불러오는 중입니다.</p>
+              <p className="text-on-surface-variant">{copy.detail.loadingCanvases}</p>
             </div>
           ) : filteredCanvases.length === 0 ? (
             <div className="py-24 text-center">
               <p className="text-on-surface-variant">
                 {workspaceCanvases.length === 0
-                  ? '아직 생성된 캔버스가 없습니다.'
-                  : `"${searchTerm}" 검색 결과가 없습니다.`}
+                  ? copy.detail.noCanvases
+                  : copy.detail.noResults(searchTerm)}
               </p>
             </div>
           ) : (

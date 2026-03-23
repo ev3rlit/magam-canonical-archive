@@ -19,6 +19,14 @@
 
 총 58개 파일을 개선 후보로 수집했습니다.
 
+## 진행 상태
+
+- 완료: 중앙 locale dictionary 도입 (`app/features/i18n/`)
+- 완료: UI/workspace/canvas authoring 문자열의 1차 이관
+- 완료: 기본 생성 텍스트 분리 (`app/features/editing/defaultContent.ts`)
+- 완료: API/CLI 메시지 모듈 스캐폴딩 (`app/app/api/_shared/messages.ts`, `libs/cli/src/messages.ts`)
+- 정책: 앱 UI는 locale dictionary를 사용하고, CLI는 영어 고정 정책을 유지합니다.
+
 ### 앱 UI / 화면 카피
 
 - `app/components/ExportDialog.tsx`

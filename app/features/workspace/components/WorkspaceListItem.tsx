@@ -1,6 +1,7 @@
 import React from 'react';
 import type { SidebarWorkspaceEntry } from '@/components/ui/Sidebar';
 import { ChevronRight } from 'lucide-react';
+import { getWorkspaceCopy } from '../copy';
 
 interface WorkspaceListItemProps {
   workspace: SidebarWorkspaceEntry;
@@ -9,6 +10,7 @@ interface WorkspaceListItemProps {
 
 export function WorkspaceListItem({ workspace, onClick }: WorkspaceListItemProps) {
   const isOk = workspace.status === 'ok';
+  const copy = getWorkspaceCopy();
 
   return (
     <div
@@ -32,7 +34,7 @@ export function WorkspaceListItem({ workspace, onClick }: WorkspaceListItemProps
 
       <div className="flex items-center gap-3">
         {!isOk && (
-          <span className="text-[10px] uppercase font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-md">Error</span>
+          <span className="text-[10px] uppercase font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-md">{copy.sidebar.errorBadge}</span>
         )}
         <ChevronRight size={16} className="text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
       </div>

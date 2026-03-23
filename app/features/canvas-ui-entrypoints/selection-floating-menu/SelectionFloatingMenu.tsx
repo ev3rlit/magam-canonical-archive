@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { FontFamilyPreset } from '@magam/core';
 import { cn } from '@/utils/cn';
 import { toFontFamilyCssValue } from '@/utils/fontHierarchy';
+import { getCanvasUiCopy } from '@/features/canvas-ui-entrypoints/copy';
 import type {
   SelectionFloatingMenuControlId,
   SelectionFloatingMenuPresetOption,
@@ -11,10 +12,12 @@ import type {
   SelectionFloatingMenuStylePatchKey,
 } from './types';
 
+const copy = getCanvasUiCopy().selectionMenu;
+
 const FONT_FAMILY_OPTIONS: Array<{ value: FontFamilyPreset; label: string; short: string }> = [
-  { value: 'hand-gaegu', label: 'Handwriting (Gaegu)', short: 'Gaegu' },
-  { value: 'hand-caveat', label: 'Handwriting (Caveat)', short: 'Caveat' },
-  { value: 'sans-inter', label: 'Sans (Inter)', short: 'Inter' },
+  { value: 'hand-gaegu', label: copy.fontOptions.handGaegu, short: copy.fontShort.handGaegu },
+  { value: 'hand-caveat', label: copy.fontOptions.handCaveat, short: copy.fontShort.handCaveat },
+  { value: 'sans-inter', label: copy.fontOptions.sansInter, short: copy.fontShort.sansInter },
 ];
 
 const FONT_SIZE_OPTIONS: Array<{ value: string | number; label: string }> = [
@@ -46,21 +49,21 @@ function toPatternPreset(value: string): Record<string, unknown> {
 
 function formatControlValue(controlId: SelectionFloatingMenuControlId, value: unknown): string {
   if (controlId === 'font-family') {
-    return FONT_FAMILY_OPTIONS.find((option) => option.value === value)?.short ?? 'Font';
+    return FONT_FAMILY_OPTIONS.find((option) => option.value === value)?.short ?? copy.controlFallbacks.font;
   }
   if (controlId === 'font-size') {
-    return typeof value === 'string' || typeof value === 'number' ? String(value).toUpperCase() : 'Size';
+    return typeof value === 'string' || typeof value === 'number' ? String(value).toUpperCase() : copy.controlFallbacks.size;
   }
   if (controlId === 'bold') {
-    return value === true ? 'Bold' : 'B';
+    return value === true ? copy.controlFallbacks.bold : 'B';
   }
   if (controlId === 'object-type') {
-    return typeof value === 'string' && value.length > 0 ? value : 'Type';
+    return typeof value === 'string' && value.length > 0 ? value : copy.controlFallbacks.type;
   }
   if (controlId === 'align') {
-    return typeof value === 'string' && value.length > 0 ? value : 'Align';
+    return typeof value === 'string' && value.length > 0 ? value : copy.controlFallbacks.align;
   }
-  return typeof value === 'string' && value.length > 0 ? value : 'Color';
+  return typeof value === 'string' && value.length > 0 ? value : copy.controlFallbacks.color;
 }
 
 interface SelectionFloatingMenuProps {
@@ -162,7 +165,7 @@ export function SelectionFloatingMenu({
               }}
             >
               <span>{option.label}</span>
-              {model.summary.commonValues.fontFamily === option.value ? <span>OK</span> : null}
+              {model.summary.commonValues.fontFamily === option.value ? <span>{copy.ok}</span> : null}
             </button>
           ))}
         </div>
@@ -218,7 +221,7 @@ export function SelectionFloatingMenu({
                       : 'text-slate-900',
                   )}
                   >
-                    OK
+                    {copy.ok}
                   </span>
                 ) : null}
               </button>
@@ -258,7 +261,7 @@ export function SelectionFloatingMenu({
               }}
             >
               <label className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Content
+                {copy.contentLabel}
               </label>
               <input
                 type="text"
@@ -277,7 +280,7 @@ export function SelectionFloatingMenu({
                     : 'cursor-not-allowed bg-slate-100 text-slate-400',
                 )}
               >
-                Apply content
+                {copy.applyContent}
               </button>
             </form>
           ) : null}
@@ -285,7 +288,7 @@ export function SelectionFloatingMenu({
           {presetControl?.visible && presetControl.patchKey === 'pattern' && washiPresets.length > 0 ? (
             <div className="flex flex-col gap-2">
               <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Washi preset
+                {copy.washiPresetLabel}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {washiPresets.map((preset) => (
@@ -339,8 +342,8 @@ export function SelectionFloatingMenu({
             type="button"
             disabled={disabled}
             title={control.disabledReason ?? control.inventory.label}
-            onClick={() => {
-              if (control.inventory.controlId === 'bold' && control.patchKey) {
+              onClick={() => {
+                if (control.inventory.controlId === 'bold' && control.patchKey) {
                 void runStylePatch('bold', control.patchKey, !(control.value === true));
                 return;
               }
@@ -368,7 +371,7 @@ export function SelectionFloatingMenu({
                 : undefined}
             >
               {control.inventory.controlId === 'more'
-                ? 'More'
+                ? copy.controlFallbacks.more
                 : formatControlValue(control.inventory.controlId, control.value)}
             </span>
           </button>

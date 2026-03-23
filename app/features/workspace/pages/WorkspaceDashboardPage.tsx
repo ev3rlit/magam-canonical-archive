@@ -10,8 +10,10 @@ import { DashboardHeader } from '../components/DashboardHeader';
 import { WorkspaceCard } from '../components/WorkspaceCard';
 import { WorkspaceListItem } from '../components/WorkspaceListItem';
 import { FolderOpen } from 'lucide-react';
+import { getWorkspaceCopy } from '../copy';
 
 export function WorkspaceDashboardPage() {
+  const copy = getWorkspaceCopy();
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState('');
   const hostRpc = useMemo(() => getHostRuntime().rpc, []);
@@ -24,7 +26,7 @@ export function WorkspaceDashboardPage() {
 
   const handleAddWorkspace = async () => {
     const rootPath = await pickWorkspaceRootPath({
-      title: '워크스페이스 폴더 선택',
+      title: copy.dashboard.addWorkspaceDialogTitle,
     });
     if (!rootPath) return;
 
@@ -32,7 +34,7 @@ export function WorkspaceDashboardPage() {
       const probe = await hostRpc.ensureWorkspace(rootPath);
       await upsertWorkspaceFromProbe(probe, { activate: true });
     } catch {
-      setError({ message: '워크스페이스 추가 실패' });
+      setError({ message: copy.dashboard.addWorkspaceError });
     }
   };
 
@@ -52,11 +54,11 @@ export function WorkspaceDashboardPage() {
       <main className="flex-1 relative w-full h-full overflow-y-auto p-12 bg-surface">
         <div className="max-w-6xl mx-auto space-y-8">
           <DashboardHeader
-            title="Workspaces"
+            title={copy.dashboard.title}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
             onAddAction={handleAddWorkspace}
-            addLabel="New Workspace"
+            addLabel={copy.dashboard.addLabel}
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
           />
@@ -66,14 +68,14 @@ export function WorkspaceDashboardPage() {
               <div className="w-16 h-16 rounded-2xl bg-surface-container-low flex items-center justify-center mb-2">
                 <FolderOpen size={32} className="text-on-surface-variant opacity-50" />
               </div>
-              <h2 className="font-manrope font-semibold text-title-lg text-on-surface">No workspaces yet</h2>
+              <h2 className="font-manrope font-semibold text-title-lg text-on-surface">{copy.dashboard.emptyTitle}</h2>
               <p className="font-inter text-body-md text-on-surface-variant max-w-sm">
-                Connect a local folder to start creating your ethereal canvases.
+                {copy.dashboard.emptyBody}
               </p>
             </div>
           ) : filteredWorkspaces.length === 0 ? (
             <div className="py-24 text-center">
-              <p className="text-on-surface-variant">No workspaces found matching "{searchTerm}".</p>
+              <p className="text-on-surface-variant">{copy.dashboard.noResults(searchTerm)}</p>
             </div>
           ) : (
             <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6' : 'flex flex-col gap-2'}>

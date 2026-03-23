@@ -19,9 +19,9 @@
 
 **Purpose**: Turn the raw audit into execution-ready remediation inputs before code changes begin.
 
-- [ ] T001 Create file-by-file ownership matrix in `docs/features/hardcoded-text-audit/STRING_CLASSIFICATION.md`
-- [ ] T002 Create remediation policy and naming rules for `app/features/i18n/locales/*`, feature adapters, `defaultContent.ts`, and `messages.ts` in `docs/features/hardcoded-text-audit/MIGRATION_PLAN.md`
-- [ ] T003 [P] Create manual verification checklist for UI, authoring, and backend message flows in `docs/features/hardcoded-text-audit/MANUAL_QA.md`
+- [x] T001 Create file-by-file ownership matrix in `docs/features/hardcoded-text-audit/STRING_CLASSIFICATION.md`
+- [x] T002 Create remediation policy and naming rules for `app/features/i18n/locales/*`, feature adapters, `defaultContent.ts`, and `messages.ts` in `docs/features/hardcoded-text-audit/MIGRATION_PLAN.md`
+- [x] T003 [P] Create manual verification checklist for UI, authoring, and backend message flows in `docs/features/hardcoded-text-audit/MANUAL_QA.md`
 
 ---
 
@@ -31,11 +31,11 @@
 
 **CRITICAL**: No user story work should begin until this phase is complete.
 
-- [ ] T004 Create centralized i18n runtime surface in `app/features/i18n/index.ts` and `app/features/i18n/types.ts`
-- [ ] T005 [P] Create locale dictionaries in `app/features/i18n/locales/ko.ts` and `app/features/i18n/locales/en.ts`
-- [ ] T006 [P] Create UI adapter modules that read from centralized i18n in `app/components/ui/copy.ts`, `app/features/workspace/copy.ts`, and `app/features/canvas-ui-entrypoints/copy.ts`
-- [ ] T007 [P] Create shared default-content source module in `app/features/editing/defaultContent.ts`
-- [ ] T008 [P] Create API and backend message helper modules in `app/app/api/_shared/messages.ts` and `libs/cli/src/messages.ts`
+- [x] T004 Create centralized i18n runtime surface in `app/features/i18n/index.ts` and `app/features/i18n/types.ts`
+- [x] T005 [P] Create locale dictionaries in `app/features/i18n/locales/ko.ts` and `app/features/i18n/locales/en.ts`
+- [x] T006 [P] Create UI adapter modules that read from centralized i18n in `app/components/ui/copy.ts`, `app/features/workspace/copy.ts`, and `app/features/canvas-ui-entrypoints/copy.ts`
+- [x] T007 [P] Create shared default-content source module in `app/features/editing/defaultContent.ts`
+- [x] T008 [P] Create API and backend message helper modules in `app/app/api/_shared/messages.ts` and `libs/cli/src/messages.ts`
 
 **Checkpoint**: Centralized locale dictionaries and adapter boundaries exist; phased migration can now proceed without reopening ownership decisions.
 
@@ -49,10 +49,10 @@
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Add app-shell, dialog, and search namespaces to `app/features/i18n/locales/ko.ts` and `app/features/i18n/locales/en.ts`
-- [ ] T010 [P] [US1] Move app-shell copy from `app/components/ui/Header.tsx`, `app/components/ui/QuickOpenDialog.tsx`, `app/components/ui/SearchOverlay.tsx`, and `app/components/ExportDialog.tsx` to read through `app/components/ui/copy.ts` backed by `app/features/i18n/index.ts`
-- [ ] T011 [P] [US1] Move selector/toggle/inspector copy from `app/components/BackgroundSelector.tsx`, `app/components/FontSelector.tsx`, `app/components/ui/ThemeModeToggle.tsx`, and `app/components/ui/StickerInspector.tsx` to read through `app/components/ui/copy.ts` backed by `app/features/i18n/index.ts`
-- [ ] T012 [US1] Add workspace/dashboard namespaces to `app/features/i18n/locales/ko.ts` and `app/features/i18n/locales/en.ts`, then migrate `app/features/workspace/components/DashboardHeader.tsx`, `app/features/workspace/components/DashboardSidebar.tsx`, `app/features/workspace/components/WorkspaceCard.tsx`, `app/features/workspace/components/WorkspaceListItem.tsx`, `app/features/workspace/components/CanvasCard.tsx`, `app/features/workspace/components/CanvasListItem.tsx`, `app/features/workspace/pages/WorkspaceDashboardPage.tsx`, and `app/features/workspace/pages/WorkspaceDetailPage.tsx` through `app/features/workspace/copy.ts`
+- [x] T009 [US1] Add app-shell, dialog, and search namespaces to `app/features/i18n/locales/ko.ts` and `app/features/i18n/locales/en.ts`
+- [x] T010 [P] [US1] Move app-shell copy from `app/components/ui/Header.tsx`, `app/components/ui/QuickOpenDialog.tsx`, `app/components/ui/SearchOverlay.tsx`, and `app/components/ExportDialog.tsx` to read through `app/components/ui/copy.ts` backed by `app/features/i18n/index.ts`
+- [x] T011 [P] [US1] Move selector/toggle/inspector copy from `app/components/BackgroundSelector.tsx`, `app/components/FontSelector.tsx`, `app/components/ui/ThemeModeToggle.tsx`, and `app/components/ui/StickerInspector.tsx` to read through `app/components/ui/copy.ts` backed by `app/features/i18n/index.ts`
+- [x] T012 [US1] Add workspace/dashboard namespaces to `app/features/i18n/locales/ko.ts` and `app/features/i18n/locales/en.ts`, then migrate `app/features/workspace/components/DashboardHeader.tsx`, `app/features/workspace/components/DashboardSidebar.tsx`, `app/features/workspace/components/WorkspaceCard.tsx`, `app/features/workspace/components/WorkspaceListItem.tsx`, `app/features/workspace/components/CanvasCard.tsx`, `app/features/workspace/components/CanvasListItem.tsx`, `app/features/workspace/pages/WorkspaceDashboardPage.tsx`, and `app/features/workspace/pages/WorkspaceDetailPage.tsx` through `app/features/workspace/copy.ts`
 
 **Checkpoint**: User-facing app and workspace surfaces are centrally localized without changing behavior.
 
@@ -66,12 +66,12 @@
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] Add canvas authoring namespaces to `app/features/i18n/locales/ko.ts` and `app/features/i18n/locales/en.ts`
-- [ ] T014 [P] [US2] Move toolbar action and section labels from `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarActions.ts` and `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarSections.ts` to read through `app/features/canvas-ui-entrypoints/copy.ts` backed by `app/features/i18n/index.ts`
-- [ ] T015 [P] [US2] Move node and pane context-menu labels from `app/features/canvas-ui-entrypoints/node-context-menu/nodeMenuItems.ts` and `app/features/canvas-ui-entrypoints/pane-context-menu/paneMenuItems.ts` to read through `app/features/canvas-ui-entrypoints/copy.ts` backed by `app/features/i18n/index.ts`
-- [ ] T016 [P] [US2] Move selection-menu labels from `app/features/canvas-ui-entrypoints/selection-floating-menu/controlInventory.ts`, `app/features/canvas-ui-entrypoints/selection-floating-menu/SelectionFloatingMenu.tsx`, and `app/processes/canvas-runtime/bindings/toolbarPresenter.ts` to read through `app/features/canvas-ui-entrypoints/copy.ts` backed by `app/features/i18n/index.ts`
-- [ ] T017 [US2] Move node default labels and initial content from `app/features/editing/createDefaults.ts` into `app/features/editing/defaultContent.ts` and align user-visible defaults with keys or localized values sourced from `app/features/i18n/locales/ko.ts` and `app/features/i18n/locales/en.ts`
-- [ ] T018 [P] [US2] Move plugin example sample titles and labels from `app/features/plugin-runtime/examples/index.ts` and `app/features/plugin-runtime/examples/chart/index.tsx` to localized/default-content exports while keeping runtime behavior unchanged
+- [x] T013 [US2] Add canvas authoring namespaces to `app/features/i18n/locales/ko.ts` and `app/features/i18n/locales/en.ts`
+- [x] T014 [P] [US2] Move toolbar action and section labels from `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarActions.ts` and `app/features/canvas-ui-entrypoints/canvas-toolbar/toolbarSections.ts` to read through `app/features/canvas-ui-entrypoints/copy.ts` backed by `app/features/i18n/index.ts`
+- [x] T015 [P] [US2] Move node and pane context-menu labels from `app/features/canvas-ui-entrypoints/node-context-menu/nodeMenuItems.ts` and `app/features/canvas-ui-entrypoints/pane-context-menu/paneMenuItems.ts` to read through `app/features/canvas-ui-entrypoints/copy.ts` backed by `app/features/i18n/index.ts`
+- [x] T016 [P] [US2] Move selection-menu labels from `app/features/canvas-ui-entrypoints/selection-floating-menu/controlInventory.ts`, `app/features/canvas-ui-entrypoints/selection-floating-menu/SelectionFloatingMenu.tsx`, and `app/processes/canvas-runtime/bindings/toolbarPresenter.ts` to read through `app/features/canvas-ui-entrypoints/copy.ts` backed by `app/features/i18n/index.ts`
+- [x] T017 [US2] Move node default labels and initial content from `app/features/editing/createDefaults.ts` into `app/features/editing/defaultContent.ts` and align user-visible defaults with keys or localized values sourced from `app/features/i18n/locales/ko.ts` and `app/features/i18n/locales/en.ts`
+- [x] T018 [P] [US2] Move plugin example sample titles and labels from `app/features/plugin-runtime/examples/index.ts` and `app/features/plugin-runtime/examples/chart/index.tsx` to localized/default-content exports while keeping runtime behavior unchanged
 
 **Checkpoint**: Canvas authoring and default-content surfaces stop treating inline strings as canonical data.
 
@@ -98,7 +98,7 @@
 
 **Purpose**: Close the loop on documentation, progress tracking, and residual backlog after the migrations land.
 
-- [ ] T023 [P] Update remediation status, centralized i18n module references, and remaining hotspots in `docs/features/hardcoded-text-audit/README.md`, `docs/features/hardcoded-text-audit/STRING_CLASSIFICATION.md`, and `docs/features/hardcoded-text-audit/MIGRATION_PLAN.md`
+- [x] T023 [P] Update remediation status, centralized i18n module references, and remaining hotspots in `docs/features/hardcoded-text-audit/README.md`, `docs/features/hardcoded-text-audit/STRING_CLASSIFICATION.md`, and `docs/features/hardcoded-text-audit/MIGRATION_PLAN.md`
 - [ ] T024 [P] Execute the manual verification checklist and record residual blockers or deferred follow-ups in `docs/features/hardcoded-text-audit/MANUAL_QA.md`
 
 ---

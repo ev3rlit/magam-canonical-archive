@@ -10,6 +10,9 @@ import {
   Type,
 } from 'lucide-react';
 import type { ContextMenuContext, ContextMenuItem } from '@/types/contextMenu';
+import { getCanvasUiCopy } from '@/features/canvas-ui-entrypoints/copy';
+
+const copy = getCanvasUiCopy().paneMenu;
 
 function canCreateFromPane(ctx: ContextMenuContext): boolean {
   return ctx.type === 'pane'
@@ -31,7 +34,7 @@ export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'create-rectangle',
-    label: '사각형 생성',
+    label: copy.createRectangle,
     icon: Square,
     when: canCreateFromPane,
     handler: (ctx) => ctx.actions?.createCanvasNode?.('rectangle', ctx.position),
@@ -40,7 +43,7 @@ export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'create-ellipse',
-    label: '타원 생성',
+    label: copy.createEllipse,
     icon: Circle,
     when: canCreateFromPane,
     handler: (ctx) => ctx.actions?.createCanvasNode?.('ellipse', ctx.position),
@@ -49,7 +52,7 @@ export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'create-diamond',
-    label: '다이아몬드 생성',
+    label: copy.createDiamond,
     icon: Diamond,
     when: canCreateFromPane,
     handler: (ctx) => ctx.actions?.createCanvasNode?.('diamond', ctx.position),
@@ -58,7 +61,7 @@ export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'create-text',
-    label: '텍스트 생성',
+    label: copy.createText,
     icon: Type,
     when: canCreateFromPane,
     handler: (ctx) => ctx.actions?.createCanvasNode?.('text', ctx.position),
@@ -67,7 +70,7 @@ export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'create-markdown',
-    label: '마크다운 생성',
+    label: copy.createMarkdown,
     icon: FileText,
     when: canCreateFromPane,
     handler: (ctx) => ctx.actions?.createCanvasNode?.('markdown', ctx.position),
@@ -76,7 +79,7 @@ export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'create-line',
-    label: '선 생성',
+    label: copy.createLine,
     icon: Minus,
     when: canCreateFromPane,
     handler: (ctx) => ctx.actions?.createCanvasNode?.('line', ctx.position),
@@ -85,7 +88,7 @@ export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'create-sticky',
-    label: '스티키 생성',
+    label: copy.createSticky,
     icon: StickyNote,
     when: canCreateFromPane,
     handler: (ctx) => ctx.actions?.createCanvasNode?.('sticky', ctx.position),
@@ -95,7 +98,7 @@ export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'export-all',
-    label: '전체 내보내기',
+    label: copy.exportAll,
     icon: Download,
     when: canExportFromPane,
     handler: (ctx) => ctx.actions?.openExportDialog?.('full'),
@@ -104,7 +107,7 @@ export const paneMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'fit-view',
-    label: '화면에 맞추기',
+    label: copy.fitView,
     icon: Maximize,
     shortcut: 'Space',
     when: canFitViewFromPane,

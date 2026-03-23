@@ -12,6 +12,7 @@ import { cn } from '@/utils/cn';
 import { FontSelector } from './FontSelector';
 import type { CanvasEntrypointCreateMode } from '@/features/canvas-ui-entrypoints/contracts';
 import { useGraphStore } from '@/store/graph';
+import { getCanvasUiCopy } from '@/features/canvas-ui-entrypoints/copy';
 import type { EntrypointInteractionMode } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 import { canvasRuntime } from '@/processes/canvas-runtime/createCanvasRuntime';
 import {
@@ -66,6 +67,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   positioning = 'canvas',
   className,
 }) => {
+  const copy = getCanvasUiCopy();
   const entrypointRuntime = useGraphStore((store) => store.entrypointRuntime);
   const setEntrypointInteractionMode = useGraphStore((store) => store.setEntrypointInteractionMode);
   const setEntrypointCreateMode = useGraphStore((store) => store.setEntrypointCreateMode);
@@ -187,7 +189,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
           setEntrypointInteractionMode,
           onInteractionModeChange,
         })}
-        title="Selection Mode (V)"
+        title={copy.floatingToolbar.selectionModeTitle}
       >
         <MousePointer2 className="w-4 h-4" />
       </PrimitiveToolbarButton>
@@ -198,7 +200,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
           setEntrypointInteractionMode,
           onInteractionModeChange,
         })}
-        title="Pan Mode (H)"
+        title={copy.floatingToolbar.panModeTitle}
       >
         <Hand className="w-4 h-4" />
       </PrimitiveToolbarButton>
@@ -216,7 +218,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
             createMenuElement: createMenuRef.current,
             api: toolbarSurfaceApi,
           })}
-          title={activeCreateLabel ? `Create Mode: ${activeCreateLabel}` : 'Open Create Modes'}
+          title={activeCreateLabel ? copy.floatingToolbar.createModeTitle(activeCreateLabel) : copy.floatingToolbar.openCreateModesTitle}
         >
           <Plus className="w-4 h-4" />
         </PrimitiveToolbarButton>
@@ -224,7 +226,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
         {isCreateMenuOpen && (
           <Menu className="absolute left-1/2 top-12 w-56 -translate-x-1/2 overflow-hidden">
             <MenuLabel>
-              Create on pane click
+              {copy.floatingToolbar.createOnPaneClick}
             </MenuLabel>
             <div className="space-y-1 pb-1">
               {TOOLBAR_CREATE_OPTIONS.map((option) => (
@@ -260,7 +262,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                 });
               }}
             >
-              Create mode off
+              {copy.floatingToolbar.createModeOff}
             </MenuItem>
           </Menu>
         )}
@@ -284,8 +286,8 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
               })}
               title={
                 canOpenWashiPreset
-                  ? 'Washi Preset Catalog'
-                  : 'Select a Washi Tape node to open preset catalog'
+                  ? copy.floatingToolbar.washiPresetCatalogTitle
+                  : copy.floatingToolbar.washiPresetCatalogDisabledTitle
               }
               className={!canOpenWashiPreset ? 'opacity-40 cursor-not-allowed' : undefined}
             >
@@ -295,7 +297,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
             {isWashiPresetMenuOpen && (
               <Menu className="absolute left-1/2 top-12 w-60 -translate-x-1/2 overflow-hidden">
                 <MenuLabel>
-                  PresetPattern Catalog
+                  {copy.floatingToolbar.washiPresetMenuLabel}
                 </MenuLabel>
                 <div className="max-h-56 space-y-1 overflow-y-auto pb-1">
                   {washiPresets.map((preset) => (
@@ -324,7 +326,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                 </div>
                 {activeWashiPresetLabel && (
                   <div className="px-3 py-2 text-xs text-foreground/52 truncate">
-                    Active: {activeWashiPresetLabel}
+                    {copy.floatingToolbar.activePresetLabel(activeWashiPresetLabel)}
                   </div>
                 )}
               </Menu>

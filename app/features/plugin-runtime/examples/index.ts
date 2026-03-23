@@ -9,6 +9,9 @@ import type {
   PluginVersionRegistration,
 } from '../types';
 import type { PluginRuntimeRegistry } from '../registry';
+import { getDefaultChartExampleContent } from '@/features/editing/defaultContent';
+
+const defaultChartContent = getDefaultChartExampleContent();
 
 export interface ExamplePluginCatalogEntry {
   manifest: ExamplePluginManifest;
@@ -65,7 +68,7 @@ function buildChartHtml(instance: PluginInstanceConfig): string {
 
   const bars = series.map((row, index) => {
     const item = readRecord(row);
-    const label = typeof item.label === 'string' ? item.label : `Item ${index + 1}`;
+    const label = typeof item.label === 'string' ? item.label : defaultChartContent.fallbackSeriesLabel(index);
     const value = typeof item.value === 'number' ? item.value : 0;
     const height = Math.max(8, Math.round((value / maxValue) * 100));
     const color = palette[index % palette.length];

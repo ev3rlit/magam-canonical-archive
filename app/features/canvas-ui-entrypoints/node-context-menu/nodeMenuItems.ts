@@ -8,8 +8,11 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { ContextMenuContext, ContextMenuItem } from '@/types/contextMenu';
+import { getCanvasUiCopy } from '@/features/canvas-ui-entrypoints/copy';
 import { buildNodeContextMenuModel } from './buildNodeContextMenuModel';
 import type { NodeContextMenuActionId, NodeContextMenuActionState, NodeContextSnapshot } from './types';
+
+const copy = getCanvasUiCopy().nodeMenu;
 
 function getNodeContextSnapshot(ctx: ContextMenuContext): NodeContextSnapshot | null {
   if (ctx.type !== 'node' || typeof ctx.nodeId !== 'string') {
@@ -49,7 +52,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'copy-as-png',
-    label: 'PNG로 복사',
+    label: copy.copyAsPng,
     icon: Copy,
     shortcut: '⌘⇧C',
     when: (ctx) => isVisible('copy-as-png', ctx),
@@ -67,7 +70,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'export-selection',
-    label: '선택 항목 내보내기',
+    label: copy.exportSelection,
     icon: Download,
     when: (ctx) => isVisible('export-selection', ctx),
     disabled: (ctx) => isDisabled('export-selection', ctx),
@@ -84,7 +87,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'rename-node',
-    label: 'ID 변경',
+    label: copy.renameNode,
     icon: Pencil,
     when: (ctx) => isVisible('rename-node', ctx),
     disabled: (ctx) => isDisabled('rename-node', ctx),
@@ -101,7 +104,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'mindmap-add-child',
-    label: '자식 추가',
+    label: copy.addMindmapChild,
     icon: Plus,
     when: (ctx) => isVisible('mindmap-add-child', ctx),
     disabled: (ctx) => isDisabled('mindmap-add-child', ctx),
@@ -118,7 +121,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'mindmap-add-sibling',
-    label: '형제 추가',
+    label: copy.addMindmapSibling,
     icon: Plus,
     when: (ctx) => isVisible('mindmap-add-sibling', ctx),
     disabled: (ctx) => isDisabled('mindmap-add-sibling', ctx),
@@ -135,7 +138,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'select-group',
-    label: '그룹 선택',
+    label: copy.selectGroup,
     icon: MousePointerSquareDashed,
     when: (ctx) => isVisible('select-group', ctx),
     disabled: (ctx) => isDisabled('select-group', ctx),
@@ -152,7 +155,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'enter-group',
-    label: '그룹 안으로 들어가기',
+    label: copy.enterGroup,
     icon: MousePointerSquareDashed,
     when: (ctx) => isVisible('enter-group', ctx),
     disabled: (ctx) => isDisabled('enter-group', ctx),
@@ -169,7 +172,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'group-selection',
-    label: '그룹 만들기',
+    label: copy.groupSelection,
     icon: Plus,
     when: (ctx) => isVisible('group-selection', ctx),
     disabled: (ctx) => isDisabled('group-selection', ctx),
@@ -186,7 +189,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'ungroup-selection',
-    label: '그룹 해제',
+    label: copy.ungroupSelection,
     icon: MousePointerSquareDashed,
     when: (ctx) => isVisible('ungroup-selection', ctx),
     disabled: (ctx) => isDisabled('ungroup-selection', ctx),
@@ -203,7 +206,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'bring-to-front',
-    label: '맨 앞으로',
+    label: copy.bringToFront,
     icon: Copy,
     when: (ctx) => isVisible('bring-to-front', ctx),
     disabled: (ctx) => isDisabled('bring-to-front', ctx),
@@ -220,7 +223,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'send-to-back',
-    label: '맨 뒤로',
+    label: copy.sendToBack,
     icon: Download,
     when: (ctx) => isVisible('send-to-back', ctx),
     disabled: (ctx) => isDisabled('send-to-back', ctx),
@@ -237,7 +240,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'duplicate-node',
-    label: '복제',
+    label: copy.duplicateNode,
     icon: Copy,
     when: (ctx) => isVisible('duplicate-node', ctx),
     disabled: (ctx) => isDisabled('duplicate-node', ctx),
@@ -254,7 +257,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'delete-node',
-    label: '삭제',
+    label: copy.deleteNode,
     icon: Trash2,
     when: (ctx) => isVisible('delete-node', ctx),
     disabled: (ctx) => isDisabled('delete-node', ctx),
@@ -271,7 +274,7 @@ export const nodeMenuItems: ContextMenuItem[] = [
   {
     type: 'action',
     id: 'lock-node',
-    label: '잠금 토글',
+    label: copy.toggleLock,
     icon: Lock,
     when: (ctx) => isVisible('lock-node', ctx),
     disabled: (ctx) => isDisabled('lock-node', ctx),

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { APP_DEFAULT_LOCALE } from '@/features/i18n';
 import { ThemeProvider } from '@/features/theme/provider';
 import { fontPresetCSS } from '@/features/theme/document';
 import { getThemeBootstrapScript } from '@/features/theme/runtime';
@@ -15,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning data-theme="light">
+    <html lang={APP_DEFAULT_LOCALE} suppressHydrationWarning data-theme="light">
       <head>
         <style dangerouslySetInnerHTML={{ __html: fontPresetCSS }} />
         <script dangerouslySetInnerHTML={{ __html: getThemeBootstrapScript() }} />

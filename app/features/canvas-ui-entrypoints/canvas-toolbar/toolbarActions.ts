@@ -10,15 +10,18 @@ import type {
   CanvasToolbarViewportActionDefinition,
   CanvasToolbarInteractionActionDefinition,
 } from './types';
+import { getCanvasUiCopy } from '@/features/canvas-ui-entrypoints/copy';
+
+const copy = getCanvasUiCopy().toolbar;
 
 const PENDING_ENTRYPOINT_ACTION_DISABLED_REASON: CanvasToolbarDisabledReason = {
   code: 'pending-entrypoint-action',
-  message: 'Create tools stay locked while another entrypoint action is pending.',
+  message: copy.disabledReasons.pendingEntrypointAction,
 };
 
 const MISSING_ACTION_BINDING_DISABLED_REASON: CanvasToolbarDisabledReason = {
   code: 'missing-action-binding',
-  message: 'Toolbar action is not bound to a runtime callback.',
+  message: copy.disabledReasons.missingActionBinding,
 };
 
 export const canvasToolbarInteractionActions = [
@@ -26,14 +29,14 @@ export const canvasToolbarInteractionActions = [
     actionId: 'interaction.pointer',
     sectionId: 'interaction',
     kind: 'interaction-mode',
-    label: 'Select',
+    label: copy.interaction.select,
     value: 'pointer',
   },
   {
     actionId: 'interaction.hand',
     sectionId: 'interaction',
     kind: 'interaction-mode',
-    label: 'Pan',
+    label: copy.interaction.pan,
     value: 'hand',
   },
 ] as const satisfies readonly CanvasToolbarInteractionActionDefinition[];
@@ -43,49 +46,49 @@ export const canvasToolbarCreateActions = [
     actionId: 'create.rectangle',
     sectionId: 'create',
     kind: 'create-node',
-    label: 'Rectangle',
+    label: copy.create.rectangle,
     value: 'rectangle',
   },
   {
     actionId: 'create.ellipse',
     sectionId: 'create',
     kind: 'create-node',
-    label: 'Ellipse',
+    label: copy.create.ellipse,
     value: 'ellipse',
   },
   {
     actionId: 'create.diamond',
     sectionId: 'create',
     kind: 'create-node',
-    label: 'Diamond',
+    label: copy.create.diamond,
     value: 'diamond',
   },
   {
     actionId: 'create.text',
     sectionId: 'create',
     kind: 'create-node',
-    label: 'Text',
+    label: copy.create.text,
     value: 'text',
   },
   {
     actionId: 'create.markdown',
     sectionId: 'create',
     kind: 'create-node',
-    label: 'Markdown',
+    label: copy.create.markdown,
     value: 'markdown',
   },
   {
     actionId: 'create.line',
     sectionId: 'create',
     kind: 'create-node',
-    label: 'Line',
+    label: copy.create.line,
     value: 'line',
   },
   {
     actionId: 'create.sticky',
     sectionId: 'create',
     kind: 'create-node',
-    label: 'Sticky',
+    label: copy.create.sticky,
     value: 'sticky',
   },
 ] as const satisfies readonly CanvasToolbarCreateActionDefinition[];
@@ -95,21 +98,21 @@ export const canvasToolbarViewportActions = [
     actionId: 'viewport.zoom-in',
     sectionId: 'viewport',
     kind: 'viewport',
-    label: 'Zoom in',
+    label: copy.viewport.zoomIn,
     value: 'zoom-in',
   },
   {
     actionId: 'viewport.zoom-out',
     sectionId: 'viewport',
     kind: 'viewport',
-    label: 'Zoom out',
+    label: copy.viewport.zoomOut,
     value: 'zoom-out',
   },
   {
     actionId: 'viewport.fit-view',
     sectionId: 'viewport',
     kind: 'viewport',
-    label: 'Fit view',
+    label: copy.viewport.fitView,
     value: 'fit-view',
   },
 ] as const satisfies readonly CanvasToolbarViewportActionDefinition[];

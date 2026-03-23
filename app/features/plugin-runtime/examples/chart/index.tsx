@@ -1,5 +1,6 @@
 import { chartExampleManifest } from './manifest';
 import type { ExamplePluginModule } from '../types';
+import { getDefaultChartExampleContent } from '@/features/editing/defaultContent';
 
 export interface ChartSeriesItem {
   label: string;
@@ -12,13 +13,15 @@ export interface ChartWidgetProps {
   palette?: string[];
 }
 
+const defaultChartContent = getDefaultChartExampleContent();
+
 export const chartExampleDefaults: ChartWidgetProps = {
-  title: 'Quarterly Revenue',
+  title: defaultChartContent.title,
   series: [
-    { label: 'Q1', value: 12 },
-    { label: 'Q2', value: 18 },
-    { label: 'Q3', value: 9 },
-    { label: 'Q4', value: 22 },
+    { label: defaultChartContent.seriesLabels[0] ?? defaultChartContent.fallbackSeriesLabel(0), value: 12 },
+    { label: defaultChartContent.seriesLabels[1] ?? defaultChartContent.fallbackSeriesLabel(1), value: 18 },
+    { label: defaultChartContent.seriesLabels[2] ?? defaultChartContent.fallbackSeriesLabel(2), value: 9 },
+    { label: defaultChartContent.seriesLabels[3] ?? defaultChartContent.fallbackSeriesLabel(3), value: 22 },
   ],
   palette: ['#0f766e', '#0ea5e9', '#f97316', '#84cc16'],
 };

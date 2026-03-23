@@ -2,6 +2,7 @@ import React from 'react';
 import { cn } from '@/utils/cn';
 import { Search, Plus, LayoutGrid, LayoutList } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { getWorkspaceCopy } from '../copy';
 
 interface DashboardHeaderProps {
   title: string;
@@ -24,6 +25,7 @@ export function DashboardHeader({
   searchTerm,
   onSearchChange,
 }: DashboardHeaderProps) {
+  const copy = getWorkspaceCopy();
   return (
     <div className="flex flex-col gap-6 md:flex-row md:items-center justify-between pb-6">
       <div>
@@ -38,7 +40,7 @@ export function DashboardHeader({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant" size={16} />
           <input
             type="text"
-            placeholder="Search..."
+            placeholder={copy.shared.searchPlaceholder}
             value={searchTerm ?? ''}
             onChange={e => onSearchChange?.(e.target.value)}
             className="w-full bg-surface-container-lowest text-on-surface placeholder:text-on-surface-variant text-sm font-inter rounded-xl pl-10 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all shadow-[inset_0_2px_4px_rgba(44,47,48,0.02)]"

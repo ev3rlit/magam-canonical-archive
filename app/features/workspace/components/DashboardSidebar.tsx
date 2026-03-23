@@ -1,6 +1,7 @@
 import React from 'react';
 import { cn } from '@/utils/cn';
 import { Home, Component, LayoutTemplate, Settings } from 'lucide-react';
+import { getWorkspaceCopy } from '../copy';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -30,20 +31,21 @@ function SidebarItem({ icon, label, isActive, onClick }: SidebarItemProps) {
 }
 
 export function DashboardSidebar() {
+  const copy = getWorkspaceCopy().sidebar;
   return (
     <aside className="flex flex-col h-full w-64 bg-surface-container-low text-on-surface p-4 flex-shrink-0">
       <div className="flex items-center px-4 py-4 mb-6">
-        <h1 className="font-manrope font-bold text-headline-sm text-on-surface tracking-tight">Ethereal Studio</h1>
+        <h1 className="font-manrope font-bold text-headline-sm text-on-surface tracking-tight">{copy.brand}</h1>
       </div>
 
       <nav className="flex-1 space-y-1">
-        <SidebarItem icon={<Home />} label="Workspaces" isActive />
-        <SidebarItem icon={<LayoutTemplate />} label="Templates" />
-        <SidebarItem icon={<Component />} label="Components" />
+        <SidebarItem icon={<Home />} label={copy.workspaces} isActive />
+        <SidebarItem icon={<LayoutTemplate />} label={copy.templates} />
+        <SidebarItem icon={<Component />} label={copy.components} />
       </nav>
 
       <div className="mt-auto">
-        <SidebarItem icon={<Settings />} label="Settings" />
+        <SidebarItem icon={<Settings />} label={copy.settings} />
       </div>
     </aside>
   );

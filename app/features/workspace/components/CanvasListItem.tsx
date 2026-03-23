@@ -1,6 +1,7 @@
 import React from 'react';
 import type { SidebarCanvasEntry } from '@/components/ui/Sidebar';
 import { ChevronRight, FileCode2 } from 'lucide-react';
+import { getWorkspaceCopy } from '../copy';
 
 interface CanvasListItemProps {
   canvas: SidebarCanvasEntry;
@@ -8,6 +9,7 @@ interface CanvasListItemProps {
 }
 
 export function CanvasListItem({ canvas, onClick }: CanvasListItemProps) {
+  const copy = getWorkspaceCopy().shared;
   return (
     <div
       onClick={onClick}
@@ -19,13 +21,13 @@ export function CanvasListItem({ canvas, onClick }: CanvasListItemProps) {
       
       <div className="flex-1 min-w-0 flex items-center gap-4">
         <h3 className="font-manrope font-semibold text-sm text-on-surface group-hover:text-primary transition-colors truncate">
-          {canvas.title || 'Untitled Canvas'}
+          {canvas.title || copy.untitledCanvas}
         </h3>
       </div>
 
       <div className="flex items-center gap-4">
         <span className="text-[10px] font-medium text-on-surface-variant bg-surface-container-highest px-2 py-1 rounded-md hidden md:block">
-          Last edited recently
+          {copy.lastEditedRecently}
         </span>
         <ChevronRight size={16} className="text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity -translate-x-2 group-hover:translate-x-0" />
       </div>

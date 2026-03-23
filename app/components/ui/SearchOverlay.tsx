@@ -6,9 +6,11 @@ import { clsx } from 'clsx';
 import { SearchResult, buildSearchResults } from '@/utils/search';
 import { useGraphStore } from '@/store/graph';
 import { useNodeNavigation } from '@/contexts/NavigationContext';
+import { getUiCopy } from '@/components/ui/copy';
 import { getInputClassName } from './Input';
 
 export const SearchOverlay: React.FC = () => {
+  const copy = getUiCopy().searchOverlay;
   const {
     isSearchOpen,
     searchMode,
@@ -123,14 +125,14 @@ export const SearchOverlay: React.FC = () => {
     if (searchResults.length === 0) {
       if (!searchQuery.trim()) {
         return searchMode === 'global'
-          ? '현재 파일 및 노드를 검색하려면 입력하세요.'
-          : '현재 페이지의 노드를 검색하려면 입력하세요.';
+          ? copy.emptyHint.global
+          : copy.emptyHint.page;
       }
-      return '검색 결과 없음';
+      return copy.noResults;
     }
 
-    return `${searchResults.length}건 찾음`;
-  }, [searchResults.length, searchMode, searchQuery]);
+    return copy.resultCount(searchResults.length);
+  }, [copy, searchResults.length, searchMode, searchQuery]);
 
   const handleResultSubmit = (result: SearchResult) => {
     console.debug('[Search] search_executed', {
@@ -238,7 +240,7 @@ export const SearchOverlay: React.FC = () => {
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}
         aria-modal="true"
-        aria-label="Search"
+        aria-label={copy.dialogLabel}
       >
         <div className="space-y-2 p-3 shadow-[inset_0_-1px_0_rgb(var(--color-border)/0.08)]">
           <div className="flex items-center gap-2">
@@ -252,13 +254,13 @@ export const SearchOverlay: React.FC = () => {
               }}
               onCompositionStart={() => setIsComposing(true)}
               onCompositionEnd={() => setIsComposing(false)}
-              placeholder="Node 또는 파일 검색..."
-              aria-label="검색어 입력"
+              placeholder={copy.placeholder}
+              aria-label={copy.inputLabel}
               className={getInputClassName({ className: 'w-full' })}
             />
             <button
               type="button"
-              aria-label="검색 닫기"
+              aria-label={copy.closeLabel}
               onClick={() => closeSearch({ clearQuery: true, clearHighlights: true })}
               className="rounded-md p-1 text-foreground/48 transition-colors duration-fast hover:bg-card hover:text-foreground"
             >
@@ -277,7 +279,7 @@ export const SearchOverlay: React.FC = () => {
                   : 'text-foreground/56 hover:text-foreground',
               )}
             >
-              Global
+              {copy.modeLabels.global}
             </button>
             <button
               type="button"
@@ -289,14 +291,14 @@ export const SearchOverlay: React.FC = () => {
                   : 'text-foreground/56 hover:text-foreground',
               )}
             >
-              Page
+              {copy.modeLabels.page}
             </button>
           </div>
         </div>
 
         <div
           role="listbox"
-          aria-label="검색 결과 목록"
+          aria-label={copy.dialogLabel}
           aria-activedescendant={activeResultId}
           className="max-h-96 overflow-y-auto"
         >
@@ -328,7 +330,9 @@ export const SearchOverlay: React.FC = () => {
                       <FileText className="w-3.5 h-3.5 flex-shrink-0 text-success" />
                     )}
                     <span className="font-medium truncate">{result.title}</span>
-                    <span className="ml-auto text-xs text-foreground/48">{result.type}</span>
+                    <span className="ml-auto text-xs text-foreground/48">
+                      {copy.resultTypeLabels[result.type]}
+                    </span>
                   </div>
                   <div className="ml-5 truncate text-xs text-foreground/42">{result.subtitle}</div>
                 </button>
@@ -338,9 +342,9 @@ export const SearchOverlay: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3 px-3 py-2 text-xs text-foreground/48 shadow-[inset_0_1px_0_rgb(var(--color-border)/0.08)]">
-          <span>↑↓: 이동</span>
-          <span>Enter: 실행</span>
-          <span>Esc: 닫기</span>
+          <span>{copy.footer.move}</span>
+          <span>{copy.footer.execute}</span>
+          <span>{copy.footer.close}</span>
           <span className="ml-auto flex items-center gap-1">
             <Check className="w-3 h-3" />
             {resultHint}

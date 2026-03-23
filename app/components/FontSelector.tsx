@@ -6,20 +6,21 @@ import { cn } from '@/utils/cn';
 import { useGraphStore } from '@/store/graph';
 import type { FontFamilyPreset } from '@magam/core';
 import { toFontFamilyCssValue } from '@/utils/fontHierarchy';
+import { getUiCopy } from '@/components/ui/copy';
 import { Menu, MenuItem } from './ui/Menu';
 import { ToolbarButton } from './ui/Toolbar';
 
-const options: Array<{
-  value: FontFamilyPreset;
-  label: string;
-  short: string;
-}> = [
-  { value: 'hand-gaegu', label: 'Handwriting (Gaegu)', short: 'Gaegu' },
-  { value: 'hand-caveat', label: 'Handwriting (Caveat)', short: 'Caveat' },
-  { value: 'sans-inter', label: 'Sans (Inter)', short: 'Inter' },
-];
-
 export const FontSelector: React.FC = () => {
+  const copy = getUiCopy().fontSelector;
+  const options: Array<{
+    value: FontFamilyPreset;
+    label: string;
+    short: string;
+  }> = [
+    { value: 'hand-gaegu', label: copy.options.handGaegu, short: copy.short.handGaegu },
+    { value: 'hand-caveat', label: copy.options.handCaveat, short: copy.short.handCaveat },
+    { value: 'sans-inter', label: copy.options.sansInter, short: copy.short.sansInter },
+  ];
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
@@ -50,7 +51,7 @@ export const FontSelector: React.FC = () => {
     <div className="relative" ref={ref}>
       <ToolbarButton
         onClick={() => setIsOpen((prev) => !prev)}
-        title="Global Font Family"
+        title={copy.title}
         active={isOpen}
       >
         <Pencil className="w-4 h-4" />
@@ -83,7 +84,7 @@ export const FontSelector: React.FC = () => {
           })}
 
           <div className="px-1 pt-1 text-[10px] text-foreground/44">
-            Current: {options.find((option) => option.value === globalFontFamily)?.short ?? 'Gaegu'}
+            {copy.currentPrefix}: {options.find((option) => option.value === globalFontFamily)?.short ?? copy.short.handGaegu}
           </div>
         </Menu>
       )}

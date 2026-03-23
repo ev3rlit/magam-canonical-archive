@@ -4,6 +4,7 @@ import { X, Copy, Download } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { useExportImage, type ExportOptions } from '@/hooks/useExportImage';
 import { useGraphStore } from '@/store/graph';
+import { getUiCopy } from '@/components/ui/copy';
 import { Button } from './ui/Button';
 import { Select } from './ui/Select';
 
@@ -46,14 +47,15 @@ function SelectField<T extends string>({ label, value, options, onChange }: Sele
 }
 
 interface FormatSelectorProps {
+  label: string;
   value: ExportOptions['format'];
   onChange: (format: ExportOptions['format']) => void;
 }
 
-function FormatSelector({ value, onChange }: FormatSelectorProps) {
+function FormatSelector({ label, value, onChange }: FormatSelectorProps) {
   return (
     <div className="space-y-2">
-      <p className="text-sm text-foreground/62">파일 유형</p>
+      <p className="text-sm text-foreground/62">{label}</p>
       <div className="grid grid-cols-4 gap-2">
         {(['png', 'jpg', 'svg', 'pdf'] as const).map((format) => (
           <button
@@ -81,6 +83,7 @@ export function ExportDialog({
   defaultArea,
   selectedNodeIds: selectedNodeIdsFromContext = [],
 }: ExportDialogProps) {
+  const copy = getUiCopy().exportDialog;
   const [format, setFormat] = useState<ExportOptions['format']>('png');
   const [background, setBackground] = useState<ExportOptions['background']>('grid');
   const [area, setArea] = useState<ExportOptions['area']>(defaultArea);
@@ -117,7 +120,7 @@ export function ExportDialog({
       await downloadImage({ format, background, area }, undefined, exportNodeIds);
       onClose();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '내보내기 중 오류가 발생했습니다.');
+      setErrorMessage(error instanceof Error ? error.message : copy.exportFailed);
     }
   };
 
@@ -138,12 +141,18 @@ export function ExportDialog({
       }
       onClose();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '클립보드 복사 중 오류가 발생했습니다.');
+      setErrorMessage(error instanceof Error ? error.message : copy.copyFailed);
     }
   };
 
-  const previewText =
-    area === 'selection' ? '선택 항목' : '전체 캔버스';
+  const previewText = area === 'selection'
+    ? copy.scopeLabels.selection
+    : copy.scopeLabels.full;
+  const backgroundText = background === 'grid'
+    ? copy.backgroundOptions.grid
+    : background === 'transparent'
+      ? copy.backgroundOptions.transparent
+      : copy.backgroundOptions.solidWhite;
 
   return createPortal(
     <div className="fixed inset-0 z-[300] flex items-center justify-center">
@@ -157,7 +166,7 @@ export function ExportDialog({
         )}
       >
         <div className="flex items-center justify-between px-6 py-4 shadow-[inset_0_-1px_0_rgb(var(--color-border)/0.08)]">
-          <h2 className="text-lg font-semibold text-foreground">Export Image</h2>
+          <h2 className="text-lg font-semibold text-foreground">{copy.title}</h2>
           <Button onClick={onClose} className="rounded-md" size="icon" variant="ghost">
             <X className="w-5 h-5" />
           </Button>
@@ -165,29 +174,31 @@ export function ExportDialog({
 
         <div className="px-6 py-5 space-y-5">
           <div className="flex h-40 w-full items-center justify-center rounded-lg bg-muted text-center shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.10)]">
-            <span className="text-sm text-foreground/46">미리보기: {previewText} ({format.toUpperCase()}/{background})</span>
+            <span className="text-sm text-foreground/46">
+              {copy.previewLabel}: {previewText} ({format.toUpperCase()}/{backgroundText})
+            </span>
           </div>
 
-          <FormatSelector value={format} onChange={setFormat} />
+          <FormatSelector label={copy.formatLabel} value={format} onChange={setFormat} />
 
           <SelectField
-            label="배경"
+            label={copy.backgroundLabel}
             value={background}
             onChange={setBackground}
             options={[
-              { value: 'grid', label: '그리드' },
-              { value: 'transparent', label: '투명' },
-              { value: 'solid', label: '단색 (흰색)' },
+              { value: 'grid', label: copy.backgroundOptions.grid },
+              { value: 'transparent', label: copy.backgroundOptions.transparent },
+              { value: 'solid', label: copy.backgroundOptions.solidWhite },
             ]}
           />
 
           <SelectField
-            label="내보내기 영역"
+            label={copy.areaLabel}
             value={area}
             onChange={setArea}
             options={[
-              { value: 'selection', label: '선택 항목만' },
-              { value: 'full', label: '전체 영역' },
+              { value: 'selection', label: copy.areaOptions.selection },
+              { value: 'full', label: copy.areaOptions.full },
             ]}
           />
         </div>
@@ -202,12 +213,12 @@ export function ExportDialog({
           <Button
             onClick={handleCopy}
             disabled={isExporting || !canCopy}
-            title={canCopy ? 'PNG로 복사' : '클립보드 복사를 지원하지 않는 브라우저입니다.'}
+            title={canCopy ? copy.copyButtonTitle : copy.copyUnsupportedTitle}
             className="flex-1 justify-center rounded-lg"
             variant="secondary"
           >
             <Copy className="w-4 h-4" />
-            클립보드 복사
+            {copy.copyButton}
           </Button>
           <Button
             onClick={handleDownload}
@@ -216,7 +227,7 @@ export function ExportDialog({
             variant="primary"
           >
             <Download className="w-4 h-4" />
-            다운로드
+            {copy.downloadButton}
           </Button>
         </div>
       </div>

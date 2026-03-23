@@ -18,6 +18,9 @@ import {
   type OpenSurfaceDescriptor,
 } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 import type { ToolbarPresenterBindingContract } from '../types';
+import { getCanvasUiCopy } from '@/features/canvas-ui-entrypoints/copy';
+
+const copy = getCanvasUiCopy();
 
 export interface ToolbarPresenterWashiPresetOption {
   id: string;
@@ -52,13 +55,13 @@ export const TOOLBAR_CREATE_ANCHOR_ID = 'toolbar:create-anchor';
 export const TOOLBAR_PRESET_ANCHOR_ID = 'toolbar:preset-anchor';
 
 export const TOOLBAR_CREATE_OPTIONS: ToolbarCreateOption[] = [
-  { id: 'rectangle', label: 'Rectangle', icon: React.createElement(Square, { className: 'w-4 h-4' }) },
-  { id: 'ellipse', label: 'Ellipse', icon: React.createElement(Circle, { className: 'w-4 h-4' }) },
-  { id: 'diamond', label: 'Diamond', icon: React.createElement(Diamond, { className: 'w-4 h-4' }) },
-  { id: 'text', label: 'Text', icon: React.createElement(Type, { className: 'w-4 h-4' }) },
-  { id: 'markdown', label: 'Markdown', icon: React.createElement(FileText, { className: 'w-4 h-4' }) },
-  { id: 'line', label: 'Line', icon: React.createElement(Minus, { className: 'w-4 h-4' }) },
-  { id: 'sticky', label: 'Sticky', icon: React.createElement(StickyNote, { className: 'w-4 h-4' }) },
+  { id: 'rectangle', label: copy.toolbar.create.rectangle, icon: React.createElement(Square, { className: 'w-4 h-4' }) },
+  { id: 'ellipse', label: copy.toolbar.create.ellipse, icon: React.createElement(Circle, { className: 'w-4 h-4' }) },
+  { id: 'diamond', label: copy.toolbar.create.diamond, icon: React.createElement(Diamond, { className: 'w-4 h-4' }) },
+  { id: 'text', label: copy.toolbar.create.text, icon: React.createElement(Type, { className: 'w-4 h-4' }) },
+  { id: 'markdown', label: copy.toolbar.create.markdown, icon: React.createElement(FileText, { className: 'w-4 h-4' }) },
+  { id: 'line', label: copy.toolbar.create.line, icon: React.createElement(Minus, { className: 'w-4 h-4' }) },
+  { id: 'sticky', label: copy.toolbar.create.sticky, icon: React.createElement(StickyNote, { className: 'w-4 h-4' }) },
 ];
 
 export function resolveToolbarPresenterState(input: ToolbarPresenterStateInput) {

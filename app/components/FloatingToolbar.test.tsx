@@ -123,7 +123,7 @@ describe('FloatingToolbar runtime-state integration', () => {
 
     await renderToolbar(environment);
 
-    expect(environment.dom.window.document.body.textContent).toContain('Create on pane click');
+    expect(environment.dom.window.document.body.textContent).toContain('캔버스 클릭으로 생성');
   });
 
   it('disables shared-surface toggles while pending actions exist', async () => {

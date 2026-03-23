@@ -74,6 +74,13 @@ No task is done until the outcome is verified.
 - Update local guidance when shared expectations change, and keep guidance files consistent with this document.
 - Make exceptions explicit, narrow, and documented instead of relying on informal precedent.
 
+## i18n Guidance
+
+- App UI strings live in `app/features/i18n/locales/`.
+- Feature and component code should read locale data through thin adapters such as `app/components/ui/copy.ts`, `app/features/workspace/copy.ts`, and `app/features/canvas-ui-entrypoints/copy.ts`.
+- User-visible default content belongs in `app/features/editing/defaultContent.ts`, not inline in UI components.
+- CLI messages remain English-only unless a task explicitly requires locale-aware CLI output.
+
 ## Review Bar
 
 - Review for correctness, boundary clarity, dependency direction, hidden coupling, contract stability, and verification quality.
