@@ -110,8 +110,11 @@ describe('WorkspaceClient document materialization', () => {
       expect(init?.body).toBe(JSON.stringify({ rootPath: '/tmp/workspace' }));
 
       return new Response(JSON.stringify({
+        documentId: 'doc-1',
+        workspaceId: 'ws-1',
         filePath: 'docs/untitled-2.graph.tsx',
         sourceVersion: 'sha256:created-document',
+        latestRevision: 1,
       }), {
         status: 201,
         headers: { 'Content-Type': 'application/json' },
@@ -122,15 +125,21 @@ describe('WorkspaceClient document materialization', () => {
     await expect(
       createWorkspaceDocument({ rootPath: '/tmp/workspace' }),
     ).resolves.toEqual({
+      documentId: 'doc-1',
+      workspaceId: 'ws-1',
       filePath: 'docs/untitled-2.graph.tsx',
       sourceVersion: 'sha256:created-document',
+      latestRevision: 1,
     });
   });
 
   it('rejects create-document responses that still expose a draft placeholder version', async () => {
     const fetchMock = mock(async () => new Response(JSON.stringify({
+      documentId: 'doc-1',
+      workspaceId: 'ws-1',
       filePath: 'docs/untitled-2.graph.tsx',
       sourceVersion: 'draft:empty-canvas',
+      latestRevision: 1,
     }), {
       status: 201,
       headers: { 'Content-Type': 'application/json' },

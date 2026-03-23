@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import type { HeadlessServiceContext } from '../canonical-cli';
 import { cliError } from '../canonical-cli';
 import { canvasBindings, canvasNodes, documentRevisions } from '../canonical-persistence/schema';
@@ -18,6 +18,45 @@ export interface DocumentSummary {
   nodeCount: number;
   bindingCount: number;
   latestRevision: number | null;
+}
+
+export interface WorkspaceDocumentShellSummary {
+  documentId: string;
+  workspaceId: string;
+  filePath: string | null;
+  surfaceIds: string[];
+  nodeCount: number;
+  bindingCount: number;
+  latestRevision: number | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readDocumentShellMetadata(
+  mutationBatch: Record<string, unknown> | null | undefined,
+): { workspaceId?: string; filePath?: string | null } | null {
+  if (!isRecord(mutationBatch)) {
+    return null;
+  }
+
+  const shell = isRecord(mutationBatch.documentShell)
+    ? mutationBatch.documentShell
+    : isRecord(mutationBatch.meta) && isRecord(mutationBatch.meta.documentShell)
+      ? mutationBatch.meta.documentShell
+      : null;
+
+  if (!shell) {
+    return null;
+  }
+
+  return {
+    ...(typeof shell.workspaceId === 'string' ? { workspaceId: shell.workspaceId } : {}),
+    ...(typeof shell.filePath === 'string' ? { filePath: shell.filePath } : { filePath: null }),
+  };
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
@@ -147,6 +186,80 @@ export async function getDocument(
     bindingCount: bindings.length,
     latestRevision: revisions[0]?.revisionNo ?? null,
   };
+}
+
+export async function getWorkspaceDocument(
+  context: HeadlessServiceContext,
+  documentId: string,
+  workspaceId = context.defaultWorkspaceId,
+): Promise<WorkspaceDocumentShellSummary> {
+  const [nodes, bindings, revisions] = await Promise.all([
+    context.db.query.canvasNodes.findMany({
+      where: eq(canvasNodes.documentId, documentId),
+      columns: {
+        documentId: true,
+        surfaceId: true,
+      },
+    }),
+    context.db.query.canvasBindings.findMany({
+      where: eq(canvasBindings.documentId, documentId),
+      columns: {
+        id: true,
+      },
+    }),
+    context.db.query.documentRevisions.findMany({
+      where: eq(documentRevisions.documentId, documentId),
+      columns: {
+        revisionNo: true,
+        mutationBatch: true,
+        createdAt: true,
+      },
+      orderBy: [desc(documentRevisions.revisionNo)],
+    }),
+  ]);
+
+  if (nodes.length === 0 && bindings.length === 0 && revisions.length === 0) {
+    throw cliError('DOCUMENT_NOT_FOUND', `Document ${documentId} was not found.`, {
+      details: { documentId },
+    });
+  }
+
+  const latestMetadata = revisions
+    .map((revision) => readDocumentShellMetadata(revision.mutationBatch))
+    .find((metadata) => metadata !== null) ?? null;
+
+  return {
+    documentId,
+    workspaceId: latestMetadata?.workspaceId ?? workspaceId,
+    filePath: latestMetadata?.filePath ?? null,
+    surfaceIds: uniqueStrings(nodes.map((node) => node.surfaceId)),
+    nodeCount: nodes.length,
+    bindingCount: bindings.length,
+    latestRevision: revisions[0]?.revisionNo ?? null,
+    createdAt: revisions.length > 0 ? revisions[revisions.length - 1]?.createdAt ?? null : null,
+    updatedAt: revisions[0]?.createdAt ?? null,
+  };
+}
+
+export async function listWorkspaceDocuments(
+  context: HeadlessServiceContext,
+  workspaceId = context.defaultWorkspaceId,
+): Promise<WorkspaceDocumentShellSummary[]> {
+  const documentIds = await listDocumentIds(context);
+  const documents = await Promise.all(
+    documentIds.map((documentId) => getWorkspaceDocument(context, documentId, workspaceId)),
+  );
+
+  return documents
+    .filter((document) => document.workspaceId === workspaceId)
+    .sort((left, right) => {
+      const leftTime = left.updatedAt?.getTime() ?? 0;
+      const rightTime = right.updatedAt?.getTime() ?? 0;
+      if (rightTime !== leftTime) {
+        return rightTime - leftTime;
+      }
+      return left.documentId.localeCompare(right.documentId);
+    });
 }
 
 export async function getCurrentDocumentRevision(

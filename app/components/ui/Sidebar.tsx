@@ -21,6 +21,9 @@ export interface SidebarWorkspaceEntry {
 }
 
 export interface SidebarDocumentEntry {
+  documentId?: string;
+  workspaceId?: string;
+  latestRevision?: number | null;
   absolutePath: string;
   relativePath: string;
   title: string;
@@ -112,14 +115,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside
       className={cn(
-        'flex h-full flex-shrink-0 flex-col bg-muted/82 text-foreground transition-all duration-300 ease-in-out',
-        'shadow-[inset_-1px_0_0_rgb(var(--color-border)/0.08)]',
+        'flex h-full flex-shrink-0 flex-col bg-surface-container-low text-on-surface transition-all duration-300 ease-in-out',
         isCollapsed ? 'w-12' : 'w-72',
       )}
     >
       <div
         className={cn(
-          'flex items-center px-3 py-3 shadow-[inset_0_-1px_0_rgb(var(--color-border)/0.08)]',
+          'flex items-center px-3 py-3',
           isCollapsed ? 'justify-center' : 'justify-between',
         )}
       >
@@ -352,7 +354,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       )}
 
-      <div className="flex justify-center p-3 shadow-[inset_0_1px_0_rgb(var(--color-border)/0.08)]">
+      <div className="flex justify-center p-3">
         {!isCollapsed ? (
           <div className="truncate text-xs text-foreground/42">
             Workspace-first document shell

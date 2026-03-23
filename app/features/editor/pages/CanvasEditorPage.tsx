@@ -78,6 +78,7 @@ import {
   pickWorkspaceRootPath,
 } from '@/components/editor/desktopBridge';
 import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
+import { navigateToDocument, navigateToWorkspaceDocument } from '@/features/host/renderer/navigation';
 
 
 
@@ -111,6 +112,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     setFiles,
     setGraph,
     currentFile,
+    setCurrentDocumentId,
     workspaceRootPath,
     registeredWorkspaces,
     activeWorkspaceId,
@@ -167,6 +169,10 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
   const workspaceDocuments = useMemo<SidebarDocumentEntry[]>(
     () => (activeWorkspaceId ? workspaceDocumentsByWorkspaceId[activeWorkspaceId] ?? [] : []),
     [activeWorkspaceId, workspaceDocumentsByWorkspaceId],
+  );
+  const activeWorkspaceDocument = useMemo(
+    () => workspaceDocuments.find((document) => document.absolutePath === currentFile) ?? null,
+    [currentFile, workspaceDocuments],
   );
 
 
@@ -374,6 +380,10 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     void rememberLastActiveDocumentForWorkspace(activeWorkspace.id, currentFile);
   }, [activeWorkspace, currentFile, rememberLastActiveDocumentForWorkspace]);
 
+  useEffect(() => {
+    setCurrentDocumentId(activeWorkspaceDocument?.documentId ?? null);
+  }, [activeWorkspaceDocument?.documentId, setCurrentDocumentId]);
+
 
 
   const openTabByPath = useCallback(
@@ -542,15 +552,16 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       const createdDocument = await hostRpc.createWorkspaceDocument({
         rootPath: activeWorkspace.rootPath,
       });
-      const absoluteFilePath = resolveWorkspaceDocumentAbsolutePath(
-        activeWorkspace.rootPath,
-        createdDocument.filePath,
-      );
+      const absoluteFilePath = resolveWorkspaceDocumentAbsolutePath(activeWorkspace.rootPath, createdDocument.filePath);
       useGraphStore.getState().setSourceVersionForFile(
         absoluteFilePath,
         createdDocument.sourceVersion,
       );
+      setCurrentDocumentId(createdDocument.documentId);
       registerWorkspaceDocument(activeWorkspace.id, {
+        documentId: createdDocument.documentId,
+        workspaceId: createdDocument.workspaceId,
+        latestRevision: createdDocument.latestRevision,
         absolutePath: absoluteFilePath,
         relativePath: createdDocument.filePath,
         title: createdDocument.filePath.split('/').filter(Boolean).at(-1) ?? createdDocument.filePath,
@@ -572,6 +583,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       }
 
       await loadActiveWorkspaceDocuments(activeWorkspace);
+      navigateToWorkspaceDocument(activeWorkspace.rootPath, createdDocument);
       return opened;
     } catch (error) {
       const message = error instanceof Error
@@ -584,7 +596,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       });
       return false;
     }
-  }, [activeWorkspace, hostRpc, loadActiveWorkspaceDocuments, openTabByPath, registerWorkspaceDocument, setGraph, setGraphError]);
+  }, [activeWorkspace, hostRpc, loadActiveWorkspaceDocuments, openTabByPath, registerWorkspaceDocument, setCurrentDocumentId, setGraph, setGraphError]);
 
   const restoreNodeData = useCallback((nodeId: string, previousData: Record<string, unknown> | undefined) => {
     useGraphStore.setState((state) => ({
@@ -1668,6 +1680,9 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             filePath: currentFile,
+            ...(activeWorkspaceDocument?.documentId
+              ? { documentId: activeWorkspaceDocument.documentId }
+              : {}),
             ...(activeWorkspace?.rootPath ?? workspaceRootPath
               ? { rootPath: activeWorkspace?.rootPath ?? workspaceRootPath }
               : {}),
@@ -1710,6 +1725,9 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
 
         const parsed = parseRenderGraph(data);
         if (parsed) {
+          setCurrentDocumentId(typeof data.documentId === 'string'
+            ? data.documentId
+            : activeWorkspaceDocument?.documentId ?? null);
           setGraph(parsed);
           if (pendingSelectionNodeIdRef.current) {
             const createdNodeId = pendingSelectionNodeIdRef.current;
@@ -1735,7 +1753,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     }
 
     renderFile();
-  }, [activeWorkspace?.rootPath, currentFile, draftDocuments, refreshKey, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on file changes
+  }, [activeWorkspace?.rootPath, activeWorkspaceDocument?.documentId, currentFile, draftDocuments, refreshKey, setCurrentDocumentId, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on file changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
@@ -1750,22 +1768,14 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
         onAddWorkspace={() => { void handleAddExistingWorkspace(); }}
         onCreateDocument={() => { void handleCreateDocument(); }}
         onOpenDocument={(path) => {
-            if (typeof window !== 'undefined' && 'electron' in window) {
-              window.location.hash = `/document/${encodeURIComponent(path)}`;
-            } else {
-              window.location.href = `/app/document/${encodeURIComponent(path)}`;
-            }
+            navigateToDocument(path);
         }}
         onCopyWorkspacePath={() => { void handleCopyWorkspacePath(); }}
         onRevealWorkspace={() => { void handleRevealWorkspace(); }}
         onReconnectWorkspace={() => { void handleReconnectWorkspace(); }}
         onRemoveWorkspace={handleRemoveWorkspace}
         onOpenLegacyFile={(path) => {
-            if (typeof window !== 'undefined' && 'electron' in window) {
-              window.location.hash = `/document/${encodeURIComponent(path)}`;
-            } else {
-              window.location.href = `/app/document/${encodeURIComponent(path)}`;
-            }
+            navigateToDocument(path);
         }}
       />
 

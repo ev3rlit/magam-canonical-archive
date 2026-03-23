@@ -211,6 +211,7 @@ export interface GraphState {
   fileTree: FileTreeNode | null;
   expandedFolders: Set<string>;
   currentFile: string | null;
+  currentDocumentId: string | null;
   // Workspace-document-shell migration anchor:
   // registry/session/path-health state is owned here so runtime scope follows the active workspace.
   registeredWorkspaces: RegisteredWorkspace[];
@@ -294,6 +295,7 @@ export interface GraphState {
   setFileTree: (tree: FileTreeNode | null) => void;
   toggleFolder: (path: string) => void;
   setCurrentFile: (file: string) => void;
+  setCurrentDocumentId: (documentId: string | null) => void;
   setStatus: (status: GraphState['status']) => void;
   setError: (error: AppError | null) => void;
   setSelectedNodes: (selectedNodeIds: string[]) => void;
@@ -800,6 +802,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   fileTree: null,
   expandedFolders: new Set<string>(),
   currentFile: null,
+  currentDocumentId: null,
   registeredWorkspaces: [],
   activeWorkspaceId: null,
   lastActiveDocumentsByWorkspaceId: {},
@@ -1088,7 +1091,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   }),
   registerWorkspaceDocument: (workspaceId, document) => set((state) => {
     const currentDocuments = state.workspaceDocumentsByWorkspaceId[workspaceId] ?? [];
-    if (currentDocuments.some((entry) => entry.absolutePath === document.absolutePath)) {
+    if (currentDocuments.some((entry) => (
+      (entry.documentId && document.documentId && entry.documentId === document.documentId)
+      || entry.absolutePath === document.absolutePath
+    ))) {
       return state;
     }
 
@@ -1281,6 +1287,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       : null;
     return {
       currentFile: normalizedCurrentFile,
+      currentDocumentId: normalizedCurrentFile === state.currentFile ? state.currentDocumentId : null,
       sourceVersion: normalizedCurrentFile ? (state.sourceVersions[normalizedCurrentFile] ?? null) : null,
       activeGroupFocusGroupId: null,
       entrypointRuntime: resetEntrypointRuntimeState({
@@ -1289,6 +1296,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       }),
       hoveredNodeIdsByGroupId: {},
     };
+  }),
+  setCurrentDocumentId: (currentDocumentId) => set({
+    currentDocumentId: currentDocumentId && currentDocumentId.length > 0 ? currentDocumentId : null,
   }),
   setStatus: (status) => set({ status }),
   setError: (error) => set({ error }),
@@ -1437,6 +1447,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         openTabs: nextTabs,
         activeTabId: existingTab.tabId,
         currentFile: normalizedPageId,
+        currentDocumentId: null,
       });
       if (activeTabId !== existingTab.tabId || currentFile !== normalizedPageId) {
         console.debug('[Telemetry] tabs_switched', { tabId: existingTab.tabId, pageId: normalizedPageId, source: 'openTab' });
@@ -1472,6 +1483,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       openTabs: [...openTabs, nextTab],
       activeTabId: nextTab.tabId,
       currentFile: normalizedPageId,
+      currentDocumentId: null,
     });
     console.debug('[Telemetry] tabs_opened', { tabId: nextTab.tabId, pageId: normalizedPageId, source: 'openTab' });
     return { status: 'opened', tabId: nextTab.tabId };
@@ -1504,6 +1516,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       openTabs: nextTabs,
       activeTabId: replaceTabId,
       currentFile: normalizedPageId,
+      currentDocumentId: null,
     });
     console.debug('[Telemetry] tabs_limit_replaced', { tabId: replaceTabId, pageId: normalizedPageId });
   },
@@ -1522,6 +1535,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       )),
       activeTabId: tabId,
       currentFile: tab.pageId,
+      currentDocumentId: null,
     });
     console.debug('[Telemetry] tabs_switched', { tabId, pageId: tab.pageId, source: 'activateTab' });
   },
@@ -1553,6 +1567,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           openTabs: [fallbackTab],
           activeTabId: fallbackTab.tabId,
           currentFile: fallbackPageId,
+          currentDocumentId: null,
         });
         console.debug('[Telemetry] tabs_fallback_opened', { tabId: fallbackTab.tabId, pageId: fallbackPageId });
         return;
@@ -1562,6 +1577,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         openTabs: [],
         activeTabId: null,
         currentFile: null,
+        currentDocumentId: null,
       });
       return;
     }
@@ -1579,6 +1595,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       openTabs: remainingTabs,
       activeTabId: nextActiveTab?.tabId ?? null,
       currentFile: nextActiveTab?.pageId ?? null,
+      currentDocumentId: null,
     });
     console.debug('[Telemetry] tabs_closed', { tabId, pageId: targetTab.pageId, dirty: targetTab.dirty });
   },

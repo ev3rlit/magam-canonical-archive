@@ -14,6 +14,9 @@ export type WorkspaceHealthState = 'ok' | 'missing' | 'not-directory' | 'unreada
 
 export interface WorkspaceDocumentSummary {
   filePath: string;
+  documentId?: string;
+  workspaceId?: string;
+  latestRevision?: number | null;
   size?: number;
   modifiedAt?: number;
 }
@@ -42,6 +45,9 @@ export interface RegisteredWorkspace {
 }
 
 export interface WorkspaceSidebarDocument {
+  documentId?: string;
+  workspaceId?: string;
+  latestRevision?: number | null;
   absolutePath: string;
   relativePath: string;
   title: string;
@@ -425,6 +431,9 @@ export function buildSidebarDocuments(
   documents: WorkspaceDocumentSummary[],
 ): WorkspaceSidebarDocument[] {
   return documents.map((document) => ({
+    ...(typeof document.documentId === 'string' ? { documentId: document.documentId } : {}),
+    ...(typeof document.workspaceId === 'string' ? { workspaceId: document.workspaceId } : {}),
+    ...(document.latestRevision !== undefined ? { latestRevision: document.latestRevision } : {}),
     absolutePath: resolveWorkspaceDocumentAbsolutePath(rootPath, document.filePath),
     relativePath: document.filePath,
     title: basename(document.filePath),

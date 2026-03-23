@@ -170,4 +170,58 @@ describe('headless mutation executor', () => {
 
     await handle.close();
   });
+
+  it('continues revision sequencing after a document-shell create revision already exists', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const context = buildContext(handle);
+
+    await context.repository.createCanonicalObject({
+      record: buildSeedRecord(),
+      operation: 'create',
+    });
+    await context.repository.createCanvasNode({
+      id: 'node-1',
+      documentId: 'doc-1',
+      surfaceId: 'main',
+      nodeKind: 'native',
+      canonicalObjectId: 'note-1',
+      layout: { x: 0, y: 0 },
+      zIndex: 1,
+    });
+    await context.repository.appendDocumentRevision({
+      id: 'docrev-0',
+      documentId: 'doc-1',
+      revisionNo: 1,
+      authorKind: 'system',
+      authorId: 'document-shell',
+      mutationBatch: {
+        op: 'document.create',
+        documentShell: {
+          workspaceId: 'ws-1',
+          filePath: 'documents/doc-1.graph.tsx',
+        },
+      },
+    });
+
+    const applied = await executeMutationBatch({
+      context,
+      batch: {
+        workspaceRef: 'ws-1',
+        documentRef: 'doc-1',
+        preconditions: {
+          documentRevision: 1,
+        },
+        operations: [{
+          op: 'canvas.node.move',
+          nodeId: 'node-1',
+          patch: { x: 12, y: 24 },
+        }],
+      },
+    });
+
+    expect(applied.documentRevisionBefore).toBe(1);
+    expect(applied.documentRevisionAfter).toBe(2);
+
+    await handle.close();
+  });
 });

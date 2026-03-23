@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createCanonicalPgliteDb } from '../canonical-persistence/pglite-db';
 import { CanonicalPersistenceRepository } from '../canonical-persistence/repository';
 import type { HeadlessServiceContext } from '../canonical-cli/context';
-import { getDocument, listWorkspaces } from './workspace-document';
+import { getDocument, getWorkspaceDocument, listWorkspaceDocuments, listWorkspaces } from './workspace-document';
 import { queryObjects, querySurfaceNodes, searchDocuments } from './object-surface-search';
 
 function buildNoteRecord(id: string) {
@@ -151,6 +151,60 @@ describe('headless query services', () => {
       expect.objectContaining({
         id: 'doc-2',
         matchedObjectIds: ['note-2'],
+      }),
+    ]);
+
+    await handle.close();
+  });
+
+  it('lists canonical document shell summaries from revision metadata', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const repository = new CanonicalPersistenceRepository(handle.db);
+    const context: HeadlessServiceContext = {
+      db: handle.db,
+      repository,
+      targetDir: process.cwd(),
+      dataDir: null,
+      defaultWorkspaceId: 'ws-1',
+    };
+
+    await repository.appendDocumentRevision({
+      id: 'docrev-1',
+      documentId: 'doc-shell-1',
+      revisionNo: 1,
+      authorKind: 'system',
+      authorId: 'test',
+      mutationBatch: {
+        op: 'document.create',
+        documentShell: {
+          workspaceId: 'ws-1',
+          filePath: 'documents/doc-shell-1.graph.tsx',
+        },
+      },
+    });
+
+    await repository.appendDocumentRevision({
+      id: 'docrev-2',
+      documentId: 'doc-shell-1',
+      revisionNo: 2,
+      authorKind: 'agent',
+      authorId: 'test',
+      mutationBatch: {
+        op: 'document.touch',
+      },
+    });
+
+    await expect(getWorkspaceDocument(context, 'doc-shell-1')).resolves.toMatchObject({
+      documentId: 'doc-shell-1',
+      workspaceId: 'ws-1',
+      filePath: 'documents/doc-shell-1.graph.tsx',
+      latestRevision: 2,
+    });
+
+    await expect(listWorkspaceDocuments(context)).resolves.toEqual([
+      expect.objectContaining({
+        documentId: 'doc-shell-1',
+        filePath: 'documents/doc-shell-1.graph.tsx',
       }),
     ]);
 

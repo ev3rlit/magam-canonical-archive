@@ -1,8 +1,14 @@
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import {
+  createCanonicalDocument,
+  listCanonicalDocuments,
+  type CanonicalDocumentShellRecord,
+} from '../../../../libs/shared/src/lib/canonical-document-shell';
+import { isCanonicalCliError } from '../../../../libs/shared/src/lib/canonical-cli';
+import {
   ApiError,
-  createWorkspaceDocument,
+  createDocumentSourceVersion,
   requireWorkspaceRoot,
 } from '../workspaces/_shared';
 
@@ -36,6 +42,18 @@ function toJsonErrorResponse(error: unknown) {
     );
   }
 
+  if (isCanonicalCliError(error)) {
+    const status = error.code === 'INVALID_ARGUMENT'
+      ? 400
+      : error.code === 'DOCUMENT_NOT_FOUND' || error.code === 'WORKSPACE_NOT_FOUND'
+        ? 404
+        : 422;
+    return NextResponse.json(
+      { error: error.message, code: error.code, details: error.details },
+      { status },
+    );
+  }
+
   const message = error instanceof Error ? error.message : 'Unknown error';
   console.error('[api/documents] unexpected error:', message);
   return NextResponse.json(
@@ -60,20 +78,47 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
   return body as Record<string, unknown>;
 }
 
+function toRouteDocumentSummary(document: CanonicalDocumentShellRecord) {
+  return {
+    documentId: document.documentId,
+    workspaceId: document.workspaceId,
+    filePath: document.filePath ?? `documents/${document.documentId}.graph.tsx`,
+    modifiedAt: document.updatedAt?.getTime() ?? document.createdAt?.getTime() ?? null,
+    latestRevision: document.latestRevision,
+  };
+}
+
+function toCompatibilitySourceVersion(document: CanonicalDocumentShellRecord): string {
+  return createDocumentSourceVersion(JSON.stringify({
+    documentId: document.documentId,
+    workspaceId: document.workspaceId,
+    latestRevision: document.latestRevision,
+  }));
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const rootPath = resolveDocumentRootPath(pickRootPath(searchParams));
 
     const workspace = await requireWorkspaceRoot(rootPath);
+    const documents = await listCanonicalDocuments({
+      targetDir: workspace.rootPath,
+    });
     return NextResponse.json({
       code: 'DOC_200_LISTED',
       rootPath: workspace.rootPath,
       root: workspace.rootPath,
       workspaceName: workspace.workspaceName,
-      documentCount: workspace.documentCount,
-      documents: workspace.documents,
-      lastModifiedAt: workspace.lastModifiedAt,
+      documentCount: documents.length,
+      documents: documents.map(toRouteDocumentSummary),
+      lastModifiedAt: documents.reduce<number | null>((latest, document) => {
+        const timestamp = document.updatedAt?.getTime() ?? document.createdAt?.getTime() ?? null;
+        if (timestamp === null) {
+          return latest;
+        }
+        return latest === null ? timestamp : Math.max(latest, timestamp);
+      }, null),
     });
   } catch (error) {
     return toJsonErrorResponse(error);
@@ -93,10 +138,22 @@ export async function POST(request: Request) {
         ? body.path
         : null;
 
-    const created = await createWorkspaceDocument({
-      rootPath: workspace.rootPath,
-      filePath: rawFilePath,
-    });
+    let created: CanonicalDocumentShellRecord;
+    try {
+      created = await createCanonicalDocument({
+        targetDir: workspace.rootPath,
+        filePath: rawFilePath,
+        actor: {
+          kind: 'system',
+          id: 'api.documents',
+        },
+      });
+    } catch (error) {
+      if (isCanonicalCliError(error) && error.code === 'INVALID_ARGUMENT') {
+        throw new ApiError(400, 'DOC_400_INVALID_PATH', error.message, error.details);
+      }
+      throw error;
+    }
 
     return NextResponse.json({
       code: 'DOC_201_CREATED',
@@ -104,7 +161,8 @@ export async function POST(request: Request) {
       root: workspace.rootPath,
       workspaceName: workspace.workspaceName,
       created: true,
-      ...created,
+      ...toRouteDocumentSummary(created),
+      sourceVersion: toCompatibilitySourceVersion(created),
     }, { status: 201 });
   } catch (error) {
     return toJsonErrorResponse(error);

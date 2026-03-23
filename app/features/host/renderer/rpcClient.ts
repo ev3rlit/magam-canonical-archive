@@ -24,6 +24,9 @@ export interface RendererFileCreateResponse {
 export interface CreateWorkspaceDocumentResult {
   filePath: string;
   sourceVersion: string;
+  documentId: string;
+  workspaceId: string;
+  latestRevision: number | null;
 }
 
 export interface WorkspaceDocumentCreateInput {
@@ -49,6 +52,9 @@ export function isCreateWorkspaceDocumentResult(
   return (
     typeof record.filePath === 'string'
     && typeof record.sourceVersion === 'string'
+    && typeof record.documentId === 'string'
+    && typeof record.workspaceId === 'string'
+    && (typeof record.latestRevision === 'number' || record.latestRevision === null)
     && record.sourceVersion.startsWith('sha256:')
   );
 }

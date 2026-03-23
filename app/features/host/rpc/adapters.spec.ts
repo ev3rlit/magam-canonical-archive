@@ -54,8 +54,11 @@ describe('host RPC adapters', () => {
         lastModifiedAt: 10,
       }))
       .mockResolvedValueOnce(jsonResponse({
+        documentId: 'doc-1',
+        workspaceId: 'ws-1',
         filePath: 'docs/untitled-1.graph.tsx',
         sourceVersion: 'sha256:created-document',
+        latestRevision: 1,
       }, 201));
     globalThis.fetch = fetchMock as typeof fetch;
 
@@ -65,8 +68,11 @@ describe('host RPC adapters', () => {
       workspaceName: 'workspace',
     });
     await expect(adapter.createWorkspaceDocument({ rootPath: '/tmp/workspace' })).resolves.toEqual({
+      documentId: 'doc-1',
+      workspaceId: 'ws-1',
       filePath: 'docs/untitled-1.graph.tsx',
       sourceVersion: 'sha256:created-document',
+      latestRevision: 1,
     });
 
     expect(fetchMock).toHaveBeenNthCalledWith(

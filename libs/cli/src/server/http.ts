@@ -7,8 +7,14 @@ import { transpileWithMetadata } from '../core/transpiler';
 import { execute } from '../core/executor';
 import { ChatHandler } from '../chat/handler';
 import {
+  createCanonicalDocument,
+  listCanonicalDocuments,
+  type CanonicalDocumentShellRecord,
+} from '../../../shared/src/lib/canonical-document-shell';
+import { isCanonicalCliError } from '../../../shared/src/lib/canonical-cli';
+import {
   ApiError,
-  createWorkspaceDocument as createWorkspaceShellDocument,
+  createDocumentSourceVersion,
   ensureWorkspaceRoot,
   openWorkspaceInFileBrowser,
   probeWorkspace,
@@ -686,6 +692,9 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
       graph: pipelineResult.graph,
       sourceVersion: pipelineResult.sourceVersion,
       sourceVersions: pipelineResult.sourceVersions,
+      ...(typeof body?.documentId === 'string' && body.documentId.trim().length > 0
+        ? { documentId: body.documentId.trim() }
+        : {}),
     }));
   } catch (error: any) {
     console.error('Render Error:', error);
@@ -1080,6 +1089,24 @@ function toDocumentsResponsePayload(workspace: Awaited<ReturnType<typeof require
   };
 }
 
+function toCanonicalDocumentSummary(document: CanonicalDocumentShellRecord) {
+  return {
+    documentId: document.documentId,
+    workspaceId: document.workspaceId,
+    filePath: document.filePath ?? `documents/${document.documentId}.graph.tsx`,
+    modifiedAt: document.updatedAt?.getTime() ?? document.createdAt?.getTime() ?? null,
+    latestRevision: document.latestRevision,
+  };
+}
+
+function toCanonicalDocumentSourceVersion(document: CanonicalDocumentShellRecord): string {
+  return createDocumentSourceVersion(JSON.stringify({
+    documentId: document.documentId,
+    workspaceId: document.workspaceId,
+    latestRevision: document.latestRevision,
+  }));
+}
+
 function writeApiError(
   res: http.ServerResponse,
   error: unknown,
@@ -1091,6 +1118,20 @@ function writeApiError(
 ): void {
   if (error instanceof ApiError) {
     writeJson(res, error.status, {
+      error: error.message,
+      code: error.code,
+      details: error.details,
+    });
+    return;
+  }
+
+  if (isCanonicalCliError(error)) {
+    const status = error.code === 'INVALID_ARGUMENT'
+      ? 400
+      : error.code === 'DOCUMENT_NOT_FOUND' || error.code === 'WORKSPACE_NOT_FOUND'
+        ? 404
+        : 422;
+    writeJson(res, status, {
       error: error.message,
       code: error.code,
       details: error.details,
@@ -1245,7 +1286,21 @@ async function handleDocumentsList(url: URL, res: http.ServerResponse) {
     const rootPath = resolveDocumentRootPath(pickRootPath(url.searchParams));
 
     const workspace = await requireWorkspaceRoot(rootPath);
-    writeJson(res, 200, toDocumentsResponsePayload(workspace, 'DOC_200_LISTED'));
+    const documents = await listCanonicalDocuments({
+      targetDir: workspace.rootPath,
+    });
+    writeJson(res, 200, {
+      ...toDocumentsResponsePayload(workspace, 'DOC_200_LISTED'),
+      documentCount: documents.length,
+      documents: documents.map(toCanonicalDocumentSummary),
+      lastModifiedAt: documents.reduce<number | null>((latest, document) => {
+        const timestamp = document.updatedAt?.getTime() ?? document.createdAt?.getTime() ?? null;
+        if (timestamp === null) {
+          return latest;
+        }
+        return latest === null ? timestamp : Math.max(latest, timestamp);
+      }, null),
+    });
   } catch (error) {
     writeApiError(res, error, {
       logLabel: '[documents] unexpected error:',
@@ -1270,10 +1325,22 @@ async function handleDocumentsCreate(req: http.IncomingMessage, res: http.Server
       : typeof body.path === 'string'
         ? body.path
         : null;
-    const created = await createWorkspaceShellDocument({
-      rootPath: workspace.rootPath,
-      filePath: rawFilePath,
-    });
+    let created: CanonicalDocumentShellRecord;
+    try {
+      created = await createCanonicalDocument({
+        targetDir: workspace.rootPath,
+        filePath: rawFilePath,
+        actor: {
+          kind: 'system',
+          id: 'desktop.http',
+        },
+      });
+    } catch (error) {
+      if (isCanonicalCliError(error) && error.code === 'INVALID_ARGUMENT') {
+        throw new ApiError(400, 'DOC_400_INVALID_PATH', error.message, error.details);
+      }
+      throw error;
+    }
 
     writeJson(res, 201, {
       code: 'DOC_201_CREATED',
@@ -1281,7 +1348,8 @@ async function handleDocumentsCreate(req: http.IncomingMessage, res: http.Server
       root: workspace.rootPath,
       workspaceName: workspace.workspaceName,
       created: true,
-      ...created,
+      ...toCanonicalDocumentSummary(created),
+      sourceVersion: toCanonicalDocumentSourceVersion(created),
     });
   } catch (error) {
     writeApiError(res, error, {

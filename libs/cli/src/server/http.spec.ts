@@ -323,8 +323,21 @@ describe('HTTP Render Server', () => {
         expect(response.status).toBe(201);
         expect(body.code).toBe('DOC_201_CREATED');
         expect(body.rootPath).toBe(workspaceRoot);
-        expect(body.filePath).toBe('untitled-1.graph.tsx');
+        expect(body.filePath).toMatch(/^documents\/doc-/);
         expect(body.sourceVersion).toMatch(/^sha256:/);
+        expect(body.documentId).toMatch(/^doc-/);
+        expect(body.workspaceId).toBe(path.basename(workspaceRoot).toLowerCase());
+        expect(body.latestRevision).toBe(1);
+
+        const listed = await fetch(`${baseUrl}/documents?rootPath=${encodeURIComponent(workspaceRoot)}`);
+        const listedBody = await listed.json();
+        expect(listed.status).toBe(200);
+        expect(listedBody.documentCount).toBe(1);
+        expect(listedBody.documents[0]).toEqual(expect.objectContaining({
+          documentId: body.documentId,
+          workspaceId: body.workspaceId,
+          filePath: body.filePath,
+        }));
       } finally {
         await rm(workspaceRoot, { recursive: true, force: true });
       }
@@ -498,7 +511,7 @@ describe('HTTP Render Server', () => {
 
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
-        body: JSON.stringify({ filePath: 'exists.tsx' }),
+        body: JSON.stringify({ filePath: 'exists.tsx', documentId: 'doc-1' }),
       });
       const body = await response.json();
 
@@ -509,6 +522,7 @@ describe('HTTP Render Server', () => {
       expect(body.sourceVersions).toEqual({
         'exists.tsx': body.sourceVersion,
       });
+      expect(body.documentId).toBe('doc-1');
       // expect valid args
       expect(mockTranspileWithMetadata).toHaveBeenCalledWith(expect.stringContaining('exists.tsx'));
       expect(mockExecute).toHaveBeenCalledWith('transpiled code');

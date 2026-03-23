@@ -9,3 +9,4 @@ export * from './lib/canonical-persistence';
 export * from './lib/canonical-cli';
 export * from './lib/canonical-query';
 export * from './lib/canonical-mutation';
+export * from './lib/canonical-document-shell';

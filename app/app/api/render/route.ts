@@ -33,6 +33,9 @@ export async function POST(request: Request) {
     const payload = {
       ...body,
       filePath: body.filePath.trim(),
+      ...(typeof body.documentId === 'string' && body.documentId.trim().length > 0
+        ? { documentId: body.documentId.trim() }
+        : {}),
       ...(rawRootPath ? { rootPath: path.resolve(rawRootPath.trim()) } : {}),
     };
 

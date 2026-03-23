@@ -4,6 +4,7 @@ import type {
   AppWorkspaceRecord,
 } from '../../../libs/shared/src/lib/app-state-persistence/contracts/types';
 import {
+  buildSidebarDocuments,
   hydrateWorkspaceRegistryFromAppState,
   LEGACY_WORKSPACE_REGISTRY_IMPORT_PREFERENCE_KEY,
   LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY,
@@ -289,5 +290,25 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
     expect(rpc.upsertAppStateWorkspace).not.toHaveBeenCalled();
     expect(rpc.setAppStateWorkspaceSession).not.toHaveBeenCalled();
     expect(rpc.upsertAppStateRecentDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('buildSidebarDocuments', () => {
+  it('preserves canonical document metadata while projecting absolute paths', () => {
+    expect(buildSidebarDocuments('/tmp/ws-1', [{
+      documentId: 'doc-1',
+      workspaceId: 'ws-1',
+      filePath: 'docs/alpha.graph.tsx',
+      latestRevision: 3,
+    }])).toEqual([
+      {
+        documentId: 'doc-1',
+        workspaceId: 'ws-1',
+        latestRevision: 3,
+        absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',
+        relativePath: 'docs/alpha.graph.tsx',
+        title: 'alpha.graph.tsx',
+      },
+    ]);
   });
 });

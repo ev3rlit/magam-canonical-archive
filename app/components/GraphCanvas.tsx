@@ -34,7 +34,6 @@ import { ExportDialog } from './ExportDialog';
 import { CustomBackground } from './CustomBackground';
 import {
   resolveViewportToRestore,
-  toTabViewportState,
 } from './GraphCanvas.viewport';
 import { resolveFontFamilyCssValue } from '@/utils/fontHierarchy';
 import { areNodesMeasured, getMindMapSizeSignaturesByGroup } from '@/utils/layoutUtils';
@@ -817,6 +816,7 @@ function GraphCanvasContent({
     selectNodesByType,
     focusNextNodeByType,
     currentFile,
+    currentDocumentId,
     graphId,
     needsAutoLayout,
     layoutType,
@@ -824,9 +824,7 @@ function GraphCanvasContent({
     canvasBackground,
     globalFontFamily,
     canvasFontFamily,
-    activeTabId,
-    openTabs,
-    updateTabSnapshot,
+
     requestTextEditCommit,
     requestTextEditCancel,
     startTextEditSession,
@@ -888,6 +886,7 @@ function GraphCanvasContent({
   const relayoutInFlightRef = useRef(false);
   const lastRelayoutAtRef = useRef<Map<string, number>>(new Map());
   const previousFileRef = useRef<string | null>(currentFile);
+  const previousDocumentIdRef = useRef<string | null>(currentDocumentId);
   const pendingViewportRestoreRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const clipboardHistory = useRef<{ past: GraphSnapshot[]; future: GraphSnapshot[] }>({
     past: [],
@@ -906,10 +905,7 @@ function GraphCanvasContent({
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
 
-  const activeTab = useMemo(
-    () => openTabs.find((tab) => tab.tabId === activeTabId) ?? null,
-    [activeTabId, openTabs],
-  );
+
 
   const showToast = useCallback((message: string) => {
     setToastMessage(message);
@@ -941,19 +937,7 @@ function GraphCanvasContent({
         : { ...node, selected: shouldSelect };
     }));
     setSelectedNodes(nodeIds);
-    if (!activeTabId) {
-      return;
-    }
-    updateTabSnapshot(activeTabId, {
-      lastSelection: nodeIds.length > 0
-        ? {
-            nodeIds,
-            edgeIds: [],
-            updatedAt: Date.now(),
-          }
-        : null,
-    });
-  }, [activeTabId, setNodes, setSelectedNodes, updateTabSnapshot]);
+  }, [setNodes, setSelectedNodes]);
 
   const enterGroupFocusForNode = useCallback((nodeId: string) => {
     const groupSelection = resolveGroupNodeIdsForNode(
@@ -1161,15 +1145,9 @@ function GraphCanvasContent({
     showToast,
   ]);
 
-  const persistActiveTabViewport = useCallback((viewport: { x: number; y: number; zoom: number }) => {
-    if (!activeTabId) {
-      return;
-    }
-
-    updateTabSnapshot(activeTabId, {
-      lastViewport: toTabViewportState(viewport),
-    });
-  }, [activeTabId, updateTabSnapshot]);
+  const persistActiveTabViewport = useCallback((_viewport: { x: number; y: number; zoom: number }) => {
+    // Deprecated: Viewport states are now handled outside of store tabs.
+  }, []);
 
   const restorePendingViewport = useCallback(async () => {
     const pending = pendingViewportRestoreRef.current;
@@ -1481,22 +1459,25 @@ function GraphCanvasContent({
       console.log('[Layout] New graph detected, resetting layout state.');
       pendingViewportRestoreRef.current = resolveViewportToRestore({
         hasRenderedGraph: lastLayoutedGraphId.current !== null,
+        previousDocumentId: previousDocumentIdRef.current,
+        currentDocumentId,
         previousFile: previousFileRef.current,
         currentFile,
         currentViewport: getViewport(),
-        savedViewport: activeTab?.lastViewport,
+        savedViewport: null,
       });
       hasLayouted.current = false;
       setIsGraphVisible(false); // Hide graph=
       lastLayoutedGraphId.current = graphId;
       previousFileRef.current = currentFile;
+      previousDocumentIdRef.current = currentDocumentId;
       lastSizeSignaturesRef.current = new Map();
       relayoutCountRef.current = new Map();
       relayoutInFlightRef.current = false;
       lastRelayoutAtRef.current = new Map();
       clearPendingRelayout();
     }
-  }, [activeTab?.lastViewport, clearPendingRelayout, currentFile, getViewport, graphId]);
+  }, [clearPendingRelayout, currentDocumentId, currentFile, getViewport, graphId]);
 
   // Trigger Layout when all nodes are initialized (measured)
   useEffect(() => {
@@ -1677,17 +1658,7 @@ function GraphCanvasContent({
 
       setSelectedNodes(selectedIds);
       handleSelectionChange(selectedIds);
-      if (activeTabId) {
-        updateTabSnapshot(activeTabId, {
-          lastSelection: selectedIds.length > 0
-            ? {
-                nodeIds: selectedIds,
-                edgeIds: [],
-                updatedAt: Date.now(),
-              }
-            : null,
-        });
-      }
+
       if (selectedIds.length === 0) {
         clearEntrypointAnchor('selection-floating-menu:selection-bounds');
         return;
@@ -1701,7 +1672,7 @@ function GraphCanvasContent({
         registerEntrypointAnchor(selectionAnchor);
       }
     },
-    [activeTabId, clearEntrypointAnchor, getViewport, handleSelectionChange, registerEntrypointAnchor, setSelectedNodes, syncControlledSelection, updateTabSnapshot],
+    [clearEntrypointAnchor, getViewport, handleSelectionChange, registerEntrypointAnchor, setSelectedNodes, syncControlledSelection],
   );
 
   useEffect(() => {

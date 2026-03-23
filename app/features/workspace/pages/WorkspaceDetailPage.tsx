@@ -3,6 +3,11 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useGraphStore } from '@/store/graph';
 import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
+import {
+  navigateToDashboard,
+  navigateToDocument,
+  navigateToWorkspaceDocument,
+} from '@/features/host/renderer/navigation';
 import { DashboardSidebar } from '../components/DashboardSidebar';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { CanvasCard } from '../components/CanvasCard';
@@ -38,33 +43,21 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   );
 
   const handleDocumentClick = (path: string) => {
-    if (typeof window !== 'undefined' && 'electron' in window) {
-      window.location.hash = `/document/${encodeURIComponent(path)}`;
-    } else {
-      window.location.href = `/app/document/${encodeURIComponent(path)}`;
-    }
+    navigateToDocument(path);
   };
 
   const handleCreateDocument = async () => {
     if (!activeWorkspace) return;
     try {
       const result = await hostRpc.createWorkspaceDocument({ rootPath: activeWorkspace.rootPath });
-      if (typeof window !== 'undefined' && 'electron' in window) {
-        window.location.hash = `/document/${encodeURIComponent(result.filePath)}`;
-      } else {
-        window.location.href = `/app/document/${encodeURIComponent(result.filePath)}`;
-      }
+      navigateToWorkspaceDocument(activeWorkspace.rootPath, result);
     } catch {
       setError({ message: '캔버스 생성 실패' });
     }
   };
 
   const handleGoBack = () => {
-    if (typeof window !== 'undefined' && 'electron' in window) {
-      window.location.hash = ``;
-    } else {
-      window.location.href = `/app`;
-    }
+    navigateToDashboard();
   };
 
   if (!activeWorkspace) {

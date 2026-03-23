@@ -76,6 +76,18 @@ describe('graph metadata state', () => {
     expect(state.lastAppliedCommandId).toBe('cmd-1');
   });
 
+  it('currentDocumentId는 currentFile 전환 시 초기화되고 별도로 갱신할 수 있다', () => {
+    useGraphStore.getState().setCurrentFile('examples/main.tsx');
+    useGraphStore.getState().setCurrentDocumentId('doc-1');
+    expect(useGraphStore.getState().currentDocumentId).toBe('doc-1');
+
+    useGraphStore.getState().setCurrentFile('examples/other.tsx');
+    expect(useGraphStore.getState().currentDocumentId).toBeNull();
+
+    useGraphStore.getState().setCurrentDocumentId('doc-2');
+    expect(useGraphStore.getState().currentDocumentId).toBe('doc-2');
+  });
+
   it('pendingActionRoutingByKey는 register/clear lifecycle을 유지한다', () => {
     useGraphStore.getState().registerPendingActionRouting({
       pendingKey: 'selection-floating-menu:selection.style.update:shape-1:sha256:v1',
@@ -273,6 +285,34 @@ describe('document session persistence', () => {
         expect.objectContaining({ path: 'docs/untitled-1.graph.tsx', type: 'file' }),
       ]),
     );
+  });
+
+  it('deduplicates registered workspace documents by canonical document id', () => {
+    useGraphStore.setState(initialGraphState);
+    useGraphStore.getState().setWorkspaceDocuments('ws-1', [{
+      documentId: 'doc-1',
+      workspaceId: 'ws-1',
+      latestRevision: 1,
+      absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',
+      relativePath: 'docs/alpha.graph.tsx',
+      title: 'alpha.graph.tsx',
+    }]);
+
+    useGraphStore.getState().registerWorkspaceDocument('ws-1', {
+      documentId: 'doc-1',
+      workspaceId: 'ws-1',
+      latestRevision: 2,
+      absolutePath: '/tmp/ws-1/docs/renamed-alpha.graph.tsx',
+      relativePath: 'docs/renamed-alpha.graph.tsx',
+      title: 'renamed-alpha.graph.tsx',
+    });
+
+    expect(useGraphStore.getState().workspaceDocumentsByWorkspaceId['ws-1']).toEqual([
+      expect.objectContaining({
+        documentId: 'doc-1',
+        absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',
+      }),
+    ]);
   });
 
   it('ignores repeated empty selection commits to avoid render loops', () => {
