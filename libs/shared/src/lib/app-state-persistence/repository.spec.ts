@@ -6,7 +6,7 @@ import { createAppStatePgliteDb } from './pglite-db';
 import { AppStatePersistenceRepository } from './repository';
 
 describe('AppStatePersistenceRepository', () => {
-  it('stores and reads workspaces, session, recent documents, and preferences', async () => {
+  it('stores and reads workspaces, session, recent canvases, and preferences', async () => {
     const handle = await createAppStatePgliteDb(process.cwd(), { dataDir: null });
     const repository = new AppStatePersistenceRepository(handle.db);
 
@@ -32,9 +32,9 @@ describe('AppStatePersistenceRepository', () => {
     const session = await repository.setWorkspaceSession({
       activeWorkspaceId: pinnedWorkspace.id,
     });
-    const recentDocument = await repository.upsertRecentDocument({
+    const recentCanvas = await repository.upsertRecentCanvas({
       workspaceId: pinnedWorkspace.id,
-      documentPath: '/tmp/ws-pinned/doc-1.tsx',
+      canvasPath: '/tmp/ws-pinned/doc-1.tsx',
       lastOpenedAt: new Date('2026-03-23T00:00:00Z'),
     });
     await repository.setPreference({
@@ -42,10 +42,10 @@ describe('AppStatePersistenceRepository', () => {
       valueJson: 'light',
     });
     await repository.setPreference({
-      key: 'workspace.lastActiveDocumentSession',
+      key: 'workspace.lastActiveCanvasSession',
       valueJson: {
         workspaceId: pinnedWorkspace.id,
-        documentPath: recentDocument.documentPath,
+        canvasPath: recentCanvas.canvasPath,
       },
     });
 
@@ -53,7 +53,7 @@ describe('AppStatePersistenceRepository', () => {
     const storedSession = await repository.getWorkspaceSession();
     const recentCanvases = await repository.listRecentCanvases(pinnedWorkspace.id);
     const themePreference = await repository.getPreference('theme.mode');
-    const lastActivePreference = await repository.getPreference('workspace.lastActiveDocumentSession');
+    const lastActivePreference = await repository.getPreference('workspace.lastActiveCanvasSession');
 
     expect(workspaces.map((workspace) => workspace.id)).toEqual(['ws-pinned', 'ws-older']);
     expect(session.activeWorkspaceId).toBe('ws-pinned');
@@ -63,7 +63,7 @@ describe('AppStatePersistenceRepository', () => {
     expect(recentCanvases).toEqual([
       expect.objectContaining({
         workspaceId: 'ws-pinned',
-        documentPath: '/tmp/ws-pinned/doc-1.tsx',
+        canvasPath: '/tmp/ws-pinned/doc-1.tsx',
       }),
     ]);
     expect(themePreference).toEqual(expect.objectContaining({
@@ -71,10 +71,10 @@ describe('AppStatePersistenceRepository', () => {
       valueJson: 'light',
     }));
     expect(lastActivePreference).toEqual(expect.objectContaining({
-      key: 'workspace.lastActiveDocumentSession',
+      key: 'workspace.lastActiveCanvasSession',
       valueJson: {
         workspaceId: 'ws-pinned',
-        documentPath: '/tmp/ws-pinned/doc-1.tsx',
+        canvasPath: '/tmp/ws-pinned/doc-1.tsx',
       },
     }));
 
@@ -98,14 +98,14 @@ describe('AppStatePersistenceRepository', () => {
     await repository.setWorkspaceSession({
       activeWorkspaceId: workspace.id,
     });
-    await repository.upsertRecentDocument({
+    await repository.upsertRecentCanvas({
       workspaceId: workspace.id,
-      documentPath: '/tmp/ws-remove/doc-a.tsx',
+      canvasPath: '/tmp/ws-remove/doc-a.tsx',
       lastOpenedAt: new Date('2026-03-23T01:00:00Z'),
     });
-    await repository.upsertRecentDocument({
+    await repository.upsertRecentCanvas({
       workspaceId: workspace.id,
-      documentPath: '/tmp/ws-remove/doc-b.tsx',
+      canvasPath: '/tmp/ws-remove/doc-b.tsx',
       lastOpenedAt: new Date('2026-03-23T02:00:00Z'),
     });
 
@@ -120,7 +120,7 @@ describe('AppStatePersistenceRepository', () => {
     await handle.close();
   }, 15_000);
 
-  it('restores imported workspace/session/document preference state after reopening the same app-state DB', async () => {
+  it('restores imported workspace/session/canvas preference state after reopening the same app-state DB', async () => {
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'magam-app-state-reopen-'));
 
     const firstHandle = await createAppStatePgliteDb(process.cwd(), { dataDir });
@@ -147,13 +147,13 @@ describe('AppStatePersistenceRepository', () => {
     await firstRepository.setWorkspaceSession({
       activeWorkspaceId: 'ws-import-2',
     });
-    await firstRepository.upsertRecentDocument({
+    await firstRepository.upsertRecentCanvas({
       workspaceId: 'ws-import-2',
-      documentPath: 'docs/imported.graph.tsx',
+      canvasPath: 'docs/imported.graph.tsx',
       lastOpenedAt: new Date('2026-03-24T00:30:00Z'),
     });
     await firstRepository.setPreference({
-      key: 'workspace.lastActiveDocumentSession',
+      key: 'workspace.lastActiveCanvasSession',
       valueJson: {
         'ws-import-2': 'docs/imported.graph.tsx',
       },
@@ -171,9 +171,9 @@ describe('AppStatePersistenceRepository', () => {
       expect.objectContaining({ activeWorkspaceId: 'ws-import-2' }),
     );
     expect(await secondRepository.listRecentCanvases('ws-import-2')).toEqual([
-      expect.objectContaining({ documentPath: 'docs/imported.graph.tsx' }),
+      expect.objectContaining({ canvasPath: 'docs/imported.graph.tsx' }),
     ]);
-    expect(await secondRepository.getPreference('workspace.lastActiveDocumentSession')).toEqual(
+    expect(await secondRepository.getPreference('workspace.lastActiveCanvasSession')).toEqual(
       expect.objectContaining({
         valueJson: {
           'ws-import-2': 'docs/imported.graph.tsx',

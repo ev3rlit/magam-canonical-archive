@@ -26,7 +26,7 @@ export interface AppStateRepository {
   getWorkspaceSession(): Promise<AppWorkspaceSessionRecord | null>;
   setWorkspaceSession(input: AppWorkspaceSessionUpdateInput): Promise<AppWorkspaceSessionRecord>;
   listRecentCanvases(workspaceId: string): Promise<AppRecentCanvasRecord[]>;
-  upsertRecentDocument(input: AppRecentCanvasUpsertInput): Promise<AppRecentCanvasRecord>;
+  upsertRecentCanvas(input: AppRecentCanvasUpsertInput): Promise<AppRecentCanvasRecord>;
   clearRecentCanvases(workspaceId: string): Promise<void>;
   getPreference(key: string): Promise<AppPreferenceRecord | null>;
   setPreference(input: AppPreferenceUpsertInput): Promise<AppPreferenceRecord>;
@@ -142,19 +142,19 @@ export class AppStatePersistenceRepository implements AppStateRepository {
       .select()
       .from(appRecentCanvases)
       .where(eq(appRecentCanvases.workspaceId, workspaceId))
-      .orderBy(desc(appRecentCanvases.lastOpenedAt), asc(appRecentCanvases.documentPath));
+      .orderBy(desc(appRecentCanvases.lastOpenedAt), asc(appRecentCanvases.canvasPath));
   }
 
-  async upsertRecentDocument(input: AppRecentCanvasUpsertInput): Promise<AppRecentCanvasRecord> {
+  async upsertRecentCanvas(input: AppRecentCanvasUpsertInput): Promise<AppRecentCanvasRecord> {
     const inserted = await this.db
       .insert(appRecentCanvases)
       .values({
         workspaceId: input.workspaceId,
-        documentPath: input.documentPath,
+        canvasPath: input.canvasPath,
         lastOpenedAt: input.lastOpenedAt ?? null,
       })
       .onConflictDoUpdate({
-        target: [appRecentCanvases.workspaceId, appRecentCanvases.documentPath],
+        target: [appRecentCanvases.workspaceId, appRecentCanvases.canvasPath],
         set: {
           lastOpenedAt: input.lastOpenedAt ?? null,
           updatedAt: new Date(),
@@ -162,7 +162,7 @@ export class AppStatePersistenceRepository implements AppStateRepository {
       })
       .returning();
 
-    return requireFirstRow(inserted, 'app recent document upsert');
+    return requireFirstRow(inserted, 'app recent canvas upsert');
   }
 
   async clearRecentCanvases(workspaceId: string): Promise<void> {

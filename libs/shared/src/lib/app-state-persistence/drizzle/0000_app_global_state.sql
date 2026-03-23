@@ -18,10 +18,10 @@ CREATE TABLE "app_workspace_session" (
 --> statement-breakpoint
 CREATE TABLE "app_recent_canvases" (
 	"workspace_id" text NOT NULL,
-	"document_path" text NOT NULL,
+	"canvas_path" text NOT NULL,
 	"last_opened_at" timestamp with time zone,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "app_recent_canvases_workspace_id_document_path_pk" PRIMARY KEY("workspace_id","document_path")
+	CONSTRAINT "app_recent_canvases_workspace_id_canvas_path_pk" PRIMARY KEY("workspace_id","canvas_path")
 );
 --> statement-breakpoint
 CREATE TABLE "app_preferences" (

@@ -108,6 +108,7 @@ describe('app-state pglite bootstrap', () => {
 
     expect(migrationRows.rows).toEqual([
       { migration_name: '0000_app_global_state.sql' },
+      { migration_name: '0001_canvas_terminology.sql' },
     ]);
 
     await upgradedHandle.close();

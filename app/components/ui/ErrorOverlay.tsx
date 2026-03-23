@@ -4,9 +4,11 @@ import { useEffect } from 'react';
 export function ErrorOverlay() {
   const { error } = useGraphStore();
 
-  if (!error) return null;
-
   useEffect(() => {
+    if (!error) {
+      return;
+    }
+
     console.error('[CanvasEditorError]', {
       type: error.type ?? 'Error',
       message: error.message,

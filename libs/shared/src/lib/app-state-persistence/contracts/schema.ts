@@ -44,14 +44,14 @@ export const appRecentCanvases = pgTable(
   'app_recent_canvases',
   {
     workspaceId: text('workspace_id').notNull(),
-    documentPath: text('document_path').notNull(),
+    canvasPath: text('canvas_path').notNull(),
     lastOpenedAt: timestamp('last_opened_at', { withTimezone: true, mode: 'date' }),
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({
     pk: primaryKey({
-      columns: [table.workspaceId, table.documentPath],
-      name: 'app_recent_canvases_workspace_id_document_path_pk',
+      columns: [table.workspaceId, table.canvasPath],
+      name: 'app_recent_canvases_workspace_id_canvas_path_pk',
     }),
     workspaceIdx: index('idx_app_recent_canvases_workspace').on(table.workspaceId, table.lastOpenedAt),
   }),
