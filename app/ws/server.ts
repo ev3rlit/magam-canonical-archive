@@ -23,7 +23,7 @@ const WATCH_DIR = process.env.MAGAM_TARGET_DIR || './examples';
 
 // Client connections with their subscriptions
 const clients = new Map<unknown, Set<string>>();
-const watchedSubscriptionPaths = new Set<string>();
+const watchedCompatibilitySubscriptionPaths = new Set<string>();
 
 const COMMAND_EVENT_TTL_MS = 3000;
 const recentCommandEvents = new Map<string, number>();
@@ -131,7 +131,7 @@ const watcher = watch(watchPath, {
     ignored: /(^|[\/\\])\../, // ignore dotfiles
 });
 
-function resolveSubscribedWatchPath(filePath: string, rootPath?: string): string {
+function resolveCompatibilitySubscribedWatchPath(filePath: string, rootPath?: string): string {
     if (isAbsolute(filePath)) {
         return filePath;
     }
@@ -140,19 +140,19 @@ function resolveSubscribedWatchPath(filePath: string, rootPath?: string): string
 }
 
 function ensureWatchedSubscriptionPath(filePath: string, rootPath?: string): void {
-    const resolvedPath = resolveSubscribedWatchPath(filePath, rootPath);
-    if (watchedSubscriptionPaths.has(resolvedPath)) {
+    const resolvedPath = resolveCompatibilitySubscribedWatchPath(filePath, rootPath);
+    if (watchedCompatibilitySubscriptionPaths.has(resolvedPath)) {
         return;
     }
 
     watcher.add(resolvedPath);
-    watchedSubscriptionPaths.add(resolvedPath);
+    watchedCompatibilitySubscriptionPaths.add(resolvedPath);
 }
 
 /**
  * Broadcast file list update to all connected clients
  */
-function broadcastFileListUpdate(event: 'add' | 'unlink', filePath: string) {
+function broadcastCompatibilityFileListUpdate(event: 'add' | 'unlink', filePath: string) {
     // Extract relative path from the full path
     const relativePath = filePath.startsWith(`${watchPath}/`)
         ? filePath.replace(`${watchPath}/`, '')
@@ -170,7 +170,7 @@ function broadcastFileListUpdate(event: 'add' | 'unlink', filePath: string) {
         (ws as { send: (data: string) => void }).send(message);
     });
 
-    console.log(`[WS] Broadcasted files.changed: ${event} - ${relativePath}`);
+    console.log(`[WS] Broadcasted compatibility files.changed: ${event} - ${relativePath}`);
 }
 
 function broadcastFileChanged(payload: {
@@ -267,14 +267,14 @@ watcher.on('add', (filePath) => {
     // Only handle .tsx files
     if (!filePath.endsWith('.tsx')) return;
     console.log(`[WS] File added: ${filePath}`);
-    broadcastFileListUpdate('add', filePath);
+    broadcastCompatibilityFileListUpdate('add', filePath);
 });
 
 watcher.on('unlink', (filePath) => {
     // Only handle .tsx files
     if (!filePath.endsWith('.tsx')) return;
     console.log(`[WS] File deleted: ${filePath}`);
-    broadcastFileListUpdate('unlink', filePath);
+    broadcastCompatibilityFileListUpdate('unlink', filePath);
 });
 
 watcher.on('error', (error) => {

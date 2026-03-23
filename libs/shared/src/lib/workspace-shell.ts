@@ -22,18 +22,20 @@ export type WorkspaceHealth = {
   message?: string;
 };
 
-export type WorkspaceDocumentSummary = {
+export type CompatibilityWorkspaceDocumentSummary = {
   filePath: string;
   size: number;
   modifiedAt: number;
 };
+
+export type WorkspaceDocumentSummary = CompatibilityWorkspaceDocumentSummary;
 
 export type WorkspaceProbeResult = {
   rootPath: string;
   workspaceName: string;
   health: WorkspaceHealth;
   documentCount: number;
-  documents: WorkspaceDocumentSummary[];
+  documents: CompatibilityWorkspaceDocumentSummary[];
   lastModifiedAt: number | null;
 };
 
@@ -126,8 +128,8 @@ function shouldSkipEntry(name: string): boolean {
   return name.startsWith('.') || SKIPPED_DIR_NAMES.has(name);
 }
 
-async function readWorkspaceDocuments(rootPath: string): Promise<WorkspaceDocumentSummary[]> {
-  const results: WorkspaceDocumentSummary[] = [];
+async function readWorkspaceDocuments(rootPath: string): Promise<CompatibilityWorkspaceDocumentSummary[]> {
+  const results: CompatibilityWorkspaceDocumentSummary[] = [];
 
   async function walk(currentDir: string): Promise<void> {
     const entries = await readdir(currentDir, { withFileTypes: true });
@@ -167,11 +169,13 @@ async function readWorkspaceDocuments(rootPath: string): Promise<WorkspaceDocume
   return results;
 }
 
-export function createDefaultDocumentSource(): string {
+export function createCompatibilityDocumentSource(): string {
   return DEFAULT_DOCUMENT_SOURCE;
 }
 
-export function createGeneratedDocumentPath(existingFiles: Iterable<string>): string {
+export const createDefaultDocumentSource = createCompatibilityDocumentSource;
+
+export function createCompatibilityGeneratedDocumentPath(existingFiles: Iterable<string>): string {
   const taken = new Set(existingFiles);
   const useDocsFolder = Array.from(taken).some((filePath) => filePath.startsWith('docs/'));
   let counter = 1;
@@ -185,11 +189,13 @@ export function createGeneratedDocumentPath(existingFiles: Iterable<string>): st
   }
 }
 
+export const createGeneratedDocumentPath = createCompatibilityGeneratedDocumentPath;
+
 export function normalizeWorkspaceRootPath(rawPath: string): string {
   return normalizeAbsolutePath(rawPath, 'rootPath');
 }
 
-export function resolveWorkspaceDocumentPath(rootPath: string, rawPath: string): string {
+export function resolveCompatibilityDocumentPath(rootPath: string, rawPath: string): string {
   const absolutePath = normalizeWorkspaceTargetPath(rootPath, rawPath, 'filePath');
   if (path.extname(absolutePath).toLowerCase() !== '.tsx') {
     throw new ApiError(422, 'DOC_422_UNSUPPORTED_EXTENSION', 'Documents must use the .tsx extension');
@@ -197,6 +203,8 @@ export function resolveWorkspaceDocumentPath(rootPath: string, rawPath: string):
 
   return absolutePath;
 }
+
+export const resolveWorkspaceDocumentPath = resolveCompatibilityDocumentPath;
 
 export function resolveWorkspaceBrowserTargetPath(rootPath: string, rawPath?: string | null): string {
   if (!rawPath) {
@@ -423,15 +431,15 @@ export async function openWorkspaceInFileBrowser(input: {
   };
 }
 
-export async function createWorkspaceDocument(input: {
+export async function createCompatibilityWorkspaceDocument(input: {
   rootPath: string;
   filePath?: string | null;
 }): Promise<{ filePath: string; sourceVersion: string }> {
   const probe = await ensureWorkspaceRoot(input.rootPath);
   const relativeFilePath = input.filePath && input.filePath.trim().length > 0
     ? input.filePath.trim()
-    : createGeneratedDocumentPath(probe.documents.map((document) => document.filePath));
-  const absoluteFilePath = resolveWorkspaceDocumentPath(probe.rootPath, relativeFilePath);
+    : createCompatibilityGeneratedDocumentPath(probe.documents.map((document) => document.filePath));
+  const absoluteFilePath = resolveCompatibilityDocumentPath(probe.rootPath, relativeFilePath);
 
   try {
     const existing = await stat(absoluteFilePath);
@@ -452,7 +460,7 @@ export async function createWorkspaceDocument(input: {
   }
 
   await mkdir(path.dirname(absoluteFilePath), { recursive: true });
-  const content = createDefaultDocumentSource();
+  const content = createCompatibilityDocumentSource();
   await writeFile(absoluteFilePath, content, 'utf-8');
 
   return {
@@ -460,5 +468,7 @@ export async function createWorkspaceDocument(input: {
     sourceVersion: createDocumentSourceVersion(content),
   };
 }
+
+export const createWorkspaceDocument = createCompatibilityWorkspaceDocument;
 
 export { toWorkspaceRelativePath, createDocumentSourceVersion };

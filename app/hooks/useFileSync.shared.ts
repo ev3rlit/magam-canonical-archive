@@ -150,11 +150,13 @@ export function resolveFileSyncWsUrl(input?: {
   return `${protocol}://${hostname}:${port}`;
 }
 
-export function normalizeWatchedFiles(filePath: string | null, dependencyFiles: string[]): string[] {
+export function normalizeCompatibilityWatchedFiles(filePath: string | null, dependencyFiles: string[]): string[] {
   return Array.from(new Set(
     [filePath, ...dependencyFiles].filter((value): value is string => typeof value === 'string' && value.length > 0),
   )).sort();
 }
+
+export const normalizeWatchedFiles = normalizeCompatibilityWatchedFiles;
 
 export function buildWatchedFilesSignature(files: string[]): string {
   return files.join('\n');

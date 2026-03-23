@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { basename, dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { createHash } from 'crypto';
@@ -168,6 +168,43 @@ describe('RPC editing methods', () => {
     expect(patched.includes('id={"shape-1"}')).toBe(true);
     expect(patched.includes('x={120}')).toBe(true);
     expect(patched.includes('y={160}')).toBe(true);
+  });
+
+  it('node.create: compatibility documents directory paths still mutate through the relative contract', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'magam-methods-compat-'));
+    tempDirs.push(dir);
+    const documentsDir = join(dir, 'documents');
+    await mkdir(documentsDir, { recursive: true });
+    const filePath = join(documentsDir, 'doc-1.graph.tsx');
+    await writeFile(filePath, [
+      "import { Canvas } from '@magam/core';",
+      '',
+      'export default function UntitledDocument() {',
+      '  return <Canvas></Canvas>;',
+      '}',
+      '',
+    ].join('\n'), 'utf-8');
+    const original = await readFile(filePath, 'utf-8');
+    process.env.MAGAM_TARGET_DIR = dir;
+
+    const result = await methods['node.create']({
+      filePath: 'documents/doc-1.graph.tsx',
+      node: {
+        id: 'shape-compat-1',
+        type: 'rectangle',
+        props: { size: { width: 160, height: 100 } },
+        placement: { mode: 'canvas-absolute', x: 48, y: 96 },
+      },
+      baseVersion: sha(original),
+      originId: 'client-1',
+      commandId: 'cmd-compat-doc-create',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('shape-compat-1')).toBe(true);
+    expect(patched.includes('x={48}')).toBe(true);
+    expect(patched.includes('y={96}')).toBe(true);
   });
 
   it('node.create: canvas-absolute placement를 그대로 저장한다', async () => {

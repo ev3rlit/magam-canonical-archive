@@ -7,16 +7,16 @@ import { execute } from '../core/executor';
 import { MagamError } from '@magam/core';
 import { startServer, broadcast } from '../server/websocket';
 
+const COMPATIBILITY_ENTRY_CANDIDATES = ['overview.tsx', 'main.tsx'] as const;
+const COMPATIBILITY_TSX_GLOB = '**/*.tsx';
+
 export async function startDevServer(cwd: string, entryFile?: string) {
   let entryPoint = entryFile;
   if (!entryPoint) {
-    if (fs.existsSync(path.join(cwd, 'overview.tsx'))) {
-      entryPoint = 'overview.tsx';
-    } else if (fs.existsSync(path.join(cwd, 'main.tsx'))) {
-      entryPoint = 'main.tsx';
-    } else {
+    entryPoint = COMPATIBILITY_ENTRY_CANDIDATES.find((candidate) => fs.existsSync(path.join(cwd, candidate)));
+    if (!entryPoint) {
       console.error(
-        '\x1b[31mNo entry file found. Please create overview.tsx or main.tsx\x1b[0m',
+        '\x1b[31mNo compatibility entry file found. Please create overview.tsx or main.tsx\x1b[0m',
       );
       return;
     }
@@ -73,7 +73,7 @@ export async function startDevServer(cwd: string, entryFile?: string) {
 
   const { port } = await startServer(undefined, async (message, ws) => {
     if (message.type === 'get-files') {
-      const files = await glob('**/*.tsx', {
+      const files = await glob(COMPATIBILITY_TSX_GLOB, {
         cwd,
         ignore: ['**/node_modules/**', '**/.git/**'],
       });
@@ -90,7 +90,7 @@ export async function startDevServer(cwd: string, entryFile?: string) {
 
   await run();
 
-  const watcher = chokidar.watch('**/*.tsx', {
+  const watcher = chokidar.watch(COMPATIBILITY_TSX_GLOB, {
     cwd,
     ignored: ['**/node_modules/**', '**/.git/**'],
     ignoreInitial: true,

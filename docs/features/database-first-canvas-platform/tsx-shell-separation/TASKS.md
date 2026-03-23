@@ -69,9 +69,9 @@
 ### Implementation for User Story 2
 
 - [x] T014 [US2] Redefine editor document identity state away from raw file path ownership in `app/store/graph.ts`, `app/features/editor/pages/CanvasEditorPage.tsx`, and `app/components/GraphCanvas.tsx`
-- [ ] T015 [US2] Replace file-path based render entry with canonical document materialization/load behavior in `app/features/editor/pages/CanvasEditorPage.tsx`, `app/app/api/render/route.ts`, and `libs/cli/src/server/http.ts`
-- [ ] T016 [P] [US2] Add editor restore/layout regression coverage in `app/store/graph.test.ts`, `app/components/GraphCanvas.viewport.test.ts`, and `app/components/GraphCanvas.test.tsx`
-- [ ] T017 [P] [US2] Add document identity parity coverage for navigation/open flows in `app/features/host/renderer/navigation.spec.ts` and `app/features/workspace/pages/WorkspaceDetailPage.tsx`
+- [x] T015 [US2] Replace file-path based render entry with canonical document materialization/load behavior in `app/features/editor/pages/CanvasEditorPage.tsx`, `app/app/api/render/route.ts`, and `libs/cli/src/server/http.ts`
+- [x] T016 [P] [US2] Add editor restore/layout regression coverage in `app/store/graph.test.ts`, `app/components/GraphCanvas.viewport.test.ts`, and `app/components/GraphCanvas.test.tsx`
+- [x] T017 [P] [US2] Add document identity parity coverage for navigation/open flows in `app/features/host/renderer/navigation.spec.ts` and `app/features/workspace/pages/WorkspaceDetailPage.tsx`
 
 **Checkpoint**: Canonical document identity drives editor restore/render behavior and prevents spurious graph resets.
 
@@ -85,10 +85,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T018 [US3] Split `workspace-shell.ts` responsibilities into workspace shell vs compatibility file shell in `libs/shared/src/lib/workspace-shell.ts`, `libs/shared/src/lib/canonical-document-shell/service.ts`, and `app/app/api/workspaces/_shared.ts`
-- [ ] T019 [P] [US3] Demote TSX file tree and watcher ownership in `app/ws/server.ts`, `app/hooks/useFileSync.ts`, `app/hooks/useFileSync.shared.ts`, and `libs/cli/src/server/http.ts`
-- [ ] T020 [P] [US3] Add compatibility-boundary regression coverage in `app/ws/methods.test.ts`, `app/hooks/useFileSync.test.ts`, and `libs/shared/src/lib/canonical-document-shell/service.spec.ts`
-- [ ] T021 [US3] Rename or isolate remaining compatibility-only TSX helpers in `libs/shared/src/lib/workspace-shell.ts`, `libs/cli/src/commands/dev.ts`, and `libs/cli/src/commands/new.ts`
+- [x] T018 [US3] Split `workspace-shell.ts` responsibilities into workspace shell vs compatibility file shell in `libs/shared/src/lib/workspace-shell.ts`, `libs/shared/src/lib/canonical-document-shell/service.ts`, and `app/app/api/workspaces/_shared.ts`
+- [x] T019 [P] [US3] Demote TSX file tree and watcher ownership in `app/ws/server.ts`, `app/hooks/useFileSync.ts`, `app/hooks/useFileSync.shared.ts`, and `libs/cli/src/server/http.ts`
+- [x] T020 [P] [US3] Add compatibility-boundary regression coverage in `app/ws/methods.test.ts`, `app/hooks/useFileSync.test.ts`, and `libs/shared/src/lib/canonical-document-shell/service.spec.ts`
+- [x] T021 [US3] Rename or isolate remaining compatibility-only TSX helpers in `libs/shared/src/lib/workspace-shell.ts`, `libs/cli/src/commands/dev.ts`, and `libs/cli/src/commands/new.ts`
 
 **Checkpoint**: TSX paths remain only as clearly named compatibility/import/materialization paths.
 

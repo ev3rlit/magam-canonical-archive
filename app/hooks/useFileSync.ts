@@ -10,7 +10,7 @@ import {
     applyEditCompletionSnapshot,
     buildWatchedFilesSignature,
     createPerFileMutationExecutor,
-    normalizeWatchedFiles,
+    normalizeCompatibilityWatchedFiles,
     pruneExpiredOwnCommands,
     rememberOwnCommand,
     resolveFileSyncWsUrl,
@@ -87,7 +87,7 @@ export function useFileSync(
         [dependencyFiles],
     );
     const watchedFiles = useMemo(
-        () => normalizeWatchedFiles(filePath, dependencyFiles),
+        () => normalizeCompatibilityWatchedFiles(filePath, dependencyFiles),
         [dependencyFilesSignature, filePath],
     );
     const watchedFilesSignature = useMemo(

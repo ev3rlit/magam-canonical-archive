@@ -6,6 +6,7 @@ import {
   MAX_VERSION_CONFLICT_RETRY,
   RpcClientError,
   buildWatchedFilesSignature,
+  normalizeCompatibilityWatchedFiles,
   normalizeWatchedFiles,
   resolveFileSyncWsUrl,
   shouldReloadAfterHistoryReplay,
@@ -49,6 +50,16 @@ describe('useFileSync watched files normalization', () => {
     ])).toEqual([
       'examples/a.tsx',
       'examples/b.tsx',
+    ]);
+  });
+
+  it('compatibility alias도 동일한 watched file normalization을 유지한다', () => {
+    expect(normalizeCompatibilityWatchedFiles('documents/doc-1.graph.tsx', [
+      'documents/doc-1.graph.tsx',
+      'components/auth.tsx',
+    ])).toEqual([
+      'components/auth.tsx',
+      'documents/doc-1.graph.tsx',
     ]);
   });
 
