@@ -70,7 +70,7 @@ async function runBuildCore(repoRoot: string): Promise<void> {
     return;
   }
 
-  const process = Bun.spawn({
+  const childProcess = Bun.spawn({
     cmd: ['bun', 'run', 'build:core'],
     cwd: repoRoot,
     env: process.env,
@@ -79,7 +79,7 @@ async function runBuildCore(repoRoot: string): Promise<void> {
     stdin: 'inherit',
   });
 
-  const exitCode = await process.exited;
+  const exitCode = await childProcess.exited;
   if (exitCode !== 0) {
     throw new Error(`build:core failed with exit code ${exitCode}`);
   }
