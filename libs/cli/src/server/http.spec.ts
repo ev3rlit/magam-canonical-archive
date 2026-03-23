@@ -1,7 +1,37 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+
+type HttpSpecMocks = {
+  actualFsRef: { current: null | typeof import('fs') };
+  mockGlob: ReturnType<typeof vi.fn>;
+  mockTranspileWithMetadata: ReturnType<typeof vi.fn>;
+  mockExecute: ReturnType<typeof vi.fn>;
+  mockExistsSync: ReturnType<typeof vi.fn>;
+  mockReadFileSync: ReturnType<typeof vi.fn>;
+  mockMkdirSync: ReturnType<typeof vi.fn>;
+  mockWriteFileSync: ReturnType<typeof vi.fn>;
+};
+
+function getHttpSpecMocks(): HttpSpecMocks {
+  const globalState = globalThis as typeof globalThis & { __HTTP_SPEC_MOCKS__?: HttpSpecMocks };
+  if (!globalState.__HTTP_SPEC_MOCKS__) {
+    globalState.__HTTP_SPEC_MOCKS__ = {
+      actualFsRef: { current: null },
+      mockGlob: vi.fn(),
+      mockTranspileWithMetadata: vi.fn(),
+      mockExecute: vi.fn(),
+      mockExistsSync: vi.fn(),
+      mockReadFileSync: vi.fn(),
+      mockMkdirSync: vi.fn(),
+      mockWriteFileSync: vi.fn(),
+    };
+  }
+
+  return globalState.__HTTP_SPEC_MOCKS__;
+}
 
 const {
   actualFsRef,
@@ -12,16 +42,8 @@ const {
   mockReadFileSync,
   mockMkdirSync,
   mockWriteFileSync,
-} = vi.hoisted(() => ({
-  actualFsRef: { current: null as null | typeof import('fs') },
-  mockGlob: vi.fn(),
-  mockTranspileWithMetadata: vi.fn(),
-  mockExecute: vi.fn(),
-  mockExistsSync: vi.fn(),
-  mockReadFileSync: vi.fn(),
-  mockMkdirSync: vi.fn(),
-  mockWriteFileSync: vi.fn(),
-}));
+} = getHttpSpecMocks();
+const require = createRequire(import.meta.url);
 
 // Mock fast-glob
 vi.mock('fast-glob', () => ({
@@ -38,8 +60,8 @@ vi.mock('../core/executor', () => ({
   execute: mockExecute,
 }));
 
-vi.mock('fs', async () => {
-  const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
+vi.mock('fs', () => {
+  const actual = require('node:fs') as typeof import('node:fs');
   actualFsRef.current = actual;
   return {
     ...actual,
@@ -197,7 +219,7 @@ describe('HTTP Render Server', () => {
       }
     });
 
-    it('creates workspace documents through POST /canvases', async () => {
+    it('creates workspace canvases through POST /canvases', async () => {
       const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'magam-http-documents-'));
 
       try {
@@ -211,22 +233,21 @@ describe('HTTP Render Server', () => {
         expect(response.status).toBe(201);
         expect(body.code).toBe('DOC_201_CREATED');
         expect(body.rootPath).toBe(workspaceRoot);
-        expect(body.filePath).toMatch(/^documents\/doc-/);
         expect(body.sourceVersion).toMatch(/^sha256:/);
         expect(body.canvasId).toMatch(/^doc-/);
         expect(body.workspaceId).toBe(path.basename(workspaceRoot).toLowerCase());
         expect(body.latestRevision).toBe(1);
+        expect(body.title).toBeNull();
 
         const listed = await fetch(`${baseUrl}/canvases?rootPath=${encodeURIComponent(workspaceRoot)}`);
         const listedBody = await listed.json();
         expect(listed.status).toBe(200);
         expect(listedBody.health.state).toBe('ok');
-        expect(listedBody.health.canvasCount).toBe(1);
         expect(listedBody.canvasCount).toBe(1);
-        expect(listedBody.documents[0]).toEqual(expect.objectContaining({
+        expect(listedBody.canvases[0]).toEqual(expect.objectContaining({
           canvasId: body.canvasId,
           workspaceId: body.workspaceId,
-          filePath: body.filePath,
+          title: null,
         }));
       } finally {
         await rm(workspaceRoot, { recursive: true, force: true });
@@ -300,7 +321,7 @@ describe('HTTP Render Server', () => {
       });
     });
 
-    it('lists, upserts, and clears recent documents', async () => {
+    it('lists, upserts, and clears recent canvases', async () => {
       const initial = await requestJson('/app-state/recent-canvases?workspaceId=workspace-3');
       expect(initial.response.status).toBe(200);
       expect(initial.body).toEqual([]);
@@ -310,13 +331,13 @@ describe('HTTP Render Server', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           workspaceId: 'workspace-3',
-          documentPath: 'docs/alpha.graph.tsx',
+          canvasPath: 'docs/alpha.graph.tsx',
         }),
       });
       expect(upsert.response.status).toBe(200);
       expect(upsert.body).toMatchObject({
         workspaceId: 'workspace-3',
-        documentPath: 'docs/alpha.graph.tsx',
+        canvasPath: 'docs/alpha.graph.tsx',
       });
 
       const listed = await requestJson('/app-state/recent-canvases?workspaceId=workspace-3');
@@ -324,7 +345,7 @@ describe('HTTP Render Server', () => {
       expect(listed.body).toHaveLength(1);
       expect(listed.body[0]).toMatchObject({
         workspaceId: 'workspace-3',
-        documentPath: 'docs/alpha.graph.tsx',
+        canvasPath: 'docs/alpha.graph.tsx',
       });
 
       const cleared = await requestJson('/app-state/recent-canvases?workspaceId=workspace-3', {
@@ -367,7 +388,7 @@ describe('HTTP Render Server', () => {
   });
 
   describe('POST /render', () => {
-    it('should return 400 if filePath is missing', async () => {
+    it('should return 400 if canvasId is missing', async () => {
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
         body: JSON.stringify({}),
@@ -378,12 +399,10 @@ describe('HTTP Render Server', () => {
       expect(body.type).toBe('VALIDATION_ERROR');
     });
 
-    it('should return 404 if file does not exist', async () => {
-      mockExistsSync.mockReturnValue(false);
-
+    it('should return 404 if canvas does not exist', async () => {
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
-        body: JSON.stringify({ filePath: 'missing.tsx' }),
+        body: JSON.stringify({ canvasId: 'doc-missing', rootPath: targetDir }),
       });
       const body = await response.json();
 
@@ -391,33 +410,7 @@ describe('HTTP Render Server', () => {
       expect(body.type).toBe('FILE_NOT_FOUND');
     });
 
-    it('should render file successfully', async () => {
-      mockExistsSync.mockReturnValue(true);
-      mockTranspileWithMetadata.mockResolvedValue({
-        code: 'transpiled code',
-        inputs: [`${targetDir}/exists.tsx`],
-      });
-      mockExecute.mockResolvedValue({ isOk: () => true, value: {} } as any);
-
-      const response = await fetch(`${baseUrl}/render`, {
-        method: 'POST',
-        body: JSON.stringify({ filePath: 'exists.tsx' }),
-      });
-      const body = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(body.graph).toEqual({});
-      expect(typeof body.sourceVersion).toBe('string');
-      expect(body.sourceVersion.startsWith('sha256:')).toBe(true);
-      expect(body.sourceVersions).toEqual({
-        'exists.tsx': body.sourceVersion,
-      });
-      // expect valid args
-      expect(mockTranspileWithMetadata).toHaveBeenCalledWith(expect.stringContaining('exists.tsx'));
-      expect(mockExecute).toHaveBeenCalledWith('transpiled code');
-    });
-
-    it('should render a canonical document by canvasId even when no filePath is provided', async () => {
+    it('should render canvas successfully', async () => {
       const created = await fetch(`${baseUrl}/canvases`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -426,10 +419,50 @@ describe('HTTP Render Server', () => {
 
       mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
         String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
+          ? true
+          : actualFsRef.current?.existsSync(candidatePath) ?? false
       ));
       mockTranspileWithMetadata.mockResolvedValue({
         code: 'transpiled code',
-        inputs: [`${targetDir}/${created.filePath}`],
+        inputs: [`${targetDir}/canvases/${created.canvasId}.graph.tsx`],
+      });
+      mockExecute.mockResolvedValue({ isOk: () => true, value: {} } as any);
+
+      const response = await fetch(`${baseUrl}/render`, {
+        method: 'POST',
+        body: JSON.stringify({ canvasId: created.canvasId, rootPath: targetDir }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.graph).toEqual({});
+      expect(body.canvasId).toBe(created.canvasId);
+      expect(typeof body.sourceVersion).toBe('string');
+      expect(body.sourceVersion.startsWith('sha256:')).toBe(true);
+      expect(body.sourceVersions).toEqual({
+        [`canvases/${created.canvasId}.graph.tsx`]: body.sourceVersion,
+      });
+      expect(mockTranspileWithMetadata).toHaveBeenCalledWith(
+        `${targetDir}/canvases/${created.canvasId}.graph.tsx`,
+      );
+      expect(mockExecute).toHaveBeenCalledWith('transpiled code');
+    });
+
+    it('should render a canonical canvas by canvasId', async () => {
+      const created = await fetch(`${baseUrl}/canvases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rootPath: targetDir }),
+      }).then((response) => response.json());
+
+      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
+        String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
+          ? true
+          : actualFsRef.current?.existsSync(candidatePath) ?? false
+      ));
+      mockTranspileWithMetadata.mockResolvedValue({
+        code: 'transpiled code',
+        inputs: [`${targetDir}/canvases/${created.canvasId}.graph.tsx`],
       });
       mockExecute.mockResolvedValue({ isOk: () => true, value: {} } as any);
 
@@ -443,42 +476,26 @@ describe('HTTP Render Server', () => {
       expect(body.graph).toEqual({});
       expect(body.canvasId).toBe(created.canvasId);
       expect(mockTranspileWithMetadata).toHaveBeenCalledWith(
-        `${targetDir}/${created.filePath}`,
-      );
-    });
-
-    it('should normalize duplicated workspace prefixes in render requests', async () => {
-      const workspaceName = path.basename(targetDir);
-      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
-        String(candidatePath) === `${targetDir}/nested/example.tsx`
-      ));
-      mockTranspileWithMetadata.mockResolvedValue({
-        code: 'transpiled code',
-        inputs: [`${targetDir}/nested/example.tsx`],
-      });
-      mockExecute.mockResolvedValue({ isOk: () => true, value: {} } as any);
-
-      const response = await fetch(`${baseUrl}/render`, {
-        method: 'POST',
-        body: JSON.stringify({ filePath: `${workspaceName}/${workspaceName}/nested/example.tsx` }),
-      });
-      const body = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(body.sourceVersions).toEqual({
-        'nested/example.tsx': body.sourceVersion,
-      });
-      expect(mockTranspileWithMetadata).toHaveBeenCalledWith(
-        `${targetDir}/nested/example.tsx`,
+        `${targetDir}/canvases/${created.canvasId}.graph.tsx`,
       );
     });
 
     it('should inject sourceMeta.filePath from JSX source info', async () => {
-      mockExistsSync.mockReturnValue(true);
+      const created = await fetch(`${baseUrl}/canvases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rootPath: targetDir }),
+      }).then((response) => response.json());
+
+      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
+        String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
+          ? true
+          : actualFsRef.current?.existsSync(candidatePath) ?? false
+      ));
       mockTranspileWithMetadata.mockResolvedValue({
         code: 'transpiled code',
         inputs: [
-          `${targetDir}/exists.tsx`,
+          `${targetDir}/canvases/${created.canvasId}.graph.tsx`,
           `${targetDir}/components/auth.tsx`,
         ],
       });
@@ -500,7 +517,7 @@ describe('HTTP Render Server', () => {
 
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
-        body: JSON.stringify({ filePath: 'exists.tsx' }),
+        body: JSON.stringify({ canvasId: created.canvasId, rootPath: targetDir }),
       });
       const body = await response.json();
 
@@ -512,17 +529,27 @@ describe('HTTP Render Server', () => {
         kind: 'canvas',
       });
       expect(body.sourceVersions).toMatchObject({
-        'exists.tsx': expect.stringMatching(/^sha256:/),
+        [`canvases/${created.canvasId}.graph.tsx`]: expect.stringMatching(/^sha256:/),
         'components/auth.tsx': expect.stringMatching(/^sha256:/),
       });
     });
 
     it('should derive frame-local sourceId for scoped reusable nodes', async () => {
-      mockExistsSync.mockReturnValue(true);
+      const created = await fetch(`${baseUrl}/canvases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rootPath: targetDir }),
+      }).then((response) => response.json());
+
+      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
+        String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
+          ? true
+          : actualFsRef.current?.existsSync(candidatePath) ?? false
+      ));
       mockTranspileWithMetadata.mockResolvedValue({
         code: 'transpiled code',
         inputs: [
-          `${targetDir}/exists.tsx`,
+          `${targetDir}/canvases/${created.canvasId}.graph.tsx`,
           `${targetDir}/components/service-frame.tsx`,
         ],
       });
@@ -545,7 +572,7 @@ describe('HTTP Render Server', () => {
 
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
-        body: JSON.stringify({ filePath: 'exists.tsx' }),
+        body: JSON.stringify({ canvasId: created.canvasId, rootPath: targetDir }),
       });
       const body = await response.json();
 
@@ -562,12 +589,22 @@ describe('HTTP Render Server', () => {
     });
 
     it('should handle render errors', async () => {
-      mockExistsSync.mockReturnValue(true);
+      const created = await fetch(`${baseUrl}/canvases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rootPath: targetDir }),
+      }).then((response) => response.json());
+
+      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
+        String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
+          ? true
+          : actualFsRef.current?.existsSync(candidatePath) ?? false
+      ));
       mockTranspileWithMetadata.mockRejectedValue(new Error('Transpile error'));
 
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
-        body: JSON.stringify({ filePath: 'error.tsx' }),
+        body: JSON.stringify({ canvasId: created.canvasId, rootPath: targetDir }),
       });
       const body = await response.json();
 

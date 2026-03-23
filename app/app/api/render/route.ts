@@ -11,15 +11,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const requestedFilePath = isRecord(body) && typeof body.filePath === 'string'
-      ? body.filePath.trim()
-      : '';
     const requestedCanvasId = isRecord(body) && typeof body.canvasId === 'string'
       ? body.canvasId.trim()
       : '';
-    if (!isRecord(body) || (!requestedFilePath && !requestedCanvasId)) {
+    if (!isRecord(body) || !requestedCanvasId) {
       return Response.json(
-        { error: 'filePath or canvasId is required' },
+        { error: 'canvasId is required' },
         { status: 400 },
       );
     }
@@ -38,10 +35,7 @@ export async function POST(request: Request) {
 
     const payload = {
       ...body,
-      ...(requestedFilePath ? { filePath: requestedFilePath } : {}),
-      ...(typeof body.canvasId === 'string' && body.canvasId.trim().length > 0
-        ? { canvasId: body.canvasId.trim() }
-        : {}),
+      canvasId: requestedCanvasId,
       ...(rawRootPath ? { rootPath: path.resolve(rawRootPath.trim()) } : {}),
     };
 

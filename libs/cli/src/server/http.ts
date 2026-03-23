@@ -601,10 +601,9 @@ async function handleAppStatePreferencesSet(
 async function handleRender(req: http.IncomingMessage, res: http.ServerResponse, targetDir: string) {
   const body = await parseBody(req);
   const requestedCanvasId = typeof body?.canvasId === 'string' ? body.canvasId.trim() : '';
-  const requestedFilePath = typeof body?.filePath === 'string' ? body.filePath.trim() : '';
-  if (!requestedCanvasId && !requestedFilePath) {
+  if (!requestedCanvasId) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Missing filePath or canvasId in body', type: 'VALIDATION_ERROR' }));
+    res.end(JSON.stringify({ error: 'Missing canvasId in body', type: 'VALIDATION_ERROR' }));
     return;
   }
 
@@ -620,30 +619,28 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
   }
 
   const requestTargetDir = rawRootPath ? path.resolve(rawRootPath) : targetDir;
-  let resolvedWorkspacePath = requestedFilePath;
-  let resolvedCanvasId = requestedCanvasId || null;
+  let resolvedWorkspacePath = '';
+  let resolvedCanvasId = requestedCanvasId;
 
-  if (requestedCanvasId) {
-    try {
-      const canonicalCanvas = await getCanonicalCanvas({
-        targetDir: requestTargetDir,
-        canvasId: requestedCanvasId,
-      });
-      resolvedCanvasId = canonicalCanvas.canvasId;
-      resolvedWorkspacePath = canonicalCanvas.compatibilityFilePath ?? `canvases/${canonicalCanvas.canvasId}.graph.tsx`;
-      const materializedAbsolutePath = path.resolve(requestTargetDir, resolvedWorkspacePath);
-      if (!fs.existsSync(materializedAbsolutePath)) {
-        fs.mkdirSync(path.dirname(materializedAbsolutePath), { recursive: true });
-        fs.writeFileSync(materializedAbsolutePath, createCompatibilityCanvasSource(), 'utf-8');
-      }
-    } catch (error) {
-      if (isCanonicalCliError(error) && error.code === 'DOCUMENT_NOT_FOUND') {
-        res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: error.message, type: 'FILE_NOT_FOUND' }));
-        return;
-      }
-      throw error;
+  try {
+    const canonicalCanvas = await getCanonicalCanvas({
+      targetDir: requestTargetDir,
+      canvasId: requestedCanvasId,
+    });
+    resolvedCanvasId = canonicalCanvas.canvasId;
+    resolvedWorkspacePath = canonicalCanvas.compatibilityFilePath ?? `canvases/${canonicalCanvas.canvasId}.graph.tsx`;
+    const materializedAbsolutePath = path.resolve(requestTargetDir, resolvedWorkspacePath);
+    if (!fs.existsSync(materializedAbsolutePath)) {
+      fs.mkdirSync(path.dirname(materializedAbsolutePath), { recursive: true });
+      fs.writeFileSync(materializedAbsolutePath, createCompatibilityCanvasSource(), 'utf-8');
     }
+  } catch (error) {
+    if (isCanonicalCliError(error) && error.code === 'DOCUMENT_NOT_FOUND') {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: error.message, type: 'FILE_NOT_FOUND' }));
+      return;
+    }
+    throw error;
   }
 
   const resolvedRequest = resolveWorkspaceFilePath(requestTargetDir, resolvedWorkspacePath);
