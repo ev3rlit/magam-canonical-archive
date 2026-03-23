@@ -99,7 +99,7 @@
 **Purpose**: Close the loop on documentation, progress tracking, and residual backlog after the migrations land.
 
 - [x] T023 [P] Update remediation status, centralized i18n module references, and remaining hotspots in `docs/features/hardcoded-text-audit/README.md`, `docs/features/hardcoded-text-audit/STRING_CLASSIFICATION.md`, and `docs/features/hardcoded-text-audit/MIGRATION_PLAN.md`
-- [ ] T024 [P] Execute the manual verification checklist and record residual blockers or deferred follow-ups in `docs/features/hardcoded-text-audit/MANUAL_QA.md`
+- [x] T024 [P] Execute the manual verification checklist and record residual blockers or deferred follow-ups in `docs/features/hardcoded-text-audit/MANUAL_QA.md`
 
 ---
 
