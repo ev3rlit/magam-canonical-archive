@@ -16,17 +16,17 @@ export function toTabViewportState(viewport: FlowViewportLike): TabViewportState
 
 export function resolveViewportToRestore(input: {
   hasRenderedGraph: boolean;
-  previousDocumentId?: string | null;
-  currentDocumentId?: string | null;
+  previousCanvasId?: string | null;
+  currentCanvasId?: string | null;
   previousFile: string | null;
   currentFile: string | null;
   currentViewport: FlowViewportLike;
   savedViewport: TabViewportState | null | undefined;
 }): TabViewportState | null {
   const isSameDocument = (
-    input.previousDocumentId
-    && input.currentDocumentId
-    && input.previousDocumentId === input.currentDocumentId
+    input.previousCanvasId
+    && input.currentCanvasId
+    && input.previousCanvasId === input.currentCanvasId
   );
 
   if (

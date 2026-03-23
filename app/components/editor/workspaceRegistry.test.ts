@@ -4,11 +4,11 @@ import type {
   AppWorkspaceRecord,
 } from '../../../libs/shared/src/lib/app-state-persistence/contracts/types';
 import {
-  buildSidebarDocuments,
+  buildSidebarCanvases,
   hydrateWorkspaceRegistryFromAppState,
   LEGACY_WORKSPACE_REGISTRY_IMPORT_PREFERENCE_KEY,
-  LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY,
-  type LastActiveDocumentMap,
+  LAST_ACTIVE_CANVAS_SESSION_PREFERENCE_KEY,
+  type LastActiveCanvasMap,
   type RegisteredWorkspace,
   type WorkspaceRegistryAppStateRpcClient,
 } from './workspaceRegistry';
@@ -62,7 +62,7 @@ function buildWorkspace(id: string, patch?: Partial<RegisteredWorkspace>): Regis
     name: `Workspace ${id}`,
     rootPath: `/tmp/${id}`,
     status: 'ok',
-    documentCount: 0,
+    canvasCount: 0,
     lastModifiedAt: Date.parse('2026-03-23T00:00:00Z'),
     lastOpenedAt: Date.parse('2026-03-23T00:00:00Z'),
     ...patch,
@@ -84,8 +84,8 @@ function buildRpcMock(overrides?: Partial<WorkspaceRegistryAppStateRpcClient>): 
       activeWorkspaceId: input.activeWorkspaceId ?? null,
       updatedAt: new Date('2026-03-23T00:00:00Z'),
     })),
-    listAppStateRecentDocuments: vi.fn(async () => []),
-    upsertAppStateRecentDocument: vi.fn(async (input) => ({
+    listAppStateRecentCanvases: vi.fn(async () => []),
+    upsertAppStateRecentCanvas: vi.fn(async (input) => ({
       workspaceId: input.workspaceId,
       documentPath: input.documentPath,
       lastOpenedAt: input.lastOpenedAt ?? null,
@@ -110,11 +110,11 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
     installWindowLocalStorage({
       'magam:workspaceRegistry:v1': JSON.stringify([buildWorkspace('legacy-ws')]),
       'magam:activeWorkspaceId:v1': JSON.stringify('legacy-ws'),
-      'magam:lastActiveDocuments:v1': JSON.stringify({ 'legacy-ws': '/tmp/legacy/doc.tsx' }),
+      'magam:lastActiveCanvases:v1': JSON.stringify({ 'legacy-ws': '/tmp/legacy/doc.tsx' }),
     });
 
     const lastActivePreference: AppPreferenceRecord = {
-      key: LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY,
+      key: LAST_ACTIVE_CANVAS_SESSION_PREFERENCE_KEY,
       valueJson: {
         'ws-2': '/tmp/ws-2/doc-pref.tsx',
       },
@@ -148,14 +148,14 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
         updatedAt: new Date('2026-03-23T00:00:00Z'),
       })),
       getAppStatePreference: vi.fn(async (key: string) => {
-        if (key === LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY) {
+        if (key === LAST_ACTIVE_CANVAS_SESSION_PREFERENCE_KEY) {
           return lastActivePreference;
         }
 
         return null;
       }),
-      listAppStateRecentDocuments: vi.fn(async (workspaceId: string) => {
-        const recentDocuments: Record<string, { workspaceId: string; documentPath: string; lastOpenedAt: Date }[]> = {
+      listAppStateRecentCanvases: vi.fn(async (workspaceId: string) => {
+        const recentCanvases: Record<string, { workspaceId: string; documentPath: string; lastOpenedAt: Date }[]> = {
           'ws-1': [{
             workspaceId: 'ws-1',
             documentPath: '/tmp/ws-1/doc-recent.tsx',
@@ -163,24 +163,21 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
           }],
           'ws-2': [],
         };
-        return recentDocuments[workspaceId] ?? [];
+        return recentCanvases[workspaceId] ?? [];
       }),
     });
 
     const result = await hydrateWorkspaceRegistryFromAppState(rpc);
 
-    expect(result).toEqual({
-      workspaces: [
-        expect.objectContaining({ id: 'ws-2', name: 'Workspace 2', status: 'missing' }),
-        expect.objectContaining({ id: 'ws-1', name: 'Workspace 1', status: 'ok' }),
-      ],
-      activeWorkspaceId: 'ws-2',
-      lastActiveDocuments: {
-        'ws-1': '/tmp/ws-1/doc-recent.tsx',
-        'ws-2': '/tmp/ws-2/doc-pref.tsx',
-      },
-      migratedFromLegacyStorage: false,
+    expect(result.workspaces).toEqual([
+      expect.objectContaining({ id: 'ws-2', name: 'Workspace 2', status: 'missing' }),
+      expect.objectContaining({ id: 'ws-1', name: 'Workspace 1', status: 'ok' }),
+    ]);
+    expect(result.activeWorkspaceId).toBe('ws-2');
+    expect(result.lastActiveCanvases).toEqual({
+      'ws-2': '/tmp/ws-2/doc-pref.tsx',
     });
+    expect(result.migratedFromLegacyStorage).toBe(false);
     expect(rpc.upsertAppStateWorkspace).not.toHaveBeenCalled();
     expect(rpc.setAppStateWorkspaceSession).not.toHaveBeenCalled();
     expect(rpc.setAppStatePreference).not.toHaveBeenCalled();
@@ -226,31 +223,29 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
         lastOpenedAt: Date.parse('2026-03-22T00:00:00Z'),
       }),
     ];
-    const lastActiveDocuments: LastActiveDocumentMap = {
+    const lastActiveDocuments: LastActiveCanvasMap = {
       'ws-1': '/tmp/ws-1/doc-a.tsx',
       orphan: '/tmp/orphan/doc-z.tsx',
     };
     installWindowLocalStorage({
       'magam:workspaceRegistry:v1': JSON.stringify(legacyWorkspaces),
       'magam:activeWorkspaceId:v1': JSON.stringify('ws-1'),
-      'magam:lastActiveDocuments:v1': JSON.stringify(lastActiveDocuments),
+      'magam:lastActiveCanvases:v1': JSON.stringify(lastActiveDocuments),
     });
 
     const rpc = buildRpcMock();
 
     const result = await hydrateWorkspaceRegistryFromAppState(rpc);
 
-    expect(result).toEqual({
-      workspaces: [
-        expect.objectContaining({ id: 'ws-1', name: 'Workspace 1' }),
-        expect.objectContaining({ id: 'ws-2', name: 'Workspace 2' }),
-      ],
-      activeWorkspaceId: 'ws-1',
-      lastActiveDocuments: {
-        'ws-1': '/tmp/ws-1/doc-a.tsx',
-      },
-      migratedFromLegacyStorage: true,
+    expect(result.workspaces).toEqual([
+      expect.objectContaining({ id: 'ws-1', name: 'Workspace 1' }),
+      expect.objectContaining({ id: 'ws-2', name: 'Workspace 2' }),
+    ]);
+    expect(result.activeWorkspaceId).toBe('ws-1');
+    expect(result.lastActiveCanvases).toEqual({
+      'ws-1': '/tmp/ws-1/doc-a.tsx',
     });
+    expect(result.migratedFromLegacyStorage).toBe(true);
     expect(rpc.upsertAppStateWorkspace).toHaveBeenCalledTimes(2);
     expect(rpc.upsertAppStateWorkspace).toHaveBeenNthCalledWith(1, expect.objectContaining({
       id: 'ws-1',
@@ -267,13 +262,13 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
     expect(rpc.setAppStateWorkspaceSession).toHaveBeenCalledWith({
       activeWorkspaceId: 'ws-1',
     });
-    expect(rpc.upsertAppStateRecentDocument).toHaveBeenCalledTimes(1);
-    expect(rpc.upsertAppStateRecentDocument).toHaveBeenCalledWith(expect.objectContaining({
+    expect(rpc.upsertAppStateRecentCanvas).toHaveBeenCalledTimes(1);
+    expect(rpc.upsertAppStateRecentCanvas).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: 'ws-1',
-      documentPath: '/tmp/ws-1/doc-a.tsx',
+      canvasPath: '/tmp/ws-1/doc-a.tsx',
     }));
     expect(rpc.setAppStatePreference).toHaveBeenCalledWith({
-      key: LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY,
+      key: LAST_ACTIVE_CANVAS_SESSION_PREFERENCE_KEY,
       valueJson: {
         'ws-1': '/tmp/ws-1/doc-a.tsx',
       },
@@ -288,7 +283,7 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
     installWindowLocalStorage({
       'magam:workspaceRegistry:v1': JSON.stringify([buildWorkspace('legacy-ws')]),
       'magam:activeWorkspaceId:v1': JSON.stringify('legacy-ws'),
-      'magam:lastActiveDocuments:v1': JSON.stringify({ 'legacy-ws': '/tmp/legacy/doc.tsx' }),
+      'magam:lastActiveCanvases:v1': JSON.stringify({ 'legacy-ws': '/tmp/legacy/doc.tsx' }),
     });
 
     const rpc = buildRpcMock({
@@ -310,25 +305,25 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
     expect(result).toEqual({
       workspaces: [],
       activeWorkspaceId: null,
-      lastActiveDocuments: {},
+      lastActiveCanvases: {},
       migratedFromLegacyStorage: false,
     });
     expect(rpc.upsertAppStateWorkspace).not.toHaveBeenCalled();
     expect(rpc.setAppStateWorkspaceSession).not.toHaveBeenCalled();
-    expect(rpc.upsertAppStateRecentDocument).not.toHaveBeenCalled();
+    expect(rpc.upsertAppStateRecentCanvas).not.toHaveBeenCalled();
   });
 });
 
-describe('buildSidebarDocuments', () => {
+describe('buildSidebarCanvases', () => {
   it('preserves canonical document metadata while projecting absolute paths', () => {
-    expect(buildSidebarDocuments('/tmp/ws-1', [{
-      documentId: 'doc-1',
+    expect(buildSidebarCanvases('/tmp/ws-1', [{
+      canvasId: 'doc-1',
       workspaceId: 'ws-1',
       filePath: 'docs/alpha.graph.tsx',
       latestRevision: 3,
     }])).toEqual([
       {
-        documentId: 'doc-1',
+        canvasId: 'doc-1',
         workspaceId: 'ws-1',
         latestRevision: 3,
         absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',

@@ -17,11 +17,11 @@ export interface SidebarWorkspaceEntry {
   name: string;
   rootPath: string;
   status: SidebarWorkspaceStatus;
-  documentCount: number;
+  canvasCount: number;
 }
 
-export interface SidebarDocumentEntry {
-  documentId?: string;
+export interface SidebarCanvasEntry {
+  canvasId?: string;
   workspaceId?: string;
   latestRevision?: number | null;
   absolutePath: string;
@@ -32,15 +32,15 @@ export interface SidebarDocumentEntry {
 interface SidebarProps {
   activeWorkspace: SidebarWorkspaceEntry | null;
   workspaces: SidebarWorkspaceEntry[];
-  documents: SidebarDocumentEntry[];
+  canvases: SidebarCanvasEntry[];
   fileTree?: FileTreeNode | null;
   isLoading?: boolean;
   onRefresh?: () => void;
   onSelectWorkspace?: (workspaceId: string) => void;
   onCreateWorkspace?: () => void;
   onAddWorkspace?: () => void;
-  onCreateDocument?: () => void;
-  onOpenDocument?: (absolutePath: string) => boolean | void;
+  onCreateCanvas?: () => void;
+  onOpenCanvas?: (absolutePath: string) => boolean | void;
   onCopyWorkspacePath?: () => void;
   onRevealWorkspace?: () => void;
   onReconnectWorkspace?: () => void;
@@ -63,13 +63,13 @@ function workspaceStatusLabel(status: SidebarWorkspaceStatus): string {
   }
 }
 
-function getDocumentSubtitle(document: SidebarDocumentEntry): string | null {
-  const normalizedTitle = document.title.trim();
-  if (!normalizedTitle || normalizedTitle === document.relativePath) {
+function getCanvasSubtitle(canvas: SidebarCanvasEntry): string | null {
+  const normalizedTitle = canvas.title.trim();
+  if (!normalizedTitle || normalizedTitle === canvas.relativePath) {
     return null;
   }
 
-  return document.relativePath;
+  return canvas.relativePath;
 }
 
 const sectionLabelClassName =
@@ -78,15 +78,15 @@ const sectionLabelClassName =
 export const Sidebar: React.FC<SidebarProps> = ({
   activeWorkspace,
   workspaces,
-  documents,
+  canvases,
   fileTree,
   isLoading = false,
   onRefresh,
   onSelectWorkspace,
   onCreateWorkspace,
   onAddWorkspace,
-  onCreateDocument,
-  onOpenDocument,
+  onCreateCanvas,
+  onOpenCanvas,
   onCopyWorkspacePath,
   onRevealWorkspace,
   onReconnectWorkspace,
@@ -101,16 +101,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     : null;
   const hasWorkspaces = workspaces.length > 0;
   const activeWorkspaceUnavailable = Boolean(activeWorkspace && activeWorkspace.status !== 'ok');
-  const documentCountLabel = useMemo(() => {
+  const canvasCountLabel = useMemo(() => {
     if (!activeWorkspace) {
       return null;
     }
 
-    return `${documents.length} docs`;
-  }, [activeWorkspace, documents.length]);
+    return `${canvases.length} canvases`;
+  }, [activeWorkspace, canvases.length]);
   const hasLegacyTree = Boolean(fileTree && fileTree.children && fileTree.children.length > 0);
 
-  // Workspace-document-shell migration anchor:
+  // Workspace-canvas-shell migration anchor:
   // sidebar is presenter-only and keeps legacy TSX access in a compatibility section.
   return (
     <aside
@@ -209,8 +209,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       {statusLabel}
                     </CardDescription>
                   </div>
-                  {documentCountLabel && (
-                    <Badge variant="neutral">{documentCountLabel}</Badge>
+                  {canvasCountLabel && (
+                    <Badge variant="neutral">{canvasCountLabel}</Badge>
                   )}
                 </div>
                 <div className="break-all text-xs text-foreground/54">
@@ -223,16 +223,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <section className="px-3 space-y-3">
             <div className="flex items-center justify-between">
               <div className={sectionLabelClassName}>
-                Documents
+                Canvases
               </div>
               <Button
-                onClick={onCreateDocument}
+                onClick={onCreateCanvas}
                 disabled={!activeWorkspace || activeWorkspaceUnavailable}
                 size="sm"
                 variant="secondary"
               >
                 <Plus className="h-3 w-3" />
-                New Document
+                New Canvas
               </Button>
             </div>
 
@@ -259,25 +259,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </Card>
             ) : isLoading ? (
               <Card className="px-3 py-4 text-sm text-foreground/56" variant="base">
-                Loading documents...
+                Loading canvases...
               </Card>
-            ) : documents.length === 0 ? (
+            ) : canvases.length === 0 ? (
               <Card className="px-3 py-4 text-sm text-foreground/56" variant="muted">
-                이 workspace에는 아직 문서가 없습니다. `New Document`로 첫 canvas를 만드세요.
+                이 workspace에는 아직 캔버스가 없습니다. `New Canvas`로 첫 캔버스를 만드세요.
               </Card>
             ) : (
               <div className="space-y-2">
-                {documents.map((document) => {
-                  const subtitle = getDocumentSubtitle(document);
+                {canvases.map((canvas) => {
+                  const subtitle = getCanvasSubtitle(canvas);
                   return (
                     <button
-                      key={document.absolutePath}
+                      key={canvas.absolutePath}
                       type="button"
-                      onClick={() => onOpenDocument?.(document.absolutePath)}
+                      onClick={() => onOpenCanvas?.(canvas.absolutePath)}
                       className="w-full rounded-lg bg-card px-3 py-2 text-left text-foreground shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)] transition-[background-color,color,box-shadow] duration-fast hover:bg-card/88 hover:shadow-[inset_0_0_0_1px_rgb(var(--color-primary)/0.14)]"
                     >
                       <div className="truncate text-sm font-medium">
-                        {document.title}
+                        {canvas.title}
                       </div>
                       {subtitle && (
                         <div className="truncate text-xs text-foreground/52">
@@ -319,7 +319,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
               <Card className="space-y-3 px-3 py-3" variant="base">
                 <div className="text-xs text-foreground/52">
-                  Document list가 primary navigation입니다. 레거시 TSX tree는 import/reference 용도로만 여기서 엽니다.
+                  Canvas list가 primary navigation입니다. 레거시 TSX tree는 import/reference 용도로만 여기서 엽니다.
                 </div>
                 {hasLegacyTree ? (
                   <>
@@ -357,7 +357,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex justify-center p-3">
         {!isCollapsed ? (
           <div className="truncate text-xs text-foreground/42">
-            Workspace-first document shell
+            Workspace-first canvas shell
           </div>
         ) : (
           <div className="h-2 w-2 rounded-full bg-primary/50" />

@@ -5,15 +5,15 @@ import { cliError, persistenceFailureToCliError } from '../canonical-cli';
 import { createCanonicalPgliteDb, CanonicalPersistenceRepository } from '../canonical-persistence';
 import type { HeadlessServiceContext } from '../canonical-cli';
 import {
-  getCurrentDocumentRevision,
-  getWorkspaceDocument,
-  listWorkspaceDocuments,
-} from '../canonical-query/workspace-document';
+  getCurrentCanvasRevision,
+  getWorkspaceCanvas,
+  listWorkspaceCanvases,
+} from '../canonical-query/workspace-canvas';
 import type {
-  CanonicalDocumentShellRecord,
-  CreateCanonicalDocumentShellInput,
-  GetCanonicalDocumentShellInput,
-  ListCanonicalDocumentShellInput,
+  CanonicalCanvasShellRecord,
+  CreateCanonicalCanvasShellInput,
+  GetCanonicalCanvasShellInput,
+  ListCanonicalCanvasShellInput,
 } from './types';
 
 function sanitizeWorkspaceId(targetDir: string): string {
@@ -34,8 +34,8 @@ function resolveMigrationsFolder(): string {
   return fileURLToPath(new URL('../canonical-persistence/drizzle/', import.meta.url));
 }
 
-function normalizeCompatibilityFilePath(documentId: string, rawFilePath?: string | null): string {
-  const fallback = `documents/${documentId}.graph.tsx`;
+function normalizeCompatibilityFilePath(canvasId: string, rawFilePath?: string | null): string {
+  const fallback = `canvases/${canvasId}.graph.tsx`;
   if (!rawFilePath) {
     return fallback;
   }
@@ -50,7 +50,7 @@ function normalizeCompatibilityFilePath(documentId: string, rawFilePath?: string
   return normalized;
 }
 
-async function withCanonicalDocumentContext<T>(
+async function withCanonicalCanvasContext<T>(
   targetDirInput: string,
   workspaceIdInput: string | undefined,
   run: (context: HeadlessServiceContext, workspaceId: string) => Promise<T>,
@@ -77,39 +77,39 @@ async function withCanonicalDocumentContext<T>(
   }
 }
 
-export async function listCanonicalDocuments(
-  input: ListCanonicalDocumentShellInput,
-): Promise<CanonicalDocumentShellRecord[]> {
-  return withCanonicalDocumentContext(input.targetDir, input.workspaceId, async (context, workspaceId) => (
-    listWorkspaceDocuments(context, workspaceId)
+export async function listCanonicalCanvases(
+  input: ListCanonicalCanvasShellInput,
+): Promise<CanonicalCanvasShellRecord[]> {
+  return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context, workspaceId) => (
+    listWorkspaceCanvases(context, workspaceId)
   ));
 }
 
-export async function getCanonicalDocument(
-  input: GetCanonicalDocumentShellInput,
-): Promise<CanonicalDocumentShellRecord> {
-  return withCanonicalDocumentContext(input.targetDir, input.workspaceId, async (context, workspaceId) => (
-    getWorkspaceDocument(context, input.documentId, workspaceId)
+export async function getCanonicalCanvas(
+  input: GetCanonicalCanvasShellInput,
+): Promise<CanonicalCanvasShellRecord> {
+  return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context, workspaceId) => (
+    getWorkspaceCanvas(context, input.canvasId, workspaceId)
   ));
 }
 
-export async function createCanonicalDocument(
-  input: CreateCanonicalDocumentShellInput,
-): Promise<CanonicalDocumentShellRecord> {
-  return withCanonicalDocumentContext(input.targetDir, input.workspaceId, async (context, workspaceId) => {
-    const documentId = input.documentId?.trim() || `doc-${randomUUID()}`;
-    const filePath = normalizeCompatibilityFilePath(documentId, input.filePath);
-    const revisionNo = (await getCurrentDocumentRevision(context, documentId)) + 1;
+export async function createCanonicalCanvas(
+  input: CreateCanonicalCanvasShellInput,
+): Promise<CanonicalCanvasShellRecord> {
+  return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context, workspaceId) => {
+    const canvasId = input.canvasId?.trim() || `doc-${randomUUID()}`;
+    const filePath = normalizeCompatibilityFilePath(canvasId, input.filePath);
+    const revisionNo = (await getCurrentCanvasRevision(context, canvasId)) + 1;
     const createdAt = new Date();
-    const appendResult = await context.repository.appendDocumentRevision({
+    const appendResult = await context.repository.appendCanvasRevision({
       id: `docrev-${randomUUID()}`,
-      documentId,
+      canvasId,
       revisionNo,
       authorKind: input.actor?.kind ?? 'system',
-      authorId: input.actor?.id ?? 'canonical-document-shell',
+      authorId: input.actor?.id ?? 'canonical-canvas-shell',
       mutationBatch: {
-        op: 'document.create',
-        documentShell: {
+        op: 'canvas.create',
+        canvasShell: {
           workspaceId,
           filePath,
           createdAt: createdAt.toISOString(),
@@ -122,6 +122,6 @@ export async function createCanonicalDocument(
       throw persistenceFailureToCliError(appendResult);
     }
 
-    return getWorkspaceDocument(context, documentId, workspaceId);
+    return getWorkspaceCanvas(context, canvasId, workspaceId);
   });
 }

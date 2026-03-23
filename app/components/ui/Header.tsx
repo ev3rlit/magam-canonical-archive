@@ -7,18 +7,18 @@ import {
 import { Button } from './Button';
 
 interface HeaderProps {
-  onCreateDocument?: () => void;
+  onCreateCanvas?: () => void;
   workspaceLabel?: string | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  onCreateDocument,
+  onCreateCanvas,
   workspaceLabel: workspaceLabelOverride,
 }) => {
   const { status, currentFile, isSearchOpen, openSearch, closeSearch } = useGraphStore();
   void status;
   const workspaceLabel = workspaceLabelOverride || 'workspace';
-  const currentDocumentLabel = currentFile ? currentFile.split('/').at(-1) ?? currentFile : null;
+  const currentCanvasLabel = currentFile ? currentFile.split('/').at(-1) ?? currentFile : null;
 
   return (
     <header className="relative z-10 flex h-14 items-center justify-between bg-background/80 px-4 backdrop-blur-glass shadow-[inset_0_-1px_0_rgb(var(--color-border)/0.08)]">
@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="text-sm text-foreground/68">{workspaceLabel}</span>
             <span className="text-foreground/22">/</span>
             <span className="font-mono text-sm font-medium text-foreground">
-              {currentDocumentLabel}
+              {currentCanvasLabel}
             </span>
           </div>
         ) : null}
@@ -39,13 +39,13 @@ export const Header: React.FC<HeaderProps> = ({
 
       <div className="flex items-center gap-3">
         <Button
-          onClick={onCreateDocument}
+          onClick={onCreateCanvas}
           size="sm"
           variant="secondary"
-          aria-label="New document"
+          aria-label="New canvas"
         >
           <Plus className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">New document</span>
+          <span className="hidden sm:inline">New canvas</span>
           <span className="sm:hidden">New</span>
         </Button>
 

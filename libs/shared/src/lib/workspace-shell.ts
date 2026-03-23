@@ -7,7 +7,7 @@ const COMPATIBILITY_DOCUMENT_EXTENSIONS = new Set(['.tsx']);
 const COMPATIBILITY_DOCUMENT_SOURCE = [
   "import { Canvas } from '@magam/core';",
   '',
-  'export default function UntitledDocument() {',
+  'export default function UntitledCanvas() {',
   '  return <Canvas></Canvas>;',
   '}',
   '',
@@ -22,20 +22,20 @@ export type WorkspaceHealth = {
   message?: string;
 };
 
-export type CompatibilityWorkspaceDocumentSummary = {
+export type CompatibilityWorkspaceCanvasSummary = {
   filePath: string;
   size: number;
   modifiedAt: number;
 };
 
-export type WorkspaceDocumentSummary = CompatibilityWorkspaceDocumentSummary;
+export type WorkspaceCanvasSummary = CompatibilityWorkspaceCanvasSummary;
 
 export type WorkspaceProbeResult = {
   rootPath: string;
   workspaceName: string;
   health: WorkspaceHealth;
-  documentCount: number;
-  documents: CompatibilityWorkspaceDocumentSummary[];
+  canvasCount: number;
+  canvases: CompatibilityWorkspaceCanvasSummary[];
   lastModifiedAt: number | null;
 };
 
@@ -120,7 +120,7 @@ function toWorkspaceRelativePath(rootPath: string, absolutePath: string): string
   return path.relative(rootPath, absolutePath).replace(/\\/g, '/');
 }
 
-function createDocumentSourceVersion(content: string): string {
+function createCanvasSourceVersion(content: string): string {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
 
@@ -128,8 +128,8 @@ function shouldSkipEntry(name: string): boolean {
   return name.startsWith('.') || SKIPPED_DIR_NAMES.has(name);
 }
 
-async function readWorkspaceDocuments(rootPath: string): Promise<CompatibilityWorkspaceDocumentSummary[]> {
-  const results: CompatibilityWorkspaceDocumentSummary[] = [];
+async function readWorkspaceCanvases(rootPath: string): Promise<CompatibilityWorkspaceCanvasSummary[]> {
+  const results: CompatibilityWorkspaceCanvasSummary[] = [];
 
   async function walk(currentDir: string): Promise<void> {
     const entries = await readdir(currentDir, { withFileTypes: true });
@@ -169,13 +169,13 @@ async function readWorkspaceDocuments(rootPath: string): Promise<CompatibilityWo
   return results;
 }
 
-export function createCompatibilityDocumentSource(): string {
+export function createCompatibilityCanvasSource(): string {
   return COMPATIBILITY_DOCUMENT_SOURCE;
 }
 
-export const createDefaultDocumentSource = createCompatibilityDocumentSource;
+export const createDefaultCanvasSource = createCompatibilityCanvasSource;
 
-export function createCompatibilityGeneratedDocumentPath(existingFiles: Iterable<string>): string {
+export function createCompatibilityGeneratedCanvasPath(existingFiles: Iterable<string>): string {
   const taken = new Set(existingFiles);
   const useDocsFolder = Array.from(taken).some((filePath) => filePath.startsWith('docs/'));
   let counter = 1;
@@ -189,22 +189,22 @@ export function createCompatibilityGeneratedDocumentPath(existingFiles: Iterable
   }
 }
 
-export const createGeneratedDocumentPath = createCompatibilityGeneratedDocumentPath;
+export const createGeneratedCanvasPath = createCompatibilityGeneratedCanvasPath;
 
 export function normalizeWorkspaceRootPath(rawPath: string): string {
   return normalizeAbsolutePath(rawPath, 'rootPath');
 }
 
-export function resolveCompatibilityDocumentPath(rootPath: string, rawPath: string): string {
+export function resolveCompatibilityCanvasPath(rootPath: string, rawPath: string): string {
   const absolutePath = normalizeWorkspaceTargetPath(rootPath, rawPath, 'filePath');
   if (path.extname(absolutePath).toLowerCase() !== '.tsx') {
-    throw new ApiError(422, 'DOC_422_UNSUPPORTED_EXTENSION', 'Documents must use the .tsx extension');
+    throw new ApiError(422, 'DOC_422_UNSUPPORTED_EXTENSION', 'Canvases must use the .tsx extension');
   }
 
   return absolutePath;
 }
 
-export const resolveWorkspaceDocumentPath = resolveCompatibilityDocumentPath;
+export const resolveWorkspaceCanvasPath = resolveCompatibilityCanvasPath;
 
 export function resolveWorkspaceBrowserTargetPath(rootPath: string, rawPath?: string | null): string {
   if (!rawPath) {
@@ -228,24 +228,24 @@ export async function probeWorkspace(rootPathInput: string): Promise<WorkspacePr
           status: 'not-directory',
           message: 'Workspace root is not a directory',
         },
-        documentCount: 0,
-        documents: [],
+        canvasCount: 0,
+        canvases: [],
         lastModifiedAt: null,
       };
     }
 
     try {
-      const documents = await readWorkspaceDocuments(rootPath);
-      const lastModifiedAt = documents.length > 0
-        ? Math.max(...documents.map((document) => document.modifiedAt))
+      const canvases = await readWorkspaceCanvases(rootPath);
+      const lastModifiedAt = canvases.length > 0
+        ? Math.max(...canvases.map((canvas) => canvas.modifiedAt))
         : null;
 
       return {
         rootPath,
         workspaceName,
         health: { status: 'ok' },
-        documentCount: documents.length,
-        documents,
+        canvasCount: canvases.length,
+        canvases,
         lastModifiedAt,
       };
     } catch (error) {
@@ -255,10 +255,10 @@ export async function probeWorkspace(rootPathInput: string): Promise<WorkspacePr
         workspaceName,
         health: {
           status: 'unreadable',
-          message: `Failed to read workspace documents: ${message}`,
+          message: `Failed to read workspace canvases: ${message}`,
         },
-        documentCount: 0,
-        documents: [],
+        canvasCount: 0,
+        canvases: [],
         lastModifiedAt: null,
       };
     }
@@ -271,8 +271,8 @@ export async function probeWorkspace(rootPathInput: string): Promise<WorkspacePr
           status: 'missing',
           message: 'Workspace root does not exist',
         },
-        documentCount: 0,
-        documents: [],
+        canvasCount: 0,
+        canvases: [],
         lastModifiedAt: null,
       };
     }
@@ -285,8 +285,8 @@ export async function probeWorkspace(rootPathInput: string): Promise<WorkspacePr
           status: 'unreadable',
           message: 'Workspace root is not readable',
         },
-        documentCount: 0,
-        documents: [],
+        canvasCount: 0,
+        canvases: [],
         lastModifiedAt: null,
       };
     }
@@ -431,23 +431,23 @@ export async function openWorkspaceInFileBrowser(input: {
   };
 }
 
-export async function createCompatibilityWorkspaceDocument(input: {
+export async function createCompatibilityWorkspaceCanvas(input: {
   rootPath: string;
   filePath?: string | null;
 }): Promise<{ filePath: string; sourceVersion: string }> {
   const probe = await ensureWorkspaceRoot(input.rootPath);
   const relativeFilePath = input.filePath && input.filePath.trim().length > 0
     ? input.filePath.trim()
-    : createCompatibilityGeneratedDocumentPath(probe.documents.map((document) => document.filePath));
-  const absoluteFilePath = resolveCompatibilityDocumentPath(probe.rootPath, relativeFilePath);
+    : createCompatibilityGeneratedCanvasPath(probe.canvases.map((canvas) => canvas.filePath));
+  const absoluteFilePath = resolveCompatibilityCanvasPath(probe.rootPath, relativeFilePath);
 
   try {
     const existing = await stat(absoluteFilePath);
     if (existing.isFile()) {
-      throw new ApiError(409, 'DOC_409_ALREADY_EXISTS', 'Document already exists');
+      throw new ApiError(409, 'DOC_409_ALREADY_EXISTS', 'Canvas already exists');
     }
 
-    throw new ApiError(409, 'DOC_409_PATH_NOT_AVAILABLE', 'Document path is not available');
+    throw new ApiError(409, 'DOC_409_PATH_NOT_AVAILABLE', 'Canvas path is not available');
   } catch (error) {
     if (error instanceof ApiError) {
       throw error;
@@ -460,15 +460,15 @@ export async function createCompatibilityWorkspaceDocument(input: {
   }
 
   await mkdir(path.dirname(absoluteFilePath), { recursive: true });
-  const content = createCompatibilityDocumentSource();
+  const content = createCompatibilityCanvasSource();
   await writeFile(absoluteFilePath, content, 'utf-8');
 
   return {
     filePath: toWorkspaceRelativePath(probe.rootPath, absoluteFilePath),
-    sourceVersion: createDocumentSourceVersion(content),
+    sourceVersion: createCanvasSourceVersion(content),
   };
 }
 
-export const createWorkspaceDocument = createCompatibilityWorkspaceDocument;
+export const createWorkspaceCanvas = createCompatibilityWorkspaceCanvas;
 
-export { toWorkspaceRelativePath, createDocumentSourceVersion };
+export { toWorkspaceRelativePath, createCanvasSourceVersion };

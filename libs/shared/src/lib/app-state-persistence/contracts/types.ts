@@ -35,14 +35,14 @@ export interface AppWorkspaceSessionUpdateInput {
   activeWorkspaceId?: string | null;
 }
 
-export interface AppRecentDocumentRecord {
+export interface AppRecentCanvasRecord {
   workspaceId: string;
   documentPath: string;
   lastOpenedAt?: Date | null;
   updatedAt?: Date;
 }
 
-export interface AppRecentDocumentUpsertInput {
+export interface AppRecentCanvasUpsertInput {
   workspaceId: string;
   documentPath: string;
   lastOpenedAt?: Date | null;

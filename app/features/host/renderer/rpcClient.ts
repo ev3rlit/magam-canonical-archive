@@ -4,8 +4,8 @@ import type { WorkspaceProbeResponse } from '@/components/editor/workspaceRegist
 import type {
   AppPreferenceRecord,
   AppPreferenceUpsertInput,
-  AppRecentDocumentRecord,
-  AppRecentDocumentUpsertInput,
+  AppRecentCanvasRecord,
+  AppRecentCanvasUpsertInput,
   AppWorkspaceRecord,
   AppWorkspaceSessionRecord,
   AppWorkspaceSessionUpdateInput,
@@ -21,15 +21,15 @@ export interface RendererFileCreateResponse {
   sourceVersion: string;
 }
 
-export interface CreateWorkspaceDocumentResult {
+export interface CreateWorkspaceCanvasResult {
   filePath: string;
   sourceVersion: string;
-  documentId: string;
+  canvasId: string;
   workspaceId: string;
   latestRevision: number | null;
 }
 
-export interface WorkspaceDocumentCreateInput {
+export interface WorkspaceCanvasCreateInput {
   rootPath: string;
   filePath?: string | null;
 }
@@ -41,9 +41,9 @@ export interface WorkspaceFileBrowserActionInput {
   targetPath?: string | null;
 }
 
-export function isCreateWorkspaceDocumentResult(
+export function isCreateWorkspaceCanvasResult(
   value: unknown,
-): value is CreateWorkspaceDocumentResult {
+): value is CreateWorkspaceCanvasResult {
   if (!value || typeof value !== 'object') {
     return false;
   }
@@ -52,7 +52,7 @@ export function isCreateWorkspaceDocumentResult(
   return (
     typeof record.filePath === 'string'
     && typeof record.sourceVersion === 'string'
-    && typeof record.documentId === 'string'
+    && typeof record.canvasId === 'string'
     && typeof record.workspaceId === 'string'
     && (typeof record.latestRevision === 'number' || record.latestRevision === null)
     && record.sourceVersion.startsWith('sha256:')
@@ -77,15 +77,15 @@ export interface RendererRpcClient {
   removeAppStateWorkspace: (workspaceId: string) => Promise<void>;
   getAppStateWorkspaceSession: () => Promise<AppWorkspaceSessionRecord | null>;
   setAppStateWorkspaceSession: (input: AppWorkspaceSessionUpdateInput) => Promise<AppWorkspaceSessionRecord>;
-  listAppStateRecentDocuments: (workspaceId: string) => Promise<AppRecentDocumentRecord[]>;
-  upsertAppStateRecentDocument: (input: AppRecentDocumentUpsertInput) => Promise<AppRecentDocumentRecord>;
-  clearAppStateRecentDocuments: (workspaceId: string) => Promise<void>;
+  listAppStateRecentCanvases: (workspaceId: string) => Promise<AppRecentCanvasRecord[]>;
+  upsertAppStateRecentCanvas: (input: AppRecentCanvasUpsertInput) => Promise<AppRecentCanvasRecord>;
+  clearAppStateRecentCanvases: (workspaceId: string) => Promise<void>;
   getAppStatePreference: (key: string) => Promise<AppPreferenceRecord | null>;
   setAppStatePreference: (input: AppPreferenceUpsertInput) => Promise<AppPreferenceRecord>;
   probeWorkspace: (rootPath?: string | null) => Promise<WorkspaceProbeResponse>;
   ensureWorkspace: (rootPath: string) => Promise<WorkspaceProbeResponse>;
-  listWorkspaceDocuments: (rootPath: string) => Promise<WorkspaceProbeResponse>;
-  createWorkspaceDocument: (input: WorkspaceDocumentCreateInput) => Promise<CreateWorkspaceDocumentResult>;
+  listWorkspaceCanvases: (rootPath: string) => Promise<WorkspaceProbeResponse>;
+  createWorkspaceCanvas: (input: WorkspaceCanvasCreateInput) => Promise<CreateWorkspaceCanvasResult>;
   launchWorkspaceFileBrowser: (input: WorkspaceFileBrowserActionInput) => Promise<void>;
   createFile: (filePath: string) => Promise<RendererFileCreateResponse>;
   getFileTree: (rootPath?: string | null) => Promise<{ tree: FileTreeNode | null }>;

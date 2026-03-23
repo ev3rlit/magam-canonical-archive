@@ -105,7 +105,7 @@ async function shouldBackfillLegacyMigrationRecord(
       and tablename in (
         'app_workspaces',
         'app_workspace_session',
-        'app_recent_documents',
+        'app_recent_canvases',
         'app_preferences'
       )
     order by tablename

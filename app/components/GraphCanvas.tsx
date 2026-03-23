@@ -816,7 +816,7 @@ function GraphCanvasContent({
     selectNodesByType,
     focusNextNodeByType,
     currentFile,
-    currentDocumentId,
+    currentCanvasId,
     graphId,
     needsAutoLayout,
     layoutType,
@@ -886,7 +886,7 @@ function GraphCanvasContent({
   const relayoutInFlightRef = useRef(false);
   const lastRelayoutAtRef = useRef<Map<string, number>>(new Map());
   const previousFileRef = useRef<string | null>(currentFile);
-  const previousDocumentIdRef = useRef<string | null>(currentDocumentId);
+  const previousCanvasIdRef = useRef<string | null>(currentCanvasId);
   const pendingViewportRestoreRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const clipboardHistory = useRef<{ past: GraphSnapshot[]; future: GraphSnapshot[] }>({
     past: [],
@@ -1459,8 +1459,8 @@ function GraphCanvasContent({
       console.log('[Layout] New graph detected, resetting layout state.');
       pendingViewportRestoreRef.current = resolveViewportToRestore({
         hasRenderedGraph: lastLayoutedGraphId.current !== null,
-        previousDocumentId: previousDocumentIdRef.current,
-        currentDocumentId,
+        previousCanvasId: previousCanvasIdRef.current,
+        currentCanvasId,
         previousFile: previousFileRef.current,
         currentFile,
         currentViewport: getViewport(),
@@ -1470,14 +1470,14 @@ function GraphCanvasContent({
       setIsGraphVisible(false); // Hide graph=
       lastLayoutedGraphId.current = graphId;
       previousFileRef.current = currentFile;
-      previousDocumentIdRef.current = currentDocumentId;
+      previousCanvasIdRef.current = currentCanvasId;
       lastSizeSignaturesRef.current = new Map();
       relayoutCountRef.current = new Map();
       relayoutInFlightRef.current = false;
       lastRelayoutAtRef.current = new Map();
       clearPendingRelayout();
     }
-  }, [clearPendingRelayout, currentDocumentId, currentFile, getViewport, graphId]);
+  }, [clearPendingRelayout, currentCanvasId, currentFile, getViewport, graphId]);
 
   // Trigger Layout when all nodes are initialized (measured)
   useEffect(() => {

@@ -1,14 +1,14 @@
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import {
-  createCanonicalDocument,
-  listCanonicalDocuments,
-  type CanonicalDocumentShellRecord,
-} from '../../../../libs/shared/src/lib/canonical-document-shell';
+  createCanonicalCanvas,
+  listCanonicalCanvases,
+  type CanonicalCanvasShellRecord,
+} from '../../../../libs/shared/src/lib/canonical-canvas-shell';
 import { isCanonicalCliError } from '../../../../libs/shared/src/lib/canonical-cli';
 import {
   ApiError,
-  createDocumentSourceVersion,
+  createCanvasSourceVersion,
   requireWorkspaceRoot,
 } from '../workspaces/_shared';
 
@@ -21,7 +21,7 @@ function pickRootPath(searchParams: URLSearchParams): string | null {
   return searchParams.get('rootPath') || searchParams.get('root');
 }
 
-function resolveDocumentRootPath(rawRootPath: unknown): string {
+function resolveCanvasRootPath(rawRootPath: unknown): string {
   if (typeof rawRootPath !== 'string') {
     throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath is required');
   }
@@ -55,9 +55,9 @@ function toJsonErrorResponse(error: unknown) {
   }
 
   const message = error instanceof Error ? error.message : 'Unknown error';
-  console.error('[api/documents] unexpected error:', message);
+  console.error('[api/canvases] unexpected error:', message);
   return NextResponse.json(
-    { error: `Failed to handle documents request: ${message}`, code: 'DOC_500_REQUEST_FAILED' },
+    { error: `Failed to handle canvases request: ${message}`, code: 'DOC_500_REQUEST_FAILED' },
     { status: 500 },
   );
 }
@@ -78,31 +78,31 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
   return body as Record<string, unknown>;
 }
 
-function toRouteDocumentSummary(document: CanonicalDocumentShellRecord) {
+function toRouteCanvasSummary(canvas: CanonicalCanvasShellRecord) {
   return {
-    documentId: document.documentId,
-    workspaceId: document.workspaceId,
-    filePath: document.filePath ?? `documents/${document.documentId}.graph.tsx`,
-    modifiedAt: document.updatedAt?.getTime() ?? document.createdAt?.getTime() ?? null,
-    latestRevision: document.latestRevision,
+    canvasId: canvas.canvasId,
+    workspaceId: canvas.workspaceId,
+    filePath: canvas.filePath ?? `canvases/${canvas.canvasId}.graph.tsx`,
+    modifiedAt: canvas.updatedAt?.getTime() ?? canvas.createdAt?.getTime() ?? null,
+    latestRevision: canvas.latestRevision,
   };
 }
 
-function toCompatibilitySourceVersion(document: CanonicalDocumentShellRecord): string {
-  return createDocumentSourceVersion(JSON.stringify({
-    documentId: document.documentId,
-    workspaceId: document.workspaceId,
-    latestRevision: document.latestRevision,
+function toCompatibilitySourceVersion(canvas: CanonicalCanvasShellRecord): string {
+  return createCanvasSourceVersion(JSON.stringify({
+    canvasId: canvas.canvasId,
+    workspaceId: canvas.workspaceId,
+    latestRevision: canvas.latestRevision,
   }));
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const rootPath = resolveDocumentRootPath(pickRootPath(searchParams));
+    const rootPath = resolveCanvasRootPath(pickRootPath(searchParams));
 
     const workspace = await requireWorkspaceRoot(rootPath);
-    const documents = await listCanonicalDocuments({
+    const canvases = await listCanonicalCanvases({
       targetDir: workspace.rootPath,
     });
     return NextResponse.json({
@@ -114,12 +114,12 @@ export async function GET(request: Request) {
       health: {
         state: workspace.health.status,
         message: workspace.health.message,
-        documentCount: documents.length,
+        canvasCount: canvases.length,
       },
-      documentCount: documents.length,
-      documents: documents.map(toRouteDocumentSummary),
-      lastModifiedAt: documents.reduce<number | null>((latest, document) => {
-        const timestamp = document.updatedAt?.getTime() ?? document.createdAt?.getTime() ?? null;
+      canvasCount: canvases.length,
+      canvases: canvases.map(toRouteCanvasSummary),
+      lastModifiedAt: canvases.reduce<number | null>((latest, canvas) => {
+        const timestamp = canvas.updatedAt?.getTime() ?? canvas.createdAt?.getTime() ?? null;
         if (timestamp === null) {
           return latest;
         }
@@ -135,7 +135,7 @@ export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);
     const rawRootPath = 'rootPath' in body ? body.rootPath : body.root;
-    const rootPath = resolveDocumentRootPath(rawRootPath);
+    const rootPath = resolveCanvasRootPath(rawRootPath);
 
     const workspace = await requireWorkspaceRoot(rootPath);
     const rawFilePath = typeof body.filePath === 'string'
@@ -144,14 +144,14 @@ export async function POST(request: Request) {
         ? body.path
         : null;
 
-    let created: CanonicalDocumentShellRecord;
+    let created: CanonicalCanvasShellRecord;
     try {
-      created = await createCanonicalDocument({
+      created = await createCanonicalCanvas({
         targetDir: workspace.rootPath,
         filePath: rawFilePath,
         actor: {
           kind: 'system',
-          id: 'api.documents',
+          id: 'api.canvases',
         },
       });
     } catch (error) {
@@ -167,7 +167,7 @@ export async function POST(request: Request) {
       root: workspace.rootPath,
       workspaceName: workspace.workspaceName,
       created: true,
-      ...toRouteDocumentSummary(created),
+      ...toRouteCanvasSummary(created),
       sourceVersion: toCompatibilitySourceVersion(created),
     }, { status: 201 });
   } catch (error) {

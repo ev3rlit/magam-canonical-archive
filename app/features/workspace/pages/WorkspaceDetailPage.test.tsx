@@ -5,8 +5,8 @@ import { JSDOM } from 'jsdom';
 import { createRoot, type Root } from 'react-dom/client';
 import { useGraphStore } from '@/store/graph';
 
-const createWorkspaceDocumentMock = mock(async (_input: { rootPath: string }) => ({
-  documentId: 'doc-2',
+const createWorkspaceCanvasMock = mock(async (_input: { rootPath: string }) => ({
+  canvasId: 'doc-2',
   workspaceId: 'ws-1',
   filePath: 'documents/doc-2.graph.tsx',
   sourceVersion: 'sha256:doc-2',
@@ -29,14 +29,14 @@ const setAppStatePreferenceMock = mock(async (input: { key: string; valueJson: u
   valueJson: input.valueJson,
   updatedAt: new Date('2026-03-23T00:00:00Z'),
 }));
-const navigateToDocumentMock = mock((_path: string) => {});
-const navigateToWorkspaceDocumentMock = mock((_rootPath: string, _document: { filePath: string }) => {});
+const navigateToCanvasMock = mock((_path: string) => {});
+const navigateToWorkspaceCanvasMock = mock((_rootPath: string, _canvas: { filePath: string }) => {});
 const navigateToDashboardMock = mock(() => {});
 
 mock.module('@/features/host/renderer/createHostRuntime', () => ({
   getHostRuntime: () => ({
     rpc: {
-      createWorkspaceDocument: createWorkspaceDocumentMock,
+      createWorkspaceCanvas: createWorkspaceCanvasMock,
       upsertAppStateWorkspace: upsertAppStateWorkspaceMock,
       removeAppStateWorkspace: removeAppStateWorkspaceMock,
       setAppStateWorkspaceSession: setAppStateWorkspaceSessionMock,
@@ -47,8 +47,8 @@ mock.module('@/features/host/renderer/createHostRuntime', () => ({
 
 mock.module('@/features/host/renderer/navigation', () => ({
   navigateToDashboard: navigateToDashboardMock,
-  navigateToDocument: navigateToDocumentMock,
-  navigateToWorkspaceDocument: navigateToWorkspaceDocumentMock,
+  navigateToCanvas: navigateToCanvasMock,
+  navigateToWorkspaceCanvas: navigateToWorkspaceCanvasMock,
 }));
 
 mock.module('../components/DashboardSidebar', () => ({
@@ -63,45 +63,45 @@ mock.module('../components/DashboardHeader', () => ({
     'div',
     { 'data-testid': 'dashboard-header' },
     React.createElement('h1', null, props.title),
-    React.createElement(
-      'button',
-      {
-        type: 'button',
-        'data-testid': 'create-document',
-        onClick: props.onAddAction,
-      },
-      'New Canvas',
-    ),
+        React.createElement(
+          'button',
+          {
+            type: 'button',
+            'data-testid': 'create-canvas',
+            onClick: props.onAddAction,
+          },
+          'New Canvas',
+        ),
   ),
 }));
 
 mock.module('../components/CanvasCard', () => ({
   CanvasCard: (props: {
-    document: { title: string; absolutePath: string };
+    canvas: { title: string; absolutePath: string };
     onClick: () => void;
   }) => React.createElement(
     'button',
     {
       type: 'button',
-      'data-testid': `canvas-card:${props.document.title}`,
+      'data-testid': `canvas-card:${props.canvas.title}`,
       onClick: props.onClick,
     },
-    props.document.title,
+    props.canvas.title,
   ),
 }));
 
 mock.module('../components/CanvasListItem', () => ({
   CanvasListItem: (props: {
-    document: { title: string; absolutePath: string };
+    canvas: { title: string; absolutePath: string };
     onClick: () => void;
   }) => React.createElement(
     'button',
     {
       type: 'button',
-      'data-testid': `canvas-list-item:${props.document.title}`,
+      'data-testid': `canvas-list-item:${props.canvas.title}`,
       onClick: props.onClick,
     },
-    props.document.title,
+    props.canvas.title,
   ),
 }));
 
@@ -170,13 +170,13 @@ describe('WorkspaceDetailPage canonical navigation flows', () => {
         name: 'Workspace 1',
         rootPath: '/tmp/ws-1',
         status: 'ok',
-        documentCount: 1,
+        canvasCount: 1,
         lastModifiedAt: Date.now(),
         lastOpenedAt: Date.now(),
       }],
-      workspaceDocumentsByWorkspaceId: {
+      workspaceCanvasesByWorkspaceId: {
         'ws-1': [{
-          documentId: 'doc-1',
+          canvasId: 'doc-1',
           workspaceId: 'ws-1',
           latestRevision: 3,
           absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',
@@ -186,13 +186,13 @@ describe('WorkspaceDetailPage canonical navigation flows', () => {
       },
       activeWorkspaceId: 'ws-1',
     }));
-    createWorkspaceDocumentMock.mockClear();
+    createWorkspaceCanvasMock.mockClear();
     upsertAppStateWorkspaceMock.mockClear();
     removeAppStateWorkspaceMock.mockClear();
     setAppStateWorkspaceSessionMock.mockClear();
     setAppStatePreferenceMock.mockClear();
-    navigateToDocumentMock.mockClear();
-    navigateToWorkspaceDocumentMock.mockClear();
+    navigateToCanvasMock.mockClear();
+    navigateToWorkspaceCanvasMock.mockClear();
     navigateToDashboardMock.mockClear();
   });
 
@@ -204,7 +204,7 @@ describe('WorkspaceDetailPage canonical navigation flows', () => {
     useGraphStore.setState(initialGraphState);
   });
 
-  it('opens existing documents through the absolute workspace document path', async () => {
+  it('opens existing canvases through the absolute workspace canvas path', async () => {
     await act(async () => {
       environment.root.render(<WorkspaceDetailPage workspaceId="ws-1" />);
     });
@@ -214,22 +214,22 @@ describe('WorkspaceDetailPage canonical navigation flows', () => {
       trigger?.dispatchEvent(new environment.dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    expect(navigateToDocumentMock).toHaveBeenCalledWith('/tmp/ws-1/docs/alpha.graph.tsx');
+    expect(navigateToCanvasMock).toHaveBeenCalledWith('/tmp/ws-1/docs/alpha.graph.tsx');
   });
 
-  it('navigates newly created documents through the canonical workspace document helper', async () => {
+  it('navigates newly created canvases through the canonical workspace canvas helper', async () => {
     await act(async () => {
       environment.root.render(<WorkspaceDetailPage workspaceId="ws-1" />);
     });
 
-    const trigger = environment.dom.window.document.querySelector('[data-testid="create-document"]');
+    const trigger = environment.dom.window.document.querySelector('[data-testid="create-canvas"]');
     await act(async () => {
       trigger?.dispatchEvent(new environment.dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    expect(createWorkspaceDocumentMock).toHaveBeenCalledWith({ rootPath: '/tmp/ws-1' });
-    expect(navigateToWorkspaceDocumentMock).toHaveBeenCalledWith('/tmp/ws-1', expect.objectContaining({
-      documentId: 'doc-2',
+    expect(createWorkspaceCanvasMock).toHaveBeenCalledWith({ rootPath: '/tmp/ws-1' });
+    expect(navigateToWorkspaceCanvasMock).toHaveBeenCalledWith('/tmp/ws-1', expect.objectContaining({
+      canvasId: 'doc-2',
       filePath: 'documents/doc-2.graph.tsx',
     }));
   });

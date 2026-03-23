@@ -1,13 +1,13 @@
 import React from 'react';
-import type { SidebarDocumentEntry } from '@/components/ui/Sidebar';
+import type { SidebarCanvasEntry } from '@/components/ui/Sidebar';
 import { ChevronRight, FileCode2 } from 'lucide-react';
 
 interface CanvasListItemProps {
-  document: SidebarDocumentEntry;
+  canvas: SidebarCanvasEntry;
   onClick: () => void;
 }
 
-export function CanvasListItem({ document, onClick }: CanvasListItemProps) {
+export function CanvasListItem({ canvas, onClick }: CanvasListItemProps) {
   return (
     <div
       onClick={onClick}
@@ -19,10 +19,10 @@ export function CanvasListItem({ document, onClick }: CanvasListItemProps) {
       
       <div className="flex-1 min-w-0 flex items-center gap-4">
         <h3 className="font-manrope font-semibold text-sm text-on-surface group-hover:text-primary transition-colors truncate">
-          {document.title || 'Untitled Canvas'}
+          {canvas.title || 'Untitled Canvas'}
         </h3>
         <p className="font-inter text-xs text-on-surface-variant truncate hidden sm:block">
-          {document.relativePath}
+          {canvas.relativePath}
         </p>
       </div>
 

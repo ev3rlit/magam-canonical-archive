@@ -6,7 +6,7 @@ import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
-import { createWorkspaceDocument } from './WorkspaceClient';
+import { createWorkspaceCanvas } from './WorkspaceClient';
 import {
   canCommitTextEdit,
   canRunNodeCommand,
@@ -105,12 +105,12 @@ describe('WorkspaceClient document entry convergence', () => {
 describe('WorkspaceClient document materialization', () => {
   it('creates untitled documents through the server contract with a real sourceVersion', async () => {
     const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(input).toBe('/api/documents');
+      expect(input).toBe('/api/canvases');
       expect(init?.method).toBe('POST');
       expect(init?.body).toBe(JSON.stringify({ rootPath: '/tmp/workspace' }));
 
       return new Response(JSON.stringify({
-        documentId: 'doc-1',
+        canvasId: 'doc-1',
         workspaceId: 'ws-1',
         filePath: 'docs/untitled-2.graph.tsx',
         sourceVersion: 'sha256:created-document',
@@ -123,9 +123,9 @@ describe('WorkspaceClient document materialization', () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     await expect(
-      createWorkspaceDocument({ rootPath: '/tmp/workspace' }),
+      createWorkspaceCanvas({ rootPath: '/tmp/workspace' }),
     ).resolves.toEqual({
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       workspaceId: 'ws-1',
       filePath: 'docs/untitled-2.graph.tsx',
       sourceVersion: 'sha256:created-document',
@@ -135,7 +135,7 @@ describe('WorkspaceClient document materialization', () => {
 
   it('rejects create-document responses that still expose a draft placeholder version', async () => {
     const fetchMock = mock(async () => new Response(JSON.stringify({
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       workspaceId: 'ws-1',
       filePath: 'docs/untitled-2.graph.tsx',
       sourceVersion: 'draft:empty-canvas',
@@ -147,7 +147,7 @@ describe('WorkspaceClient document materialization', () => {
     globalThis.fetch = fetchMock as typeof fetch;
 
     await expect(
-      createWorkspaceDocument({ rootPath: '/tmp/workspace' }),
+      createWorkspaceCanvas({ rootPath: '/tmp/workspace' }),
     ).rejects.toThrow('새 문서 생성 응답이 올바르지 않습니다.');
   });
 });

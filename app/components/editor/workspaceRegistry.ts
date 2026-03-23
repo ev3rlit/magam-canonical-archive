@@ -2,8 +2,8 @@ import type { RendererRpcClient } from '../../features/host/renderer/rpcClient';
 import type {
   AppPreferenceRecord,
   AppPreferenceUpsertInput,
-  AppRecentDocumentRecord,
-  AppRecentDocumentUpsertInput,
+  AppRecentCanvasRecord,
+  AppRecentCanvasUpsertInput,
   AppWorkspaceRecord,
   AppWorkspaceSessionRecord,
   AppWorkspaceSessionUpdateInput,
@@ -12,9 +12,9 @@ import type {
 
 export type WorkspaceHealthState = 'ok' | 'missing' | 'not-directory' | 'unreadable';
 
-export interface WorkspaceDocumentSummary {
+export interface WorkspaceCanvasSummary {
   filePath: string;
-  documentId?: string;
+  canvasId?: string;
   workspaceId?: string;
   latestRevision?: number | null;
   size?: number;
@@ -27,10 +27,10 @@ export interface WorkspaceProbeResponse {
   health: {
     state: WorkspaceHealthState;
     message?: string;
-    documentCount?: number;
+    canvasCount?: number;
   };
-  documentCount: number;
-  documents: WorkspaceDocumentSummary[];
+  canvasCount: number;
+  canvases: WorkspaceCanvasSummary[];
   lastModifiedAt: number | null;
 }
 
@@ -39,13 +39,13 @@ export interface RegisteredWorkspace {
   name: string;
   rootPath: string;
   status: WorkspaceHealthState;
-  documentCount: number;
+  canvasCount: number;
   lastModifiedAt: number | null;
   lastOpenedAt: number;
 }
 
-export interface WorkspaceSidebarDocument {
-  documentId?: string;
+export interface WorkspaceSidebarCanvas {
+  canvasId?: string;
   workspaceId?: string;
   latestRevision?: number | null;
   absolutePath: string;
@@ -53,14 +53,14 @@ export interface WorkspaceSidebarDocument {
   title: string;
 }
 
-export interface LastActiveDocumentMap {
+export interface LastActiveCanvasMap {
   [workspaceId: string]: string;
 }
 
 const WORKSPACE_REGISTRY_STORAGE_KEY = 'magam:workspaceRegistry:v1';
 const ACTIVE_WORKSPACE_STORAGE_KEY = 'magam:activeWorkspaceId:v1';
-const LAST_ACTIVE_DOCUMENTS_STORAGE_KEY = 'magam:lastActiveDocuments:v1';
-export const LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY = 'workspace.lastActiveDocumentSession';
+const LAST_ACTIVE_CANVASES_STORAGE_KEY = 'magam:lastActiveCanvases:v1';
+export const LAST_ACTIVE_CANVAS_SESSION_PREFERENCE_KEY = 'workspace.lastActiveCanvasSession';
 export const LEGACY_WORKSPACE_REGISTRY_IMPORT_PREFERENCE_KEY = 'workspace.registryLegacyImportCompleted';
 
 export type WorkspaceRegistryAppStateRpcClient = Pick<
@@ -69,8 +69,8 @@ export type WorkspaceRegistryAppStateRpcClient = Pick<
   | 'upsertAppStateWorkspace'
   | 'getAppStateWorkspaceSession'
   | 'setAppStateWorkspaceSession'
-  | 'listAppStateRecentDocuments'
-  | 'upsertAppStateRecentDocument'
+  | 'listAppStateRecentCanvases'
+  | 'upsertAppStateRecentCanvas'
   | 'getAppStatePreference'
   | 'setAppStatePreference'
 >;
@@ -78,7 +78,7 @@ export type WorkspaceRegistryAppStateRpcClient = Pick<
 export interface WorkspaceRegistryHydrationResult {
   workspaces: RegisteredWorkspace[];
   activeWorkspaceId: string | null;
-  lastActiveDocuments: LastActiveDocumentMap;
+  lastActiveCanvases: LastActiveCanvasMap;
   migratedFromLegacyStorage: boolean;
 }
 
@@ -132,12 +132,12 @@ export function writeStoredActiveWorkspaceId(workspaceId: string | null): void {
   window.localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, JSON.stringify(workspaceId));
 }
 
-export function readLastActiveDocumentMap(): LastActiveDocumentMap {
-  return safeReadJson<LastActiveDocumentMap>(LAST_ACTIVE_DOCUMENTS_STORAGE_KEY, {});
+export function readLastActiveCanvasMap(): LastActiveCanvasMap {
+  return safeReadJson<LastActiveCanvasMap>(LAST_ACTIVE_CANVASES_STORAGE_KEY, {});
 }
 
-export function writeLastActiveDocumentMap(map: LastActiveDocumentMap): void {
-  safeWriteJson(LAST_ACTIVE_DOCUMENTS_STORAGE_KEY, map);
+export function writeLastActiveCanvasMap(map: LastActiveCanvasMap): void {
+  safeWriteJson(LAST_ACTIVE_CANVASES_STORAGE_KEY, map);
 }
 
 export function registeredWorkspaceToAppStateWorkspaceInput(
@@ -176,7 +176,7 @@ export function appStateWorkspaceToRegisteredWorkspace(
     name: workspace.displayName,
     rootPath: workspace.rootPath,
     status: workspace.status,
-    documentCount: 0,
+    canvasCount: 0,
     lastModifiedAt: toEpochMillis(workspace.lastSeenAt),
     lastOpenedAt: toEpochMillis(workspace.lastOpenedAt) ?? 0,
   };
@@ -202,62 +202,62 @@ export function appStateSessionToActiveWorkspaceId(
   return workspaces[0]?.id ?? null;
 }
 
-export function lastActiveDocumentMapToRecentDocumentInputs(
-  lastActiveDocuments: LastActiveDocumentMap,
+export function lastActiveCanvasMapToRecentCanvasInputs(
+  lastActiveCanvases: LastActiveCanvasMap,
   workspaces: RegisteredWorkspace[],
-): AppRecentDocumentUpsertInput[] {
+): AppRecentCanvasUpsertInput[] {
   const knownWorkspaceIds = new Set(workspaces.map((workspace) => workspace.id));
 
-  return Object.entries(lastActiveDocuments)
-    .filter(([workspaceId, documentPath]) => knownWorkspaceIds.has(workspaceId) && !!documentPath)
-    .map(([workspaceId, documentPath]) => ({
+  return Object.entries(lastActiveCanvases)
+    .filter(([workspaceId, canvasPath]) => knownWorkspaceIds.has(workspaceId) && !!canvasPath)
+    .map(([workspaceId, canvasPath]) => ({
       workspaceId,
-      documentPath,
+      canvasPath,
       lastOpenedAt: new Date(),
     }));
 }
 
-export function recentDocumentsToLastActiveDocumentMap(
-  recentDocumentsByWorkspace: Record<string, AppRecentDocumentRecord[]>,
-): LastActiveDocumentMap {
-  const lastActiveDocuments: LastActiveDocumentMap = {};
+export function recentCanvasesToLastActiveCanvasMap(
+  recentCanvasesByWorkspace: Record<string, AppRecentCanvasRecord[]>,
+): LastActiveCanvasMap {
+  const lastActiveCanvases: LastActiveCanvasMap = {};
 
-  for (const [workspaceId, recentDocuments] of Object.entries(recentDocumentsByWorkspace)) {
-    const currentDocument = recentDocuments[0]?.documentPath;
-    if (currentDocument) {
-      lastActiveDocuments[workspaceId] = currentDocument;
+  for (const [workspaceId, recentCanvases] of Object.entries(recentCanvasesByWorkspace)) {
+    const currentCanvas = recentCanvases[0]?.canvasPath;
+    if (currentCanvas) {
+      lastActiveCanvases[workspaceId] = currentCanvas;
     }
   }
 
-  return lastActiveDocuments;
+  return lastActiveCanvases;
 }
 
-export function lastActiveDocumentMapToPreferenceInput(
-  lastActiveDocuments: LastActiveDocumentMap,
+export function lastActiveCanvasMapToPreferenceInput(
+  lastActiveCanvases: LastActiveCanvasMap,
 ): AppPreferenceUpsertInput {
   return {
-    key: LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY,
-    valueJson: lastActiveDocuments,
+    key: LAST_ACTIVE_CANVAS_SESSION_PREFERENCE_KEY,
+    valueJson: lastActiveCanvases,
   };
 }
 
-export function preferenceToLastActiveDocumentMap(
+export function preferenceToLastActiveCanvasMap(
   preference: AppPreferenceRecord | null,
-): LastActiveDocumentMap {
+): LastActiveCanvasMap {
   const value = preference?.valueJson;
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
   }
 
-  const lastActiveDocuments: LastActiveDocumentMap = {};
+  const lastActiveCanvases: LastActiveCanvasMap = {};
 
-  for (const [workspaceId, documentPath] of Object.entries(value)) {
-    if (typeof documentPath === 'string') {
-      lastActiveDocuments[workspaceId] = documentPath;
+  for (const [workspaceId, canvasPath] of Object.entries(value)) {
+    if (typeof canvasPath === 'string') {
+      lastActiveCanvases[workspaceId] = canvasPath;
     }
   }
 
-  return lastActiveDocuments;
+  return lastActiveCanvases;
 }
 
 export function isLegacyWorkspaceRegistryImportCompleted(
@@ -266,15 +266,15 @@ export function isLegacyWorkspaceRegistryImportCompleted(
   return preference?.valueJson === true;
 }
 
-function sanitizeLastActiveDocumentMap(
-  map: LastActiveDocumentMap,
+function sanitizeLastActiveCanvasMap(
+  map: LastActiveCanvasMap,
   workspaces: RegisteredWorkspace[],
-): LastActiveDocumentMap {
+): LastActiveCanvasMap {
   const knownWorkspaceIds = new Set(workspaces.map((workspace) => workspace.id));
 
   return Object.fromEntries(
     Object.entries(map).filter(
-      ([workspaceId, documentPath]) => knownWorkspaceIds.has(workspaceId) && typeof documentPath === 'string' && documentPath.length > 0,
+      ([workspaceId, canvasPath]) => knownWorkspaceIds.has(workspaceId) && typeof canvasPath === 'string' && canvasPath.length > 0,
     ),
   );
 }
@@ -283,7 +283,7 @@ async function importLegacyWorkspaceRegistryToAppState(
   rpc: WorkspaceRegistryAppStateRpcClient,
   workspaces: RegisteredWorkspace[],
   activeWorkspaceId: string | null,
-  lastActiveDocuments: LastActiveDocumentMap,
+  lastActiveCanvases: LastActiveCanvasMap,
 ): Promise<WorkspaceRegistryHydrationResult> {
   const importedWorkspaces = sortWorkspaces(
     await Promise.all(
@@ -292,14 +292,14 @@ async function importLegacyWorkspaceRegistryToAppState(
       )),
     ),
   );
-  const sanitizedLastActiveDocuments = sanitizeLastActiveDocumentMap(lastActiveDocuments, importedWorkspaces);
+  const sanitizedLastActiveCanvases = sanitizeLastActiveCanvasMap(lastActiveCanvases, importedWorkspaces);
 
   await Promise.all(
-    lastActiveDocumentMapToRecentDocumentInputs(sanitizedLastActiveDocuments, importedWorkspaces).map(
-      (input) => rpc.upsertAppStateRecentDocument(input),
+    lastActiveCanvasMapToRecentCanvasInputs(sanitizedLastActiveCanvases, importedWorkspaces).map(
+      (input) => rpc.upsertAppStateRecentCanvas(input),
     ),
   );
-  await rpc.setAppStatePreference(lastActiveDocumentMapToPreferenceInput(sanitizedLastActiveDocuments));
+  await rpc.setAppStatePreference(lastActiveCanvasMapToPreferenceInput(sanitizedLastActiveCanvases));
   await rpc.setAppStatePreference({
     key: LEGACY_WORKSPACE_REGISTRY_IMPORT_PREFERENCE_KEY,
     valueJson: true,
@@ -317,7 +317,7 @@ async function importLegacyWorkspaceRegistryToAppState(
   return {
     workspaces: importedWorkspaces,
     activeWorkspaceId: nextActiveWorkspaceId,
-    lastActiveDocuments: sanitizedLastActiveDocuments,
+    lastActiveCanvases: sanitizedLastActiveCanvases,
     migratedFromLegacyStorage: true,
   };
 }
@@ -333,8 +333,8 @@ export async function hydrateWorkspaceRegistryFromAppState(
   if (appStateWorkspaces.length === 0 && !isLegacyWorkspaceRegistryImportCompleted(legacyImportPreference)) {
     const legacyWorkspaces = sortWorkspaces(readStoredWorkspaces());
     const legacyActiveWorkspaceId = readStoredActiveWorkspaceId();
-    const legacyLastActiveDocuments = sanitizeLastActiveDocumentMap(
-      readLastActiveDocumentMap(),
+    const legacyLastActiveCanvases = sanitizeLastActiveCanvasMap(
+      readLastActiveCanvasMap(),
       legacyWorkspaces,
     );
 
@@ -342,33 +342,33 @@ export async function hydrateWorkspaceRegistryFromAppState(
       rpc,
       legacyWorkspaces,
       legacyActiveWorkspaceId,
-      legacyLastActiveDocuments,
+      legacyLastActiveCanvases,
     );
   }
 
   const workspaces = sortWorkspaces(appStateWorkspaces.map(appStateWorkspaceToRegisteredWorkspace));
-  const [session, lastActivePreference, recentDocumentsByWorkspaceEntries] = await Promise.all([
+  const [session, lastActivePreference, recentCanvasesByWorkspaceEntries] = await Promise.all([
     rpc.getAppStateWorkspaceSession(),
-    rpc.getAppStatePreference(LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY),
+    rpc.getAppStatePreference(LAST_ACTIVE_CANVAS_SESSION_PREFERENCE_KEY),
     Promise.all(
       workspaces.map(async (workspace) => [
         workspace.id,
-        await rpc.listAppStateRecentDocuments(workspace.id),
+        await rpc.listAppStateRecentCanvases(workspace.id),
       ] as const),
     ),
   ]);
 
   const activeWorkspaceId = appStateSessionToActiveWorkspaceId(session, workspaces);
-  const recentDocumentsByWorkspace = Object.fromEntries(recentDocumentsByWorkspaceEntries);
-  const lastActiveDocuments = {
-    ...recentDocumentsToLastActiveDocumentMap(recentDocumentsByWorkspace),
-    ...sanitizeLastActiveDocumentMap(preferenceToLastActiveDocumentMap(lastActivePreference), workspaces),
+  const recentCanvasesByWorkspace = Object.fromEntries(recentCanvasesByWorkspaceEntries);
+  const lastActiveCanvases = {
+    ...recentCanvasesToLastActiveCanvasMap(recentCanvasesByWorkspace),
+    ...sanitizeLastActiveCanvasMap(preferenceToLastActiveCanvasMap(lastActivePreference), workspaces),
   };
 
   return {
     workspaces,
     activeWorkspaceId,
-    lastActiveDocuments,
+    lastActiveCanvases,
     migratedFromLegacyStorage: false,
   };
 }
@@ -382,7 +382,7 @@ export function buildRegisteredWorkspace(
     name: input.workspaceName,
     rootPath: input.rootPath,
     status: input.health.state,
-    documentCount: input.documentCount,
+    canvasCount: input.canvasCount,
     lastModifiedAt: input.lastModifiedAt,
     lastOpenedAt: Date.now(),
   };
@@ -415,17 +415,17 @@ export function updateWorkspaceFromProbe(
     name: probe.workspaceName,
     rootPath: probe.rootPath,
     status: probe.health.state,
-    documentCount: probe.documentCount,
+    canvasCount: probe.canvasCount,
     lastModifiedAt: probe.lastModifiedAt,
   };
 }
 
-export function resolveWorkspaceDocumentAbsolutePath(rootPath: string, relativePath: string): string {
+export function resolveWorkspaceCanvasAbsolutePath(rootPath: string, relativePath: string): string {
   const normalizedRelativePath = normalizePathSeparators(relativePath).replace(/^\/+/, '');
   return `${normalizePathSeparators(trimTrailingSeparators(rootPath))}/${normalizedRelativePath}`;
 }
 
-export function normalizeWorkspaceDocumentPath(
+export function normalizeWorkspaceCanvasPath(
   rootPath: string | null | undefined,
   filePath: string,
 ): string {
@@ -438,20 +438,20 @@ export function normalizeWorkspaceDocumentPath(
     return normalizedFilePath;
   }
 
-  return resolveWorkspaceDocumentAbsolutePath(rootPath, normalizedFilePath);
+  return resolveWorkspaceCanvasAbsolutePath(rootPath, normalizedFilePath);
 }
 
-export function buildSidebarDocuments(
+export function buildSidebarCanvases(
   rootPath: string,
-  documents: WorkspaceDocumentSummary[],
-): WorkspaceSidebarDocument[] {
-  return documents.map((document) => ({
-    ...(typeof document.documentId === 'string' ? { documentId: document.documentId } : {}),
-    ...(typeof document.workspaceId === 'string' ? { workspaceId: document.workspaceId } : {}),
-    ...(document.latestRevision !== undefined ? { latestRevision: document.latestRevision } : {}),
-    absolutePath: resolveWorkspaceDocumentAbsolutePath(rootPath, document.filePath),
-    relativePath: document.filePath,
-    title: basename(document.filePath),
+  canvases: WorkspaceCanvasSummary[],
+): WorkspaceSidebarCanvas[] {
+  return canvases.map((canvas) => ({
+    ...(typeof canvas.canvasId === 'string' ? { canvasId: canvas.canvasId } : {}),
+    ...(typeof canvas.workspaceId === 'string' ? { workspaceId: canvas.workspaceId } : {}),
+    ...(canvas.latestRevision !== undefined ? { latestRevision: canvas.latestRevision } : {}),
+    absolutePath: resolveWorkspaceCanvasAbsolutePath(rootPath, canvas.filePath),
+    relativePath: canvas.filePath,
+    title: basename(canvas.filePath),
   }));
 }
 

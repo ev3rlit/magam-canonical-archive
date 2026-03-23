@@ -39,7 +39,7 @@ describe('headless mutation executor', () => {
     });
     await context.repository.createCanvasNode({
       id: 'node-1',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       surfaceId: 'main',
       nodeKind: 'native',
       canonicalObjectId: 'note-1',
@@ -52,7 +52,7 @@ describe('headless mutation executor', () => {
       dryRun: true,
       batch: {
         workspaceRef: 'ws-1',
-        documentRef: 'doc-1',
+        canvasRef: 'doc-1',
         operations: [
           {
             op: 'object.content.update',
@@ -69,8 +69,8 @@ describe('headless mutation executor', () => {
       },
     });
 
-    expect(result.documentRevisionBefore).toBe(0);
-    expect(result.documentRevisionAfter).toBe(1);
+    expect(result.canvasRevisionBefore).toBe(0);
+    expect(result.canvasRevisionAfter).toBe(1);
     expect(result.changed).toEqual({
       objects: ['note-1'],
       nodes: ['node-1'],
@@ -87,7 +87,7 @@ describe('headless mutation executor', () => {
     }
 
     const row = await context.db.query.canvasNodes.findFirst({
-      where: (table, { and, eq }) => and(eq(table.documentId, 'doc-1'), eq(table.id, 'node-1')),
+      where: (table, { and, eq }) => and(eq(table.canvasId, 'doc-1'), eq(table.id, 'node-1')),
     });
     expect(row?.layout).toEqual({ x: 0, y: 0 });
 
@@ -104,7 +104,7 @@ describe('headless mutation executor', () => {
     });
     await context.repository.createCanvasNode({
       id: 'node-1',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       surfaceId: 'main',
       nodeKind: 'native',
       canonicalObjectId: 'note-1',
@@ -116,9 +116,9 @@ describe('headless mutation executor', () => {
       context,
       batch: {
         workspaceRef: 'ws-1',
-        documentRef: 'doc-1',
+        canvasRef: 'doc-1',
         preconditions: {
-          documentRevision: 0,
+          canvasRevision: 0,
         },
         operations: [
           {
@@ -136,8 +136,8 @@ describe('headless mutation executor', () => {
       },
     });
 
-    expect(applied.documentRevisionBefore).toBe(0);
-    expect(applied.documentRevisionAfter).toBe(1);
+    expect(applied.canvasRevisionBefore).toBe(0);
+    expect(applied.canvasRevisionAfter).toBe(1);
 
     const objectRecord = await context.repository.getCanonicalObject('ws-1', 'note-1');
     expect(objectRecord.ok).toBe(true);
@@ -146,7 +146,7 @@ describe('headless mutation executor', () => {
     }
 
     const nodeRow = await context.db.query.canvasNodes.findFirst({
-      where: (table, { and, eq }) => and(eq(table.documentId, 'doc-1'), eq(table.id, 'node-1')),
+      where: (table, { and, eq }) => and(eq(table.canvasId, 'doc-1'), eq(table.id, 'node-1')),
     });
     expect(nodeRow?.parentNodeId).toBe('group-1');
 
@@ -154,9 +154,9 @@ describe('headless mutation executor', () => {
       context,
       batch: {
         workspaceRef: 'ws-1',
-        documentRef: 'doc-1',
+        canvasRef: 'doc-1',
         preconditions: {
-          documentRevision: 0,
+          canvasRevision: 0,
         },
         operations: [{
           op: 'canvas.node.move',
@@ -181,7 +181,7 @@ describe('headless mutation executor', () => {
     });
     await context.repository.createCanvasNode({
       id: 'node-1',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       surfaceId: 'main',
       nodeKind: 'native',
       canonicalObjectId: 'note-1',
@@ -190,7 +190,7 @@ describe('headless mutation executor', () => {
     });
     await context.repository.appendDocumentRevision({
       id: 'docrev-0',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       revisionNo: 1,
       authorKind: 'system',
       authorId: 'document-shell',
@@ -207,9 +207,9 @@ describe('headless mutation executor', () => {
       context,
       batch: {
         workspaceRef: 'ws-1',
-        documentRef: 'doc-1',
+        canvasRef: 'doc-1',
         preconditions: {
-          documentRevision: 1,
+          canvasRevision: 1,
         },
         operations: [{
           op: 'canvas.node.move',
@@ -219,8 +219,8 @@ describe('headless mutation executor', () => {
       },
     });
 
-    expect(applied.documentRevisionBefore).toBe(1);
-    expect(applied.documentRevisionAfter).toBe(2);
+    expect(applied.canvasRevisionBefore).toBe(1);
+    expect(applied.canvasRevisionAfter).toBe(2);
 
     await handle.close();
   });

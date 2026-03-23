@@ -16,12 +16,12 @@ CREATE TABLE "app_workspace_session" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "app_recent_documents" (
+CREATE TABLE "app_recent_canvases" (
 	"workspace_id" text NOT NULL,
 	"document_path" text NOT NULL,
 	"last_opened_at" timestamp with time zone,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "app_recent_documents_workspace_id_document_path_pk" PRIMARY KEY("workspace_id","document_path")
+	CONSTRAINT "app_recent_canvases_workspace_id_document_path_pk" PRIMARY KEY("workspace_id","document_path")
 );
 --> statement-breakpoint
 CREATE TABLE "app_preferences" (
@@ -36,4 +36,4 @@ CREATE INDEX "idx_app_workspaces_status" ON "app_workspaces" USING btree ("statu
 --> statement-breakpoint
 CREATE INDEX "idx_app_workspaces_last_opened" ON "app_workspaces" USING btree ("last_opened_at");
 --> statement-breakpoint
-CREATE INDEX "idx_app_recent_documents_workspace" ON "app_recent_documents" USING btree ("workspace_id","last_opened_at");
+CREATE INDEX "idx_app_recent_canvases_workspace" ON "app_recent_canvases" USING btree ("workspace_id","last_opened_at");

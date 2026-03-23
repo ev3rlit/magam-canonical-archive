@@ -20,14 +20,14 @@ magam canvas-node move --document doc-smoke --node node-1 --x 12 --y 34 --json
 magam canvas-node reparent --document doc-smoke --node node-1 --parent group-1 --json
 printf '{"source":"# hello"}' | magam object update-content --workspace ws-smoke --document doc-smoke --object note-1 --kind markdown --patch @stdin --json
 printf '{"fill":"#FDE68A"}' | magam object patch-capability --workspace ws-smoke --document doc-smoke --object note-1 --capability frame --patch @stdin --json
-printf '{"workspaceRef":"ws-smoke","documentRef":"doc-smoke","operations":[{"op":"canvas.node.move","nodeId":"node-1","patch":{"x":12,"y":34}}]}' | magam mutation apply --json
+printf '{"workspaceRef":"ws-smoke","canvasRef":"doc-smoke","operations":[{"op":"canvas.node.move","nodeId":"node-1","patch":{"x":12,"y":34}}]}' | magam mutation apply --json
 ```
 
 ## JSON Contract
 
 - `--json`에서는 success/failure 모두 structured envelope를 반환한다.
 - failure는 `ok: false`, `error.code`, `error.message`, `error.details`, `error.retryable`를 포함한다.
-- mutation 명령은 가능하면 `documentRevisionBefore`, `documentRevisionAfter`, `changed`, `warnings`를 함께 반환한다.
+- mutation 명령은 가능하면 `canvasRevisionBefore`, `canvasRevisionAfter`, `changed`, `warnings`를 함께 반환한다.
 
 ## Runtime Notes
 

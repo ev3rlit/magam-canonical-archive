@@ -1,2 +1,2 @@
-export * from './workspace-document';
+export * from './workspace-canvas';
 export * from './object-surface-search';

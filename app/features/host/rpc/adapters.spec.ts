@@ -54,12 +54,12 @@ describe('host RPC adapters', () => {
         rootPath: '/tmp/workspace',
         workspaceName: 'workspace',
         health: { state: 'ok' },
-        documentCount: 1,
+        canvasCount: 1,
         documents: [{ filePath: 'docs/alpha.graph.tsx' }],
         lastModifiedAt: 10,
       }))
       .mockResolvedValueOnce(jsonResponse({
-        documentId: 'doc-1',
+        canvasId: 'doc-1',
         workspaceId: 'ws-1',
         filePath: 'docs/untitled-1.graph.tsx',
         sourceVersion: 'sha256:created-document',
@@ -72,8 +72,8 @@ describe('host RPC adapters', () => {
       rootPath: '/tmp/workspace',
       workspaceName: 'workspace',
     });
-    await expect(adapter.createWorkspaceDocument({ rootPath: '/tmp/workspace' })).resolves.toEqual({
-      documentId: 'doc-1',
+    await expect(adapter.createWorkspaceCanvas({ rootPath: '/tmp/workspace' })).resolves.toEqual({
+      canvasId: 'doc-1',
       workspaceId: 'ws-1',
       filePath: 'docs/untitled-1.graph.tsx',
       sourceVersion: 'sha256:created-document',
@@ -87,7 +87,7 @@ describe('host RPC adapters', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      '/api/documents',
+      '/api/canvases',
       expect.objectContaining({
         method: 'POST',
         cache: 'no-store',
@@ -102,7 +102,7 @@ describe('host RPC adapters', () => {
         rootPath: '/tmp/workspace',
         workspaceName: 'workspace',
         health: { state: 'ok' },
-        documentCount: 0,
+        canvasCount: 0,
         documents: [],
         lastModifiedAt: null,
       }))
@@ -214,7 +214,7 @@ describe('host RPC adapters', () => {
     await expect(adapter.getAppStateWorkspaceSession()).resolves.toEqual(
       expect.objectContaining({ activeWorkspaceId: 'ws-1' }),
     );
-    await expect(adapter.listAppStateRecentDocuments('ws-1')).resolves.toEqual([
+    await expect(adapter.listAppStateRecentCanvases('ws-1')).resolves.toEqual([
       expect.objectContaining({ documentPath: 'docs/alpha.graph.tsx' }),
     ]);
     await expect(adapter.getAppStatePreference('theme.mode')).resolves.toEqual(
@@ -233,7 +233,7 @@ describe('host RPC adapters', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      '/api/app-state/recent-documents?workspaceId=ws-1',
+      '/api/app-state/recent-canvases?workspaceId=ws-1',
       expect.objectContaining({ cache: 'no-store' }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -283,7 +283,7 @@ describe('host RPC adapters', () => {
 
     await adapter.listAppStateWorkspaces();
     await adapter.getAppStateWorkspaceSession();
-    await adapter.listAppStateRecentDocuments('ws-1');
+    await adapter.listAppStateRecentCanvases('ws-1');
     await adapter.getAppStatePreference('theme.mode');
     await adapter.removeAppStateWorkspace('ws-1');
 
@@ -299,7 +299,7 @@ describe('host RPC adapters', () => {
     );
     expect(fetchMock).toHaveBeenNthCalledWith(
       3,
-      'http://127.0.0.1:3003/app-state/recent-documents?workspaceId=ws-1',
+      'http://127.0.0.1:3003/app-state/recent-canvases?workspaceId=ws-1',
       expect.objectContaining({ cache: 'no-store' }),
     );
     expect(fetchMock).toHaveBeenNthCalledWith(

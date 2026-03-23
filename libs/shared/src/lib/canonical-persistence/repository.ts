@@ -6,7 +6,7 @@ import type {
   CanvasNodeRecord,
   CloneEditableNoteInput,
   CreateCanonicalObjectInput,
-  DocumentRevisionRecord,
+  CanvasRevisionRecord,
   ObjectRelationRecord,
   PersistenceResult,
   PluginExportRecord,
@@ -21,7 +21,7 @@ import {
   canonicalObjects,
   canvasBindings,
   canvasNodes,
-  documentRevisions,
+  canvasRevisions,
   objectRelations,
   pluginExports,
   pluginInstances,
@@ -33,7 +33,7 @@ import {
   validateCanonicalObjectRecord,
   validateCanvasBindingRecord,
   validateCanvasNodeRecord,
-  validateDocumentRevisionRecord,
+  validateCanvasRevisionRecord,
   validateObjectRelationRecord,
   validatePluginExportRecord,
   validatePluginInstanceRecord,
@@ -100,7 +100,7 @@ function fromCanonicalObjectRow(row: CanonicalObjectRow): CanonicalObjectRecord 
 function fromCanvasBindingRow(row: CanvasBindingRow): CanvasBindingRecord {
   return {
     id: row.id,
-    documentId: row.documentId,
+    canvasId: row.canvasId,
     nodeId: row.nodeId,
     bindingKind: row.bindingKind,
     sourceRef: row.sourceRef,
@@ -162,7 +162,7 @@ function fromPluginPermissionRow(row: PluginPermissionRow): PluginPermissionReco
 function fromPluginInstanceRow(row: PluginInstanceRow): PluginInstanceRecord {
   return {
     id: row.id,
-    documentId: row.documentId,
+    canvasId: row.canvasId,
     surfaceId: row.surfaceId,
     pluginExportId: row.pluginExportId,
     pluginVersionId: row.pluginVersionId,
@@ -452,7 +452,7 @@ export class CanonicalPersistenceRepository {
 
     await this.db.insert(canvasNodes).values({
       id: record.id,
-      documentId: record.documentId,
+      canvasId: record.canvasId,
       surfaceId: record.surfaceId,
       nodeKind: record.nodeKind,
       nodeType: record.nodeType ?? null,
@@ -479,7 +479,7 @@ export class CanonicalPersistenceRepository {
 
     await this.db.insert(canvasBindings).values({
       id: record.id,
-      documentId: record.documentId,
+      canvasId: record.canvasId,
       nodeId: record.nodeId,
       bindingKind: record.bindingKind,
       sourceRef: record.sourceRef,
@@ -492,12 +492,12 @@ export class CanonicalPersistenceRepository {
   }
 
   async resolveCanvasBinding(
-    documentId: string,
+    canvasId: string,
     id: string,
   ): Promise<PersistenceResult<CanvasBindingResolution>> {
     const row = await this.db.query.canvasBindings.findFirst({
       where: and(
-        eq(canvasBindings.documentId, documentId),
+        eq(canvasBindings.canvasId, canvasId),
         eq(canvasBindings.id, id),
       ),
     });
@@ -505,7 +505,7 @@ export class CanonicalPersistenceRepository {
     if (!row) {
       return errResult(
         'TOMBSTONE_PLACEHOLDER_RESOLUTION_FAILED',
-        `Canvas binding ${id} was not found for document ${documentId}.`,
+        `Canvas binding ${id} was not found for document ${canvasId}.`,
         { path: 'id' },
       );
     }
@@ -845,7 +845,7 @@ export class CanonicalPersistenceRepository {
       .insert(pluginInstances)
       .values({
         id: validation.value.id,
-        documentId: validation.value.documentId,
+        canvasId: validation.value.canvasId,
         surfaceId: validation.value.surfaceId,
         pluginExportId: validation.value.pluginExportId,
         pluginVersionId: validation.value.pluginVersionId,
@@ -874,16 +874,16 @@ export class CanonicalPersistenceRepository {
     return okResult(fromPluginInstanceRow(row));
   }
 
-  async listPluginInstances(documentId: string, surfaceId?: string): Promise<PluginInstanceRecord[]> {
+  async listPluginInstances(canvasId: string, surfaceId?: string): Promise<PluginInstanceRecord[]> {
     const rows = surfaceId
       ? await this.db.query.pluginInstances.findMany({
         where: and(
-          eq(pluginInstances.documentId, documentId),
+          eq(pluginInstances.canvasId, canvasId),
           eq(pluginInstances.surfaceId, surfaceId),
         ),
       })
       : await this.db.query.pluginInstances.findMany({
-        where: eq(pluginInstances.documentId, documentId),
+        where: eq(pluginInstances.canvasId, canvasId),
       });
     return rows.map(fromPluginInstanceRow);
   }
@@ -1006,15 +1006,15 @@ export class CanonicalPersistenceRepository {
     });
   }
 
-  async appendDocumentRevision(record: DocumentRevisionRecord): Promise<PersistenceResult<DocumentRevisionRecord>> {
-    const validation = validateDocumentRevisionRecord(record);
+  async appendCanvasRevision(record: CanvasRevisionRecord): Promise<PersistenceResult<CanvasRevisionRecord>> {
+    const validation = validateCanvasRevisionRecord(record);
     if (!validation.ok) {
       return validation;
     }
 
-    await this.db.insert(documentRevisions).values({
+    await this.db.insert(canvasRevisions).values({
       id: record.id,
-      documentId: record.documentId,
+      canvasId: record.canvasId,
       revisionNo: record.revisionNo,
       authorKind: record.authorKind,
       authorId: record.authorId,

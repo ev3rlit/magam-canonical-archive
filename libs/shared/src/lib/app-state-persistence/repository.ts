@@ -3,8 +3,8 @@ import type {
   AppPreferenceValue,
   AppPreferenceRecord,
   AppPreferenceUpsertInput,
-  AppRecentDocumentRecord,
-  AppRecentDocumentUpsertInput,
+  AppRecentCanvasRecord,
+  AppRecentCanvasUpsertInput,
   AppWorkspaceRecord,
   AppWorkspaceSessionRecord,
   AppWorkspaceSessionUpdateInput,
@@ -14,7 +14,7 @@ import { APP_STATE_SESSION_SINGLETON_KEY } from './contracts/types';
 import type { AppStateDb } from './pglite-db';
 import {
   appPreferences,
-  appRecentDocuments,
+  appRecentCanvases,
   appWorkspaceSession,
   appWorkspaces,
 } from './contracts/schema';
@@ -25,9 +25,9 @@ export interface AppStateRepository {
   removeWorkspace(workspaceId: string): Promise<void>;
   getWorkspaceSession(): Promise<AppWorkspaceSessionRecord | null>;
   setWorkspaceSession(input: AppWorkspaceSessionUpdateInput): Promise<AppWorkspaceSessionRecord>;
-  listRecentDocuments(workspaceId: string): Promise<AppRecentDocumentRecord[]>;
-  upsertRecentDocument(input: AppRecentDocumentUpsertInput): Promise<AppRecentDocumentRecord>;
-  clearRecentDocuments(workspaceId: string): Promise<void>;
+  listRecentCanvases(workspaceId: string): Promise<AppRecentCanvasRecord[]>;
+  upsertRecentDocument(input: AppRecentCanvasUpsertInput): Promise<AppRecentCanvasRecord>;
+  clearRecentCanvases(workspaceId: string): Promise<void>;
   getPreference(key: string): Promise<AppPreferenceRecord | null>;
   setPreference(input: AppPreferenceUpsertInput): Promise<AppPreferenceRecord>;
 }
@@ -77,8 +77,8 @@ export class AppStatePersistenceRepository implements AppStateRepository {
   async removeWorkspace(workspaceId: string): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx
-        .delete(appRecentDocuments)
-        .where(eq(appRecentDocuments.workspaceId, workspaceId));
+        .delete(appRecentCanvases)
+        .where(eq(appRecentCanvases.workspaceId, workspaceId));
 
       const session = await tx
         .select()
@@ -137,24 +137,24 @@ export class AppStatePersistenceRepository implements AppStateRepository {
     return requireFirstRow(inserted, 'app workspace session upsert');
   }
 
-  async listRecentDocuments(workspaceId: string): Promise<AppRecentDocumentRecord[]> {
+  async listRecentCanvases(workspaceId: string): Promise<AppRecentCanvasRecord[]> {
     return this.db
       .select()
-      .from(appRecentDocuments)
-      .where(eq(appRecentDocuments.workspaceId, workspaceId))
-      .orderBy(desc(appRecentDocuments.lastOpenedAt), asc(appRecentDocuments.documentPath));
+      .from(appRecentCanvases)
+      .where(eq(appRecentCanvases.workspaceId, workspaceId))
+      .orderBy(desc(appRecentCanvases.lastOpenedAt), asc(appRecentCanvases.documentPath));
   }
 
-  async upsertRecentDocument(input: AppRecentDocumentUpsertInput): Promise<AppRecentDocumentRecord> {
+  async upsertRecentDocument(input: AppRecentCanvasUpsertInput): Promise<AppRecentCanvasRecord> {
     const inserted = await this.db
-      .insert(appRecentDocuments)
+      .insert(appRecentCanvases)
       .values({
         workspaceId: input.workspaceId,
         documentPath: input.documentPath,
         lastOpenedAt: input.lastOpenedAt ?? null,
       })
       .onConflictDoUpdate({
-        target: [appRecentDocuments.workspaceId, appRecentDocuments.documentPath],
+        target: [appRecentCanvases.workspaceId, appRecentCanvases.documentPath],
         set: {
           lastOpenedAt: input.lastOpenedAt ?? null,
           updatedAt: new Date(),
@@ -165,10 +165,10 @@ export class AppStatePersistenceRepository implements AppStateRepository {
     return requireFirstRow(inserted, 'app recent document upsert');
   }
 
-  async clearRecentDocuments(workspaceId: string): Promise<void> {
+  async clearRecentCanvases(workspaceId: string): Promise<void> {
     await this.db
-      .delete(appRecentDocuments)
-      .where(eq(appRecentDocuments.workspaceId, workspaceId));
+      .delete(appRecentCanvases)
+      .where(eq(appRecentCanvases.workspaceId, workspaceId));
   }
 
   async getPreference(key: string): Promise<AppPreferenceRecord | null> {

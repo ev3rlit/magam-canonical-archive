@@ -10,16 +10,16 @@ export interface HeadlessBootstrapOptions {
   targetDir?: string;
   workspaceRef?: string;
   requireWorkspace?: boolean;
-  documentRef?: string;
+  canvasRef?: string;
   requireDocument?: boolean;
 }
 
 export interface HeadlessCliContext extends HeadlessServiceContext {
   handle: Awaited<ReturnType<typeof createCanonicalPgliteDb>>;
   workspaceIds: string[];
-  documentIds: string[];
+  canvasIds: string[];
   resolvedWorkspaceId?: string;
-  resolvedDocumentId?: string;
+  resolvedCanvasId?: string;
 }
 
 function sanitizeWorkspaceId(targetDir: string): string {
@@ -49,23 +49,23 @@ async function discoverWorkspaceIds(
   return [...new Set([defaultWorkspaceId, ...repositoryIds, ...rows.map((row) => row.workspaceId)])];
 }
 
-async function discoverDocumentIds(db: HeadlessServiceContext['db']): Promise<string[]> {
+async function discoverCanvasIds(db: HeadlessServiceContext['db']): Promise<string[]> {
   const [nodes, bindings, revisions] = await Promise.all([
     db.query.canvasNodes.findMany({
-      columns: { documentId: true },
+      columns: { canvasId: true },
     }),
     db.query.canvasBindings.findMany({
-      columns: { documentId: true },
+      columns: { canvasId: true },
     }),
-    db.query.documentRevisions.findMany({
-      columns: { documentId: true },
+    db.query.canvasRevisions.findMany({
+      columns: { canvasId: true },
     }),
   ]);
 
   return [...new Set([
-    ...nodes.map((row) => row.documentId),
-    ...bindings.map((row) => row.documentId),
-    ...revisions.map((row) => row.documentId),
+    ...nodes.map((row) => row.canvasId),
+    ...bindings.map((row) => row.canvasId),
+    ...revisions.map((row) => row.canvasId),
   ])];
 }
 
@@ -96,7 +96,7 @@ function resolveWorkspaceRef(input: {
   });
 }
 
-function resolveDocumentRef(input: {
+function resolveCanvasRef(input: {
   explicit?: string;
   discovered: string[];
   required: boolean;
@@ -114,7 +114,7 @@ function resolveDocumentRef(input: {
   }
 
   throw cliError('INVALID_ARGUMENT', '--document is required when a single document cannot be inferred.', {
-    details: { documentIds: input.discovered },
+    details: { canvasIds: input.discovered },
   });
 }
 
@@ -142,16 +142,16 @@ export async function withHeadlessContext<T>(
   try {
     const repository = new CanonicalPersistenceRepository(handle.db);
     const workspaceIds = await discoverWorkspaceIds(repository, handle.db, defaultWorkspaceId);
-    const documentIds = await discoverDocumentIds(handle.db);
+    const canvasIds = await discoverCanvasIds(handle.db);
     const resolvedWorkspaceId = resolveWorkspaceRef({
       explicit: options.workspaceRef,
       discovered: workspaceIds.filter((workspaceId) => workspaceId !== defaultWorkspaceId || workspaceIds.length === 1),
       defaultWorkspaceId,
       required: options.requireWorkspace ?? false,
     });
-    const resolvedDocumentId = resolveDocumentRef({
-      explicit: options.documentRef,
-      discovered: documentIds,
+    const resolvedCanvasId = resolveCanvasRef({
+      explicit: options.canvasRef,
+      discovered: canvasIds,
       required: options.requireDocument ?? false,
     });
 
@@ -163,9 +163,9 @@ export async function withHeadlessContext<T>(
       dataDir: handle.dataDir,
       defaultWorkspaceId,
       workspaceIds,
-      documentIds,
+      canvasIds,
       ...(resolvedWorkspaceId ? { resolvedWorkspaceId } : {}),
-      ...(resolvedDocumentId ? { resolvedDocumentId } : {}),
+      ...(resolvedCanvasId ? { resolvedCanvasId } : {}),
     });
   } finally {
     await handle.close();

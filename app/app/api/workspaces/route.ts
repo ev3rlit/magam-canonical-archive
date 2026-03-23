@@ -57,10 +57,10 @@ export async function GET(request: Request) {
       health: {
         state: workspace.health.status,
         message: workspace.health.message,
-        documentCount: workspace.documentCount,
+        canvasCount: workspace.canvasCount,
       },
-      documentCount: workspace.documentCount,
-      documents: workspace.documents,
+      canvasCount: workspace.canvasCount,
+      canvases: workspace.canvases,
       lastModifiedAt: workspace.lastModifiedAt,
     });
   } catch (error) {
@@ -92,10 +92,10 @@ export async function POST(request: Request) {
         health: {
           state: ensured.health.status,
           message: ensured.health.message,
-          documentCount: ensured.documentCount,
+          canvasCount: ensured.canvasCount,
         },
-        documentCount: ensured.documentCount,
-        documents: ensured.documents,
+        canvasCount: ensured.canvasCount,
+        canvases: ensured.canvases,
         lastModifiedAt: ensured.lastModifiedAt,
       });
     }

@@ -5,7 +5,7 @@ describe('canonical/canvas boundary', () => {
   it('rejects canonical payload leakage in canvas node props', () => {
     const result = validateCanvasNodeRecord({
       id: 'node-1',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       surfaceId: 'surface-1',
       nodeKind: 'native',
       canonicalObjectId: 'object-1',

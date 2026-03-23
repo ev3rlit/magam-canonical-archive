@@ -6,16 +6,16 @@ import glob from 'fast-glob';
 import { transpileWithMetadata } from '../core/transpiler';
 import { execute } from '../core/executor';
 import {
-  createCanonicalDocument,
-  getCanonicalDocument,
-  listCanonicalDocuments,
-  type CanonicalDocumentShellRecord,
-} from '../../../shared/src/lib/canonical-document-shell';
+  createCanonicalCanvas,
+  getCanonicalCanvas,
+  listCanonicalCanvases,
+  type CanonicalCanvasShellRecord,
+} from '../../../shared/src/lib/canonical-canvas-shell';
 import { isCanonicalCliError } from '../../../shared/src/lib/canonical-cli';
 import {
   ApiError,
-  createCompatibilityDocumentSource,
-  createDocumentSourceVersion,
+  createCompatibilityCanvasSource,
+  createCanvasSourceVersion,
   ensureWorkspaceRoot,
   openWorkspaceInFileBrowser,
   probeWorkspace,
@@ -253,12 +253,12 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
         await handleAppStateSessionGet(res, appStateRepository);
       } else if (req.method === 'POST' && url.pathname === '/app-state/session') {
         await handleAppStateSessionSet(req, res, appStateRepository);
-      } else if (req.method === 'GET' && url.pathname === '/app-state/recent-documents') {
-        await handleAppStateRecentDocumentsList(url, res, appStateRepository);
-      } else if (req.method === 'POST' && url.pathname === '/app-state/recent-documents') {
-        await handleAppStateRecentDocumentsUpsert(req, res, appStateRepository);
-      } else if (req.method === 'DELETE' && url.pathname === '/app-state/recent-documents') {
-        await handleAppStateRecentDocumentsDelete(url, res, appStateRepository);
+      } else if (req.method === 'GET' && url.pathname === '/app-state/recent-canvases') {
+        await handleAppStateRecentCanvasesList(url, res, appStateRepository);
+      } else if (req.method === 'POST' && url.pathname === '/app-state/recent-canvases') {
+        await handleAppStateRecentCanvasesUpsert(req, res, appStateRepository);
+      } else if (req.method === 'DELETE' && url.pathname === '/app-state/recent-canvases') {
+        await handleAppStateRecentCanvasesDelete(url, res, appStateRepository);
       } else if (req.method === 'GET' && url.pathname === '/app-state/preferences') {
         await handleAppStatePreferencesGet(url, res, appStateRepository);
       } else if (req.method === 'POST' && url.pathname === '/app-state/preferences') {
@@ -267,10 +267,10 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
         await handleWorkspaceProbe(url, res, config.targetDir);
       } else if (req.method === 'POST' && url.pathname === '/workspaces') {
         await handleWorkspaceMutation(req, res);
-      } else if (req.method === 'GET' && url.pathname === '/documents') {
-        await handleDocumentsList(url, res);
-      } else if (req.method === 'POST' && url.pathname === '/documents') {
-        await handleDocumentsCreate(req, res);
+      } else if (req.method === 'GET' && url.pathname === '/canvases') {
+        await handleCanvasesList(url, res);
+      } else if (req.method === 'POST' && url.pathname === '/canvases') {
+        await handleCanvasesCreate(req, res);
       } else if (req.method === 'GET' && url.pathname === '/file-tree') {
         await handleFileTree(url, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/health') {
@@ -498,25 +498,25 @@ async function handleAppStateSessionSet(
   }
 }
 
-async function handleAppStateRecentDocumentsList(
+async function handleAppStateRecentCanvasesList(
   url: URL,
   res: http.ServerResponse,
   repository: AppStatePersistenceRepository,
 ) {
   try {
     const workspaceId = requireAppStateString(url.searchParams.get('workspaceId'), 'workspaceId');
-    writeJson(res, 200, await repository.listRecentDocuments(workspaceId));
+    writeJson(res, 200, await repository.listRecentCanvases(workspaceId));
   } catch (error) {
     writeAppStateError(
       res,
       error,
-      'app-state/recent-documents',
-      'Failed to handle app-state recent-documents request',
+      'app-state/recent-canvases',
+      'Failed to handle app-state recent-canvases request',
     );
   }
 }
 
-async function handleAppStateRecentDocumentsUpsert(
+async function handleAppStateRecentCanvasesUpsert(
   req: http.IncomingMessage,
   res: http.ServerResponse,
   repository: AppStatePersistenceRepository,
@@ -527,38 +527,38 @@ async function handleAppStateRecentDocumentsUpsert(
       invalidJsonMessage: 'Request body must be a JSON object.',
     });
 
-    const recentDocument = await repository.upsertRecentDocument({
+    const recentCanvas = await repository.upsertRecentCanvas({
       workspaceId: requireAppStateString(body.workspaceId, 'workspaceId'),
-      documentPath: requireAppStateString(body.documentPath, 'documentPath'),
+      canvasPath: requireAppStateString(body.canvasPath, 'canvasPath'),
       lastOpenedAt: parseAppStateOptionalDate(body.lastOpenedAt),
     });
 
-    writeJson(res, 200, recentDocument);
+    writeJson(res, 200, recentCanvas);
   } catch (error) {
     writeAppStateError(
       res,
       error,
-      'app-state/recent-documents',
-      'Failed to handle app-state recent-documents request',
+      'app-state/recent-canvases',
+      'Failed to handle app-state recent-canvases request',
     );
   }
 }
 
-async function handleAppStateRecentDocumentsDelete(
+async function handleAppStateRecentCanvasesDelete(
   url: URL,
   res: http.ServerResponse,
   repository: AppStatePersistenceRepository,
 ) {
   try {
     const workspaceId = requireAppStateString(url.searchParams.get('workspaceId'), 'workspaceId');
-    await repository.clearRecentDocuments(workspaceId);
+    await repository.clearRecentCanvases(workspaceId);
     writeJson(res, 200, { deleted: true });
   } catch (error) {
     writeAppStateError(
       res,
       error,
-      'app-state/recent-documents',
-      'Failed to handle app-state recent-documents request',
+      'app-state/recent-canvases',
+      'Failed to handle app-state recent-canvases request',
     );
   }
 }
@@ -600,11 +600,11 @@ async function handleAppStatePreferencesSet(
 
 async function handleRender(req: http.IncomingMessage, res: http.ServerResponse, targetDir: string) {
   const body = await parseBody(req);
-  const requestedDocumentId = typeof body?.documentId === 'string' ? body.documentId.trim() : '';
+  const requestedCanvasId = typeof body?.canvasId === 'string' ? body.canvasId.trim() : '';
   const requestedFilePath = typeof body?.filePath === 'string' ? body.filePath.trim() : '';
-  if (!requestedDocumentId && !requestedFilePath) {
+  if (!requestedCanvasId && !requestedFilePath) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Missing filePath or documentId in body', type: 'VALIDATION_ERROR' }));
+    res.end(JSON.stringify({ error: 'Missing filePath or canvasId in body', type: 'VALIDATION_ERROR' }));
     return;
   }
 
@@ -621,20 +621,20 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
 
   const requestTargetDir = rawRootPath ? path.resolve(rawRootPath) : targetDir;
   let resolvedWorkspacePath = requestedFilePath;
-  let resolvedDocumentId = requestedDocumentId || null;
+  let resolvedCanvasId = requestedCanvasId || null;
 
-  if (requestedDocumentId) {
+  if (requestedCanvasId) {
     try {
-      const canonicalDocument = await getCanonicalDocument({
+      const canonicalCanvas = await getCanonicalCanvas({
         targetDir: requestTargetDir,
-        documentId: requestedDocumentId,
+        canvasId: requestedCanvasId,
       });
-      resolvedDocumentId = canonicalDocument.documentId;
-      resolvedWorkspacePath = canonicalDocument.filePath ?? `documents/${canonicalDocument.documentId}.graph.tsx`;
+      resolvedCanvasId = canonicalCanvas.canvasId;
+      resolvedWorkspacePath = canonicalCanvas.filePath ?? `canvases/${canonicalCanvas.canvasId}.graph.tsx`;
       const materializedAbsolutePath = path.resolve(requestTargetDir, resolvedWorkspacePath);
       if (!fs.existsSync(materializedAbsolutePath)) {
         fs.mkdirSync(path.dirname(materializedAbsolutePath), { recursive: true });
-        fs.writeFileSync(materializedAbsolutePath, createCompatibilityDocumentSource(), 'utf-8');
+        fs.writeFileSync(materializedAbsolutePath, createCompatibilityCanvasSource(), 'utf-8');
       }
     } catch (error) {
       if (isCanonicalCliError(error) && error.code === 'DOCUMENT_NOT_FOUND') {
@@ -673,7 +673,7 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
       graph: pipelineResult.graph,
       sourceVersion: pipelineResult.sourceVersion,
       sourceVersions: pipelineResult.sourceVersions,
-      ...(resolvedDocumentId ? { documentId: resolvedDocumentId } : {}),
+      ...(resolvedCanvasId ? { canvasId: resolvedCanvasId } : {}),
     }));
   } catch (error: any) {
     console.error('Render Error:', error);
@@ -699,7 +699,7 @@ async function handleCreateFile(req: http.IncomingMessage, res: http.ServerRespo
   const workspacePath = normalizeWorkspacePath(targetDir, requestedFilePath, requestedFilePath);
   if (!workspacePath.endsWith('.tsx')) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'filePath must point to a .tsx document', type: 'VALIDATION_ERROR' }));
+    res.end(JSON.stringify({ error: 'filePath must point to a .tsx canvas', type: 'VALIDATION_ERROR' }));
     return;
   }
 
@@ -710,7 +710,7 @@ async function handleCreateFile(req: http.IncomingMessage, res: http.ServerRespo
     return;
   }
 
-  const content = createCompatibilityDocumentSource();
+  const content = createCompatibilityCanvasSource();
   fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
   fs.writeFileSync(absolutePath, content, 'utf-8');
 
@@ -1048,41 +1048,47 @@ function toWorkspaceResponsePayload(workspace: Awaited<ReturnType<typeof probeWo
     health: {
       state: workspace.health.status,
       message: workspace.health.message,
-      documentCount: workspace.documentCount,
+      canvasCount: workspace.canvasCount,
     },
-    documentCount: workspace.documentCount,
-    documents: workspace.documents,
+    canvasCount: workspace.canvasCount,
+    canvases: workspace.canvases,
     lastModifiedAt: workspace.lastModifiedAt,
   };
 }
 
-function toDocumentsResponsePayload(workspace: Awaited<ReturnType<typeof requireWorkspaceRoot>>, code: string) {
+function toCanvasesResponsePayload(workspace: Awaited<ReturnType<typeof requireWorkspaceRoot>>, code: string) {
   return {
     code,
     rootPath: workspace.rootPath,
     root: workspace.rootPath,
     workspaceName: workspace.workspaceName,
-    documentCount: workspace.documentCount,
-    documents: workspace.documents,
+    name: workspace.workspaceName,
+    health: {
+      state: workspace.health.status,
+      message: workspace.health.message,
+      canvasCount: workspace.canvasCount,
+    },
+    canvasCount: workspace.canvasCount,
+    canvases: workspace.canvases,
     lastModifiedAt: workspace.lastModifiedAt,
   };
 }
 
-function toCanonicalDocumentSummary(document: CanonicalDocumentShellRecord) {
+function toCanonicalCanvasSummary(canvas: CanonicalCanvasShellRecord) {
   return {
-    documentId: document.documentId,
-    workspaceId: document.workspaceId,
-    filePath: document.filePath ?? `documents/${document.documentId}.graph.tsx`,
-    modifiedAt: document.updatedAt?.getTime() ?? document.createdAt?.getTime() ?? null,
-    latestRevision: document.latestRevision,
+    canvasId: canvas.canvasId,
+    workspaceId: canvas.workspaceId,
+    filePath: canvas.filePath ?? `canvases/${canvas.canvasId}.graph.tsx`,
+    modifiedAt: canvas.updatedAt?.getTime() ?? canvas.createdAt?.getTime() ?? null,
+    latestRevision: canvas.latestRevision,
   };
 }
 
-function toCanonicalDocumentSourceVersion(document: CanonicalDocumentShellRecord): string {
-  return createDocumentSourceVersion(JSON.stringify({
-    documentId: document.documentId,
-    workspaceId: document.workspaceId,
-    latestRevision: document.latestRevision,
+function toCanonicalCanvasSourceVersion(canvas: CanonicalCanvasShellRecord): string {
+  return createCanvasSourceVersion(JSON.stringify({
+    canvasId: canvas.canvasId,
+    workspaceId: canvas.workspaceId,
+    latestRevision: canvas.latestRevision,
   }));
 }
 
@@ -1130,7 +1136,7 @@ function pickRootPath(searchParams: URLSearchParams, fallbackRootPath?: string |
   return searchParams.get('rootPath') || searchParams.get('root') || fallbackRootPath || null;
 }
 
-function resolveDocumentRootPath(rawRootPath: unknown): string {
+function resolveCanvasRootPath(rawRootPath: unknown): string {
   if (typeof rawRootPath !== 'string') {
     throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath is required');
   }
@@ -1260,20 +1266,20 @@ async function handleWorkspaceMutation(req: http.IncomingMessage, res: http.Serv
   }
 }
 
-async function handleDocumentsList(url: URL, res: http.ServerResponse) {
+async function handleCanvasesList(url: URL, res: http.ServerResponse) {
   try {
-    const rootPath = resolveDocumentRootPath(pickRootPath(url.searchParams));
+    const rootPath = resolveCanvasRootPath(pickRootPath(url.searchParams));
 
     const workspace = await requireWorkspaceRoot(rootPath);
-    const documents = await listCanonicalDocuments({
+    const canvases = await listCanonicalCanvases({
       targetDir: workspace.rootPath,
     });
     writeJson(res, 200, {
-      ...toDocumentsResponsePayload(workspace, 'DOC_200_LISTED'),
-      documentCount: documents.length,
-      documents: documents.map(toCanonicalDocumentSummary),
-      lastModifiedAt: documents.reduce<number | null>((latest, document) => {
-        const timestamp = document.updatedAt?.getTime() ?? document.createdAt?.getTime() ?? null;
+      ...toCanvasesResponsePayload(workspace, 'DOC_200_LISTED'),
+      canvasCount: canvases.length,
+      canvases: canvases.map(toCanonicalCanvasSummary),
+      lastModifiedAt: canvases.reduce<number | null>((latest, canvas) => {
+        const timestamp = canvas.updatedAt?.getTime() ?? canvas.createdAt?.getTime() ?? null;
         if (timestamp === null) {
           return latest;
         }
@@ -1282,21 +1288,21 @@ async function handleDocumentsList(url: URL, res: http.ServerResponse) {
     });
   } catch (error) {
     writeApiError(res, error, {
-      logLabel: '[documents] unexpected error:',
+      logLabel: '[canvases] unexpected error:',
       fallbackCode: 'DOC_500_REQUEST_FAILED',
-      fallbackMessage: 'Failed to handle documents request',
+      fallbackMessage: 'Failed to handle canvases request',
     });
   }
 }
 
-async function handleDocumentsCreate(req: http.IncomingMessage, res: http.ServerResponse) {
+async function handleCanvasesCreate(req: http.IncomingMessage, res: http.ServerResponse) {
   try {
     const body = await parseJsonObjectBody(req, {
       invalidJsonCode: 'DOC_400_INVALID_JSON',
       invalidJsonMessage: 'Request body must be a JSON object',
     });
     const rawRootPath = 'rootPath' in body ? body['rootPath'] : body['root'];
-    const rootPath = resolveDocumentRootPath(rawRootPath);
+    const rootPath = resolveCanvasRootPath(rawRootPath);
 
     const workspace = await requireWorkspaceRoot(rootPath);
     const rawFilePath = typeof body.filePath === 'string'
@@ -1304,9 +1310,9 @@ async function handleDocumentsCreate(req: http.IncomingMessage, res: http.Server
       : typeof body.path === 'string'
         ? body.path
         : null;
-    let created: CanonicalDocumentShellRecord;
+    let created: CanonicalCanvasShellRecord;
     try {
-      created = await createCanonicalDocument({
+      created = await createCanonicalCanvas({
         targetDir: workspace.rootPath,
         filePath: rawFilePath,
         actor: {
@@ -1327,14 +1333,14 @@ async function handleDocumentsCreate(req: http.IncomingMessage, res: http.Server
       root: workspace.rootPath,
       workspaceName: workspace.workspaceName,
       created: true,
-      ...toCanonicalDocumentSummary(created),
-      sourceVersion: toCanonicalDocumentSourceVersion(created),
+      ...toCanonicalCanvasSummary(created),
+      sourceVersion: toCanonicalCanvasSourceVersion(created),
     });
   } catch (error) {
     writeApiError(res, error, {
-      logLabel: '[documents] unexpected error:',
+      logLabel: '[canvases] unexpected error:',
       fallbackCode: 'DOC_500_REQUEST_FAILED',
-      fallbackMessage: 'Failed to handle documents request',
+      fallbackMessage: 'Failed to handle canvases request',
     });
   }
 }

@@ -4,7 +4,7 @@ import React from 'react';
 import { ChevronRight, ChevronDown, FileIcon, FolderIcon, FolderOpen } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useGraphStore, FileTreeNode } from '@/store/graph';
-import { navigateToDocument } from '@/features/host/renderer/navigation';
+import { navigateToCanvas } from '@/features/host/renderer/navigation';
 
 interface FolderTreeItemProps {
     node: FileTreeNode;
@@ -28,7 +28,7 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({ node, depth = 0,
         if (onOpenFile) {
             onOpenFile(node.path);
         } else {
-            navigateToDocument(node.path);
+            navigateToCanvas(node.path);
         }
     };
 

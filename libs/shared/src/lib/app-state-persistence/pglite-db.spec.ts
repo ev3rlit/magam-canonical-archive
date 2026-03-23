@@ -34,7 +34,7 @@ describe('app-state pglite bootstrap', () => {
         and tablename in (
           'app_workspaces',
           'app_workspace_session',
-          'app_recent_documents',
+          'app_recent_canvases',
           'app_preferences'
         )
       order by tablename
@@ -43,7 +43,7 @@ describe('app-state pglite bootstrap', () => {
     expect(resolveAppStateMigrationsFolder(process.cwd())).toContain('/app-state-persistence/drizzle');
     expect(tables.rows).toEqual([
       { tablename: 'app_preferences' },
-      { tablename: 'app_recent_documents' },
+      { tablename: 'app_recent_canvases' },
       { tablename: 'app_workspace_session' },
       { tablename: 'app_workspaces' },
     ]);
@@ -79,12 +79,12 @@ describe('app-state pglite bootstrap', () => {
       )
     `);
     await legacyHandle.client.exec(`
-      create table "app_recent_documents" (
+      create table "app_recent_canvases" (
         "workspace_id" text not null,
         "document_path" text not null,
         "last_opened_at" timestamp with time zone,
         "updated_at" timestamp with time zone default now() not null,
-        constraint "app_recent_documents_workspace_id_document_path_pk" primary key("workspace_id","document_path")
+        constraint "app_recent_canvases_workspace_id_document_path_pk" primary key("workspace_id","document_path")
       )
     `);
     await legacyHandle.client.exec(`

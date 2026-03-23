@@ -76,16 +76,16 @@ describe('graph metadata state', () => {
     expect(state.lastAppliedCommandId).toBe('cmd-1');
   });
 
-  it('currentDocumentId는 currentFile 전환 시 초기화되고 별도로 갱신할 수 있다', () => {
+  it('currentCanvasId는 currentFile 전환 시 초기화되고 별도로 갱신할 수 있다', () => {
     useGraphStore.getState().setCurrentFile('examples/main.tsx');
-    useGraphStore.getState().setCurrentDocumentId('doc-1');
-    expect(useGraphStore.getState().currentDocumentId).toBe('doc-1');
+    useGraphStore.getState().setCurrentCanvasId('doc-1');
+    expect(useGraphStore.getState().currentCanvasId).toBe('doc-1');
 
     useGraphStore.getState().setCurrentFile('examples/other.tsx');
-    expect(useGraphStore.getState().currentDocumentId).toBeNull();
+    expect(useGraphStore.getState().currentCanvasId).toBeNull();
 
-    useGraphStore.getState().setCurrentDocumentId('doc-2');
-    expect(useGraphStore.getState().currentDocumentId).toBe('doc-2');
+    useGraphStore.getState().setCurrentCanvasId('doc-2');
+    expect(useGraphStore.getState().currentCanvasId).toBe('doc-2');
   });
 
   it('pendingActionRoutingByKey는 register/clear lifecycle을 유지한다', () => {
@@ -249,12 +249,12 @@ describe('document session persistence', () => {
   it('persists lastActive document metadata per workspace source', () => {
     useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
     useGraphStore.getState().hydrateDocumentSession('workspace:docs/resume.graph.tsx');
-    useGraphStore.getState().rememberLastActiveDocument('docs/resume.graph.tsx');
+    useGraphStore.getState().rememberLastActiveCanvas('docs/resume.graph.tsx');
 
     expect(useGraphStore.getState().lastActiveDocumentPath).toBe('docs/resume.graph.tsx');
   });
 
-  it('tracks new-document empty-canvas entry state without requiring a pre-open naming gate', () => {
+  it('tracks new-canvas empty-canvas entry state without requiring a pre-open naming gate', () => {
     useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
     useGraphStore.getState().setFileTree({
       name: 'workspace',
@@ -289,8 +289,8 @@ describe('document session persistence', () => {
 
   it('deduplicates registered workspace documents by canonical document id', () => {
     useGraphStore.setState(initialGraphState);
-    useGraphStore.getState().setWorkspaceDocuments('ws-1', [{
-      documentId: 'doc-1',
+    useGraphStore.getState().setWorkspaceCanvases('ws-1', [{
+      canvasId: 'doc-1',
       workspaceId: 'ws-1',
       latestRevision: 1,
       absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',
@@ -298,8 +298,8 @@ describe('document session persistence', () => {
       title: 'alpha.graph.tsx',
     }]);
 
-    useGraphStore.getState().registerWorkspaceDocument('ws-1', {
-      documentId: 'doc-1',
+    useGraphStore.getState().registerWorkspaceCanvas('ws-1', {
+      canvasId: 'doc-1',
       workspaceId: 'ws-1',
       latestRevision: 2,
       absolutePath: '/tmp/ws-1/docs/renamed-alpha.graph.tsx',
@@ -307,9 +307,9 @@ describe('document session persistence', () => {
       title: 'renamed-alpha.graph.tsx',
     });
 
-    expect(useGraphStore.getState().workspaceDocumentsByWorkspaceId['ws-1']).toEqual([
+    expect(useGraphStore.getState().workspaceCanvasesByWorkspaceId['ws-1']).toEqual([
       expect.objectContaining({
-        documentId: 'doc-1',
+        canvasId: 'doc-1',
         absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',
       }),
     ]);

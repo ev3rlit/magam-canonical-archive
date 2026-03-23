@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createCanonicalPgliteDb } from '../canonical-persistence/pglite-db';
 import { CanonicalPersistenceRepository } from '../canonical-persistence/repository';
 import type { HeadlessServiceContext } from '../canonical-cli/context';
-import { getDocument, getWorkspaceDocument, listWorkspaceDocuments, listWorkspaces } from './workspace-document';
-import { queryObjects, querySurfaceNodes, searchDocuments } from './object-surface-search';
+import { getDocument, getWorkspaceCanvas, listWorkspaceCanvases, listWorkspaces } from './workspace-canvas';
+import { queryObjects, querySurfaceNodes, searchCanvases } from './object-surface-search';
 
 function buildNoteRecord(id: string) {
   return {
@@ -37,7 +37,7 @@ describe('headless query services', () => {
     });
     await repository.createCanvasNode({
       id: 'node-1',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       surfaceId: 'main',
       nodeKind: 'native',
       canonicalObjectId: 'note-1',
@@ -46,7 +46,7 @@ describe('headless query services', () => {
     });
     await repository.appendDocumentRevision({
       id: 'rev-1',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       revisionNo: 1,
       authorKind: 'agent',
       authorId: 'test',
@@ -58,7 +58,7 @@ describe('headless query services', () => {
       expect.objectContaining({
         id: 'ws-1',
         objectCount: 1,
-        documentCount: 1,
+        canvasCount: 1,
         surfaceCount: 1,
       }),
     ]);
@@ -97,7 +97,7 @@ describe('headless query services', () => {
     });
     await repository.createCanvasNode({
       id: 'node-2',
-      documentId: 'doc-2',
+      canvasId: 'doc-2',
       surfaceId: 'main',
       nodeKind: 'native',
       canonicalObjectId: 'note-2',
@@ -106,7 +106,7 @@ describe('headless query services', () => {
     });
     await repository.appendDocumentRevision({
       id: 'rev-2',
-      documentId: 'doc-2',
+      canvasId: 'doc-2',
       revisionNo: 2,
       authorKind: 'agent',
       authorId: 'test',
@@ -114,7 +114,7 @@ describe('headless query services', () => {
     });
 
     const nodes = await querySurfaceNodes(context, {
-      documentId: 'doc-2',
+      canvasId: 'doc-2',
       surfaceId: 'main',
       workspaceId: 'ws-1',
       bounds: { x: 0, y: 0, width: 400, height: 400 },
@@ -124,7 +124,7 @@ describe('headless query services', () => {
     expect(nodes.items).toEqual([
       {
         id: 'node-2',
-        documentId: 'doc-2',
+        canvasId: 'doc-2',
         surfaceId: 'main',
         layout: { x: 20, y: 30, width: 160, height: 90 },
         canonicalObject: {
@@ -143,7 +143,7 @@ describe('headless query services', () => {
       latestRevision: 2,
     });
 
-    const search = await searchDocuments(context, {
+    const search = await searchCanvases(context, {
       workspaceId: 'ws-1',
       text: 'launch checklist',
     });
@@ -170,7 +170,7 @@ describe('headless query services', () => {
 
     await repository.appendDocumentRevision({
       id: 'docrev-1',
-      documentId: 'doc-shell-1',
+      canvasId: 'doc-shell-1',
       revisionNo: 1,
       authorKind: 'system',
       authorId: 'test',
@@ -185,7 +185,7 @@ describe('headless query services', () => {
 
     await repository.appendDocumentRevision({
       id: 'docrev-2',
-      documentId: 'doc-shell-1',
+      canvasId: 'doc-shell-1',
       revisionNo: 2,
       authorKind: 'agent',
       authorId: 'test',
@@ -194,16 +194,16 @@ describe('headless query services', () => {
       },
     });
 
-    await expect(getWorkspaceDocument(context, 'doc-shell-1')).resolves.toMatchObject({
-      documentId: 'doc-shell-1',
+    await expect(getWorkspaceCanvas(context, 'doc-shell-1')).resolves.toMatchObject({
+      canvasId: 'doc-shell-1',
       workspaceId: 'ws-1',
       filePath: 'documents/doc-shell-1.graph.tsx',
       latestRevision: 2,
     });
 
-    await expect(listWorkspaceDocuments(context)).resolves.toEqual([
+    await expect(listWorkspaceCanvases(context)).resolves.toEqual([
       expect.objectContaining({
-        documentId: 'doc-shell-1',
+        canvasId: 'doc-shell-1',
         filePath: 'documents/doc-shell-1.graph.tsx',
       }),
     ]);

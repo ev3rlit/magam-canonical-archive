@@ -3,9 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  createCanonicalDocument,
-  getCanonicalDocument,
-  listCanonicalDocuments,
+  createCanonicalCanvas,
+  getCanonicalCanvas,
+  listCanonicalCanvases,
 } from './service';
 
 describe('canonical document shell service', () => {
@@ -16,10 +16,10 @@ describe('canonical document shell service', () => {
   });
 
   it('creates and lists canonical documents using revision-backed shell metadata', async () => {
-    const targetDir = await mkdtemp(path.join(os.tmpdir(), 'magam-canonical-document-shell-'));
+    const targetDir = await mkdtemp(path.join(os.tmpdir(), 'magam-canonical-canvas-shell-'));
     tempDirs.push(targetDir);
 
-    const created = await createCanonicalDocument({
+    const created = await createCanonicalCanvas({
       targetDir,
       workspaceId: 'ws-shell',
       filePath: 'docs/alpha.graph.tsx',
@@ -37,33 +37,33 @@ describe('canonical document shell service', () => {
       bindingCount: 0,
     });
 
-    await expect(listCanonicalDocuments({ targetDir, workspaceId: 'ws-shell' })).resolves.toEqual([
+    await expect(listCanonicalCanvases({ targetDir, workspaceId: 'ws-shell' })).resolves.toEqual([
       expect.objectContaining({
-        documentId: created.documentId,
+        canvasId: created.canvasId,
         filePath: 'docs/alpha.graph.tsx',
       }),
     ]);
-    await expect(getCanonicalDocument({
+    await expect(getCanonicalCanvas({
       targetDir,
       workspaceId: 'ws-shell',
-      documentId: created.documentId,
+      canvasId: created.canvasId,
     })).resolves.toMatchObject({
-      documentId: created.documentId,
+      canvasId: created.canvasId,
       filePath: 'docs/alpha.graph.tsx',
     });
   });
 
   it('falls back to a generated compatibility file path and rejects path escape attempts', async () => {
-    const targetDir = await mkdtemp(path.join(os.tmpdir(), 'magam-canonical-document-shell-'));
+    const targetDir = await mkdtemp(path.join(os.tmpdir(), 'magam-canonical-canvas-shell-'));
     tempDirs.push(targetDir);
 
-    const created = await createCanonicalDocument({
+    const created = await createCanonicalCanvas({
       targetDir,
       workspaceId: 'ws-shell',
     });
-    expect(created.filePath).toBe(`documents/${created.documentId}.graph.tsx`);
+    expect(created.filePath).toBe(`documents/${created.canvasId}.graph.tsx`);
 
-    await expect(createCanonicalDocument({
+    await expect(createCanonicalCanvas({
       targetDir,
       workspaceId: 'ws-shell',
       filePath: '../escape.graph.tsx',

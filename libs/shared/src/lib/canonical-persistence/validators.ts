@@ -1,7 +1,7 @@
 import type {
   CanvasBindingRecord,
   CanvasNodeRecord,
-  DocumentRevisionRecord,
+  CanvasRevisionRecord,
   ObjectRelationRecord,
   PersistenceResult,
   PluginExportRecord,
@@ -367,8 +367,8 @@ export function validateCanvasNodeRecord(record: CanvasNodeRecord): PersistenceR
 }
 
 export function validateCanvasBindingRecord(record: CanvasBindingRecord): PersistenceResult<CanvasBindingRecord> {
-  if (!isString(record.documentId) || record.documentId.length === 0) {
-    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'documentId is required.', { path: 'documentId' });
+  if (!isString(record.canvasId) || record.canvasId.length === 0) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'canvasId is required.', { path: 'canvasId' });
   }
   if (!isString(record.nodeId) || record.nodeId.length === 0) {
     return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'nodeId is required.', { path: 'nodeId' });
@@ -383,9 +383,9 @@ export function validateCanvasBindingRecord(record: CanvasBindingRecord): Persis
   return okResult(record);
 }
 
-export function validateDocumentRevisionRecord(record: DocumentRevisionRecord): PersistenceResult<DocumentRevisionRecord> {
-  if (!isString(record.documentId) || record.documentId.length === 0) {
-    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'documentId is required.', { path: 'documentId' });
+export function validateCanvasRevisionRecord(record: CanvasRevisionRecord): PersistenceResult<CanvasRevisionRecord> {
+  if (!isString(record.canvasId) || record.canvasId.length === 0) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'canvasId is required.', { path: 'canvasId' });
   }
   if (!isNumber(record.revisionNo)) {
     return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'revisionNo must be a number.', { path: 'revisionNo' });
@@ -513,8 +513,8 @@ export function validatePluginInstanceRecord(record: PluginInstanceRecord): Pers
   if (!isNonEmptyString(record.id)) {
     return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'id is required.', { path: 'id' });
   }
-  if (!isNonEmptyString(record.documentId)) {
-    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'documentId is required.', { path: 'documentId' });
+  if (!isNonEmptyString(record.canvasId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'canvasId is required.', { path: 'canvasId' });
   }
   if (!isNonEmptyString(record.surfaceId)) {
     return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'surfaceId is required.', { path: 'surfaceId' });

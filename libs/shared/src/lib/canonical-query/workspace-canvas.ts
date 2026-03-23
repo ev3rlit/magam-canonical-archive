@@ -1,18 +1,18 @@
 import { desc, eq } from 'drizzle-orm';
 import type { HeadlessServiceContext } from '../canonical-cli';
 import { cliError } from '../canonical-cli';
-import { canvasBindings, canvasNodes, documentRevisions } from '../canonical-persistence/schema';
+import { canvasBindings, canvasNodes, canvasRevisions } from '../canonical-persistence/schema';
 
 export interface WorkspaceSummary {
   id: string;
   targetDir: string;
   dataDir: string | null;
   objectCount: number;
-  documentCount: number;
+  canvasCount: number;
   surfaceCount: number;
 }
 
-export interface DocumentSummary {
+export interface CanvasSummary {
   id: string;
   surfaceIds: string[];
   nodeCount: number;
@@ -20,8 +20,8 @@ export interface DocumentSummary {
   latestRevision: number | null;
 }
 
-export interface WorkspaceDocumentShellSummary {
-  documentId: string;
+export interface WorkspaceCanvasShellSummary {
+  canvasId: string;
   workspaceId: string;
   filePath: string | null;
   surfaceIds: string[];
@@ -36,17 +36,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function readDocumentShellMetadata(
+function readCanvasShellMetadata(
   mutationBatch: Record<string, unknown> | null | undefined,
 ): { workspaceId?: string; filePath?: string | null } | null {
   if (!isRecord(mutationBatch)) {
     return null;
   }
 
-  const shell = isRecord(mutationBatch.documentShell)
-    ? mutationBatch.documentShell
-    : isRecord(mutationBatch.meta) && isRecord(mutationBatch.meta.documentShell)
-      ? mutationBatch.meta.documentShell
+  const shell = isRecord(mutationBatch.canvasShell)
+    ? mutationBatch.canvasShell
+    : isRecord(mutationBatch.meta) && isRecord(mutationBatch.meta.canvasShell)
+      ? mutationBatch.meta.canvasShell
       : null;
 
   if (!shell) {
@@ -79,23 +79,23 @@ export async function listWorkspaceIds(context: HeadlessServiceContext): Promise
   ]);
 }
 
-export async function listDocumentIds(context: HeadlessServiceContext): Promise<string[]> {
+export async function listCanvasIds(context: HeadlessServiceContext): Promise<string[]> {
   const [nodes, bindings, revisions] = await Promise.all([
     context.db.query.canvasNodes.findMany({
-      columns: { documentId: true },
+      columns: { canvasId: true },
     }),
     context.db.query.canvasBindings.findMany({
-      columns: { documentId: true },
+      columns: { canvasId: true },
     }),
-    context.db.query.documentRevisions.findMany({
-      columns: { documentId: true },
+    context.db.query.canvasRevisions.findMany({
+      columns: { canvasId: true },
     }),
   ]);
 
   return uniqueStrings([
-    ...nodes.map((row) => row.documentId),
-    ...bindings.map((row) => row.documentId),
-    ...revisions.map((row) => row.documentId),
+    ...nodes.map((row) => row.canvasId),
+    ...bindings.map((row) => row.canvasId),
+    ...revisions.map((row) => row.canvasId),
   ]);
 }
 
@@ -107,7 +107,7 @@ async function summarizeWorkspace(
   const canonicalObjectIds = new Set(objects.map((record) => record.id));
   const nodes = await context.db.query.canvasNodes.findMany({
     columns: {
-      documentId: true,
+      canvasId: true,
       surfaceId: true,
       canonicalObjectId: true,
     },
@@ -122,8 +122,8 @@ async function summarizeWorkspace(
     targetDir: context.targetDir,
     dataDir: context.dataDir,
     objectCount: objects.length,
-    documentCount: uniqueStrings(matchingNodes.map((node) => node.documentId)).length,
-    surfaceCount: uniqueStrings(matchingNodes.map((node) => `${node.documentId}:${node.surfaceId}`)).length,
+    canvasCount: uniqueStrings(matchingNodes.map((node) => node.canvasId)).length,
+    surfaceCount: uniqueStrings(matchingNodes.map((node) => `${node.canvasId}:${node.surfaceId}`)).length,
   };
 }
 
@@ -146,41 +146,41 @@ export async function getWorkspace(
   return summarizeWorkspace(context, workspaceId);
 }
 
-export async function getDocument(
+export async function getCanvas(
   context: HeadlessServiceContext,
-  documentId: string,
-): Promise<DocumentSummary> {
+  canvasId: string,
+): Promise<CanvasSummary> {
   const [nodes, bindings, revisions] = await Promise.all([
     context.db.query.canvasNodes.findMany({
-      where: eq(canvasNodes.documentId, documentId),
+      where: eq(canvasNodes.canvasId, canvasId),
       columns: {
-        documentId: true,
+        canvasId: true,
         surfaceId: true,
       },
     }),
     context.db.query.canvasBindings.findMany({
-      where: eq(canvasBindings.documentId, documentId),
+      where: eq(canvasBindings.canvasId, canvasId),
       columns: {
         id: true,
       },
     }),
-    context.db.query.documentRevisions.findMany({
-      where: eq(documentRevisions.documentId, documentId),
+    context.db.query.canvasRevisions.findMany({
+      where: eq(canvasRevisions.canvasId, canvasId),
       columns: {
         revisionNo: true,
       },
-      orderBy: [desc(documentRevisions.revisionNo)],
+      orderBy: [desc(canvasRevisions.revisionNo)],
     }),
   ]);
 
   if (nodes.length === 0 && bindings.length === 0 && revisions.length === 0) {
-    throw cliError('DOCUMENT_NOT_FOUND', `Document ${documentId} was not found.`, {
-      details: { documentId },
+    throw cliError('DOCUMENT_NOT_FOUND', `Canvas ${canvasId} was not found.`, {
+      details: { canvasId },
     });
   }
 
   return {
-    id: documentId,
+    id: canvasId,
     surfaceIds: uniqueStrings(nodes.map((node) => node.surfaceId)),
     nodeCount: nodes.length,
     bindingCount: bindings.length,
@@ -188,48 +188,48 @@ export async function getDocument(
   };
 }
 
-export async function getWorkspaceDocument(
+export async function getWorkspaceCanvas(
   context: HeadlessServiceContext,
-  documentId: string,
+  canvasId: string,
   workspaceId = context.defaultWorkspaceId,
-): Promise<WorkspaceDocumentShellSummary> {
+): Promise<WorkspaceCanvasShellSummary> {
   const [nodes, bindings, revisions] = await Promise.all([
     context.db.query.canvasNodes.findMany({
-      where: eq(canvasNodes.documentId, documentId),
+      where: eq(canvasNodes.canvasId, canvasId),
       columns: {
-        documentId: true,
+        canvasId: true,
         surfaceId: true,
       },
     }),
     context.db.query.canvasBindings.findMany({
-      where: eq(canvasBindings.documentId, documentId),
+      where: eq(canvasBindings.canvasId, canvasId),
       columns: {
         id: true,
       },
     }),
-    context.db.query.documentRevisions.findMany({
-      where: eq(documentRevisions.documentId, documentId),
+    context.db.query.canvasRevisions.findMany({
+      where: eq(canvasRevisions.canvasId, canvasId),
       columns: {
         revisionNo: true,
         mutationBatch: true,
         createdAt: true,
       },
-      orderBy: [desc(documentRevisions.revisionNo)],
+      orderBy: [desc(canvasRevisions.revisionNo)],
     }),
   ]);
 
   if (nodes.length === 0 && bindings.length === 0 && revisions.length === 0) {
-    throw cliError('DOCUMENT_NOT_FOUND', `Document ${documentId} was not found.`, {
-      details: { documentId },
+    throw cliError('DOCUMENT_NOT_FOUND', `Canvas ${canvasId} was not found.`, {
+      details: { canvasId },
     });
   }
 
   const latestMetadata = revisions
-    .map((revision) => readDocumentShellMetadata(revision.mutationBatch))
+    .map((revision) => readCanvasShellMetadata(revision.mutationBatch))
     .find((metadata) => metadata !== null) ?? null;
 
   return {
-    documentId,
+    canvasId,
     workspaceId: latestMetadata?.workspaceId ?? workspaceId,
     filePath: latestMetadata?.filePath ?? null,
     surfaceIds: uniqueStrings(nodes.map((node) => node.surfaceId)),
@@ -241,37 +241,37 @@ export async function getWorkspaceDocument(
   };
 }
 
-export async function listWorkspaceDocuments(
+export async function listWorkspaceCanvases(
   context: HeadlessServiceContext,
   workspaceId = context.defaultWorkspaceId,
-): Promise<WorkspaceDocumentShellSummary[]> {
-  const documentIds = await listDocumentIds(context);
-  const documents = await Promise.all(
-    documentIds.map((documentId) => getWorkspaceDocument(context, documentId, workspaceId)),
+): Promise<WorkspaceCanvasShellSummary[]> {
+  const canvasIds = await listCanvasIds(context);
+  const canvases = await Promise.all(
+    canvasIds.map((canvasId) => getWorkspaceCanvas(context, canvasId, workspaceId)),
   );
 
-  return documents
-    .filter((document) => document.workspaceId === workspaceId)
+  return canvases
+    .filter((canvas) => canvas.workspaceId === workspaceId)
     .sort((left, right) => {
       const leftTime = left.updatedAt?.getTime() ?? 0;
       const rightTime = right.updatedAt?.getTime() ?? 0;
       if (rightTime !== leftTime) {
         return rightTime - leftTime;
       }
-      return left.documentId.localeCompare(right.documentId);
+      return left.canvasId.localeCompare(right.canvasId);
     });
 }
 
-export async function getCurrentDocumentRevision(
+export async function getCurrentCanvasRevision(
   context: HeadlessServiceContext,
-  documentId: string,
+  canvasId: string,
 ): Promise<number> {
-  const latest = await context.db.query.documentRevisions.findFirst({
-    where: eq(documentRevisions.documentId, documentId),
+  const latest = await context.db.query.canvasRevisions.findFirst({
+    where: eq(canvasRevisions.canvasId, canvasId),
     columns: {
       revisionNo: true,
     },
-    orderBy: [desc(documentRevisions.revisionNo)],
+    orderBy: [desc(canvasRevisions.revisionNo)],
   });
 
   return latest?.revisionNo ?? 0;

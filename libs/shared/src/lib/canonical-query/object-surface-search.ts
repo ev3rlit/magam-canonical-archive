@@ -2,7 +2,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import type { CanonicalObjectRecord, ContentBlock } from '../canonical-object-contract';
 import type { HeadlessServiceContext } from '../canonical-cli';
 import { cliError } from '../canonical-cli';
-import { canvasNodes, documentRevisions } from '../canonical-persistence/schema';
+import { canvasNodes, canvasRevisions } from '../canonical-persistence/schema';
 
 export interface QueryPage<T> {
   items: T[];
@@ -29,7 +29,7 @@ export interface BoundsQuery {
 }
 
 export interface SurfaceQueryOptions {
-  documentId: string;
+  canvasId: string;
   surfaceId: string;
   workspaceId?: string;
   bounds?: BoundsQuery;
@@ -49,7 +49,7 @@ export interface SearchQueryOptions {
 
 interface CanvasNodeSummary {
   id: string;
-  documentId: string;
+  canvasId: string;
   surfaceId: string;
   nodeKind: string;
   nodeType: string | null;
@@ -187,7 +187,7 @@ function toObjectSummary(record: CanonicalObjectRecord): Record<string, unknown>
 function toCanvasNodeSummary(row: typeof canvasNodes.$inferSelect): CanvasNodeSummary {
   return {
     id: row.id,
-    documentId: row.documentId,
+    canvasId: row.canvasId,
     surfaceId: row.surfaceId,
     nodeKind: row.nodeKind,
     nodeType: row.nodeType ?? null,
@@ -312,12 +312,12 @@ export async function searchObjects(
 
 export async function getSurface(
   context: HeadlessServiceContext,
-  documentId: string,
+  canvasId: string,
   surfaceId: string,
 ): Promise<Record<string, unknown>> {
   const rows = await context.db.query.canvasNodes.findMany({
     where: and(
-      eq(canvasNodes.documentId, documentId),
+      eq(canvasNodes.canvasId, canvasId),
       eq(canvasNodes.surfaceId, surfaceId),
     ),
     columns: {
@@ -328,8 +328,8 @@ export async function getSurface(
   });
 
   if (rows.length === 0) {
-    throw cliError('SURFACE_NOT_FOUND', `Surface ${surfaceId} was not found in document ${documentId}.`, {
-      details: { documentId, surfaceId },
+    throw cliError('SURFACE_NOT_FOUND', `Surface ${surfaceId} was not found in document ${canvasId}.`, {
+      details: { canvasId, surfaceId },
     });
   }
 
@@ -342,7 +342,7 @@ export async function getSurface(
 
   return {
     id: surfaceId,
-    documentId,
+    canvasId,
     nodeCount: rows.length,
     bounds: xs.length > 0 && ys.length > 0
       ? {
@@ -361,15 +361,15 @@ export async function querySurfaceNodes(
 ): Promise<QueryPage<Record<string, unknown>>> {
   const rows = await context.db.query.canvasNodes.findMany({
     where: and(
-      eq(canvasNodes.documentId, options.documentId),
+      eq(canvasNodes.canvasId, options.canvasId),
       eq(canvasNodes.surfaceId, options.surfaceId),
     ),
     orderBy: [desc(canvasNodes.zIndex)],
   });
 
   if (rows.length === 0) {
-    throw cliError('SURFACE_NOT_FOUND', `Surface ${options.surfaceId} was not found in document ${options.documentId}.`, {
-      details: { documentId: options.documentId, surfaceId: options.surfaceId },
+    throw cliError('SURFACE_NOT_FOUND', `Surface ${options.surfaceId} was not found in document ${options.canvasId}.`, {
+      details: { canvasId: options.canvasId, surfaceId: options.surfaceId },
     });
   }
 
@@ -386,23 +386,23 @@ export async function querySurfaceNodes(
       summary['canonicalObject'] = canonicalObjects.get(row.canonicalObjectId)!;
     }
 
-    return projectRecord(summary, options.include, ['id', 'documentId', 'surfaceId']);
+    return projectRecord(summary, options.include, ['id', 'canvasId', 'surfaceId']);
   });
 
   return paginateItems(projected, options.limit, options.cursor);
 }
 
-export async function searchDocuments(
+export async function searchCanvases(
   context: HeadlessServiceContext,
   options: SearchQueryOptions,
 ): Promise<QueryPage<DocumentSearchResult>> {
-  const documentIds = uniqueStrings([
+  const canvasIds = uniqueStrings([
     ...(await context.db.query.canvasNodes.findMany({
-      columns: { documentId: true },
-    })).map((row) => row.documentId),
-    ...(await context.db.query.documentRevisions.findMany({
-      columns: { documentId: true },
-    })).map((row) => row.documentId),
+      columns: { canvasId: true },
+    })).map((row) => row.canvasId),
+    ...(await context.db.query.canvasRevisions.findMany({
+      columns: { canvasId: true },
+    })).map((row) => row.canvasId),
   ]);
   const query = normalizeText(options.text);
 
@@ -413,21 +413,21 @@ export async function searchDocuments(
   const objectMap = new Map(workspaceObjects.map((record) => [record.id, record]));
 
   const results: DocumentSearchResult[] = [];
-  for (const documentId of documentIds) {
+  for (const canvasId of canvasIds) {
     const [nodes, latestRevision] = await Promise.all([
       context.db.query.canvasNodes.findMany({
-        where: eq(canvasNodes.documentId, documentId),
+        where: eq(canvasNodes.canvasId, canvasId),
         columns: {
           surfaceId: true,
           canonicalObjectId: true,
         },
       }),
-      context.db.query.documentRevisions.findFirst({
-        where: eq(documentRevisions.documentId, documentId),
+      context.db.query.canvasRevisions.findFirst({
+        where: eq(canvasRevisions.canvasId, canvasId),
         columns: {
           revisionNo: true,
         },
-        orderBy: [desc(documentRevisions.revisionNo)],
+        orderBy: [desc(canvasRevisions.revisionNo)],
       }),
     ]);
 
@@ -441,7 +441,7 @@ export async function searchDocuments(
       .filter((record) => normalizeText(record.canonicalText).includes(query));
 
     const searchText = [
-      documentId,
+      canvasId,
       ...matchedObjects.map((record) => record.canonicalText),
     ].join('\n').trim();
 
@@ -450,7 +450,7 @@ export async function searchDocuments(
     }
 
     results.push({
-      id: documentId,
+      id: canvasId,
       surfaceIds: uniqueStrings(nodes.map((node) => node.surfaceId)),
       latestRevision: latestRevision?.revisionNo ?? null,
       matchedObjectIds: uniqueStrings(matchedObjects.map((record) => record.id)),

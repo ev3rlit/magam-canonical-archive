@@ -1,6 +1,6 @@
 import { getDesktopHostBridge } from './hostCapabilities';
 
-interface WorkspaceDocumentNavigationTarget {
+interface WorkspaceCanvasNavigationTarget {
   filePath: string;
 }
 
@@ -33,17 +33,17 @@ export function navigateToWorkspaceDetail(workspaceId: string): void {
   navigateToAppRoute(`/workspace/${workspaceId}`);
 }
 
-export function navigateToDocument(documentPath: string): void {
-  navigateToAppRoute(`/document/${encodeURIComponent(documentPath)}`);
+export function navigateToCanvas(canvasPath: string): void {
+  navigateToAppRoute(`/canvas/${encodeURIComponent(canvasPath)}`);
 }
 
-export function navigateToWorkspaceDocument(
+export function navigateToWorkspaceCanvas(
   rootPath: string,
-  document: WorkspaceDocumentNavigationTarget,
+  canvas: WorkspaceCanvasNavigationTarget,
 ): void {
   const normalizedRootPath = rootPath.replace(/[\\/]+$/, '').replace(/\\/g, '/');
-  const normalizedFilePath = document.filePath.replace(/^\/+/, '').replace(/\\/g, '/');
-  navigateToDocument(`${normalizedRootPath}/${normalizedFilePath}`);
+  const normalizedFilePath = canvas.filePath.replace(/^\/+/, '').replace(/\\/g, '/');
+  navigateToCanvas(`${normalizedRootPath}/${normalizedFilePath}`);
 }
 
 export function navigateToDashboard(): void {

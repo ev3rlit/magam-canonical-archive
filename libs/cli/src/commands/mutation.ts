@@ -25,7 +25,7 @@ export async function runMutationCommand(args: string[]): Promise<ResourceComman
       return withHeadlessContext({
         targetDir: getOptionalStringFlag(parsed, 'target-dir'),
         workspaceRef: getOptionalStringFlag(parsed, 'workspace'),
-        documentRef: getOptionalStringFlag(parsed, 'document'),
+        canvasRef: getOptionalStringFlag(parsed, 'document'),
       }, async (context) => {
         const raw = await readJsonValue(getOptionalStringFlag(parsed, 'input') ?? '@stdin', 'mutation batch');
         const partial = normalizeMutationBatchInput(raw);
@@ -34,8 +34,8 @@ export async function runMutationCommand(args: string[]): Promise<ResourceComman
             ?? partial.workspaceRef
             ?? context.resolvedWorkspaceId
             ?? context.defaultWorkspaceId,
-          ...(getOptionalStringFlag(parsed, 'document') || partial.documentRef || context.resolvedDocumentId
-            ? { documentRef: getOptionalStringFlag(parsed, 'document') ?? partial.documentRef ?? context.resolvedDocumentId }
+          ...(getOptionalStringFlag(parsed, 'document') || partial.canvasRef || context.resolvedCanvasId
+            ? { canvasRef: getOptionalStringFlag(parsed, 'document') ?? partial.canvasRef ?? context.resolvedCanvasId }
             : {}),
           ...(partial.actor ? { actor: partial.actor } : {}),
           ...(getOptionalStringFlag(parsed, 'reason') || partial.reason
@@ -54,7 +54,7 @@ export async function runMutationCommand(args: string[]): Promise<ResourceComman
           meta: {
             command: 'mutation.apply',
             workspaceId: batch.workspaceRef,
-            ...(batch.documentRef ? { documentId: batch.documentRef } : {}),
+            ...(batch.canvasRef ? { canvasId: batch.canvasRef } : {}),
             dryRun: getBooleanFlag(parsed, 'dry-run'),
           },
         };

@@ -23,8 +23,8 @@ describe('GraphCanvas viewport helpers', () => {
     expect(
       resolveViewportToRestore({
         hasRenderedGraph: true,
-        previousDocumentId: 'doc-a',
-        currentDocumentId: 'doc-b',
+        previousCanvasId: 'doc-a',
+        currentCanvasId: 'doc-b',
         previousFile: 'examples/a.tsx',
         currentFile: 'examples/b.tsx',
         currentViewport: { x: 120, y: -80, zoom: 1.25 },
@@ -49,8 +49,8 @@ describe('GraphCanvas viewport helpers', () => {
     expect(
       resolveViewportToRestore({
         hasRenderedGraph: true,
-        previousDocumentId: 'doc-a',
-        currentDocumentId: 'doc-a',
+        previousCanvasId: 'doc-a',
+        currentCanvasId: 'doc-a',
         previousFile: 'examples/a.tsx',
         currentFile: 'examples/a.tsx',
         currentViewport: { x: -64, y: 96, zoom: 1.4 },
@@ -63,8 +63,8 @@ describe('GraphCanvas viewport helpers', () => {
     expect(
       resolveViewportToRestore({
         hasRenderedGraph: true,
-        previousDocumentId: 'doc-1',
-        currentDocumentId: 'doc-1',
+        previousCanvasId: 'doc-1',
+        currentCanvasId: 'doc-1',
         previousFile: 'docs/alpha.graph.tsx',
         currentFile: 'documents/doc-1.graph.tsx',
         currentViewport: { x: 44, y: -12, zoom: 1.1 },

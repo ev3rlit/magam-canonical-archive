@@ -3,8 +3,8 @@ import {
   buildAppNavigationTarget,
   navigateToAppRoute,
   navigateToDashboard,
-  navigateToDocument,
-  navigateToWorkspaceDocument,
+  navigateToCanvas,
+  navigateToWorkspaceCanvas,
   navigateToWorkspaceDetail,
 } from './navigation';
 
@@ -96,17 +96,17 @@ describe('renderer navigation', () => {
     expect(buildAppNavigationTarget('/workspace/ws-1')).toBe('#/workspace/ws-1');
   });
 
-  it('navigates to workspace, document, and dashboard routes in desktop mode', () => {
+  it('navigates to workspace, canvas, and dashboard routes in desktop mode', () => {
     const location = installWindowStub({ desktop: true });
 
     navigateToWorkspaceDetail('ws-1');
     expect(location.hash).toBe('/workspace/ws-1');
 
-    navigateToDocument('/tmp/workspace/docs/alpha.graph.tsx');
-    expect(location.hash).toBe(`/${'document'}/${encodeURIComponent('/tmp/workspace/docs/alpha.graph.tsx')}`);
+    navigateToCanvas('/tmp/workspace/docs/alpha.graph.tsx');
+    expect(location.hash).toBe(`/${'canvas'}/${encodeURIComponent('/tmp/workspace/docs/alpha.graph.tsx')}`);
 
-    navigateToWorkspaceDocument('/tmp/workspace', { filePath: 'docs/beta.graph.tsx' });
-    expect(location.hash).toBe(`/${'document'}/${encodeURIComponent('/tmp/workspace/docs/beta.graph.tsx')}`);
+    navigateToWorkspaceCanvas('/tmp/workspace', { filePath: 'docs/beta.graph.tsx' });
+    expect(location.hash).toBe(`/${'canvas'}/${encodeURIComponent('/tmp/workspace/docs/beta.graph.tsx')}`);
 
     navigateToDashboard();
     expect(location.hash).toBe('/');

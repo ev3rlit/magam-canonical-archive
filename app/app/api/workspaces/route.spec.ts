@@ -30,7 +30,7 @@ describe('workspaces route', () => {
     expect(body.code).toBe('WS_200_HEALTHY');
     expect(body.rootPath).toBe(root);
     expect(body.health.state).toBe('ok');
-    expect(body.health.documentCount).toBe(1);
+    expect(body.health.canvasCount).toBe(1);
   });
 
   it('returns missing health for a non-existent root', async () => {

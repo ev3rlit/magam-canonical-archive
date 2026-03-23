@@ -1,9 +1,9 @@
-import { getDocument } from '@magam/shared';
+import { getCanvas } from '@magam/shared';
 import { withHeadlessContext } from '../headless/bootstrap';
 import { parseCommandOptions, getOptionalStringFlag } from '../headless/options';
 import type { ResourceCommandResult } from '../headless/json-output';
 
-export async function runDocumentCommand(args: string[]): Promise<ResourceCommandResult> {
+export async function runCanvasCommand(args: string[]): Promise<ResourceCommandResult> {
   const subcommand = args[0];
   const parsed = parseCommandOptions(args.slice(1));
 
@@ -11,19 +11,19 @@ export async function runDocumentCommand(args: string[]): Promise<ResourceComman
     case 'get':
       return withHeadlessContext({
         targetDir: getOptionalStringFlag(parsed, 'target-dir'),
-        documentRef: getOptionalStringFlag(parsed, 'document'),
-        requireDocument: true,
+        canvasRef: getOptionalStringFlag(parsed, 'canvas'),
+        requireCanvas: true,
       }, async (context) => ({
-        data: await getDocument(context, context.resolvedDocumentId!),
+        data: await getCanvas(context, context.resolvedCanvasId!),
         meta: {
-          command: 'document.get',
-          documentId: context.resolvedDocumentId,
+          command: 'canvas.get',
+          canvasId: context.resolvedCanvasId,
           targetDir: context.targetDir,
           dataDir: context.dataDir,
         },
       }));
 
     default:
-      throw new Error(`Unknown document subcommand: ${subcommand ?? '(missing)'}`);
+      throw new Error(`Unknown canvas subcommand: ${subcommand ?? '(missing)'}`);
   }
 }

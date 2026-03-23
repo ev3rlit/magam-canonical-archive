@@ -69,7 +69,7 @@ export async function runObjectCommand(args: string[]): Promise<ResourceCommandR
         targetDir: getOptionalStringFlag(parsed, 'target-dir'),
         workspaceRef: getOptionalStringFlag(parsed, 'workspace'),
         requireWorkspace: true,
-        documentRef: getOptionalStringFlag(parsed, 'document'),
+        canvasRef: getOptionalStringFlag(parsed, 'document'),
       }, async (context) => {
         const objectId = getStringFlag(parsed, 'object');
         const kind = getStringFlag(parsed, 'kind') as 'text' | 'markdown' | 'media' | 'sequence';
@@ -79,10 +79,10 @@ export async function runObjectCommand(args: string[]): Promise<ResourceCommandR
             context,
             batch: {
               workspaceRef: context.resolvedWorkspaceId!,
-              ...(context.resolvedDocumentId ? { documentRef: context.resolvedDocumentId } : {}),
+              ...(context.resolvedCanvasId ? { canvasRef: context.resolvedCanvasId } : {}),
               ...(getOptionalStringFlag(parsed, 'reason') ? { reason: getOptionalStringFlag(parsed, 'reason') } : {}),
               ...(getOptionalNumberFlag(parsed, 'revision') !== undefined
-                ? { preconditions: { documentRevision: getOptionalNumberFlag(parsed, 'revision') } }
+                ? { preconditions: { canvasRevision: getOptionalNumberFlag(parsed, 'revision') } }
                 : {}),
               operations: [{
                 op: 'object.content.update',
@@ -96,7 +96,7 @@ export async function runObjectCommand(args: string[]): Promise<ResourceCommandR
           meta: {
             command: 'object.update-content',
             workspaceId: context.resolvedWorkspaceId,
-            ...(context.resolvedDocumentId ? { documentId: context.resolvedDocumentId } : {}),
+            ...(context.resolvedCanvasId ? { canvasId: context.resolvedCanvasId } : {}),
             objectId,
           },
         };
@@ -107,7 +107,7 @@ export async function runObjectCommand(args: string[]): Promise<ResourceCommandR
         targetDir: getOptionalStringFlag(parsed, 'target-dir'),
         workspaceRef: getOptionalStringFlag(parsed, 'workspace'),
         requireWorkspace: true,
-        documentRef: getOptionalStringFlag(parsed, 'document'),
+        canvasRef: getOptionalStringFlag(parsed, 'document'),
       }, async (context) => {
         const objectId = getStringFlag(parsed, 'object');
         const capability = getStringFlag(parsed, 'capability');
@@ -121,10 +121,10 @@ export async function runObjectCommand(args: string[]): Promise<ResourceCommandR
             context,
             batch: {
               workspaceRef: context.resolvedWorkspaceId!,
-              ...(context.resolvedDocumentId ? { documentRef: context.resolvedDocumentId } : {}),
+              ...(context.resolvedCanvasId ? { canvasRef: context.resolvedCanvasId } : {}),
               ...(getOptionalStringFlag(parsed, 'reason') ? { reason: getOptionalStringFlag(parsed, 'reason') } : {}),
               ...(getOptionalNumberFlag(parsed, 'revision') !== undefined
-                ? { preconditions: { documentRevision: getOptionalNumberFlag(parsed, 'revision') } }
+                ? { preconditions: { canvasRevision: getOptionalNumberFlag(parsed, 'revision') } }
                 : {}),
               operations: [{
                 op: 'object.capability.patch',
@@ -138,7 +138,7 @@ export async function runObjectCommand(args: string[]): Promise<ResourceCommandR
           meta: {
             command: 'object.patch-capability',
             workspaceId: context.resolvedWorkspaceId,
-            ...(context.resolvedDocumentId ? { documentId: context.resolvedDocumentId } : {}),
+            ...(context.resolvedCanvasId ? { canvasId: context.resolvedCanvasId } : {}),
             objectId,
             capability,
           },

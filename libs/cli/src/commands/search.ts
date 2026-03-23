@@ -1,4 +1,4 @@
-import { searchDocuments, searchObjects } from '@magam/shared';
+import { searchCanvases, searchObjects } from '@magam/shared';
 import { withHeadlessContext } from '../headless/bootstrap';
 import {
   getOptionalNumberFlag,
@@ -38,7 +38,7 @@ export async function runSearchCommand(args: string[]): Promise<ResourceCommandR
         targetDir: getOptionalStringFlag(parsed, 'target-dir'),
         workspaceRef: getOptionalStringFlag(parsed, 'workspace'),
       }, async (context) => ({
-        data: await searchDocuments(context, {
+        data: await searchCanvases(context, {
           workspaceId: context.resolvedWorkspaceId ?? getOptionalStringFlag(parsed, 'workspace'),
           text: getStringFlag(parsed, 'text'),
           limit: getOptionalNumberFlag(parsed, 'limit'),

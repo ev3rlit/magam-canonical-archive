@@ -5,14 +5,14 @@ import { useGraphStore } from '@/store/graph';
 import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
 import {
   navigateToDashboard,
-  navigateToDocument,
-  navigateToWorkspaceDocument,
+  navigateToCanvas,
+  navigateToWorkspaceCanvas,
 } from '@/features/host/renderer/navigation';
 import { DashboardSidebar } from '../components/DashboardSidebar';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { CanvasCard } from '../components/CanvasCard';
 import { CanvasListItem } from '../components/CanvasListItem';
-import type { SidebarDocumentEntry } from '@/components/ui/Sidebar';
+import type { SidebarCanvasEntry } from '@/components/ui/Sidebar';
 import { Button } from '@/components/ui/Button';
 import { ArrowLeft } from 'lucide-react';
 
@@ -23,7 +23,7 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
 
   const {
     registeredWorkspaces,
-    workspaceDocumentsByWorkspaceId,
+    workspaceCanvasesByWorkspaceId,
     setActiveWorkspaceId,
     setError,
   } = useGraphStore();
@@ -37,20 +37,20 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
     [workspaceId, registeredWorkspaces],
   );
 
-  const workspaceDocuments = useMemo<SidebarDocumentEntry[]>(
-    () => (workspaceId ? workspaceDocumentsByWorkspaceId[workspaceId] ?? [] : []),
-    [workspaceId, workspaceDocumentsByWorkspaceId],
+  const workspaceCanvases = useMemo<SidebarCanvasEntry[]>(
+    () => (workspaceId ? workspaceCanvasesByWorkspaceId[workspaceId] ?? [] : []),
+    [workspaceId, workspaceCanvasesByWorkspaceId],
   );
 
-  const handleDocumentClick = (path: string) => {
-    navigateToDocument(path);
+  const handleCanvasClick = (path: string) => {
+    navigateToCanvas(path);
   };
 
-  const handleCreateDocument = async () => {
+  const handleCreateCanvas = async () => {
     if (!activeWorkspace) return;
     try {
-      const result = await hostRpc.createWorkspaceDocument({ rootPath: activeWorkspace.rootPath });
-      navigateToWorkspaceDocument(activeWorkspace.rootPath, result);
+      const result = await hostRpc.createWorkspaceCanvas({ rootPath: activeWorkspace.rootPath });
+      navigateToWorkspaceCanvas(activeWorkspace.rootPath, result);
     } catch {
       setError({ message: '캔버스 생성 실패' });
     }
@@ -71,7 +71,7 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
     );
   }
 
-  const filteredDocuments = workspaceDocuments.filter(doc => 
+  const filteredCanvases = workspaceCanvases.filter(doc => 
     (doc.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
     (doc.relativePath || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -94,34 +94,34 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
             subtitle={activeWorkspace.rootPath}
             viewMode={viewMode}
             onViewModeChange={setViewMode}
-            onAddAction={handleCreateDocument}
+            onAddAction={handleCreateCanvas}
             addLabel="New Canvas"
             searchTerm={searchTerm}
             onSearchChange={setSearchTerm}
           />
 
-          {filteredDocuments.length === 0 ? (
+          {filteredCanvases.length === 0 ? (
             <div className="py-24 text-center">
               <p className="text-on-surface-variant">
-                {workspaceDocuments.length === 0 
+                {workspaceCanvases.length === 0 
                   ? "아직 생성된 캔버스가 없습니다." 
                   : `"${searchTerm}" 검색 결과가 없습니다.`}
               </p>
             </div>
           ) : (
             <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6' : 'flex flex-col gap-2'}>
-              {filteredDocuments.map(doc => 
+              {filteredCanvases.map(doc => 
                 viewMode === 'grid' ? (
                   <CanvasCard
                     key={doc.absolutePath}
-                    document={doc}
-                    onClick={() => handleDocumentClick(doc.absolutePath)}
+                    canvas={doc}
+                    onClick={() => handleCanvasClick(doc.absolutePath)}
                   />
                 ) : (
                   <CanvasListItem
                     key={doc.absolutePath}
-                    document={doc}
-                    onClick={() => handleDocumentClick(doc.absolutePath)}
+                    canvas={doc}
+                    onClick={() => handleCanvasClick(doc.absolutePath)}
                   />
                 )
               )}

@@ -9,7 +9,7 @@ async function makeWorkspace() {
   return root;
 }
 
-describe('documents route', () => {
+describe('canvases route', () => {
   let root: string;
 
   beforeEach(async () => {
@@ -20,49 +20,49 @@ describe('documents route', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it('lists canonical documents from workspace-local persistence instead of tsx scans', async () => {
-    await POST(new Request('http://localhost/api/documents', {
+  it('lists canonical canvases from workspace-local persistence instead of tsx scans', async () => {
+    await POST(new Request('http://localhost/api/canvases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rootPath: root, path: 'docs/alpha.graph.tsx' }),
     }));
-    await POST(new Request('http://localhost/api/documents', {
+    await POST(new Request('http://localhost/api/canvases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rootPath: root, path: 'notes/archive/beta.graph.tsx' }),
     }));
 
-    const response = await GET(new Request(`http://localhost/api/documents?root=${encodeURIComponent(root)}`));
+    const response = await GET(new Request(`http://localhost/api/canvases?root=${encodeURIComponent(root)}`));
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body.code).toBe('DOC_200_LISTED');
     expect(body.rootPath).toBe(root);
     expect(body.health.state).toBe('ok');
-    expect(body.health.documentCount).toBe(2);
-    expect(body.documentCount).toBe(2);
-    expect(body.documents.map((document: { filePath: string }) => document.filePath).sort()).toEqual([
+    expect(body.health.canvasCount).toBe(2);
+    expect(body.canvasCount).toBe(2);
+    expect(body.canvases.map((canvas: { filePath: string }) => canvas.filePath).sort()).toEqual([
       'docs/alpha.graph.tsx',
       'notes/archive/beta.graph.tsx',
     ]);
-    expect(body.documents[0]).toEqual(expect.objectContaining({
-      documentId: expect.any(String),
+    expect(body.canvases[0]).toEqual(expect.objectContaining({
+      canvasId: expect.any(String),
       workspaceId: expect.any(String),
       latestRevision: 1,
     }));
   });
 
   it('rejects relative roots', async () => {
-    const response = await GET(new Request('http://localhost/api/documents?root=docs/workspace'));
+    const response = await GET(new Request('http://localhost/api/canvases?root=docs/workspace'));
     const body = await response.json();
 
     expect(response.status).toBe(400);
     expect(body.code).toBe('DOC_400_INVALID_ROOT_PATH');
   });
 
-  it('creates a document with the existing docs prefix when docs already exist', async () => {
+  it('creates a canvas with the existing canvases prefix when canvases already exist', async () => {
     await mkdir(path.join(root, 'docs'), { recursive: true });
-    const response = await POST(new Request('http://localhost/api/documents', {
+    const response = await POST(new Request('http://localhost/api/canvases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rootPath: root }),
@@ -71,15 +71,15 @@ describe('documents route', () => {
 
     expect(response.status).toBe(201);
     expect(body.code).toBe('DOC_201_CREATED');
-    expect(body.filePath).toMatch(/^documents\/doc-/);
+    expect(body.filePath).toMatch(/^canvases\/doc-/);
     expect(body.sourceVersion).toMatch(/^sha256:/);
-    expect(body.documentId).toMatch(/^doc-/);
+    expect(body.canvasId).toMatch(/^doc-/);
     expect(body.workspaceId).toBe(path.basename(root).toLowerCase());
     expect(body.latestRevision).toBe(1);
   });
 
-  it('creates a document at an explicit path inside the workspace root', async () => {
-    const response = await POST(new Request('http://localhost/api/documents', {
+  it('creates a canvas at an explicit path inside the workspace root', async () => {
+    const response = await POST(new Request('http://localhost/api/canvases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rootPath: root, path: 'notes/overview.graph.tsx' }),
@@ -88,11 +88,11 @@ describe('documents route', () => {
 
     expect(response.status).toBe(201);
     expect(body.filePath).toBe('notes/overview.graph.tsx');
-    expect(body.documentId).toMatch(/^doc-/);
+    expect(body.canvasId).toMatch(/^doc-/);
   });
 
   it('rejects path traversal outside the root', async () => {
-    const response = await POST(new Request('http://localhost/api/documents', {
+    const response = await POST(new Request('http://localhost/api/canvases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rootPath: root, path: '../escape.graph.tsx' }),

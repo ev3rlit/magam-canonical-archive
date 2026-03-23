@@ -17,7 +17,7 @@ export async function runCanvasNodeCommand(args: string[]): Promise<ResourceComm
       return withHeadlessContext({
         targetDir: getOptionalStringFlag(parsed, 'target-dir'),
         workspaceRef: getOptionalStringFlag(parsed, 'workspace'),
-        documentRef: getOptionalStringFlag(parsed, 'document'),
+        canvasRef: getOptionalStringFlag(parsed, 'document'),
         requireDocument: true,
       }, async (context) => {
         const nodeId = getStringFlag(parsed, 'node');
@@ -32,10 +32,10 @@ export async function runCanvasNodeCommand(args: string[]): Promise<ResourceComm
             context,
             batch: {
               workspaceRef: context.resolvedWorkspaceId ?? context.defaultWorkspaceId,
-              documentRef: context.resolvedDocumentId!,
+              canvasRef: context.resolvedCanvasId!,
               ...(getOptionalStringFlag(parsed, 'reason') ? { reason: getOptionalStringFlag(parsed, 'reason') } : {}),
               ...(getOptionalNumberFlag(parsed, 'revision') !== undefined
-                ? { preconditions: { documentRevision: getOptionalNumberFlag(parsed, 'revision') } }
+                ? { preconditions: { canvasRevision: getOptionalNumberFlag(parsed, 'revision') } }
                 : {}),
               operations: [{
                 op: 'canvas.node.move',
@@ -47,7 +47,7 @@ export async function runCanvasNodeCommand(args: string[]): Promise<ResourceComm
           }),
           meta: {
             command: 'canvas-node.move',
-            documentId: context.resolvedDocumentId,
+            canvasId: context.resolvedCanvasId,
             nodeId,
           },
         };
@@ -57,7 +57,7 @@ export async function runCanvasNodeCommand(args: string[]): Promise<ResourceComm
       return withHeadlessContext({
         targetDir: getOptionalStringFlag(parsed, 'target-dir'),
         workspaceRef: getOptionalStringFlag(parsed, 'workspace'),
-        documentRef: getOptionalStringFlag(parsed, 'document'),
+        canvasRef: getOptionalStringFlag(parsed, 'document'),
         requireDocument: true,
       }, async (context) => {
         const nodeId = getStringFlag(parsed, 'node');
@@ -68,10 +68,10 @@ export async function runCanvasNodeCommand(args: string[]): Promise<ResourceComm
             context,
             batch: {
               workspaceRef: context.resolvedWorkspaceId ?? context.defaultWorkspaceId,
-              documentRef: context.resolvedDocumentId!,
+              canvasRef: context.resolvedCanvasId!,
               ...(getOptionalStringFlag(parsed, 'reason') ? { reason: getOptionalStringFlag(parsed, 'reason') } : {}),
               ...(getOptionalNumberFlag(parsed, 'revision') !== undefined
-                ? { preconditions: { documentRevision: getOptionalNumberFlag(parsed, 'revision') } }
+                ? { preconditions: { canvasRevision: getOptionalNumberFlag(parsed, 'revision') } }
                 : {}),
               operations: [{
                 op: 'canvas.node.reparent',
@@ -83,7 +83,7 @@ export async function runCanvasNodeCommand(args: string[]): Promise<ResourceComm
           }),
           meta: {
             command: 'canvas-node.reparent',
-            documentId: context.resolvedDocumentId,
+            canvasId: context.resolvedCanvasId,
             nodeId,
             parentNodeId,
           },

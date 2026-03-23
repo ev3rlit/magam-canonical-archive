@@ -13,7 +13,7 @@ import { GraphCanvas } from '@/components/GraphCanvas';
 import type { GraphCanvasSelectionActionIntentInput } from '@/components/GraphCanvas';
 import {
   Sidebar,
-  type SidebarDocumentEntry,
+  type SidebarCanvasEntry,
   type SidebarWorkspaceEntry,
 } from '@/components/ui/Sidebar';
 import { Header } from '@/components/ui/Header';
@@ -65,8 +65,8 @@ import {
   resolveNodeActionRoutingContext,
 } from '@/components/editor/workspaceEditUtils';
 import {
-  buildSidebarDocuments,
-  resolveWorkspaceDocumentAbsolutePath,
+  buildSidebarCanvases,
+  resolveWorkspaceCanvasAbsolutePath,
   type RegisteredWorkspace,
   type WorkspaceProbeResponse,
   updateWorkspaceFromProbe,
@@ -76,7 +76,7 @@ import {
   pickWorkspaceRootPath,
 } from '@/components/editor/desktopBridge';
 import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
-import { navigateToDocument, navigateToWorkspaceDocument } from '@/features/host/renderer/navigation';
+import { navigateToCanvas, navigateToWorkspaceCanvas } from '@/features/host/renderer/navigation';
 
 
 
@@ -93,29 +93,42 @@ function getNodeLabel(node: { data?: unknown }): string {
   return typeof data.label === 'string' ? data.label : '';
 }
 
+function resolveWorkspaceCanvasesHealth(
+  payload: WorkspaceProbeResponse,
+): { state: WorkspaceProbeResponse['health']['state']; message?: string; canvasCount?: number } {
+  if (payload.health && typeof payload.health.state === 'string') {
+    return payload.health;
+  }
+
+  return {
+    state: 'ok',
+    canvasCount: payload.canvasCount,
+  };
+}
 
 
 
 
-export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
+
+export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
   const hostRpc = useMemo(() => getHostRuntime().rpc, []);
 
   useEffect(() => {
-    useGraphStore.getState().setCurrentFile(documentPath);
-  }, [documentPath]);
+    useGraphStore.getState().setCurrentFile(canvasPath);
+  }, [canvasPath]);
 
-  // Workspace-document-shell migration anchor:
+  // Workspace-canvas-shell migration anchor:
   // workspace registry/session state now lives in the graph store instead of local component state.
   const {
     setFiles,
     setGraph,
     currentFile,
-    setCurrentDocumentId,
+    setCurrentCanvasId,
     workspaceRootPath,
     registeredWorkspaces,
     activeWorkspaceId,
-    lastActiveDocumentsByWorkspaceId,
-    workspaceDocumentsByWorkspaceId,
+    lastActiveCanvasesByWorkspaceId,
+    workspaceCanvasesByWorkspaceId,
     sourceVersions,
     files,
     nodes,
@@ -136,7 +149,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     pushEditCompletionEvent,
     registerPendingActionRouting,
     clearPendingActionRouting,
-    draftDocuments,
+    draftCanvases,
     setFileTree,
     setWorkspaceSession,
     hydrateWorkspaceRegistry,
@@ -145,10 +158,10 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     reconnectWorkspaceFromProbe,
     setActiveWorkspaceId: setGraphActiveWorkspaceId,
     removeRegisteredWorkspace,
-    setWorkspaceDocuments,
-    registerWorkspaceDocument,
+    setWorkspaceCanvases,
+    registerWorkspaceCanvas,
     setWorkspacePathStatus,
-    rememberLastActiveDocumentForWorkspace,
+    rememberLastActiveCanvasForWorkspace,
     hydrateGlobalFontFamilyPreference,
   } = useGraphStore();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -162,13 +175,13 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     () => registeredWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
     [activeWorkspaceId, registeredWorkspaces],
   );
-  const workspaceDocuments = useMemo<SidebarDocumentEntry[]>(
-    () => (activeWorkspaceId ? workspaceDocumentsByWorkspaceId[activeWorkspaceId] ?? [] : []),
-    [activeWorkspaceId, workspaceDocumentsByWorkspaceId],
+  const workspaceCanvases = useMemo<SidebarCanvasEntry[]>(
+    () => (activeWorkspaceId ? workspaceCanvasesByWorkspaceId[activeWorkspaceId] ?? [] : []),
+    [activeWorkspaceId, workspaceCanvasesByWorkspaceId],
   );
-  const activeWorkspaceDocument = useMemo(
-    () => workspaceDocuments.find((document) => document.absolutePath === currentFile) ?? null,
-    [currentFile, workspaceDocuments],
+  const activeWorkspaceCanvas = useMemo(
+    () => workspaceCanvases.find((canvas) => canvas.absolutePath === currentFile) ?? null,
+    [currentFile, workspaceCanvases],
   );
 
 
@@ -195,8 +208,8 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       currentFile: null,
       sourceVersion: null,
       sourceVersions: {},
-      lastActiveDocumentPath: null,
-      draftDocuments: [],
+      lastActiveCanvasPath: null,
+      draftCanvases: [],
     });
   }, [
     clearPendingTextEditAction,
@@ -252,46 +265,54 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  const loadActiveWorkspaceDocuments = useCallback(async (
+  const loadActiveWorkspaceCanvases = useCallback(async (
     workspace: RegisteredWorkspace,
     options?: {
-      restoreInitialDocument?: boolean;
+      restoreInitialCanvas?: boolean;
     },
   ) => {
     try {
       const [data, legacyTree] = await Promise.all([
-        hostRpc.listWorkspaceDocuments(workspace.rootPath),
+        hostRpc.listWorkspaceCanvases(workspace.rootPath),
         hostRpc.getFileTree(workspace.rootPath).catch(() => ({ tree: null })),
       ]);
-      const sidebarDocuments = buildSidebarDocuments(workspace.rootPath, data.documents);
-      const absoluteFiles = sidebarDocuments.map((document) => document.absolutePath);
-      const resumeTarget = useGraphStore.getState().lastActiveDocumentsByWorkspaceId[workspace.id];
-      const initialDocument = (
+      const resolvedHealth = resolveWorkspaceCanvasesHealth(data);
+      if (!data.health || typeof data.health.state !== 'string') {
+        console.warn('[WorkspaceCanvasesLoad] Compatibility payload without health; falling back to inferred ok state', {
+          workspaceId: workspace.id,
+          rootPath: workspace.rootPath,
+          payload: data,
+        });
+      }
+      const sidebarCanvases = buildSidebarCanvases(workspace.rootPath, data.canvases);
+      const absoluteFiles = sidebarCanvases.map((canvas) => canvas.absolutePath);
+      const resumeTarget = useGraphStore.getState().lastActiveCanvasesByWorkspaceId[workspace.id];
+      const initialCanvas = (
         typeof resumeTarget === 'string'
         && absoluteFiles.includes(resumeTarget)
       )
         ? resumeTarget
         : absoluteFiles[0] ?? null;
 
-      setWorkspaceDocuments(workspace.id, sidebarDocuments);
+      setWorkspaceCanvases(workspace.id, sidebarCanvases);
       setFiles(absoluteFiles);
       setFileTree(legacyTree.tree);
       await syncWorkspaceEntry(data, { existingId: workspace.id });
       setWorkspacePathStatus({
         workspaceId: workspace.id,
         rootPath: data.rootPath,
-        status: data.health.state,
-        failureReason: data.health.message ?? null,
+        status: resolvedHealth.state,
+        failureReason: resolvedHealth.message ?? null,
       });
       setWorkspaceSession({
         workspaceId: workspace.id,
         rootPath: data.rootPath,
       });
       useGraphStore.setState({
-        lastActiveDocumentPath: initialDocument,
+        lastActiveCanvasPath: initialCanvas,
       });
 
-      if (options?.restoreInitialDocument && initialDocument) {
+      if (options?.restoreInitialCanvas && initialCanvas) {
         window.setTimeout(() => {
 
         }, 0);
@@ -309,19 +330,24 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       } catch {
         // Ignore probe failures and surface the original error below.
       }
-      setWorkspaceDocuments(workspace.id, []);
+      console.error('[WorkspaceCanvasesLoad] Failed to load workspace canvases', {
+        workspaceId: workspace.id,
+        rootPath: workspace.rootPath,
+        error,
+      });
+      setWorkspaceCanvases(workspace.id, []);
       setFiles([]);
       setFileTree(null);
       const message = error instanceof Error
         ? error.message
-        : '문서 목록을 불러오는 데 실패했습니다.';
+        : '캔버스 목록을 불러오는 데 실패했습니다.';
       setGraphError({
         message,
-        type: 'WORKSPACE_DOCUMENTS_LOAD_FAILED',
+        type: 'WORKSPACE_CANVASES_LOAD_FAILED',
         details: error,
       });
     }
-  }, [hostRpc, setFileTree, setFiles, setGraphError, setWorkspaceDocuments, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
+  }, [hostRpc, setFileTree, setFiles, setGraphError, setWorkspaceCanvases, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
 
   const dependencyFiles = useMemo(
     () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentFile),
@@ -333,8 +359,8 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       return;
     }
 
-    void loadActiveWorkspaceDocuments(activeWorkspace);
-  }, [activeWorkspace, loadActiveWorkspaceDocuments]);
+    void loadActiveWorkspaceCanvases(activeWorkspace);
+  }, [activeWorkspace, loadActiveWorkspaceCanvases]);
 
   // File sync with reload callback for file list changes
   const {
@@ -371,20 +397,20 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     if (activeWorkspace.status !== 'ok') {
       return;
     }
-    void loadActiveWorkspaceDocuments(activeWorkspace, { restoreInitialDocument: true });
-  }, [activeWorkspace?.id, activeWorkspace?.rootPath, activeWorkspace?.status, loadActiveWorkspaceDocuments, resetWorkspaceShellState]);
+    void loadActiveWorkspaceCanvases(activeWorkspace, { restoreInitialCanvas: true });
+  }, [activeWorkspace?.id, activeWorkspace?.rootPath, activeWorkspace?.status, loadActiveWorkspaceCanvases, resetWorkspaceShellState]);
 
   useEffect(() => {
     if (!activeWorkspace || !currentFile) {
       return;
     }
 
-    void rememberLastActiveDocumentForWorkspace(activeWorkspace.id, currentFile);
-  }, [activeWorkspace, currentFile, rememberLastActiveDocumentForWorkspace]);
+    void rememberLastActiveCanvasForWorkspace(activeWorkspace.id, currentFile);
+  }, [activeWorkspace, currentFile, rememberLastActiveCanvasForWorkspace]);
 
   useEffect(() => {
-    setCurrentDocumentId(activeWorkspaceDocument?.documentId ?? null);
-  }, [activeWorkspaceDocument?.documentId, setCurrentDocumentId]);
+    setCurrentCanvasId(activeWorkspaceCanvas?.canvasId ?? null);
+  }, [activeWorkspaceCanvas?.canvasId, setCurrentCanvasId]);
 
 
 
@@ -542,63 +568,63 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       return;
     }
 
-    await loadActiveWorkspaceDocuments(activeWorkspace);
-  }, [activeWorkspace, hostRpc, loadActiveWorkspaceDocuments, reconnectWorkspaceFromProbe]);
+    await loadActiveWorkspaceCanvases(activeWorkspace);
+  }, [activeWorkspace, hostRpc, loadActiveWorkspaceCanvases, reconnectWorkspaceFromProbe]);
 
-  const handleCreateDocument = useCallback(async () => {
+  const handleCreateCanvas = useCallback(async () => {
     if (!activeWorkspace) {
       return false;
     }
 
     try {
-      const createdDocument = await hostRpc.createWorkspaceDocument({
+      const createdCanvas = await hostRpc.createWorkspaceCanvas({
         rootPath: activeWorkspace.rootPath,
       });
-      const absoluteFilePath = resolveWorkspaceDocumentAbsolutePath(activeWorkspace.rootPath, createdDocument.filePath);
+      const absoluteFilePath = resolveWorkspaceCanvasAbsolutePath(activeWorkspace.rootPath, createdCanvas.filePath);
       useGraphStore.getState().setSourceVersionForFile(
         absoluteFilePath,
-        createdDocument.sourceVersion,
+        createdCanvas.sourceVersion,
       );
-      setCurrentDocumentId(createdDocument.documentId);
-      registerWorkspaceDocument(activeWorkspace.id, {
-        documentId: createdDocument.documentId,
-        workspaceId: createdDocument.workspaceId,
-        latestRevision: createdDocument.latestRevision,
+      setCurrentCanvasId(createdCanvas.canvasId);
+      registerWorkspaceCanvas(activeWorkspace.id, {
+        canvasId: createdCanvas.canvasId,
+        workspaceId: createdCanvas.workspaceId,
+        latestRevision: createdCanvas.latestRevision,
         absolutePath: absoluteFilePath,
-        relativePath: createdDocument.filePath,
-        title: createdDocument.filePath.split('/').filter(Boolean).at(-1) ?? createdDocument.filePath,
+        relativePath: createdCanvas.filePath,
+        title: createdCanvas.filePath.split('/').filter(Boolean).at(-1) ?? createdCanvas.filePath,
       });
 
       const opened = openTabByPath(absoluteFilePath);
       if (opened) {
         const nextSourceVersions = {
           ...useGraphStore.getState().sourceVersions,
-          [absoluteFilePath]: createdDocument.sourceVersion,
+          [absoluteFilePath]: createdCanvas.sourceVersion,
         };
         setGraph({
           nodes: [],
           edges: [],
-          sourceVersion: createdDocument.sourceVersion,
+          sourceVersion: createdCanvas.sourceVersion,
           sourceVersions: nextSourceVersions,
         });
         setGraphError(null);
       }
 
-      await loadActiveWorkspaceDocuments(activeWorkspace);
-      navigateToWorkspaceDocument(activeWorkspace.rootPath, createdDocument);
+      await loadActiveWorkspaceCanvases(activeWorkspace);
+      navigateToWorkspaceCanvas(activeWorkspace.rootPath, createdCanvas);
       return opened;
     } catch (error) {
       const message = error instanceof Error
         ? error.message
-        : '새 문서를 만드는 데 실패했습니다.';
+        : '새 캔버스를 만드는 데 실패했습니다.';
       setGraphError({
         message,
-        type: 'DOCUMENT_CREATE_FAILED',
+        type: 'CANVAS_CREATE_FAILED',
         details: error,
       });
       return false;
     }
-  }, [activeWorkspace, hostRpc, loadActiveWorkspaceDocuments, openTabByPath, registerWorkspaceDocument, setCurrentDocumentId, setGraph, setGraphError]);
+  }, [activeWorkspace, hostRpc, loadActiveWorkspaceCanvases, openTabByPath, registerWorkspaceCanvas, setCurrentCanvasId, setGraph, setGraphError]);
 
   const restoreNodeData = useCallback((nodeId: string, previousData: Record<string, unknown> | undefined) => {
     useGraphStore.setState((state) => ({
@@ -1451,8 +1477,8 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
 
   const runQuickOpenCommand = useCallback(
     async (commandId: string) => {
-      if (commandId === 'new-document') {
-        return handleCreateDocument();
+      if (commandId === 'new-canvas') {
+        return handleCreateCanvas();
       }
 
       if (commandId === 'washi:select-all') {
@@ -1482,7 +1508,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     },
     [
       focusNextNodeByType,
-      handleCreateDocument,
+      handleCreateCanvas,
       handleWashiPresetChange,
       selectNodesByType,
       selectedWashiNodeIds,
@@ -1495,10 +1521,10 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
 
     const baseCommands: QuickOpenCommand[] = [
       {
-        id: 'new-document',
-        label: 'New document',
+        id: 'new-canvas',
+        label: 'New canvas',
         hint: 'Empty canvas',
-        keywords: ['new', 'document', 'canvas', 'empty', '새 문서'],
+        keywords: ['new', 'canvas', 'empty', '새 캔버스'],
       },
       {
         id: 'washi:select-all',
@@ -1653,7 +1679,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     async function renderFile() {
       if (!currentFile) return;
 
-      if (draftDocuments.includes(currentFile)) {
+      if (draftCanvases.includes(currentFile)) {
         setGraph({
           nodes: [],
           edges: [],
@@ -1675,8 +1701,8 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             filePath: currentFile,
-            ...(activeWorkspaceDocument?.documentId
-              ? { documentId: activeWorkspaceDocument.documentId }
+            ...(activeWorkspaceCanvas?.canvasId
+              ? { canvasId: activeWorkspaceCanvas.canvasId }
               : {}),
             ...(activeWorkspace?.rootPath ?? workspaceRootPath
               ? { rootPath: activeWorkspace?.rootPath ?? workspaceRootPath }
@@ -1720,9 +1746,9 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
 
         const parsed = parseRenderGraph(data);
         if (parsed) {
-          setCurrentDocumentId(typeof data.documentId === 'string'
-            ? data.documentId
-            : activeWorkspaceDocument?.documentId ?? null);
+          setCurrentCanvasId(typeof data.canvasId === 'string'
+            ? data.canvasId
+            : activeWorkspaceCanvas?.canvasId ?? null);
           setGraph(parsed);
           if (pendingSelectionNodeIdRef.current) {
             const createdNodeId = pendingSelectionNodeIdRef.current;
@@ -1748,42 +1774,42 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     }
 
     renderFile();
-  }, [activeWorkspace?.rootPath, activeWorkspaceDocument?.documentId, currentFile, draftDocuments, refreshKey, setCurrentDocumentId, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on file changes
+  }, [activeWorkspace?.rootPath, activeWorkspaceCanvas?.canvasId, currentFile, draftCanvases, refreshKey, setCurrentCanvasId, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on file changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <Sidebar
         activeWorkspace={activeWorkspace as SidebarWorkspaceEntry | null}
         workspaces={registeredWorkspaces as SidebarWorkspaceEntry[]}
-        documents={workspaceDocuments}
+        canvases={workspaceCanvases}
         isLoading={isWorkspaceLoading}
         onRefresh={() => { void refreshActiveWorkspace(); }}
         onSelectWorkspace={handleSelectWorkspace}
         onCreateWorkspace={() => { void handleCreateWorkspace(); }}
         onAddWorkspace={() => { void handleAddExistingWorkspace(); }}
-        onCreateDocument={() => { void handleCreateDocument(); }}
-        onOpenDocument={(path) => {
-          const matchingDocument = workspaceDocuments.find((document) => document.absolutePath === path);
-          if (activeWorkspace && matchingDocument) {
-            navigateToWorkspaceDocument(activeWorkspace.rootPath, {
-              filePath: matchingDocument.relativePath,
+        onCreateCanvas={() => { void handleCreateCanvas(); }}
+        onOpenCanvas={(path) => {
+          const matchingCanvas = workspaceCanvases.find((canvas) => canvas.absolutePath === path);
+          if (activeWorkspace && matchingCanvas) {
+            navigateToWorkspaceCanvas(activeWorkspace.rootPath, {
+              filePath: matchingCanvas.relativePath,
             });
             return;
           }
-          navigateToDocument(path);
+          navigateToCanvas(path);
         }}
         onCopyWorkspacePath={() => { void handleCopyWorkspacePath(); }}
         onRevealWorkspace={() => { void handleRevealWorkspace(); }}
         onReconnectWorkspace={() => { void handleReconnectWorkspace(); }}
         onRemoveWorkspace={handleRemoveWorkspace}
         onOpenLegacyFile={(path) => {
-            navigateToDocument(path);
+            navigateToCanvas(path);
         }}
       />
 
       <div className="flex flex-1 flex-col h-full overflow-hidden relative">
         <Header
-          onCreateDocument={() => { void handleCreateDocument(); }}
+          onCreateCanvas={() => { void handleCreateCanvas(); }}
           workspaceLabel={activeWorkspace?.name ?? null}
         />
         {/* TabBar removed by user request */}

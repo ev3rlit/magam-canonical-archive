@@ -18,15 +18,15 @@ export async function runSurfaceCommand(args: string[]): Promise<ResourceCommand
     case 'get':
       return withHeadlessContext({
         targetDir: getOptionalStringFlag(parsed, 'target-dir'),
-        documentRef: getOptionalStringFlag(parsed, 'document'),
+        canvasRef: getOptionalStringFlag(parsed, 'document'),
         requireDocument: true,
       }, async (context) => {
         const surfaceId = getStringFlag(parsed, 'surface');
         return {
-          data: await getSurface(context, context.resolvedDocumentId!, surfaceId),
+          data: await getSurface(context, context.resolvedCanvasId!, surfaceId),
           meta: {
             command: 'surface.get',
-            documentId: context.resolvedDocumentId,
+            canvasId: context.resolvedCanvasId,
             surfaceId,
           },
         };
@@ -35,12 +35,12 @@ export async function runSurfaceCommand(args: string[]): Promise<ResourceCommand
     case 'query-nodes':
       return withHeadlessContext({
         targetDir: getOptionalStringFlag(parsed, 'target-dir'),
-        documentRef: getOptionalStringFlag(parsed, 'document'),
+        canvasRef: getOptionalStringFlag(parsed, 'document'),
         requireDocument: true,
       }, async (context) => {
         const surfaceId = getStringFlag(parsed, 'surface');
         const page = await querySurfaceNodes(context, {
-          documentId: context.resolvedDocumentId!,
+          canvasId: context.resolvedCanvasId!,
           surfaceId,
           workspaceId: getOptionalStringFlag(parsed, 'workspace'),
           bounds: getBoundsFlag(parsed),
@@ -53,7 +53,7 @@ export async function runSurfaceCommand(args: string[]): Promise<ResourceCommand
           data: page,
           meta: {
             command: 'surface.query-nodes',
-            documentId: context.resolvedDocumentId,
+            canvasId: context.resolvedCanvasId,
             surfaceId,
           },
         };

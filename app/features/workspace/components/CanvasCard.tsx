@@ -1,13 +1,13 @@
 import React from 'react';
-import type { SidebarDocumentEntry } from '@/components/ui/Sidebar';
+import type { SidebarCanvasEntry } from '@/components/ui/Sidebar';
 import { FileImage } from 'lucide-react';
 
 interface CanvasCardProps {
-  document: SidebarDocumentEntry;
+  canvas: SidebarCanvasEntry;
   onClick: () => void;
 }
 
-export function CanvasCard({ document, onClick }: CanvasCardProps) {
+export function CanvasCard({ canvas, onClick }: CanvasCardProps) {
   return (
     <div
       onClick={onClick}
@@ -23,11 +23,11 @@ export function CanvasCard({ document, onClick }: CanvasCardProps) {
 
       <div className="p-4 bg-surface-container-lowest">
         <h3 className="font-manrope font-semibold text-base text-on-surface group-hover:text-primary transition-colors line-clamp-1">
-          {document.title || 'Untitled Canvas'}
+          {canvas.title || 'Untitled Canvas'}
         </h3>
         <div className="flex items-center justify-between mt-1">
           <p className="font-inter text-xs text-on-surface-variant truncate">
-            {document.relativePath}
+            {canvas.relativePath}
           </p>
           <span className="text-[10px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full whitespace-nowrap ml-2">
             Canvas

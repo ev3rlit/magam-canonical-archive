@@ -1,5 +1,5 @@
-export interface CanonicalDocumentShellRecord {
-  documentId: string;
+export interface CanonicalCanvasShellRecord {
+  canvasId: string;
   workspaceId: string;
   filePath: string | null;
   surfaceIds: string[];
@@ -10,21 +10,21 @@ export interface CanonicalDocumentShellRecord {
   updatedAt: Date | null;
 }
 
-export interface ListCanonicalDocumentShellInput {
+export interface ListCanonicalCanvasShellInput {
   targetDir: string;
   workspaceId?: string;
 }
 
-export interface GetCanonicalDocumentShellInput {
+export interface GetCanonicalCanvasShellInput {
   targetDir: string;
-  documentId: string;
+  canvasId: string;
   workspaceId?: string;
 }
 
-export interface CreateCanonicalDocumentShellInput {
+export interface CreateCanonicalCanvasShellInput {
   targetDir: string;
   workspaceId?: string;
-  documentId?: string;
+  canvasId?: string;
   filePath?: string | null;
   actor?: {
     kind: 'user' | 'agent' | 'system';

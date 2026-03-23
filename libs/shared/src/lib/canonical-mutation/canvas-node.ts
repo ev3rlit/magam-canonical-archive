@@ -8,7 +8,7 @@ import type { CanvasNodeRecord } from '../canonical-persistence/records';
 function toCanvasNodeRecord(row: typeof canvasNodes.$inferSelect): CanvasNodeRecord {
   return {
     id: row.id,
-    documentId: row.documentId,
+    canvasId: row.canvasId,
     surfaceId: row.surfaceId,
     nodeKind: row.nodeKind,
     nodeType: row.nodeType ?? null,
@@ -27,19 +27,19 @@ function toCanvasNodeRecord(row: typeof canvasNodes.$inferSelect): CanvasNodeRec
 
 export async function getCanvasNode(
   context: HeadlessServiceContext,
-  documentId: string,
+  canvasId: string,
   nodeId: string,
 ): Promise<CanvasNodeRecord> {
   const row = await context.db.query.canvasNodes.findFirst({
     where: and(
-      eq(canvasNodes.documentId, documentId),
+      eq(canvasNodes.canvasId, canvasId),
       eq(canvasNodes.id, nodeId),
     ),
   });
 
   if (!row) {
-    throw cliError('NODE_NOT_FOUND', `Canvas node ${nodeId} was not found in document ${documentId}.`, {
-      details: { documentId, nodeId },
+    throw cliError('NODE_NOT_FOUND', `Canvas node ${nodeId} was not found in document ${canvasId}.`, {
+      details: { canvasId, nodeId },
     });
   }
 
@@ -108,7 +108,7 @@ export async function persistCanvasNode(
     })
     .where(
       and(
-        eq(canvasNodes.documentId, node.documentId),
+        eq(canvasNodes.canvasId, node.canvasId),
         eq(canvasNodes.id, node.id),
       ),
     );

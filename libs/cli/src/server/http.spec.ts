@@ -191,17 +191,17 @@ describe('HTTP Render Server', () => {
         expect(body.code).toBe('WS_200_HEALTHY');
         expect(body.rootPath).toBe(workspaceRoot);
         expect(body.health.state).toBe('ok');
-        expect(body.documentCount).toBe(1);
+        expect(body.canvasCount).toBe(1);
       } finally {
         await rm(workspaceRoot, { recursive: true, force: true });
       }
     });
 
-    it('creates workspace documents through POST /documents', async () => {
+    it('creates workspace documents through POST /canvases', async () => {
       const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'magam-http-documents-'));
 
       try {
-        const response = await fetch(`${baseUrl}/documents`, {
+        const response = await fetch(`${baseUrl}/canvases`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ rootPath: workspaceRoot }),
@@ -213,16 +213,18 @@ describe('HTTP Render Server', () => {
         expect(body.rootPath).toBe(workspaceRoot);
         expect(body.filePath).toMatch(/^documents\/doc-/);
         expect(body.sourceVersion).toMatch(/^sha256:/);
-        expect(body.documentId).toMatch(/^doc-/);
+        expect(body.canvasId).toMatch(/^doc-/);
         expect(body.workspaceId).toBe(path.basename(workspaceRoot).toLowerCase());
         expect(body.latestRevision).toBe(1);
 
-        const listed = await fetch(`${baseUrl}/documents?rootPath=${encodeURIComponent(workspaceRoot)}`);
+        const listed = await fetch(`${baseUrl}/canvases?rootPath=${encodeURIComponent(workspaceRoot)}`);
         const listedBody = await listed.json();
         expect(listed.status).toBe(200);
-        expect(listedBody.documentCount).toBe(1);
+        expect(listedBody.health.state).toBe('ok');
+        expect(listedBody.health.canvasCount).toBe(1);
+        expect(listedBody.canvasCount).toBe(1);
         expect(listedBody.documents[0]).toEqual(expect.objectContaining({
-          documentId: body.documentId,
+          canvasId: body.canvasId,
           workspaceId: body.workspaceId,
           filePath: body.filePath,
         }));
@@ -299,11 +301,11 @@ describe('HTTP Render Server', () => {
     });
 
     it('lists, upserts, and clears recent documents', async () => {
-      const initial = await requestJson('/app-state/recent-documents?workspaceId=workspace-3');
+      const initial = await requestJson('/app-state/recent-canvases?workspaceId=workspace-3');
       expect(initial.response.status).toBe(200);
       expect(initial.body).toEqual([]);
 
-      const upsert = await requestJson('/app-state/recent-documents', {
+      const upsert = await requestJson('/app-state/recent-canvases', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -317,7 +319,7 @@ describe('HTTP Render Server', () => {
         documentPath: 'docs/alpha.graph.tsx',
       });
 
-      const listed = await requestJson('/app-state/recent-documents?workspaceId=workspace-3');
+      const listed = await requestJson('/app-state/recent-canvases?workspaceId=workspace-3');
       expect(listed.response.status).toBe(200);
       expect(listed.body).toHaveLength(1);
       expect(listed.body[0]).toMatchObject({
@@ -325,13 +327,13 @@ describe('HTTP Render Server', () => {
         documentPath: 'docs/alpha.graph.tsx',
       });
 
-      const cleared = await requestJson('/app-state/recent-documents?workspaceId=workspace-3', {
+      const cleared = await requestJson('/app-state/recent-canvases?workspaceId=workspace-3', {
         method: 'DELETE',
       });
       expect(cleared.response.status).toBe(200);
       expect(cleared.body).toEqual({ deleted: true });
 
-      const afterClear = await requestJson('/app-state/recent-documents?workspaceId=workspace-3');
+      const afterClear = await requestJson('/app-state/recent-canvases?workspaceId=workspace-3');
       expect(afterClear.response.status).toBe(200);
       expect(afterClear.body).toEqual([]);
     });
@@ -415,15 +417,15 @@ describe('HTTP Render Server', () => {
       expect(mockExecute).toHaveBeenCalledWith('transpiled code');
     });
 
-    it('should render a canonical document by documentId even when no filePath is provided', async () => {
-      const created = await fetch(`${baseUrl}/documents`, {
+    it('should render a canonical document by canvasId even when no filePath is provided', async () => {
+      const created = await fetch(`${baseUrl}/canvases`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rootPath: targetDir }),
       }).then((response) => response.json());
 
       mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
-        String(candidatePath).endsWith(`${created.documentId}.graph.tsx`)
+        String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
       ));
       mockTranspileWithMetadata.mockResolvedValue({
         code: 'transpiled code',
@@ -433,13 +435,13 @@ describe('HTTP Render Server', () => {
 
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
-        body: JSON.stringify({ documentId: created.documentId, rootPath: targetDir }),
+        body: JSON.stringify({ canvasId: created.canvasId, rootPath: targetDir }),
       });
       const body = await response.json();
 
       expect(response.status).toBe(200);
       expect(body.graph).toEqual({});
-      expect(body.documentId).toBe(created.documentId);
+      expect(body.canvasId).toBe(created.canvasId);
       expect(mockTranspileWithMetadata).toHaveBeenCalledWith(
         `${targetDir}/${created.filePath}`,
       );

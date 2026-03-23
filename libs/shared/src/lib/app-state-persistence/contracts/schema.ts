@@ -40,8 +40,8 @@ export const appWorkspaceSession = pgTable('app_workspace_session', {
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
 });
 
-export const appRecentDocuments = pgTable(
-  'app_recent_documents',
+export const appRecentCanvases = pgTable(
+  'app_recent_canvases',
   {
     workspaceId: text('workspace_id').notNull(),
     documentPath: text('document_path').notNull(),
@@ -51,9 +51,9 @@ export const appRecentDocuments = pgTable(
   (table) => ({
     pk: primaryKey({
       columns: [table.workspaceId, table.documentPath],
-      name: 'app_recent_documents_workspace_id_document_path_pk',
+      name: 'app_recent_canvases_workspace_id_document_path_pk',
     }),
-    workspaceIdx: index('idx_app_recent_documents_workspace').on(table.workspaceId, table.lastOpenedAt),
+    workspaceIdx: index('idx_app_recent_canvases_workspace').on(table.workspaceId, table.lastOpenedAt),
   }),
 );
 

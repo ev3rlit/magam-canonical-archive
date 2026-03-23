@@ -5,27 +5,27 @@ const {
   mockCreateAppStatePgliteDb,
   mockGetPreference,
   mockGetWorkspaceSession,
-  mockListRecentDocuments,
+  mockListRecentCanvases,
   mockListWorkspaces,
   mockRemoveWorkspace,
   mockSetPreference,
   mockSetWorkspaceSession,
   mockUpsertRecentDocument,
   mockUpsertWorkspace,
-  mockClearRecentDocuments,
+  mockClearRecentCanvases,
 } = vi.hoisted(() => ({
   mockClose: vi.fn(),
   mockCreateAppStatePgliteDb: vi.fn(),
   mockGetPreference: vi.fn(),
   mockGetWorkspaceSession: vi.fn(),
-  mockListRecentDocuments: vi.fn(),
+  mockListRecentCanvases: vi.fn(),
   mockListWorkspaces: vi.fn(),
   mockRemoveWorkspace: vi.fn(),
   mockSetPreference: vi.fn(),
   mockSetWorkspaceSession: vi.fn(),
   mockUpsertRecentDocument: vi.fn(),
   mockUpsertWorkspace: vi.fn(),
-  mockClearRecentDocuments: vi.fn(),
+  mockClearRecentCanvases: vi.fn(),
 }));
 
 vi.mock('../../../../../libs/shared/src/lib/app-state-persistence', () => ({
@@ -47,14 +47,14 @@ vi.mock('../../../../../libs/shared/src/lib/app-state-persistence', () => ({
     setWorkspaceSession(input: unknown) {
       return mockSetWorkspaceSession(input);
     }
-    listRecentDocuments(workspaceId: string) {
-      return mockListRecentDocuments(workspaceId);
+    listRecentCanvases(workspaceId: string) {
+      return mockListRecentCanvases(workspaceId);
     }
     upsertRecentDocument(input: unknown) {
       return mockUpsertRecentDocument(input);
     }
-    clearRecentDocuments(workspaceId: string) {
-      return mockClearRecentDocuments(workspaceId);
+    clearRecentCanvases(workspaceId: string) {
+      return mockClearRecentCanvases(workspaceId);
     }
     getPreference(key: string) {
       return mockGetPreference(key);
@@ -67,7 +67,7 @@ vi.mock('../../../../../libs/shared/src/lib/app-state-persistence', () => ({
 
 import * as workspacesRoute from './route';
 import * as sessionRoute from '../session/route';
-import * as recentDocumentsRoute from '../recent-documents/route';
+import * as recentCanvasesRoute from '../recent-canvases/route';
 import * as preferencesRoute from '../preferences/route';
 
 describe('app-state routes', () => {
@@ -173,7 +173,7 @@ describe('app-state routes', () => {
   });
 
   it('lists, upserts, and clears recent documents', async () => {
-    mockListRecentDocuments.mockResolvedValueOnce([
+    mockListRecentCanvases.mockResolvedValueOnce([
       { workspaceId: 'ws-1', documentPath: 'docs/alpha.graph.tsx' },
     ]);
     mockUpsertRecentDocument.mockResolvedValueOnce({
@@ -181,16 +181,16 @@ describe('app-state routes', () => {
       documentPath: 'docs/beta.graph.tsx',
     });
 
-    const listResponse = await recentDocumentsRoute.GET(
-      new Request('http://localhost/api/app-state/recent-documents?workspaceId=ws-1'),
+    const listResponse = await recentCanvasesRoute.GET(
+      new Request('http://localhost/api/app-state/recent-canvases?workspaceId=ws-1'),
     );
     expect(listResponse.status).toBe(200);
-    expect(mockListRecentDocuments).toHaveBeenCalledWith('ws-1');
+    expect(mockListRecentCanvases).toHaveBeenCalledWith('ws-1');
     expect(await listResponse.json()).toEqual([
       expect.objectContaining({ documentPath: 'docs/alpha.graph.tsx' }),
     ]);
 
-    const upsertResponse = await recentDocumentsRoute.POST(new Request('http://localhost/api/app-state/recent-documents', {
+    const upsertResponse = await recentCanvasesRoute.POST(new Request('http://localhost/api/app-state/recent-canvases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -205,11 +205,11 @@ describe('app-state routes', () => {
       lastOpenedAt: undefined,
     });
 
-    const clearResponse = await recentDocumentsRoute.DELETE(
-      new Request('http://localhost/api/app-state/recent-documents?workspaceId=ws-1'),
+    const clearResponse = await recentCanvasesRoute.DELETE(
+      new Request('http://localhost/api/app-state/recent-canvases?workspaceId=ws-1'),
     );
     expect(clearResponse.status).toBe(200);
-    expect(mockClearRecentDocuments).toHaveBeenCalledWith('ws-1');
+    expect(mockClearRecentCanvases).toHaveBeenCalledWith('ws-1');
     expect(await clearResponse.json()).toEqual({ deleted: true });
   });
 

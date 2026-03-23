@@ -1,15 +1,15 @@
 import {
-  CreateWorkspaceDocumentResult,
+  CreateWorkspaceCanvasResult,
   RendererRpcClient,
-  WorkspaceDocumentCreateInput,
+  WorkspaceCanvasCreateInput,
   WorkspaceFileBrowserActionInput,
-  isCreateWorkspaceDocumentResult,
+  isCreateWorkspaceCanvasResult,
 } from '@/features/host/renderer/rpcClient';
 import type {
   AppPreferenceRecord,
   AppPreferenceUpsertInput,
-  AppRecentDocumentRecord,
-  AppRecentDocumentUpsertInput,
+  AppRecentCanvasRecord,
+  AppRecentCanvasUpsertInput,
   AppWorkspaceRecord,
   AppWorkspaceSessionRecord,
   AppWorkspaceSessionUpdateInput,
@@ -59,17 +59,17 @@ async function requestRenderJson<T>(
   return response.json() as Promise<T>;
 }
 
-async function requestWorkspaceDocumentCreate(
+async function requestWorkspaceCanvasCreate(
   baseUrl: string,
   pathname: string,
   init?: RequestInit,
-): Promise<CreateWorkspaceDocumentResult> {
+): Promise<CreateWorkspaceCanvasResult> {
   const data = await fetch(`${baseUrl}${pathname}`, {
     cache: 'no-store',
     ...init,
   }).then(parseJsonResponse<unknown>);
-  if (!isCreateWorkspaceDocumentResult(data)) {
-    throw new Error('새 문서 생성 응답이 올바르지 않습니다.');
+  if (!isCreateWorkspaceCanvasResult(data)) {
+    throw new Error('새 캔버스 생성 응답이 올바르지 않습니다.');
   }
   return data;
 }
@@ -139,18 +139,18 @@ export function createDesktopRpcAdapter(input?: {
         body: JSON.stringify(input),
         headers: createJsonHeaders(),
       }),
-    listAppStateRecentDocuments: (workspaceId: string) =>
-      requestJson<AppRecentDocumentRecord[]>(
-        `/app-state/recent-documents${buildQuery({ workspaceId })}`,
+    listAppStateRecentCanvases: (workspaceId: string) =>
+      requestJson<AppRecentCanvasRecord[]>(
+        `/app-state/recent-canvases${buildQuery({ workspaceId })}`,
       ),
-    upsertAppStateRecentDocument: (input: AppRecentDocumentUpsertInput) =>
-      requestJson('/app-state/recent-documents', {
+    upsertAppStateRecentCanvas: (input: AppRecentCanvasUpsertInput) =>
+      requestJson('/app-state/recent-canvases', {
         method: 'POST',
         body: JSON.stringify(input),
         headers: createJsonHeaders(),
       }),
-    async clearAppStateRecentDocuments(workspaceId: string) {
-      await requestJson(`/app-state/recent-documents${buildQuery({ workspaceId })}`, {
+    async clearAppStateRecentCanvases(workspaceId: string) {
+      await requestJson(`/app-state/recent-canvases${buildQuery({ workspaceId })}`, {
         method: 'DELETE',
       });
     },
@@ -170,10 +170,10 @@ export function createDesktopRpcAdapter(input?: {
         body: JSON.stringify({ rootPath, action: 'ensure' }),
         headers: createJsonHeaders(),
       }),
-    listWorkspaceDocuments: (rootPath: string) =>
-      requestJson(`/documents?rootPath=${encodeURIComponent(rootPath)}`),
-    createWorkspaceDocument: (input: WorkspaceDocumentCreateInput) =>
-      requestWorkspaceDocumentCreate(getBaseUrl(), '/documents', {
+    listWorkspaceCanvases: (rootPath: string) =>
+      requestJson(`/canvases?rootPath=${encodeURIComponent(rootPath)}`),
+    createWorkspaceCanvas: (input: WorkspaceCanvasCreateInput) =>
+      requestWorkspaceCanvasCreate(getBaseUrl(), '/canvases', {
         method: 'POST',
         body: JSON.stringify({
           rootPath: input.rootPath,

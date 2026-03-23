@@ -19,9 +19,9 @@ export function RendererAppShell() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  if (hash.startsWith('#/document/')) {
-    const documentPath = decodeURIComponent(hash.replace('#/document/', ''));
-    return <CanvasEditorPage documentPath={documentPath} />;
+  if (hash.startsWith('#/canvas/')) {
+    const canvasPath = decodeURIComponent(hash.replace('#/canvas/', ''));
+    return <CanvasEditorPage canvasPath={canvasPath} />;
   }
 
   if (hash.startsWith('#/workspace/')) {

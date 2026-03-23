@@ -30,9 +30,9 @@ function toJsonErrorResponse(error: unknown) {
   }
 
   const message = error instanceof Error ? error.message : 'Unknown error';
-  console.error('[api/app-state/recent-documents] unexpected error:', message);
+  console.error('[api/app-state/recent-canvases] unexpected error:', message);
   return NextResponse.json(
-    { error: `Failed to handle app-state recent-documents request: ${message}` },
+    { error: `Failed to handle app-state recent-canvases request: ${message}` },
     { status: 500 },
   );
 }
@@ -84,7 +84,7 @@ export async function GET(request: Request) {
       new URL(request.url).searchParams.get('workspaceId'),
       'workspaceId',
     );
-    return NextResponse.json(await repository.listRecentDocuments(workspaceId));
+    return NextResponse.json(await repository.listRecentCanvases(workspaceId));
   } catch (error) {
     return toJsonErrorResponse(error);
   } finally {
@@ -96,13 +96,13 @@ export async function POST(request: Request) {
   const { repository, close } = await createRepository();
   try {
     const body = await readJsonBody(request);
-    const document = await repository.upsertRecentDocument({
+    const canvas = await repository.upsertRecentCanvas({
       workspaceId: requireString(body.workspaceId, 'workspaceId'),
-      documentPath: requireString(body.documentPath, 'documentPath'),
+      canvasPath: requireString(body.canvasPath, 'canvasPath'),
       lastOpenedAt: parseOptionalDate(body.lastOpenedAt),
     });
 
-    return NextResponse.json(document);
+    return NextResponse.json(canvas);
   } catch (error) {
     return toJsonErrorResponse(error);
   } finally {
@@ -117,7 +117,7 @@ export async function DELETE(request: Request) {
       new URL(request.url).searchParams.get('workspaceId'),
       'workspaceId',
     );
-    await repository.clearRecentDocuments(workspaceId);
+    await repository.clearRecentCanvases(workspaceId);
     return NextResponse.json({ deleted: true });
   } catch (error) {
     return toJsonErrorResponse(error);

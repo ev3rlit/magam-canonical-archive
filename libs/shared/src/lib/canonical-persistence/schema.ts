@@ -82,7 +82,7 @@ export const canvasNodes = pgTable(
   'canvas_nodes',
   {
     id: text('id').primaryKey(),
-    documentId: text('document_id').notNull(),
+    canvasId: text('document_id').notNull(),
     surfaceId: text('surface_id').notNull(),
     nodeKind: text('node_kind').$type<CanvasNodeKind>().notNull(),
     nodeType: text('node_type'),
@@ -99,7 +99,7 @@ export const canvasNodes = pgTable(
   },
   (table) => ({
     documentSurfaceZIndexIdx: index('idx_canvas_nodes_document_surface_z').on(
-      table.documentId,
+      table.canvasId,
       table.surfaceId,
       table.zIndex,
     ),
@@ -110,7 +110,7 @@ export const canvasBindings = pgTable(
   'canvas_bindings',
   {
     id: text('id').primaryKey(),
-    documentId: text('document_id').notNull(),
+    canvasId: text('document_id').notNull(),
     nodeId: text('node_id').notNull(),
     bindingKind: text('binding_kind').$type<CanvasBindingKind>().notNull(),
     sourceRef: jsonb('source_ref').$type<Record<string, unknown>>().notNull(),
@@ -119,15 +119,15 @@ export const canvasBindings = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({
-    documentNodeIdx: index('idx_canvas_bindings_document_node').on(table.documentId, table.nodeId),
+    documentNodeIdx: index('idx_canvas_bindings_document_node').on(table.canvasId, table.nodeId),
   }),
 );
 
-export const documentRevisions = pgTable(
+export const canvasRevisions = pgTable(
   'document_revisions',
   {
     id: text('id').primaryKey(),
-    documentId: text('document_id').notNull(),
+    canvasId: text('document_id').notNull(),
     revisionNo: integer('revision_no').notNull(),
     authorKind: text('author_kind').$type<'user' | 'agent' | 'system'>().notNull(),
     authorId: text('author_id').notNull(),
@@ -136,7 +136,7 @@ export const documentRevisions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({
-    documentRevisionIdx: index('idx_document_revisions_document_revision').on(table.documentId, table.revisionNo),
+    canvasRevisionIdx: index('idx_document_revisions_document_revision').on(table.canvasId, table.revisionNo),
   }),
 );
 
@@ -212,7 +212,7 @@ export const pluginInstances = pgTable(
   'plugin_instances',
   {
     id: text('id').primaryKey(),
-    documentId: text('document_id').notNull(),
+    canvasId: text('document_id').notNull(),
     surfaceId: text('surface_id').notNull(),
     pluginExportId: text('plugin_export_id').notNull(),
     pluginVersionId: text('plugin_version_id').notNull(),
@@ -224,7 +224,7 @@ export const pluginInstances = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({
-    documentSurfaceIdx: index('idx_plugin_instances_document_surface').on(table.documentId, table.surfaceId),
+    documentSurfaceIdx: index('idx_plugin_instances_document_surface').on(table.canvasId, table.surfaceId),
     versionIdx: index('idx_plugin_instances_version').on(table.pluginVersionId),
     exportIdx: index('idx_plugin_instances_export').on(table.pluginExportId),
   }),

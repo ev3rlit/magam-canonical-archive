@@ -14,12 +14,12 @@ export async function POST(request: Request) {
     const requestedFilePath = isRecord(body) && typeof body.filePath === 'string'
       ? body.filePath.trim()
       : '';
-    const requestedDocumentId = isRecord(body) && typeof body.documentId === 'string'
-      ? body.documentId.trim()
+    const requestedCanvasId = isRecord(body) && typeof body.canvasId === 'string'
+      ? body.canvasId.trim()
       : '';
-    if (!isRecord(body) || (!requestedFilePath && !requestedDocumentId)) {
+    if (!isRecord(body) || (!requestedFilePath && !requestedCanvasId)) {
       return Response.json(
-        { error: 'filePath or documentId is required' },
+        { error: 'filePath or canvasId is required' },
         { status: 400 },
       );
     }
@@ -39,8 +39,8 @@ export async function POST(request: Request) {
     const payload = {
       ...body,
       ...(requestedFilePath ? { filePath: requestedFilePath } : {}),
-      ...(typeof body.documentId === 'string' && body.documentId.trim().length > 0
-        ? { documentId: body.documentId.trim() }
+      ...(typeof body.canvasId === 'string' && body.canvasId.trim().length > 0
+        ? { canvasId: body.canvasId.trim() }
         : {}),
       ...(rawRootPath ? { rootPath: path.resolve(rawRootPath.trim()) } : {}),
     };

@@ -6,7 +6,7 @@ export interface MutationActor {
 }
 
 export interface MutationPreconditions {
-  documentRevision?: number;
+  canvasRevision?: number;
 }
 
 export interface ObjectContentUpdateOperation {
@@ -85,7 +85,7 @@ export type MutationOperation =
 
 export interface MutationBatch {
   workspaceRef: string;
-  documentRef?: string;
+  canvasRef?: string;
   actor?: MutationActor;
   reason?: string;
   preconditions?: MutationPreconditions;
@@ -102,8 +102,8 @@ export interface MutationChangedSet {
 
 export interface MutationExecutionResult {
   mutationId: string;
-  documentRevisionBefore: number | null;
-  documentRevisionAfter: number | null;
+  canvasRevisionBefore: number | null;
+  canvasRevisionAfter: number | null;
   changed: MutationChangedSet;
   warnings: string[];
   dryRun: boolean;

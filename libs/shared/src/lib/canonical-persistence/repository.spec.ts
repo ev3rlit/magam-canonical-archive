@@ -212,7 +212,7 @@ describe('CanonicalPersistenceRepository', () => {
     });
     await repository.createCanvasNode({
       id: 'node-1',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       surfaceId: 'surface-1',
       nodeKind: 'native',
       canonicalObjectId: 'note-binding',
@@ -221,7 +221,7 @@ describe('CanonicalPersistenceRepository', () => {
     });
     await repository.createCanvasBinding({
       id: 'binding-1',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       nodeId: 'node-1',
       bindingKind: 'object',
       sourceRef: {
@@ -262,7 +262,7 @@ describe('CanonicalPersistenceRepository', () => {
 
     await repository.createCanvasBinding({
       id: 'binding-bad',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       nodeId: 'node-1',
       bindingKind: 'object',
       sourceRef: {
@@ -288,7 +288,7 @@ describe('CanonicalPersistenceRepository', () => {
 
     await repository.createCanvasBinding({
       id: 'binding-query',
-      documentId: 'doc-1',
+      canvasId: 'doc-1',
       nodeId: 'node-1',
       bindingKind: 'query',
       sourceRef: {

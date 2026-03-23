@@ -51,7 +51,7 @@ describe('AppStatePersistenceRepository', () => {
 
     const workspaces = await repository.listWorkspaces();
     const storedSession = await repository.getWorkspaceSession();
-    const recentDocuments = await repository.listRecentDocuments(pinnedWorkspace.id);
+    const recentCanvases = await repository.listRecentCanvases(pinnedWorkspace.id);
     const themePreference = await repository.getPreference('theme.mode');
     const lastActivePreference = await repository.getPreference('workspace.lastActiveDocumentSession');
 
@@ -60,7 +60,7 @@ describe('AppStatePersistenceRepository', () => {
     expect(storedSession).toEqual(expect.objectContaining({
       activeWorkspaceId: 'ws-pinned',
     }));
-    expect(recentDocuments).toEqual([
+    expect(recentCanvases).toEqual([
       expect.objectContaining({
         workspaceId: 'ws-pinned',
         documentPath: '/tmp/ws-pinned/doc-1.tsx',
@@ -112,7 +112,7 @@ describe('AppStatePersistenceRepository', () => {
     await repository.removeWorkspace(workspace.id);
 
     expect(await repository.listWorkspaces()).toEqual([]);
-    expect(await repository.listRecentDocuments(workspace.id)).toEqual([]);
+    expect(await repository.listRecentCanvases(workspace.id)).toEqual([]);
     expect(await repository.getWorkspaceSession()).toEqual(expect.objectContaining({
       activeWorkspaceId: null,
     }));
@@ -170,7 +170,7 @@ describe('AppStatePersistenceRepository', () => {
     expect(await secondRepository.getWorkspaceSession()).toEqual(
       expect.objectContaining({ activeWorkspaceId: 'ws-import-2' }),
     );
-    expect(await secondRepository.listRecentDocuments('ws-import-2')).toEqual([
+    expect(await secondRepository.listRecentCanvases('ws-import-2')).toEqual([
       expect.objectContaining({ documentPath: 'docs/imported.graph.tsx' }),
     ]);
     expect(await secondRepository.getPreference('workspace.lastActiveDocumentSession')).toEqual(

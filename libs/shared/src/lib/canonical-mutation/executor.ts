@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type { HeadlessServiceContext } from '../canonical-cli';
 import { cliError, persistenceFailureToCliError } from '../canonical-cli';
-import type { DocumentRevisionRecord } from '../canonical-persistence/records';
-import { getCurrentDocumentRevision } from '../canonical-query/workspace-document';
+import type { CanvasRevisionRecord } from '../canonical-persistence/records';
+import { getCurrentCanvasRevision } from '../canonical-query/workspace-canvas';
 import {
   applyCanvasNodeMove,
   applyCanvasNodeReparent,
@@ -248,14 +248,14 @@ async function applyOperation(input: {
     }
 
     case 'canvas.node.move': {
-      const documentId = batch.documentRef;
-      if (!documentId) {
-        throw cliError('INVALID_ARGUMENT', 'canvas.node.move requires documentRef.', {
+      const canvasId = batch.canvasRef;
+      if (!canvasId) {
+        throw cliError('INVALID_ARGUMENT', 'canvas.node.move requires canvasRef.', {
           details: { op: operation.op },
         });
       }
 
-      const current = await getCanvasNode(context, documentId, operation.nodeId);
+      const current = await getCanvasNode(context, canvasId, operation.nodeId);
       const next = applyCanvasNodeMove(current, operation.patch);
       if (apply) {
         await persistCanvasNode(context, next);
@@ -265,14 +265,14 @@ async function applyOperation(input: {
     }
 
     case 'canvas.node.reparent': {
-      const documentId = batch.documentRef;
-      if (!documentId) {
-        throw cliError('INVALID_ARGUMENT', 'canvas.node.reparent requires documentRef.', {
+      const canvasId = batch.canvasRef;
+      if (!canvasId) {
+        throw cliError('INVALID_ARGUMENT', 'canvas.node.reparent requires canvasRef.', {
           details: { op: operation.op },
         });
       }
 
-      const current = await getCanvasNode(context, documentId, operation.nodeId);
+      const current = await getCanvasNode(context, canvasId, operation.nodeId);
       const next = applyCanvasNodeReparent(current, operation.parentNodeId);
       if (apply) {
         await persistCanvasNode(context, next);
@@ -294,24 +294,24 @@ export async function executeMutationBatch(input: {
   const { context, batch, dryRun = false } = input;
   ensureOperations(batch);
 
-  const currentRevision = batch.documentRef
-    ? await getCurrentDocumentRevision(context, batch.documentRef)
+  const currentRevision = batch.canvasRef
+    ? await getCurrentCanvasRevision(context, batch.canvasRef)
     : 0;
 
   if (
-    batch.documentRef
-    && batch.preconditions?.documentRevision !== undefined
-    && batch.preconditions.documentRevision !== currentRevision
+    batch.canvasRef
+    && batch.preconditions?.canvasRevision !== undefined
+    && batch.preconditions.canvasRevision !== currentRevision
   ) {
     throw cliError(
       'DOCUMENT_REVISION_CONFLICT',
-      `expected revision ${batch.preconditions.documentRevision} but current revision is ${currentRevision}`,
+      `expected revision ${batch.preconditions.canvasRevision} but current revision is ${currentRevision}`,
       {
         retryable: true,
         details: {
-          expected: batch.preconditions.documentRevision,
+          expected: batch.preconditions.canvasRevision,
           actual: currentRevision,
-          documentId: batch.documentRef,
+          canvasId: batch.canvasRef,
         },
       },
     );
@@ -328,18 +328,18 @@ export async function executeMutationBatch(input: {
     });
   }
 
-  const nextRevision = batch.documentRef ? currentRevision + 1 : null;
-  if (!dryRun && batch.documentRef) {
+  const nextRevision = batch.canvasRef ? currentRevision + 1 : null;
+  if (!dryRun && batch.canvasRef) {
     const actor = resolveActor(batch);
-    const revision: DocumentRevisionRecord = {
+    const revision: CanvasRevisionRecord = {
       id: randomUUID(),
-      documentId: batch.documentRef,
+      canvasId: batch.canvasRef,
       revisionNo: nextRevision!,
       authorKind: actor.kind,
       authorId: actor.id,
       mutationBatch: batch as unknown as Record<string, unknown>,
     };
-    const appended = await context.repository.appendDocumentRevision(revision);
+    const appended = await context.repository.appendCanvasRevision(revision);
     if (!appended.ok) {
       throw persistenceFailureToCliError(appended);
     }
@@ -347,8 +347,8 @@ export async function executeMutationBatch(input: {
 
   return {
     mutationId: randomUUID(),
-    documentRevisionBefore: batch.documentRef ? currentRevision : null,
-    documentRevisionAfter: batch.documentRef ? nextRevision : null,
+    canvasRevisionBefore: batch.canvasRef ? currentRevision : null,
+    canvasRevisionAfter: batch.canvasRef ? nextRevision : null,
     changed,
     warnings: [],
     dryRun,

@@ -32,7 +32,7 @@ export interface ObjectRelationRecord {
 
 export interface CanvasNodeRecord {
   id: string;
-  documentId: string;
+  canvasId: string;
   surfaceId: string;
   nodeKind: CanvasNodeKind;
   nodeType?: string | null;
@@ -50,7 +50,7 @@ export interface CanvasNodeRecord {
 
 export interface CanvasBindingRecord {
   id: string;
-  documentId: string;
+  canvasId: string;
   nodeId: string;
   bindingKind: CanvasBindingKind;
   sourceRef: Record<string, unknown>;
@@ -59,9 +59,9 @@ export interface CanvasBindingRecord {
   updatedAt?: Date;
 }
 
-export interface DocumentRevisionRecord {
+export interface CanvasRevisionRecord {
   id: string;
-  documentId: string;
+  canvasId: string;
   revisionNo: number;
   authorKind: 'user' | 'agent' | 'system';
   authorId: string;
@@ -113,7 +113,7 @@ export interface PluginPermissionRecord {
 
 export interface PluginInstanceRecord {
   id: string;
-  documentId: string;
+  canvasId: string;
   surfaceId: string;
   pluginExportId: string;
   pluginVersionId: string;
