@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'bun:test';
-import {
-  parseDesktopDevFlags,
-  resolveDesktopOutDir,
-} from './desktop-dev';
+import { resolveDesktopOutDir } from './build';
+import { parseDesktopDevFlags } from './dev';
 
-describe('desktop-dev helpers', () => {
+describe('desktop dev helpers', () => {
   it('parses a positional target directory', () => {
     expect(parseDesktopDevFlags(['./workspace'])).toEqual({
+      devtools: false,
       headless: false,
       targetDir: './workspace',
     });
   });
 
-  it('parses headless mode without losing the target directory', () => {
-    expect(parseDesktopDevFlags(['--headless', './workspace'])).toEqual({
+  it('parses devtools and headless flags together', () => {
+    expect(parseDesktopDevFlags(['--devtools', '--headless', './workspace'])).toEqual({
+      devtools: true,
       headless: true,
       targetDir: './workspace',
     });

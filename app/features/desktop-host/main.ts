@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { watch } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   assertAbsolutePath,
@@ -30,6 +31,15 @@ function resolvePreloadPath(): string {
   return process.env.MAGAM_DESKTOP_PRELOAD_PATH || resolve(__dirname, 'preload.js');
 }
 
+function resolveReloadTokenPath(): string | null {
+  const tokenPath = process.env.MAGAM_DESKTOP_RELOAD_TOKEN_PATH;
+  return tokenPath && tokenPath.trim().length > 0 ? tokenPath : null;
+}
+
+function shouldEnableDevTools(): boolean {
+  return process.env.MAGAM_DESKTOP_DEVTOOLS === '1';
+}
+
 async function main(): Promise<void> {
   const repoRoot = resolveRepoRoot();
   const headless = process.env.MAGAM_DESKTOP_HEADLESS === '1';
@@ -44,6 +54,7 @@ async function main(): Promise<void> {
   let mainWindow: BrowserWindow | null = null;
   let isQuitting = false;
   let headlessTimeout: ReturnType<typeof setTimeout> | null = null;
+  let reloadWatcher: ReturnType<typeof watch> | null = null;
 
   const pushCurrentSessionEvents = () => {
     const session = orchestrator.getSession();
@@ -96,13 +107,52 @@ async function main(): Promise<void> {
       if (!headless) {
         mainWindow?.show();
       }
+      if (shouldEnableDevTools()) {
+        mainWindow?.webContents.openDevTools({ mode: 'detach' });
+      }
     });
-    mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      const isDevToolsShortcut = (
+        input.type === 'keyDown'
+        && (
+          input.key === 'F12'
+          || (
+            input.key.toLowerCase() === 'i'
+            && ((input.control && input.shift) || (input.meta && input.alt))
+          )
+        )
+      );
+      const isReloadShortcut = (
+        input.type === 'keyDown'
+        && (
+          input.key === 'F5'
+          || (
+            input.key.toLowerCase() === 'r'
+            && ((input.control && input.shift) || (input.meta && input.shift))
+          )
+        )
+      );
+
+      if (isDevToolsShortcut) {
+        event.preventDefault();
+        if (mainWindow?.webContents.isDevToolsOpened()) {
+          mainWindow.webContents.closeDevTools();
+        } else {
+          mainWindow?.webContents.openDevTools({ mode: 'detach' });
+        }
+      }
+
+      if (isReloadShortcut) {
+        event.preventDefault();
+        mainWindow?.webContents.reloadIgnoringCache();
+      }
+    });
+    mainWindow.webContents.on('console-message', (event) => {
       logger.info('Renderer console', {
-        level,
-        line,
-        message,
-        sourceId,
+        level: event.level,
+        line: event.lineNumber,
+        message: event.message,
+        sourceId: event.sourceId,
       });
     });
     mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
@@ -121,6 +171,17 @@ async function main(): Promise<void> {
 
     await mainWindow.loadFile(resolveHtmlPath());
     pushCurrentSessionEvents();
+
+    const reloadTokenPath = resolveReloadTokenPath();
+    if (reloadTokenPath) {
+      reloadWatcher = watch(reloadTokenPath, { persistent: false }, () => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          return;
+        }
+        logger.info('Reloading renderer after desktop asset rebuild');
+        mainWindow.webContents.reloadIgnoringCache();
+      });
+    }
   };
 
   const shutdown = async (exitCode = 0) => {
@@ -133,6 +194,10 @@ async function main(): Promise<void> {
     if (headlessTimeout) {
       clearTimeout(headlessTimeout);
       headlessTimeout = null;
+    }
+    if (reloadWatcher) {
+      reloadWatcher.close();
+      reloadWatcher = null;
     }
     await orchestrator.stop();
     app.exit(exitCode);
