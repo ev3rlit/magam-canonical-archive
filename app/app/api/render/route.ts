@@ -11,9 +11,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    if (!isRecord(body) || typeof body.filePath !== 'string' || body.filePath.trim().length === 0) {
+    const requestedFilePath = isRecord(body) && typeof body.filePath === 'string'
+      ? body.filePath.trim()
+      : '';
+    const requestedDocumentId = isRecord(body) && typeof body.documentId === 'string'
+      ? body.documentId.trim()
+      : '';
+    if (!isRecord(body) || (!requestedFilePath && !requestedDocumentId)) {
       return Response.json(
-        { error: 'filePath is required' },
+        { error: 'filePath or documentId is required' },
         { status: 400 },
       );
     }
@@ -32,7 +38,7 @@ export async function POST(request: Request) {
 
     const payload = {
       ...body,
-      filePath: body.filePath.trim(),
+      ...(requestedFilePath ? { filePath: requestedFilePath } : {}),
       ...(typeof body.documentId === 'string' && body.documentId.trim().length > 0
         ? { documentId: body.documentId.trim() }
         : {}),

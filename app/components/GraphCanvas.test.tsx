@@ -40,6 +40,7 @@ import {
   buildSelectionBoundsAnchor,
   shouldHandleRuntimePaneCreate,
 } from './GraphCanvas';
+import { resolveViewportToRestore } from './GraphCanvas.viewport';
 
 function resolveProfileFamily(canonical: CanonicalObject): 'mindmap-member' | 'canvas-absolute' {
   return deriveCapabilityProfile(canonical).allowedCommands.includes('node.reparent')
@@ -175,6 +176,20 @@ describe('GraphCanvas auto relayout policy', () => {
         attemptCounts: new Map([['map-a', AUTO_RELAYOUT_MAX_ATTEMPTS]]),
       }),
     ).toBe(true);
+  });
+});
+
+describe('GraphCanvas canonical document identity regressions', () => {
+  it('treats compatibility file-path changes for the same canonical document as the same viewport session', () => {
+    expect(resolveViewportToRestore({
+      hasRenderedGraph: true,
+      previousDocumentId: 'doc-1',
+      currentDocumentId: 'doc-1',
+      previousFile: 'docs/alpha.graph.tsx',
+      currentFile: 'documents/doc-1.graph.tsx',
+      currentViewport: { x: 90, y: -32, zoom: 1.2 },
+      savedViewport: { x: 0, y: 0, zoom: 0.75 },
+    })).toEqual({ x: 90, y: -32, zoom: 1.2 });
   });
 });
 

@@ -8,6 +8,7 @@ import { execute } from '../core/executor';
 import { ChatHandler } from '../chat/handler';
 import {
   createCanonicalDocument,
+  getCanonicalDocument,
   listCanonicalDocuments,
   type CanonicalDocumentShellRecord,
 } from '../../../shared/src/lib/canonical-document-shell';
@@ -646,10 +647,11 @@ async function handleAppStatePreferencesSet(
 
 async function handleRender(req: http.IncomingMessage, res: http.ServerResponse, targetDir: string) {
   const body = await parseBody(req);
+  const requestedDocumentId = typeof body?.documentId === 'string' ? body.documentId.trim() : '';
   const requestedFilePath = typeof body?.filePath === 'string' ? body.filePath.trim() : '';
-  if (!requestedFilePath) {
+  if (!requestedDocumentId && !requestedFilePath) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Missing filePath in body', type: 'VALIDATION_ERROR' }));
+    res.end(JSON.stringify({ error: 'Missing filePath or documentId in body', type: 'VALIDATION_ERROR' }));
     return;
   }
 
@@ -665,7 +667,33 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
   }
 
   const requestTargetDir = rawRootPath ? path.resolve(rawRootPath) : targetDir;
-  const resolvedRequest = resolveWorkspaceFilePath(requestTargetDir, requestedFilePath);
+  let resolvedWorkspacePath = requestedFilePath;
+  let resolvedDocumentId = requestedDocumentId || null;
+
+  if (requestedDocumentId) {
+    try {
+      const canonicalDocument = await getCanonicalDocument({
+        targetDir: requestTargetDir,
+        documentId: requestedDocumentId,
+      });
+      resolvedDocumentId = canonicalDocument.documentId;
+      resolvedWorkspacePath = canonicalDocument.filePath ?? `documents/${canonicalDocument.documentId}.graph.tsx`;
+      const materializedAbsolutePath = path.resolve(requestTargetDir, resolvedWorkspacePath);
+      if (!fs.existsSync(materializedAbsolutePath)) {
+        fs.mkdirSync(path.dirname(materializedAbsolutePath), { recursive: true });
+        fs.writeFileSync(materializedAbsolutePath, createEmptyCanvasDocumentSource(), 'utf-8');
+      }
+    } catch (error) {
+      if (isCanonicalCliError(error) && error.code === 'DOCUMENT_NOT_FOUND') {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: error.message, type: 'FILE_NOT_FOUND' }));
+        return;
+      }
+      throw error;
+    }
+  }
+
+  const resolvedRequest = resolveWorkspaceFilePath(requestTargetDir, resolvedWorkspacePath);
   const absolutePath = resolvedRequest.absolutePath;
   if (!fs.existsSync(absolutePath)) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -692,9 +720,7 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
       graph: pipelineResult.graph,
       sourceVersion: pipelineResult.sourceVersion,
       sourceVersions: pipelineResult.sourceVersions,
-      ...(typeof body?.documentId === 'string' && body.documentId.trim().length > 0
-        ? { documentId: body.documentId.trim() }
-        : {}),
+      ...(resolvedDocumentId ? { documentId: resolvedDocumentId } : {}),
     }));
   } catch (error: any) {
     console.error('Render Error:', error);

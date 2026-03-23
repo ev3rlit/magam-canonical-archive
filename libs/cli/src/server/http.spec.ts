@@ -511,7 +511,7 @@ describe('HTTP Render Server', () => {
 
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
-        body: JSON.stringify({ filePath: 'exists.tsx', documentId: 'doc-1' }),
+        body: JSON.stringify({ filePath: 'exists.tsx' }),
       });
       const body = await response.json();
 
@@ -522,10 +522,39 @@ describe('HTTP Render Server', () => {
       expect(body.sourceVersions).toEqual({
         'exists.tsx': body.sourceVersion,
       });
-      expect(body.documentId).toBe('doc-1');
       // expect valid args
       expect(mockTranspileWithMetadata).toHaveBeenCalledWith(expect.stringContaining('exists.tsx'));
       expect(mockExecute).toHaveBeenCalledWith('transpiled code');
+    });
+
+    it('should render a canonical document by documentId even when no filePath is provided', async () => {
+      const created = await fetch(`${baseUrl}/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rootPath: targetDir }),
+      }).then((response) => response.json());
+
+      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
+        String(candidatePath).endsWith(`${created.documentId}.graph.tsx`)
+      ));
+      mockTranspileWithMetadata.mockResolvedValue({
+        code: 'transpiled code',
+        inputs: [`${targetDir}/${created.filePath}`],
+      });
+      mockExecute.mockResolvedValue({ isOk: () => true, value: {} } as any);
+
+      const response = await fetch(`${baseUrl}/render`, {
+        method: 'POST',
+        body: JSON.stringify({ documentId: created.documentId, rootPath: targetDir }),
+      });
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.graph).toEqual({});
+      expect(body.documentId).toBe(created.documentId);
+      expect(mockTranspileWithMetadata).toHaveBeenCalledWith(
+        `${targetDir}/${created.filePath}`,
+      );
     });
 
     it('should normalize duplicated workspace prefixes in render requests', async () => {
