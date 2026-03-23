@@ -3,8 +3,8 @@ import { spawn } from 'node:child_process';
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const DOCUMENT_EXTENSIONS = new Set(['.tsx']);
-const DEFAULT_DOCUMENT_SOURCE = [
+const COMPATIBILITY_DOCUMENT_EXTENSIONS = new Set(['.tsx']);
+const COMPATIBILITY_DOCUMENT_SOURCE = [
   "import { Canvas } from '@magam/core';",
   '',
   'export default function UntitledDocument() {',
@@ -149,7 +149,7 @@ async function readWorkspaceDocuments(rootPath: string): Promise<CompatibilityWo
         continue;
       }
 
-      if (!DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+      if (!COMPATIBILITY_DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
         continue;
       }
 
@@ -170,7 +170,7 @@ async function readWorkspaceDocuments(rootPath: string): Promise<CompatibilityWo
 }
 
 export function createCompatibilityDocumentSource(): string {
-  return DEFAULT_DOCUMENT_SOURCE;
+  return COMPATIBILITY_DOCUMENT_SOURCE;
 }
 
 export const createDefaultDocumentSource = createCompatibilityDocumentSource;

@@ -34,10 +34,6 @@ function createLazyClientComponent<Props extends object>(
   };
 }
 
-export const LazyChatPanel = createLazyClientComponent(
-  () => import('@/components/chat/ChatPanel').then((module) => module.ChatPanel),
-);
-
 export const LazySearchOverlay = createLazyClientComponent(
   () => import('@/components/ui/SearchOverlay').then((module) => module.SearchOverlay),
 );

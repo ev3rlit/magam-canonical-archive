@@ -1,11 +1,5 @@
 import {
-  ChatGroupCreateInput,
-  ChatGroupUpdateInput,
-  ChatSessionCreateInput,
-  ChatSessionQuery,
   CreateWorkspaceDocumentResult,
-  ChatSessionUpdateInput,
-  ChatStreamRequest,
   RendererRpcClient,
   WorkspaceDocumentCreateInput,
   WorkspaceFileBrowserActionInput,
@@ -85,24 +79,6 @@ function createDescriptor(): RpcAdapterDescriptor {
       }
     },
   };
-}
-
-function toSearchParams(query?: ChatSessionQuery | { limit?: number }): string {
-  const params = new URLSearchParams();
-  Object.entries(query ?? {}).forEach(([key, rawValue]) => {
-    const value = rawValue as string | number | null | undefined;
-    if (value === undefined || value === null) {
-      return;
-    }
-
-    if (typeof value === 'string' && value.length === 0) {
-      return;
-    }
-
-    params.set(key, String(value));
-  });
-  const serialized = params.toString();
-  return serialized ? `?${serialized}` : '';
 }
 
 export function createWebRpcAdapter(): RendererRpcClient {
@@ -213,66 +189,6 @@ export function createWebRpcAdapter(): RendererRpcClient {
         body: JSON.stringify({ filePath }),
         headers: createJsonHeaders(),
       }),
-    getChatProviders: () => requestJson('/api/chat/providers'),
-    sendChat: (request: ChatStreamRequest, options) =>
-      fetch('/api/chat/send', {
-        method: 'POST',
-        body: JSON.stringify(request),
-        headers: createJsonHeaders(),
-        signal: options?.signal,
-      }),
-    async stopChat(sessionId: string) {
-      await requestJson('/api/chat/stop', {
-        method: 'POST',
-        body: JSON.stringify({ sessionId }),
-        headers: createJsonHeaders(),
-      });
-    },
-    listChatSessions: (query?: ChatSessionQuery) =>
-      requestJson(`/api/chat/sessions${toSearchParams(query)}`),
-    createChatSession: (input: ChatSessionCreateInput) =>
-      requestJson('/api/chat/sessions', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        headers: createJsonHeaders(),
-      }),
-    getChatSession: (sessionId: string) =>
-      requestJson(`/api/chat/sessions/${encodeURIComponent(sessionId)}`),
-    getChatSessionMessages: (sessionId: string, query?: { limit?: number }) =>
-      requestJson(
-        `/api/chat/sessions/${encodeURIComponent(sessionId)}/messages${toSearchParams(query)}`,
-      ),
-    updateChatSession: (sessionId: string, patch: ChatSessionUpdateInput) =>
-      requestJson(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(patch),
-        headers: createJsonHeaders(),
-      }),
-    async deleteChatSession(sessionId: string) {
-      await requestJson(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
-        method: 'DELETE',
-      });
-    },
-    listChatGroups: () => requestJson('/api/chat/groups'),
-    async createChatGroup(input: ChatGroupCreateInput) {
-      await requestJson('/api/chat/groups', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        headers: createJsonHeaders(),
-      });
-    },
-    async updateChatGroup(groupId: string, patch: ChatGroupUpdateInput) {
-      await requestJson(`/api/chat/groups/${encodeURIComponent(groupId)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(patch),
-        headers: createJsonHeaders(),
-      });
-    },
-    async deleteChatGroup(groupId: string) {
-      await requestJson(`/api/chat/groups/${encodeURIComponent(groupId)}`, {
-        method: 'DELETE',
-      });
-    },
   };
 }
 

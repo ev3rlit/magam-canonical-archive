@@ -174,3 +174,9 @@ libs/shared/src/lib/canonical-persistence/*
 ## Related Decisions
 
 - ADR-0005: database-first canvas platform의 상위 방향을 정의한다.
+
+## Implementation Alignment (2026-03-23)
+
+- `libs/shared/src/lib/canonical-document-shell/service.ts`가 canonical persistence/query 위에서 document shell ownership을 추가로 고정한다.
+- renderer, web route, desktop HTTP backend는 더 이상 document list/create를 TSX file scan helper에 의존하지 않고 shared canonical document shell을 재사용한다.
+- `libs/shared/src/lib/workspace-shell.ts`의 TSX helpers는 compatibility 명명으로만 남겨 primary canonical ownership과 분리했다.

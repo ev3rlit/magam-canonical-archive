@@ -226,12 +226,13 @@ workspace/document probe, ensure, create, file-browser launch 로직은 web rout
 
 - `app/features/host/renderer/rpcClient.ts`가 workspace/document/file-browser capability까지 포함하는 canonical renderer-facing contract를 소유한다.
 - `app/features/host/rpc/webAdapter.ts`는 same-origin `/api/*` route handler를 logical RPC method로 매핑한다.
-- `app/features/host/rpc/desktopAdapter.ts`는 runtime-configured local backend(`/workspaces`, `/documents`, `/file-tree`, existing file/chat/render routes)를 logical RPC method로 매핑한다.
+- `app/features/host/rpc/desktopAdapter.ts`는 runtime-configured local backend(`/workspaces`, `/documents`, `/file-tree`, `/render`, file edit/sync routes)를 logical RPC method로 매핑한다.
 - `libs/shared/src/lib/workspace-shell.ts`가 web route handler와 desktop HTTP backend가 공유하는 workspace shell server logic을 소유한다.
 - `app/features/editor/pages/CanvasEditorPage.tsx`, `app/features/workspace/pages/WorkspaceDashboardPage.tsx`, `app/features/workspace/pages/WorkspaceDetailPage.tsx`는 workspace shell 호출을 `getHostRuntime().rpc`로 수행한다.
 - `app/utils/imageSource.ts`는 desktop image asset URL 구성 시 host runtime base URL resolver를 사용하고 renderer-level port fallback을 제거한다.
 - app-global workspace registry/session/recent-document/theme/font preference는 same logical RPC boundary 위에서 web/desktop transport parity를 유지한다.
 - desktop runtime config는 `appStateDbPath`를 포함하고, theme/font는 app-state를 canonical source로 사용하며 renderer `localStorage`는 bootstrap cache로만 남는다.
+- chat은 renderer-facing logical RPC inventory에서 제거되어, primary shell parity는 workspace/document/render/app-state capability만 검증한다.
 
 ## Related Decisions
 

@@ -22,12 +22,10 @@ import { Footer } from '@/components/ui/Footer';
 import { type QuickOpenCommand } from '@/components/ui/QuickOpenDialog';
 import { ErrorOverlay } from '@/components/ui/ErrorOverlay';
 import {
-  LazyChatPanel,
   LazyQuickOpenDialog,
   LazySearchOverlay,
   LazyStickerInspector,
 } from '@/components/editor/LazyPanels';
-import { useChatUiStore } from '@/store/chatUi';
 import { useGraphStore } from '@/store/graph';
 import {
   buildAbsoluteMoveCommand,
@@ -153,8 +151,6 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     rememberLastActiveDocumentForWorkspace,
     hydrateGlobalFontFamilyPreference,
   } = useGraphStore();
-  const isChatOpen = useChatUiStore((state) => state.isOpen);
-  const toggleChat = useChatUiStore((state) => state.toggleOpen);
   const [refreshKey, setRefreshKey] = useState(0);
   const [isQuickOpenOpen, setIsQuickOpenOpen] = useState(false);
 
@@ -1547,12 +1543,6 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
         return;
       }
 
-      if (key === 'j') {
-        event.preventDefault();
-        toggleChat();
-        return;
-      }
-
       if (key === 'k') {
         event.preventDefault();
         if (isSearchOpen) {
@@ -1572,7 +1562,6 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     isSearchOpen,
     openSearch,
     closeSearch,
-    toggleChat,
   ]);
 
   useEffect(() => {
@@ -1768,7 +1757,14 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
         onAddWorkspace={() => { void handleAddExistingWorkspace(); }}
         onCreateDocument={() => { void handleCreateDocument(); }}
         onOpenDocument={(path) => {
-            navigateToDocument(path);
+          const matchingDocument = workspaceDocuments.find((document) => document.absolutePath === path);
+          if (activeWorkspace && matchingDocument) {
+            navigateToWorkspaceDocument(activeWorkspace.rootPath, {
+              filePath: matchingDocument.relativePath,
+            });
+            return;
+          }
+          navigateToDocument(path);
         }}
         onCopyWorkspacePath={() => { void handleCopyWorkspacePath(); }}
         onRevealWorkspace={() => { void handleRevealWorkspace(); }}
@@ -1784,7 +1780,6 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
           onCreateDocument={() => { void handleCreateDocument(); }}
           workspaceLabel={activeWorkspace?.name ?? null}
         />
-        {isChatOpen && <LazyChatPanel />}
         {/* TabBar removed by user request */}
 
         <main className="flex-1 relative w-full h-full overflow-hidden">

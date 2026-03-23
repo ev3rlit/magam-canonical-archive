@@ -21,9 +21,6 @@ export const CORE_RPC_LOGICAL_METHODS = [
   'render.generate',
   'edit.apply',
   'sync.watch',
-  'chat.send',
-  'chat.stop',
-  'chat.sessions.list',
 ] as const;
 
 export type RpcLogicalMethod = (typeof CORE_RPC_LOGICAL_METHODS)[number];

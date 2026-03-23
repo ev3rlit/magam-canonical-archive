@@ -102,10 +102,10 @@
 
 ### Implementation for User Story 4
 
-- [ ] T022 [US4] Remove chat panel and shell entrypoints from renderer app flows in `app/features/editor/pages/CanvasEditorPage.tsx`, `app/features/host/renderer/RendererAppShell.tsx`, and `app/store/chatUi.ts`
-- [ ] T023 [P] [US4] Remove chat RPC surface from host adapters/contracts in `app/features/host/renderer/rpcClient.ts`, `app/features/host/contracts/rpcMethods.ts`, `app/features/host/rpc/webAdapter.ts`, and `app/features/host/rpc/desktopAdapter.ts`
-- [ ] T024 [P] [US4] Remove chat backend routes from desktop/web shell servers in `libs/cli/src/server/http.ts`, `app/app/api/chat`, and `app/features/desktop-host/backendLifecycle.ts`
-- [ ] T025 [P] [US4] Add chat scope-off regression coverage in `app/features/host/rpc/adapters.spec.ts`, `libs/cli/src/server/http.spec.ts`, and `app/features/host/renderer/createHostRuntime.spec.ts`
+- [x] T022 [US4] Remove chat panel and shell entrypoints from renderer app flows in `app/features/editor/pages/CanvasEditorPage.tsx`, `app/features/host/renderer/RendererAppShell.tsx`, and `app/store/chatUi.ts`
+- [x] T023 [P] [US4] Remove chat RPC surface from host adapters/contracts in `app/features/host/renderer/rpcClient.ts`, `app/features/host/contracts/rpcMethods.ts`, `app/features/host/rpc/webAdapter.ts`, and `app/features/host/rpc/desktopAdapter.ts`
+- [x] T024 [P] [US4] Remove chat backend routes from desktop/web shell servers in `libs/cli/src/server/http.ts`, `app/app/api/chat`, and `app/features/desktop-host/backendLifecycle.ts`
+- [x] T025 [P] [US4] Add chat scope-off regression coverage in `app/features/host/rpc/adapters.spec.ts`, `libs/cli/src/server/http.spec.ts`, and `app/features/host/renderer/createHostRuntime.spec.ts`
 
 **Checkpoint**: Core workspace/document runtime paths are independent of chat.
 
@@ -115,9 +115,9 @@
 
 **Purpose**: Finish docs, migration notes, and cleanup for cross-cutting behavior spanning TSX shell separation and chat scope-off.
 
-- [ ] T026 [P] Document canonical document shell ownership, TSX compatibility demotion, and chat scope-off in `docs/features/database-first-canvas-platform/tsx-shell-separation/README.md` and `docs/features/database-first-canvas-platform/tsx-shell-separation/IMPLEMENT_PLAN.md`
-- [ ] T027 [P] Add implementation alignment references to `docs/adr/ADR-0006-shared-canonical-contract-and-drizzle-split.md`, `docs/adr/ADR-0011-unified-renderer-rpc-boundary-for-web-and-desktop.md`, and `docs/features/database-first-canvas-platform/workspace-document-shell/README.md`
-- [ ] T028 Remove remaining primary-runtime `.tsx` canonical assumptions from `libs/shared/src/lib/workspace-shell.ts`, `app/features/editor/pages/CanvasEditorPage.tsx`, and `libs/cli/src/server/http.ts`
+- [x] T026 [P] Document canonical document shell ownership, TSX compatibility demotion, and chat scope-off in `docs/features/database-first-canvas-platform/tsx-shell-separation/README.md` and `docs/features/database-first-canvas-platform/tsx-shell-separation/IMPLEMENT_PLAN.md`
+- [x] T027 [P] Add implementation alignment references to `docs/adr/ADR-0006-shared-canonical-contract-and-drizzle-split.md`, `docs/adr/ADR-0011-unified-renderer-rpc-boundary-for-web-and-desktop.md`, and `docs/features/database-first-canvas-platform/workspace-document-shell/README.md`
+- [x] T028 Remove remaining primary-runtime `.tsx` canonical assumptions from `libs/shared/src/lib/workspace-shell.ts`, `app/features/editor/pages/CanvasEditorPage.tsx`, and `libs/cli/src/server/http.ts`
 
 ---
 

@@ -59,6 +59,8 @@ describe('getHostRuntime', () => {
     expect(runtime.mode).toBe('web-secondary');
     expect(runtime.runtimeConfig).toBeNull();
     expect(runtime.rpc.descriptor.hostMode).toBe('web-secondary');
+    expect(runtime.rpc.descriptor.methods).not.toContain('chat.send');
+    expect('sendChat' in runtime.rpc).toBe(false);
   });
 
   it('exposes the desktop runtime config including app-state DB path from the bridge', () => {
@@ -79,5 +81,7 @@ describe('getHostRuntime', () => {
       workspacePath: '/tmp/workspace',
     }));
     expect(runtime.rpc.descriptor.hostMode).toBe('desktop-primary');
+    expect(runtime.rpc.descriptor.methods).not.toContain('chat.send');
+    expect('sendChat' in runtime.rpc).toBe(false);
   });
 });

@@ -258,6 +258,12 @@ Reconnect / Remove
 1. switcher는 registered workspace 목록만 보여준다.
 2. 목록에서 하나를 선택하면 즉시 active workspace가 바뀐다.
 3. active workspace 변경 시 document list, current canvas context, recent document scope를 함께 전환한다.
+
+## 9. 구현 정렬 (2026-03-23)
+
+- workspace/document shell의 primary source는 canonical workspace-local DB이고, `.tsx` scan은 legacy compatibility tree에만 남는다.
+- sidebar document list와 새 문서 생성은 canonical document shell 결과(`documentId`, `workspaceId`, `latestRevision`, compatibility `filePath`)를 사용한다.
+- primary renderer shell은 chat을 더 이상 요구하지 않으며, workspace/document navigation은 chat UI/RPC/backend 없이도 완결된다.
 4. unavailable workspace는 목록에 남기되 구분된 상태로 표시한다.
 5. `New Workspace`와 `Add Existing Workspace`는 switcher 근처에 둔다.
 6. switcher는 최근 문서 목록보다 workspace identity를 우선 노출한다.
