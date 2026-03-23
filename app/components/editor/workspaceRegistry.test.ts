@@ -186,6 +186,32 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
     expect(rpc.setAppStatePreference).not.toHaveBeenCalled();
   });
 
+  it('coerces serialized app-state workspace dates before sorting and hydration', async () => {
+    const rpc = buildRpcMock({
+      listAppStateWorkspaces: vi.fn(async () => ([
+        {
+          id: 'ws-1',
+          rootPath: '/tmp/ws-1',
+          displayName: 'Workspace 1',
+          status: 'ok',
+          isPinned: false,
+          lastOpenedAt: '2026-03-20T00:00:00.000Z' as unknown as Date,
+          lastSeenAt: '2026-03-21T00:00:00.000Z' as unknown as Date,
+        },
+      ] satisfies AppWorkspaceRecord[])),
+    });
+
+    const result = await hydrateWorkspaceRegistryFromAppState(rpc);
+
+    expect(result.workspaces).toEqual([
+      expect.objectContaining({
+        id: 'ws-1',
+        lastOpenedAt: Date.parse('2026-03-20T00:00:00.000Z'),
+        lastModifiedAt: Date.parse('2026-03-21T00:00:00.000Z'),
+      }),
+    ]);
+  });
+
   it('imports legacy localStorage state into app-state once when no app-state workspaces exist yet', async () => {
     const legacyWorkspaces = [
       buildWorkspace('ws-1', {

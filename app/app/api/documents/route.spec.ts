@@ -38,6 +38,8 @@ describe('documents route', () => {
     expect(response.status).toBe(200);
     expect(body.code).toBe('DOC_200_LISTED');
     expect(body.rootPath).toBe(root);
+    expect(body.health.state).toBe('ok');
+    expect(body.health.documentCount).toBe(2);
     expect(body.documentCount).toBe(2);
     expect(body.documents.map((document: { filePath: string }) => document.filePath).sort()).toEqual([
       'docs/alpha.graph.tsx',

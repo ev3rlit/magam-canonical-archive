@@ -265,7 +265,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       ]);
       const sidebarDocuments = buildSidebarDocuments(workspace.rootPath, data.documents);
       const absoluteFiles = sidebarDocuments.map((document) => document.absolutePath);
-      const resumeTarget = lastActiveDocumentsByWorkspaceId[workspace.id];
+      const resumeTarget = useGraphStore.getState().lastActiveDocumentsByWorkspaceId[workspace.id];
       const initialDocument = (
         typeof resumeTarget === 'string'
         && absoluteFiles.includes(resumeTarget)
@@ -321,12 +321,20 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
         details: error,
       });
     }
-  }, [hostRpc, lastActiveDocumentsByWorkspaceId, setFileTree, setFiles, setGraphError, setWorkspaceDocuments, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
+  }, [hostRpc, setFileTree, setFiles, setGraphError, setWorkspaceDocuments, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
 
   const dependencyFiles = useMemo(
     () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentFile),
     [currentFile, sourceVersions],
   );
+
+  const handleWorkspaceFilesChange = useCallback(() => {
+    if (!activeWorkspace) {
+      return;
+    }
+
+    void loadActiveWorkspaceDocuments(activeWorkspace);
+  }, [activeWorkspace, loadActiveWorkspaceDocuments]);
 
   // File sync with reload callback for file list changes
   const {
@@ -341,9 +349,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     currentFile,
     activeWorkspace?.rootPath ?? workspaceRootPath,
     handleFileChange,
-    activeWorkspace ? () => {
-      void loadActiveWorkspaceDocuments(activeWorkspace);
-    } : undefined,
+    handleWorkspaceFilesChange,
     dependencyFiles,
   );
 

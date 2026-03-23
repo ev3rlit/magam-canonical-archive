@@ -110,6 +110,12 @@ export async function GET(request: Request) {
       rootPath: workspace.rootPath,
       root: workspace.rootPath,
       workspaceName: workspace.workspaceName,
+      name: workspace.workspaceName,
+      health: {
+        state: workspace.health.status,
+        message: workspace.health.message,
+        documentCount: documents.length,
+      },
       documentCount: documents.length,
       documents: documents.map(toRouteDocumentSummary),
       lastModifiedAt: documents.reduce<number | null>((latest, document) => {

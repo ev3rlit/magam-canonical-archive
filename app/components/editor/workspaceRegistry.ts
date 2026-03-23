@@ -153,6 +153,21 @@ export function registeredWorkspaceToAppStateWorkspaceInput(
   };
 }
 
+function toEpochMillis(value: Date | string | number | null | undefined): number | null {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isNaN(time) ? null : time;
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    const time = parsed.getTime();
+    return Number.isNaN(time) ? null : time;
+  }
+
+  return null;
+}
+
 export function appStateWorkspaceToRegisteredWorkspace(
   workspace: AppWorkspaceRecord,
 ): RegisteredWorkspace {
@@ -162,8 +177,8 @@ export function appStateWorkspaceToRegisteredWorkspace(
     rootPath: workspace.rootPath,
     status: workspace.status,
     documentCount: 0,
-    lastModifiedAt: workspace.lastSeenAt?.getTime() ?? null,
-    lastOpenedAt: workspace.lastOpenedAt?.getTime() ?? 0,
+    lastModifiedAt: toEpochMillis(workspace.lastSeenAt),
+    lastOpenedAt: toEpochMillis(workspace.lastOpenedAt) ?? 0,
   };
 }
 
