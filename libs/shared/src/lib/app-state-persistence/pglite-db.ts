@@ -65,6 +65,14 @@ async function applySqlMigrationsWithoutJournal(
       continue;
     }
 
+    if (await shouldBackfillLegacyMigrationRecord(client, fileName)) {
+      await client.query(
+        'insert into magam_app_state_migrations (migration_name) values ($1)',
+        [fileName],
+      );
+      continue;
+    }
+
     const sql = readFileSync(join(migrationsFolder, fileName), 'utf8');
     const statements = sql
       .split('--> statement-breakpoint')
@@ -80,6 +88,30 @@ async function applySqlMigrationsWithoutJournal(
       [fileName],
     );
   }
+}
+
+async function shouldBackfillLegacyMigrationRecord(
+  client: PGlite,
+  fileName: string,
+): Promise<boolean> {
+  if (fileName !== '0000_app_global_state.sql') {
+    return false;
+  }
+
+  const existingTables = await client.query(`
+    select tablename
+    from pg_tables
+    where schemaname = 'public'
+      and tablename in (
+        'app_workspaces',
+        'app_workspace_session',
+        'app_recent_documents',
+        'app_preferences'
+      )
+    order by tablename
+  `);
+
+  return existingTables.rows.length === 4;
 }
 
 export async function createAppStatePgliteDb(
