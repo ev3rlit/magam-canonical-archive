@@ -11,7 +11,6 @@ function createHostInput(overrides: Partial<Parameters<typeof createGraphCanvasK
     deleteSelectedNodes: async () => ['shape-1'],
     duplicateSelectedNodes: async () => ['shape-2'],
     groupSelection: async () => ['shape-1', 'shape-2'],
-    showToast: () => undefined,
     getGraphState: () => ({
       nodes: [],
       edges: [],

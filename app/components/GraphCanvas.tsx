@@ -27,7 +27,7 @@ import { NavigationProvider } from '@/contexts/NavigationContext';
 import { ZoomProvider, useZoom } from '@/contexts/ZoomContext';
 import { BubbleProvider } from '@/contexts/BubbleContext';
 import { BubbleOverlay } from './BubbleOverlay';
-import { Loader2, Check, Minus, Plus, Maximize } from 'lucide-react';
+import { Loader2, Minus, Plus, Maximize } from 'lucide-react';
 import { useExportImage } from '@/hooks/useExportImage';
 import { useContextMenu } from '@/hooks/useContextMenu';
 import { ExportDialog } from './ExportDialog';
@@ -62,7 +62,6 @@ import {
   resolvePointerTypeFromEvent,
   shouldCommitDragStop,
   shouldHandlePaneCreate,
-  shouldSuppressDragStopErrorToast,
   type GraphCanvasCreateMode,
 } from './GraphCanvas.drag';
 import type { ActionRoutingSurfaceId } from '@/features/editing/actionRoutingBridge/types';
@@ -874,7 +873,6 @@ function GraphCanvasContent({
     defaultArea: 'full',
   });
   const [isGraphVisible, setIsGraphVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [dragFeedback, setDragFeedback] = useState<DragFeedbackState>(null);
   const [selectionShellGesture, setSelectionShellGesture] = useState<SelectionShellGestureState>(null);
   const [createGesture, setCreateGesture] = useState<GraphCanvasCreateGesture | null>(null);
@@ -905,13 +903,6 @@ function GraphCanvasContent({
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
   const currentZoomPercent = Math.round(zoom * 100);
-
-
-
-  const showToast = useCallback((message: string) => {
-    setToastMessage(message);
-    setTimeout(() => setToastMessage(null), 2000);
-  }, []);
   const createGestureBounds = useMemo(
     () => createGesture ? resolveCreateGestureScreenBounds(createGesture) : null,
     [createGesture],
@@ -980,11 +971,9 @@ function GraphCanvasContent({
     try {
       await Promise.resolve(onApplySelectionStyle(input));
     } catch (error) {
-      const mapped = mapEditErrorToToast?.(error);
-      showToast(mapped ?? '스타일 저장에 실패했습니다.');
       throw error;
     }
-  }, [mapEditErrorToToast, onApplySelectionStyle, showToast]);
+  }, [onApplySelectionStyle]);
 
   const handleSelectionContentCommit = useCallback(async (input: {
     nodeId: string;
@@ -996,13 +985,10 @@ function GraphCanvasContent({
 
     try {
       await Promise.resolve(onCommitSelectionContent(input));
-      showToast('텍스트를 업데이트했습니다.');
     } catch (error) {
-      const mapped = mapEditErrorToToast?.(error);
-      showToast(mapped ?? '텍스트 저장에 실패했습니다.');
       throw error;
     }
-  }, [mapEditErrorToToast, onCommitSelectionContent, showToast]);
+  }, [onCommitSelectionContent]);
 
   const runPendingUiAction = useCallback(async <T,>(input: {
     actionType: Parameters<typeof createPendingRequestIdForCommand>[0];
@@ -1087,9 +1073,6 @@ function GraphCanvasContent({
       const distance = resolveCreateGestureDistance(completedGesture);
 
       if (distance < DRAG_CREATE_THRESHOLD_PX) {
-        if (isDragRequiredCreateNodeType(session.nodeType)) {
-          showToast('선을 만들려면 드래그하세요.');
-        }
         return;
       }
 
@@ -1123,11 +1106,7 @@ function GraphCanvasContent({
         }))),
       }).then(() => {
         setEntrypointCreateMode(null);
-        showToast('새 오브젝트를 생성했습니다.');
-      }).catch((error) => {
-        const mapped = mapEditErrorToToast?.(error);
-        showToast(mapped ?? '오브젝트 생성에 실패했습니다.');
-      });
+      }).catch(() => {});
     };
 
     window.addEventListener('mousemove', handlePointerMove);
@@ -1138,12 +1117,10 @@ function GraphCanvasContent({
     };
   }, [
     createGesture,
-    mapEditErrorToToast,
     onCreateNode,
     runPendingUiAction,
     screenToFlowPosition,
     setEntrypointCreateMode,
-    showToast,
   ]);
 
   const persistActiveTabViewport = useCallback((_viewport: { x: number; y: number; zoom: number }) => {
@@ -1171,25 +1148,22 @@ function GraphCanvasContent({
     zoomIn({ duration: 300 });
     setTimeout(() => {
       persistActiveTabViewport(getViewport());
-      showToast(`Zoom: ${Math.round(getZoom() * 100)}%`);
     }, 350);
-  }, [getViewport, getZoom, persistActiveTabViewport, showToast, zoomIn]);
+  }, [getViewport, persistActiveTabViewport, zoomIn]);
 
   const handleZoomOut = useCallback(() => {
     zoomOut({ duration: 300 });
     setTimeout(() => {
       persistActiveTabViewport(getViewport());
-      showToast(`Zoom: ${Math.round(getZoom() * 100)}%`);
     }, 350);
-  }, [getViewport, getZoom, persistActiveTabViewport, showToast, zoomOut]);
+  }, [getViewport, persistActiveTabViewport, zoomOut]);
 
   const handleFitView = useCallback(() => {
     fitView({ duration: 300 });
     setTimeout(() => {
       persistActiveTabViewport(getViewport());
-      showToast('Fit to view');
     }, 350);
-  }, [fitView, getViewport, persistActiveTabViewport, showToast]);
+  }, [fitView, getViewport, persistActiveTabViewport]);
 
   const contextMenuActions = useMemo(() => createGraphCanvasContextMenuActions({
     copyImageToClipboard,
@@ -1434,18 +1408,13 @@ function GraphCanvasContent({
           }))),
         });
         setEntrypointCreateMode(null);
-        showToast('새 오브젝트를 생성했습니다.');
-      } catch (error) {
-        const mapped = mapEditErrorToToast?.(error);
-        showToast(mapped ?? '오브젝트 생성에 실패했습니다.');
-      }
+      } catch {}
     },
     [
       applyCanvasDismissal,
       createMode,
       hasPendingUiActions,
       interactionMode,
-      mapEditErrorToToast,
       onCreateNode,
       runPendingUiAction,
       screenToFlowPosition,
@@ -1839,25 +1808,6 @@ function GraphCanvasContent({
               : n
           )));
         }
-
-        if (shouldSuppressDragStopErrorToast(error)) {
-          return;
-        }
-
-        const mapped = mapEditErrorToToast?.(error);
-        if (mapped) {
-          showToast(mapped);
-          return;
-        }
-
-        const code = (error as { code?: number })?.code;
-        if (code === 40901) {
-          showToast('외부 수정 감지: 최신 상태로 다시 동기화합니다.');
-        } else if (code === 40903) {
-          showToast('ID 중복 감지: 중복 식별자를 먼저 정리해주세요.');
-        } else {
-          showToast('편집 실패: 이전 상태로 롤백되었습니다.');
-        }
       } finally {
         if (isLatestDragAttempt()) {
           dragOriginPositions.current.delete(node.id);
@@ -1865,7 +1815,7 @@ function GraphCanvasContent({
         }
       }
     },
-    [getNodes, hasPendingUiActions, mapEditErrorToToast, onNodeDragStop, runPendingUiAction, setNodes],
+    [getNodes, hasPendingUiActions, onNodeDragStop, runPendingUiAction, setNodes],
   );
 
   const beginSelectionResizeGesture = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
@@ -1971,10 +1921,8 @@ function GraphCanvasContent({
           patch: gesture.lastPatch,
           patchKey: gesture.kind === 'rotate' ? 'rotation' : 'width',
         }));
-      } catch (error) {
+      } catch {
         restoreSelectionNodePreview(gesture.nodeId, gesture.originalData);
-        const mapped = mapEditErrorToToast?.(error);
-        showToast(mapped ?? '직접 조작 변경을 저장하지 못했습니다.');
       }
     };
 
@@ -1997,11 +1945,9 @@ function GraphCanvasContent({
     };
   }, [
     clearSelectionShellGesture,
-    mapEditErrorToToast,
     onApplySelectionStyle,
     restoreSelectionNodePreview,
     selectionShellGesture,
-    showToast,
   ]);
 
   const selectionFloatingMenuContribution = useMemo(() => createGraphCanvasSelectionFloatingMenuContribution({
@@ -2153,7 +2099,6 @@ function GraphCanvasContent({
         })));
         return ids;
       },
-      showToast,
       getGraphState: () => {
         const state = useGraphStore.getState();
         return {
@@ -2237,7 +2182,6 @@ function GraphCanvasContent({
     onRedoEditStep,
     onUndoEditStep,
     selectNodesByType,
-    showToast,
     startSelectionBodyEdit,
     syncControlledSelection,
     onUngroupSelection,
@@ -2458,16 +2402,6 @@ function GraphCanvasContent({
               {dragFeedback.kind === 'reparent-ready'
                 ? `${dragFeedback.parentLabel} 아래로 놓으면 부모가 바뀝니다.`
                 : '다른 MindMap 노드 위에 놓으면 부모를 바꿀 수 있습니다.'}
-            </div>
-          </div>
-        )}
-
-        {/* Toast Notification */}
-        {toastMessage && (
-          <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-bottom-2">
-            <div className="flex items-center gap-2 rounded-full bg-card/92 px-4 py-2 text-sm font-medium text-foreground shadow-floating shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)] backdrop-blur-glass">
-              <Check className="w-4 h-4 text-success" />
-              {toastMessage}
             </div>
           </div>
         )}

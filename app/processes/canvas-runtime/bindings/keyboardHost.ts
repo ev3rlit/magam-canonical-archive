@@ -50,7 +50,6 @@ export interface GraphCanvasKeyboardHostInput {
   deleteSelectedNodes: () => Promise<string[]>;
   duplicateSelectedNodes: () => Promise<string[]>;
   groupSelection: () => Promise<string[]>;
-  showToast: (message: string) => void;
   getGraphState: () => GraphCanvasSnapshotState;
   setGraphState: (next: GraphCanvasSnapshotState) => void;
   mapEditErrorToToast?: (error: unknown) => string | null;
@@ -383,7 +382,7 @@ export function createGraphCanvasKeyboardHost(
       }
 
       if (result.feedback) {
-        input.showToast(resolveCanvasKeyboardFeedback(result.feedback).defaultMessage);
+        void resolveCanvasKeyboardFeedback(result.feedback);
       }
 
       return result;
