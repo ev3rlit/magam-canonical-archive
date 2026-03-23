@@ -34,7 +34,7 @@ export function resolveToolbarAnchor(viewport: OverlayViewport): OverlayAnchorDe
   return {
     type: 'viewport-fixed',
     x: viewport.width / 2,
-    y: viewport.height - 32,
+    y: 76,
   };
 }
 

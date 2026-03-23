@@ -15,7 +15,7 @@ export const OVERLAY_SLOT_DEFAULTS: Record<
   toolbar: {
     priority: 10,
     dismissible: false,
-    placement: 'bottom-center',
+    placement: 'top-center',
     estimatedSize: { width: 420, height: 64 },
   },
   'selection-floating-menu': {

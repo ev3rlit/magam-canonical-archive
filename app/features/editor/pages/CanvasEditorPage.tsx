@@ -11,13 +11,7 @@ import React, {
 import { RpcClientError, useFileSync } from '@/hooks/useFileSync';
 import { GraphCanvas } from '@/components/GraphCanvas';
 import type { GraphCanvasSelectionActionIntentInput } from '@/components/GraphCanvas';
-import {
-  Sidebar,
-  type SidebarCanvasEntry,
-  type SidebarWorkspaceEntry,
-} from '@/components/ui/Sidebar';
 import { Header } from '@/components/ui/Header';
-import { Footer } from '@/components/ui/Footer';
 
 import { type QuickOpenCommand } from '@/components/ui/QuickOpenDialog';
 import { ErrorOverlay } from '@/components/ui/ErrorOverlay';
@@ -69,14 +63,15 @@ import {
   resolveWorkspaceCanvasAbsolutePath,
   type RegisteredWorkspace,
   type WorkspaceProbeResponse,
+  type WorkspaceSidebarCanvas,
   updateWorkspaceFromProbe,
 } from '@/components/editor/workspaceRegistry';
-import {
-  copyTextWithDesktopBridge,
-  pickWorkspaceRootPath,
-} from '@/components/editor/desktopBridge';
 import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
-import { navigateToCanvas, navigateToWorkspaceCanvas } from '@/features/host/renderer/navigation';
+import {
+  navigateToDashboard,
+  navigateToWorkspaceCanvas,
+  navigateToWorkspaceDetail,
+} from '@/features/host/renderer/navigation';
 
 
 
@@ -155,9 +150,6 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
     hydrateWorkspaceRegistry,
     replaceRegisteredWorkspaces,
     upsertWorkspaceFromProbe,
-    reconnectWorkspaceFromProbe,
-    setActiveWorkspaceId: setGraphActiveWorkspaceId,
-    removeRegisteredWorkspace,
     setWorkspaceCanvases,
     registerWorkspaceCanvas,
     setWorkspacePathStatus,
@@ -169,13 +161,12 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
 
   const pendingSelectionNodeIdRef = useRef<string | null>(null);
   const pendingCreateEditRef = useRef<PendingCreateEdit | null>(null);
-  const [isWorkspaceLoading, setIsWorkspaceLoading] = useState(false);
 
   const activeWorkspace = useMemo(
     () => registeredWorkspaces.find((workspace) => workspace.id === activeWorkspaceId) ?? null,
     [activeWorkspaceId, registeredWorkspaces],
   );
-  const workspaceCanvases = useMemo<SidebarCanvasEntry[]>(
+  const workspaceCanvases = useMemo<WorkspaceSidebarCanvas[]>(
     () => (activeWorkspaceId ? workspaceCanvasesByWorkspaceId[activeWorkspaceId] ?? [] : []),
     [activeWorkspaceId, workspaceCanvasesByWorkspaceId],
   );
@@ -228,7 +219,6 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
   }) => upsertWorkspaceFromProbe(probe, options), [upsertWorkspaceFromProbe]);
 
   const bootstrapWorkspaceRegistry = useCallback(async () => {
-    setIsWorkspaceLoading(true);
     try {
       const { workspaces: storedWorkspaces } = await hydrateWorkspaceRegistry();
 
@@ -255,8 +245,6 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
         type: 'WORKSPACE_BOOTSTRAP_FAILED',
         details: error,
       });
-    } finally {
-      setIsWorkspaceLoading(false);
     }
   }, [hostRpc, hydrateWorkspaceRegistry, replaceRegisteredWorkspaces, setGraphError, upsertWorkspaceFromProbe]);
 
@@ -421,155 +409,6 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
     },
     [],
   );
-
-  const handleSelectWorkspace = useCallback((workspaceId: string) => {
-    void setGraphActiveWorkspaceId(workspaceId);
-  }, [setGraphActiveWorkspaceId]);
-
-  const handleCreateWorkspace = useCallback(async () => {
-    const rootPath = await pickWorkspaceRootPath({
-      title: '새 workspace 절대 경로',
-      defaultPath: activeWorkspace?.rootPath ?? '',
-    });
-    if (!rootPath) {
-      return false;
-    }
-
-    try {
-      const probe = await hostRpc.ensureWorkspace(rootPath);
-      await syncWorkspaceEntry(probe, { activate: true });
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '새 workspace를 만드는 데 실패했습니다.';
-      setGraphError({
-        message,
-        type: 'WORKSPACE_CREATE_FAILED',
-        details: error,
-      });
-      return false;
-    }
-  }, [activeWorkspace?.rootPath, hostRpc, setGraphError, syncWorkspaceEntry]);
-
-  const handleAddExistingWorkspace = useCallback(async () => {
-    const rootPath = await pickWorkspaceRootPath({
-      title: '기존 workspace 절대 경로',
-      defaultPath: activeWorkspace?.rootPath ?? '',
-    });
-    if (!rootPath) {
-      return false;
-    }
-
-    try {
-      const probe = await hostRpc.probeWorkspace(rootPath);
-      await syncWorkspaceEntry(probe, { activate: true });
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '기존 workspace를 등록하는 데 실패했습니다.';
-      setGraphError({
-        message,
-        type: 'WORKSPACE_ADD_FAILED',
-        details: error,
-      });
-      return false;
-    }
-  }, [activeWorkspace?.rootPath, hostRpc, setGraphError, syncWorkspaceEntry]);
-
-  const handleReconnectWorkspace = useCallback(async () => {
-    if (!activeWorkspace) {
-      return false;
-    }
-
-    const nextRootPath = await pickWorkspaceRootPath({
-      title: '새 workspace 절대 경로',
-      defaultPath: activeWorkspace.rootPath,
-    });
-    if (!nextRootPath) {
-      return false;
-    }
-
-    try {
-      const probe = await hostRpc.probeWorkspace(nextRootPath);
-      await reconnectWorkspaceFromProbe(activeWorkspace.id, probe);
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'workspace를 다시 연결하는 데 실패했습니다.';
-      setGraphError({
-        message,
-        type: 'WORKSPACE_RECONNECT_FAILED',
-        details: error,
-      });
-      return false;
-    }
-  }, [activeWorkspace, hostRpc, reconnectWorkspaceFromProbe, setGraphError]);
-
-  const handleRemoveWorkspace = useCallback(async () => {
-    if (!activeWorkspace) {
-      return false;
-    }
-
-    const shouldRemove = window.confirm(`"${activeWorkspace.name}" workspace를 제거할까요?`);
-    if (!shouldRemove) {
-      return false;
-    }
-
-    await removeRegisteredWorkspace(activeWorkspace.id);
-    return true;
-  }, [activeWorkspace, removeRegisteredWorkspace]);
-
-  const handleRevealWorkspace = useCallback(async () => {
-    if (!activeWorkspace) {
-      return false;
-    }
-
-    try {
-      await hostRpc.launchWorkspaceFileBrowser({
-        rootPath: activeWorkspace.rootPath,
-        action: 'open',
-      });
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'workspace 경로를 여는 데 실패했습니다.';
-      setGraphError({
-        message,
-        type: 'WORKSPACE_REVEAL_FAILED',
-        details: error,
-      });
-      return false;
-    }
-  }, [activeWorkspace, hostRpc, setGraphError]);
-
-  const handleCopyWorkspacePath = useCallback(async () => {
-    if (!activeWorkspace) {
-      return false;
-    }
-
-    try {
-      await copyTextWithDesktopBridge(activeWorkspace.rootPath);
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'workspace 경로를 복사하는 데 실패했습니다.';
-      setGraphError({
-        message,
-        type: 'WORKSPACE_COPY_PATH_FAILED',
-        details: error,
-      });
-      return false;
-    }
-  }, [activeWorkspace, setGraphError]);
-
-  const refreshActiveWorkspace = useCallback(async () => {
-    if (!activeWorkspace) {
-      return;
-    }
-
-    if (activeWorkspace.status !== 'ok') {
-      const probe = await hostRpc.probeWorkspace(activeWorkspace.rootPath);
-      await reconnectWorkspaceFromProbe(activeWorkspace.id, probe);
-      return;
-    }
-
-    await loadActiveWorkspaceCanvases(activeWorkspace);
-  }, [activeWorkspace, hostRpc, loadActiveWorkspaceCanvases, reconnectWorkspaceFromProbe]);
 
   const handleCreateCanvas = useCallback(async () => {
     if (!activeWorkspace) {
@@ -1553,6 +1392,29 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
     return [...baseCommands, ...presetCommands];
   }, [allWashiNodeIds.length, selectedWashiNodeIds.length, washiPresetCatalog]);
 
+  const handleBack = useCallback(() => {
+    if (activeWorkspace) {
+      navigateToWorkspaceDetail(activeWorkspace.id);
+      return;
+    }
+
+    navigateToDashboard();
+  }, [activeWorkspace]);
+
+  const handleMenu = useCallback(() => {
+    if (activeWorkspace) {
+      navigateToWorkspaceDetail(activeWorkspace.id);
+      return;
+    }
+
+    navigateToDashboard();
+  }, [activeWorkspace]);
+
+  const currentCanvasTitle = useMemo(() => (
+    activeWorkspaceCanvas?.title
+    ?? (currentFile ? currentFile.split('/').filter(Boolean).at(-1) ?? currentFile : null)
+  ), [activeWorkspaceCanvas?.title, currentFile]);
+
 
 
   useEffect(() => {
@@ -1778,39 +1640,11 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
-      <Sidebar
-        activeWorkspace={activeWorkspace as SidebarWorkspaceEntry | null}
-        workspaces={registeredWorkspaces as SidebarWorkspaceEntry[]}
-        canvases={workspaceCanvases}
-        isLoading={isWorkspaceLoading}
-        onRefresh={() => { void refreshActiveWorkspace(); }}
-        onSelectWorkspace={handleSelectWorkspace}
-        onCreateWorkspace={() => { void handleCreateWorkspace(); }}
-        onAddWorkspace={() => { void handleAddExistingWorkspace(); }}
-        onCreateCanvas={() => { void handleCreateCanvas(); }}
-        onOpenCanvas={(path) => {
-          const matchingCanvas = workspaceCanvases.find((canvas) => canvas.absolutePath === path);
-          if (activeWorkspace && matchingCanvas) {
-            navigateToWorkspaceCanvas(activeWorkspace.rootPath, {
-              filePath: matchingCanvas.relativePath,
-            });
-            return;
-          }
-          navigateToCanvas(path);
-        }}
-        onCopyWorkspacePath={() => { void handleCopyWorkspacePath(); }}
-        onRevealWorkspace={() => { void handleRevealWorkspace(); }}
-        onReconnectWorkspace={() => { void handleReconnectWorkspace(); }}
-        onRemoveWorkspace={handleRemoveWorkspace}
-        onOpenLegacyFile={(path) => {
-            navigateToCanvas(path);
-        }}
-      />
-
       <div className="flex flex-1 flex-col h-full overflow-hidden relative">
         <Header
-          onCreateCanvas={() => { void handleCreateCanvas(); }}
-          workspaceLabel={activeWorkspace?.name ?? null}
+          onBack={handleBack}
+          onMenu={handleMenu}
+          canvasTitle={currentCanvasTitle}
         />
         {/* TabBar removed by user request */}
 
@@ -1837,8 +1671,6 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
           />
           <LazyStickerInspector onApplyStylePatch={handleNodeStyleCommit} />
         </main>
-
-        <Footer />
 
         {isQuickOpenOpen && (
           <LazyQuickOpenDialog

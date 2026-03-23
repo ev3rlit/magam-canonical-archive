@@ -52,7 +52,7 @@ export function resolveInitialThemeState(input: {
   mode: ThemeMode;
   resolvedTheme: ResolvedTheme;
 } {
-  const mode = isThemeMode(input.storedMode) ? input.storedMode : 'system';
+  const mode = isThemeMode(input.storedMode) ? input.storedMode : 'light';
 
   return {
     mode,
@@ -76,7 +76,7 @@ export function getThemeBootstrapScript(): string {
       const rawMode = window.localStorage.getItem('${THEME_STORAGE_KEY}');
       const mode = rawMode === 'light' || rawMode === 'dark' || rawMode === 'system'
         ? rawMode
-        : 'system';
+        : 'light';
       const prefersDark = typeof window.matchMedia === 'function'
         && window.matchMedia('${THEME_MEDIA_QUERY}').matches;
       const resolvedTheme = mode === 'system'

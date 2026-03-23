@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useGraphStore } from '@/store/graph';
 import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
 import {
@@ -8,6 +8,7 @@ import {
   navigateToCanvas,
   navigateToWorkspaceCanvas,
 } from '@/features/host/renderer/navigation';
+import { buildSidebarCanvases } from '@/components/editor/workspaceRegistry';
 import { DashboardSidebar } from '../components/DashboardSidebar';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { CanvasCard } from '../components/CanvasCard';
@@ -19,12 +20,14 @@ import { ArrowLeft } from 'lucide-react';
 export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchTerm, setSearchTerm] = useState('');
+  const [isCanvasListLoading, setIsCanvasListLoading] = useState(false);
   const hostRpc = useMemo(() => getHostRuntime().rpc, []);
 
   const {
     registeredWorkspaces,
     workspaceCanvasesByWorkspaceId,
     setActiveWorkspaceId,
+    setWorkspaceCanvases,
     setError,
   } = useGraphStore();
 
@@ -41,6 +44,30 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
     () => (workspaceId ? workspaceCanvasesByWorkspaceId[workspaceId] ?? [] : []),
     [workspaceId, workspaceCanvasesByWorkspaceId],
   );
+
+  const loadWorkspaceCanvases = useCallback(async (
+    rootWorkspaceId: string,
+    rootPath: string,
+  ) => {
+    setIsCanvasListLoading(true);
+    try {
+      const data = await hostRpc.listWorkspaceCanvases(rootPath);
+      setWorkspaceCanvases(rootWorkspaceId, buildSidebarCanvases(rootPath, data.canvases));
+    } catch (error) {
+      console.error('[WorkspaceDetailPage] Failed to load canvases', {
+        workspaceId: rootWorkspaceId,
+        rootPath,
+        error,
+      });
+      setError({
+        message: '캔버스 목록을 불러오지 못했습니다.',
+        type: 'WORKSPACE_CANVASES_LOAD_FAILED',
+        details: error,
+      });
+    } finally {
+      setIsCanvasListLoading(false);
+    }
+  }, [hostRpc, setError, setWorkspaceCanvases]);
 
   const handleCanvasClick = (path: string) => {
     navigateToCanvas(path);
@@ -60,6 +87,29 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
     navigateToDashboard();
   };
 
+  useEffect(() => {
+    setSearchTerm('');
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!activeWorkspace) {
+      return;
+    }
+
+    if (activeWorkspace.status !== 'ok') {
+      setWorkspaceCanvases(activeWorkspace.id, []);
+      return;
+    }
+
+    void loadWorkspaceCanvases(activeWorkspace.id, activeWorkspace.rootPath);
+  }, [
+    activeWorkspace?.id,
+    activeWorkspace?.rootPath,
+    activeWorkspace?.status,
+    loadWorkspaceCanvases,
+    setWorkspaceCanvases,
+  ]);
+
   if (!activeWorkspace) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-surface text-on-surface">
@@ -71,10 +121,13 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
     );
   }
 
-  const filteredCanvases = workspaceCanvases.filter(doc => 
-    (doc.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
-    (doc.relativePath || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  const filteredCanvases = normalizedSearchTerm.length === 0
+    ? workspaceCanvases
+    : workspaceCanvases.filter((canvas) =>
+      (canvas.title || '').toLowerCase().includes(normalizedSearchTerm)
+      || (canvas.relativePath || '').toLowerCase().includes(normalizedSearchTerm),
+    );
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-surface text-on-surface font-inter">
@@ -100,28 +153,32 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
             onSearchChange={setSearchTerm}
           />
 
-          {filteredCanvases.length === 0 ? (
+          {isCanvasListLoading ? (
+            <div className="py-24 text-center">
+              <p className="text-on-surface-variant">캔버스 목록을 불러오는 중입니다.</p>
+            </div>
+          ) : filteredCanvases.length === 0 ? (
             <div className="py-24 text-center">
               <p className="text-on-surface-variant">
-                {workspaceCanvases.length === 0 
-                  ? "아직 생성된 캔버스가 없습니다." 
+                {workspaceCanvases.length === 0
+                  ? '아직 생성된 캔버스가 없습니다.'
                   : `"${searchTerm}" 검색 결과가 없습니다.`}
               </p>
             </div>
           ) : (
             <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6' : 'flex flex-col gap-2'}>
-              {filteredCanvases.map(doc => 
+              {filteredCanvases.map((canvas) =>
                 viewMode === 'grid' ? (
                   <CanvasCard
-                    key={doc.absolutePath}
-                    canvas={doc}
-                    onClick={() => handleCanvasClick(doc.absolutePath)}
+                    key={canvas.absolutePath}
+                    canvas={canvas}
+                    onClick={() => handleCanvasClick(canvas.absolutePath)}
                   />
                 ) : (
                   <CanvasListItem
-                    key={doc.absolutePath}
-                    canvas={doc}
-                    onClick={() => handleCanvasClick(doc.absolutePath)}
+                    key={canvas.absolutePath}
+                    canvas={canvas}
+                    onClick={() => handleCanvasClick(canvas.absolutePath)}
                   />
                 )
               )}

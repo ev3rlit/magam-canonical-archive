@@ -36,7 +36,7 @@ function getInitialClientState(): {
   resolvedTheme: ResolvedTheme;
 } {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return { mode: 'system', resolvedTheme: 'light' };
+    return { mode: 'light', resolvedTheme: 'light' };
   }
 
   const systemQuery = getSystemThemeQuery();

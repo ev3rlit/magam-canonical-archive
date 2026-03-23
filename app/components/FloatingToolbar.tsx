@@ -4,9 +4,6 @@ import React, { useEffect, useRef } from 'react';
 import {
   MousePointer2,
   Hand,
-  ZoomIn,
-  ZoomOut,
-  Maximize,
   Bookmark,
   Check,
   Plus,
@@ -49,9 +46,6 @@ interface FloatingToolbarProps {
   onInteractionModeChange: (mode: InteractionMode) => void;
   createMode: CanvasEntrypointCreateMode;
   onCreateModeChange: (mode: CanvasEntrypointCreateMode) => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onFitView: () => void;
   washiPresets?: WashiPresetOption[];
   washiPresetEnabled?: boolean;
   activeWashiPresetId?: string | null;
@@ -65,9 +59,6 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   onInteractionModeChange,
   createMode,
   onCreateModeChange,
-  onZoomIn,
-  onZoomOut,
-  onFitView,
   washiPresets = [],
   washiPresetEnabled = false,
   activeWashiPresetId = null,
@@ -185,7 +176,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   return (
     <ToolbarSurface
       className={cn(
-        positioning === 'canvas' ? 'absolute bottom-8 left-1/2 -translate-x-1/2 z-50' : 'relative',
+        positioning === 'canvas' ? 'absolute top-6 left-1/2 -translate-x-1/2 z-50' : 'relative',
         className,
       )}
     >
@@ -231,7 +222,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
         </PrimitiveToolbarButton>
 
         {isCreateMenuOpen && (
-          <Menu className="absolute bottom-12 left-1/2 w-56 -translate-x-1/2 overflow-hidden">
+          <Menu className="absolute left-1/2 top-12 w-56 -translate-x-1/2 overflow-hidden">
             <MenuLabel>
               Create on pane click
             </MenuLabel>
@@ -302,7 +293,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
             </PrimitiveToolbarButton>
 
             {isWashiPresetMenuOpen && (
-              <Menu className="absolute bottom-12 left-1/2 w-60 -translate-x-1/2 overflow-hidden">
+              <Menu className="absolute left-1/2 top-12 w-60 -translate-x-1/2 overflow-hidden">
                 <MenuLabel>
                   PresetPattern Catalog
                 </MenuLabel>
@@ -341,27 +332,6 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
           </div>
         </>
       ) : null}
-
-      <ToolbarDivider />
-
-      <PrimitiveToolbarButton
-        onClick={onZoomIn}
-        title="Zoom In (+)"
-      >
-        <ZoomIn className="w-4 h-4" />
-      </PrimitiveToolbarButton>
-      <PrimitiveToolbarButton
-        onClick={onZoomOut}
-        title="Zoom Out (-)"
-      >
-        <ZoomOut className="w-4 h-4" />
-      </PrimitiveToolbarButton>
-      <PrimitiveToolbarButton
-        onClick={onFitView}
-        title="Fit View (Space)"
-      >
-        <Maximize className="w-4 h-4" />
-      </PrimitiveToolbarButton>
 
       <ToolbarDivider />
 

@@ -142,13 +142,13 @@ describe('theme runtime helpers', () => {
     } as Pick<Storage, 'getItem'>)).toBeNull();
   });
 
-  it('defaults to system mode and resolves from system preference', () => {
+  it('defaults to light mode when no stored preference exists', () => {
     expect(resolveInitialThemeState({
       storedMode: undefined,
       systemPrefersDark: true,
     })).toEqual({
-      mode: 'system',
-      resolvedTheme: 'dark',
+      mode: 'light',
+      resolvedTheme: 'light',
     });
   });
 });

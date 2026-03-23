@@ -12,6 +12,21 @@ const createWorkspaceCanvasMock = mock(async (_input: { rootPath: string }) => (
   sourceVersion: 'sha256:doc-2',
   latestRevision: 1,
 }));
+const listWorkspaceCanvasesMock = mock(async (_rootPath: string) => ({
+  rootPath: '/tmp/ws-1',
+  workspaceName: 'Workspace 1',
+  health: {
+    state: 'ok' as const,
+  },
+  canvasCount: 1,
+  canvases: [{
+    canvasId: 'doc-1',
+    workspaceId: 'ws-1',
+    latestRevision: 3,
+    filePath: 'docs/alpha.graph.tsx',
+  }],
+  lastModifiedAt: Date.now(),
+}));
 const upsertAppStateWorkspaceMock = mock(async (input: Record<string, unknown>) => ({
   ...input,
   isPinned: false,
@@ -37,6 +52,7 @@ mock.module('@/features/host/renderer/createHostRuntime', () => ({
   getHostRuntime: () => ({
     rpc: {
       createWorkspaceCanvas: createWorkspaceCanvasMock,
+      listWorkspaceCanvases: listWorkspaceCanvasesMock,
       upsertAppStateWorkspace: upsertAppStateWorkspaceMock,
       removeAppStateWorkspace: removeAppStateWorkspaceMock,
       setAppStateWorkspaceSession: setAppStateWorkspaceSessionMock,
@@ -174,19 +190,11 @@ describe('WorkspaceDetailPage canonical navigation flows', () => {
         lastModifiedAt: Date.now(),
         lastOpenedAt: Date.now(),
       }],
-      workspaceCanvasesByWorkspaceId: {
-        'ws-1': [{
-          canvasId: 'doc-1',
-          workspaceId: 'ws-1',
-          latestRevision: 3,
-          absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',
-          relativePath: 'docs/alpha.graph.tsx',
-          title: 'alpha.graph.tsx',
-        }],
-      },
+      workspaceCanvasesByWorkspaceId: {},
       activeWorkspaceId: 'ws-1',
     }));
     createWorkspaceCanvasMock.mockClear();
+    listWorkspaceCanvasesMock.mockClear();
     upsertAppStateWorkspaceMock.mockClear();
     removeAppStateWorkspaceMock.mockClear();
     setAppStateWorkspaceSessionMock.mockClear();
@@ -208,6 +216,8 @@ describe('WorkspaceDetailPage canonical navigation flows', () => {
     await act(async () => {
       environment.root.render(<WorkspaceDetailPage workspaceId="ws-1" />);
     });
+
+    expect(listWorkspaceCanvasesMock).toHaveBeenCalledWith('/tmp/ws-1');
 
     const trigger = environment.dom.window.document.querySelector('[data-testid="canvas-card:alpha.graph.tsx"]');
     await act(async () => {

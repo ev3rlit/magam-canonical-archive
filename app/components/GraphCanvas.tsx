@@ -27,7 +27,7 @@ import { NavigationProvider } from '@/contexts/NavigationContext';
 import { ZoomProvider, useZoom } from '@/contexts/ZoomContext';
 import { BubbleProvider } from '@/contexts/BubbleContext';
 import { BubbleOverlay } from './BubbleOverlay';
-import { Loader2, Check } from 'lucide-react';
+import { Loader2, Check, Minus, Plus, Maximize } from 'lucide-react';
 import { useExportImage } from '@/hooks/useExportImage';
 import { useContextMenu } from '@/hooks/useContextMenu';
 import { ExportDialog } from './ExportDialog';
@@ -847,7 +847,7 @@ function GraphCanvasContent({
   const createMode = entrypointRuntime.activeTool.createMode;
   const hasPendingUiActions = Object.keys(entrypointRuntime.pendingByRequestId).length > 0;
 
-  const { isZoomBold } = useZoom();
+  const { zoom, isZoomBold } = useZoom();
 
   const canvasResolvedFontFamily = useMemo(
     () => resolveFontFamilyCssValue({ canvasFontFamily, globalFontFamily }),
@@ -904,6 +904,7 @@ function GraphCanvasContent({
   const suppressNextPaneClickRef = useRef(false);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
   const washiPresets = useMemo(() => getWashiPresetPatternCatalog(), []);
+  const currentZoomPercent = Math.round(zoom * 100);
 
 
 
@@ -1481,6 +1482,12 @@ function GraphCanvasContent({
 
   // Trigger Layout when all nodes are initialized (measured)
   useEffect(() => {
+    if (nodes.length === 0 && !hasLayouted.current) {
+      hasLayouted.current = true;
+      setIsGraphVisible(true);
+      return;
+    }
+
     const measured = areNodesMeasured(nodes);
 
     if (nodes.length > 0 && nodesInitialized && measured && !hasLayouted.current) {
@@ -2253,7 +2260,7 @@ function GraphCanvasContent({
       */}
       <div
         ref={canvasWrapperRef}
-        className="w-full h-full min-h-[500px] flex-1 bg-background transition-opacity duration-300"
+        className="relative w-full h-full min-h-[500px] flex-1 bg-background transition-opacity duration-300"
         onMouseDownCapture={onCanvasMouseDownCapture}
         style={{
           opacity: isGraphVisible ? 1 : 0,
@@ -2407,6 +2414,38 @@ function GraphCanvasContent({
 
         {/* Bubble overlay - renders all bubbles above nodes */}
         <BubbleOverlay />
+
+        <div className="pointer-events-none absolute bottom-6 right-6 z-[120]">
+          <div className="pointer-events-auto flex items-center gap-1 rounded-2xl bg-card/94 p-1.5 text-foreground shadow-floating shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)] backdrop-blur-glass">
+            <button
+              type="button"
+              onClick={handleZoomOut}
+              aria-label="Zoom out"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-foreground/68 transition-colors hover:bg-card hover:text-foreground"
+            >
+              <Minus className="h-4 w-4" />
+            </button>
+            <div className="min-w-[68px] text-center text-sm font-semibold text-foreground/80">
+              {currentZoomPercent}%
+            </div>
+            <button
+              type="button"
+              onClick={handleZoomIn}
+              aria-label="Zoom in"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-foreground/68 transition-colors hover:bg-card hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleFitView}
+              aria-label="Fit view"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-foreground/68 transition-colors hover:bg-card hover:text-foreground"
+            >
+              <Maximize className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
 
         {dragFeedback && (
           <div className="absolute top-24 left-1/2 z-[100] -translate-x-1/2 animate-in fade-in slide-in-from-top-2">
