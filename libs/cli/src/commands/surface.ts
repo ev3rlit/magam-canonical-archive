@@ -9,6 +9,7 @@ import {
   parseCommandOptions,
 } from '../headless/options';
 import type { ResourceCommandResult } from '../headless/json-output';
+import { CLI_MESSAGES } from '../messages';
 
 export async function runSurfaceCommand(args: string[]): Promise<ResourceCommandResult> {
   const subcommand = args[0];
@@ -60,6 +61,6 @@ export async function runSurfaceCommand(args: string[]): Promise<ResourceCommand
       });
 
     default:
-      throw new Error(`Unknown surface subcommand: ${subcommand ?? '(missing)'}`);
+      throw new Error(CLI_MESSAGES.command.unknownSubcommand('surface', subcommand));
   }
 }

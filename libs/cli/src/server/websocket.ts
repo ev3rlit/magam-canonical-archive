@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as net from 'net';
+import { CLI_MESSAGES } from '../messages';
 
 const DEFAULT_PORT = 3001;
 const ENV_VAR_NAME = 'MAGAM_WS_PORT';
@@ -36,11 +37,9 @@ async function findAvailablePort(preferredPort: number): Promise<number> {
     if (await isPortAvailable(port)) {
       return port;
     }
-    console.log(`Port ${port} is in use, trying ${port + 1}...`);
+    console.log(CLI_MESSAGES.websocket.portInUse(port, port + 1));
   }
-  throw new Error(
-    `Could not find an available port after ${MAX_PORT_ATTEMPTS} attempts starting from ${preferredPort}`
-  );
+  throw new Error(CLI_MESSAGES.websocket.noAvailablePort(preferredPort, MAX_PORT_ATTEMPTS));
 }
 
 /**
@@ -53,9 +52,7 @@ function getConfiguredPort(): number {
     if (!isNaN(parsed) && parsed > 0 && parsed < 65536) {
       return parsed;
     }
-    console.warn(
-      `Invalid ${ENV_VAR_NAME} value: ${envPort}. Using default port ${DEFAULT_PORT}`
-    );
+    console.warn(CLI_MESSAGES.websocket.invalidPortValue(ENV_VAR_NAME, envPort, DEFAULT_PORT));
   }
   return DEFAULT_PORT;
 }
@@ -75,7 +72,7 @@ export async function startServer(
   onMessage?: (message: any, ws: WebSocket) => void
 ): Promise<ServerResult> {
   if (wss) {
-    console.warn('WebSocket server already running');
+    console.warn(CLI_MESSAGES.websocket.serverAlreadyRunning);
     // Return the current port if server is already running
     const address = wss.address();
     const currentPort =
@@ -91,8 +88,10 @@ export async function startServer(
       wss = new WebSocketServer({ port: actualPort });
 
       wss.on('connection', (ws) => {
-        console.log('Client connected');
-        ws.on('error', console.error);
+        console.log(CLI_MESSAGES.websocket.clientConnected);
+        ws.on('error', (error) => {
+          console.error(CLI_MESSAGES.websocket.clientError, error);
+        });
 
         if (onMessage) {
           ws.on('message', (data) => {
@@ -100,14 +99,14 @@ export async function startServer(
               const message = JSON.parse(data.toString());
               onMessage(message, ws);
             } catch (error) {
-              console.error('Failed to parse message:', error);
+              console.error(CLI_MESSAGES.websocket.failedToParseMessage, error);
             }
           });
         }
       });
 
       wss.on('error', (error) => {
-        console.error('WebSocket server error:', error);
+        console.error(CLI_MESSAGES.websocket.serverError, error);
         reject(error);
       });
 
@@ -134,7 +133,7 @@ export function broadcast(msg: any) {
       }
     });
   } catch (error) {
-    console.error('Failed to broadcast message:', error);
+    console.error(CLI_MESSAGES.websocket.broadcastFailed, error);
   }
 }
 

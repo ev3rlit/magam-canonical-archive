@@ -29,6 +29,7 @@ import type {
   AppPreferenceValue,
   AppWorkspaceStatus,
 } from '../../../shared/src/lib/app-state-persistence';
+import { CLI_MESSAGES } from '../messages';
 
 const DEFAULT_PORT = 3002;
 
@@ -278,13 +279,13 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
         res.end(JSON.stringify({ status: 'ok', targetDir: config.targetDir }));
       } else {
         res.writeHead(404, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Not found' }));
+        res.end(JSON.stringify({ error: CLI_MESSAGES.httpServer.notFound }));
       }
     } catch (error: any) {
-      console.error('Server Error:', error);
+      console.error(CLI_MESSAGES.httpServer.serverError, error);
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
-        error: error.message || 'Internal Server Error',
+        error: error.message || CLI_MESSAGES.httpServer.internalServerError,
         type: 'SERVER_ERROR',
         details: error.stack
       }));
@@ -293,7 +294,7 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
 
   return new Promise((resolve, reject) => {
     server.listen(port, () => {
-      console.log(`HTTP render server listening on port ${port}`);
+      console.log(CLI_MESSAGES.httpServer.listening(port));
       resolve({
         port,
         close: async () => {
@@ -311,7 +312,7 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
 
 function requireAppStateString(value: unknown, fieldName: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new ApiError(400, 'APP_STATE_400_INVALID_FIELD', `${fieldName} is required.`);
+    throw new ApiError(400, 'APP_STATE_400_INVALID_FIELD', CLI_MESSAGES.httpServer.fieldRequired(fieldName));
   }
 
   return value.trim();
@@ -330,7 +331,7 @@ function parseAppStateWorkspaceStatus(value: unknown): AppWorkspaceStatus {
   throw new ApiError(
     400,
     'APP_STATE_400_INVALID_STATUS',
-    'status must be one of ok, missing, not-directory, unreadable.',
+    CLI_MESSAGES.httpServer.statusMustBeOneOf,
   );
 }
 
@@ -354,7 +355,7 @@ function parseAppStateOptionalDate(value: unknown): Date | null | undefined {
     }
   }
 
-  throw new ApiError(400, 'APP_STATE_400_INVALID_DATE', 'Date fields must be valid date values.');
+  throw new ApiError(400, 'APP_STATE_400_INVALID_DATE', CLI_MESSAGES.httpServer.dateFieldsMustBeValid);
 }
 
 function parseAppStateNullableString(value: unknown, fieldName: string): string | null | undefined {
@@ -373,7 +374,7 @@ function parseAppStateNullableString(value: unknown, fieldName: string): string 
   throw new ApiError(
     400,
     `APP_STATE_400_INVALID_${fieldName.toUpperCase()}`,
-    `${fieldName} must be a string, null, or undefined.`,
+    CLI_MESSAGES.httpServer.nullableStringField(fieldName),
   );
 }
 
@@ -394,7 +395,7 @@ function parseAppStatePreferenceValue(value: unknown): AppPreferenceValue {
   throw new ApiError(
     400,
     'APP_STATE_400_INVALID_VALUE',
-    'valueJson must be a JSON-compatible primitive, object, or null.',
+    CLI_MESSAGES.httpServer.requestJsonCompatibleValue,
   );
 }
 
@@ -405,7 +406,7 @@ function writeAppStateError(
   fallbackMessage: string,
 ): void {
   writeApiError(res, error, {
-    logLabel: `[${routeLabel}] unexpected error:`,
+    logLabel: CLI_MESSAGES.httpServer.appStateUnexpectedErrorLog(routeLabel),
     fallbackCode: 'APP_STATE_500_REQUEST_FAILED',
     fallbackMessage,
   });
@@ -418,7 +419,7 @@ async function handleAppStateWorkspacesList(
   try {
     writeJson(res, 200, await repository.listWorkspaces());
   } catch (error) {
-    writeAppStateError(res, error, 'app-state/workspaces', 'Failed to handle app-state workspaces request');
+    writeAppStateError(res, error, 'app-state/workspaces', CLI_MESSAGES.httpServer.appStateWorkspacesRequestFailed);
   }
 }
 
@@ -430,7 +431,7 @@ async function handleAppStateWorkspacesUpsert(
   try {
     const body = await parseJsonObjectBody(req, {
       invalidJsonCode: 'APP_STATE_400_INVALID_JSON',
-      invalidJsonMessage: 'Request body must be a JSON object.',
+      invalidJsonMessage: CLI_MESSAGES.httpServer.requestBodyMustBeJsonObject,
     });
 
     const workspace = await repository.upsertWorkspace({
@@ -445,7 +446,7 @@ async function handleAppStateWorkspacesUpsert(
 
     writeJson(res, 200, workspace);
   } catch (error) {
-    writeAppStateError(res, error, 'app-state/workspaces', 'Failed to handle app-state workspaces request');
+    writeAppStateError(res, error, 'app-state/workspaces', CLI_MESSAGES.httpServer.appStateWorkspacesRequestFailed);
   }
 }
 
@@ -459,7 +460,7 @@ async function handleAppStateWorkspacesDelete(
     await repository.removeWorkspace(workspaceId);
     writeJson(res, 200, { deleted: true });
   } catch (error) {
-    writeAppStateError(res, error, 'app-state/workspaces', 'Failed to handle app-state workspaces request');
+    writeAppStateError(res, error, 'app-state/workspaces', CLI_MESSAGES.httpServer.appStateWorkspacesRequestFailed);
   }
 }
 
@@ -470,7 +471,7 @@ async function handleAppStateSessionGet(
   try {
     writeJson(res, 200, await repository.getWorkspaceSession());
   } catch (error) {
-    writeAppStateError(res, error, 'app-state/session', 'Failed to handle app-state session request');
+    writeAppStateError(res, error, 'app-state/session', CLI_MESSAGES.httpServer.appStateSessionRequestFailed);
   }
 }
 
@@ -482,7 +483,7 @@ async function handleAppStateSessionSet(
   try {
     const body = await parseJsonObjectBody(req, {
       invalidJsonCode: 'APP_STATE_400_INVALID_JSON',
-      invalidJsonMessage: 'Request body must be a JSON object.',
+      invalidJsonMessage: CLI_MESSAGES.httpServer.requestBodyMustBeJsonObject,
     });
 
     const session = await repository.setWorkspaceSession({
@@ -494,7 +495,7 @@ async function handleAppStateSessionSet(
 
     writeJson(res, 200, session);
   } catch (error) {
-    writeAppStateError(res, error, 'app-state/session', 'Failed to handle app-state session request');
+    writeAppStateError(res, error, 'app-state/session', CLI_MESSAGES.httpServer.appStateSessionRequestFailed);
   }
 }
 
@@ -511,7 +512,7 @@ async function handleAppStateRecentCanvasesList(
       res,
       error,
       'app-state/recent-canvases',
-      'Failed to handle app-state recent-canvases request',
+      CLI_MESSAGES.httpServer.appStateRecentCanvasesRequestFailed,
     );
   }
 }
@@ -524,7 +525,7 @@ async function handleAppStateRecentCanvasesUpsert(
   try {
     const body = await parseJsonObjectBody(req, {
       invalidJsonCode: 'APP_STATE_400_INVALID_JSON',
-      invalidJsonMessage: 'Request body must be a JSON object.',
+      invalidJsonMessage: CLI_MESSAGES.httpServer.requestBodyMustBeJsonObject,
     });
 
     const recentCanvas = await repository.upsertRecentCanvas({
@@ -539,7 +540,7 @@ async function handleAppStateRecentCanvasesUpsert(
       res,
       error,
       'app-state/recent-canvases',
-      'Failed to handle app-state recent-canvases request',
+      CLI_MESSAGES.httpServer.appStateRecentCanvasesRequestFailed,
     );
   }
 }
@@ -558,7 +559,7 @@ async function handleAppStateRecentCanvasesDelete(
       res,
       error,
       'app-state/recent-canvases',
-      'Failed to handle app-state recent-canvases request',
+      CLI_MESSAGES.httpServer.appStateRecentCanvasesRequestFailed,
     );
   }
 }
@@ -572,7 +573,7 @@ async function handleAppStatePreferencesGet(
     const key = requireAppStateString(url.searchParams.get('key'), 'key');
     writeJson(res, 200, await repository.getPreference(key));
   } catch (error) {
-    writeAppStateError(res, error, 'app-state/preferences', 'Failed to handle app-state preferences request');
+    writeAppStateError(res, error, 'app-state/preferences', CLI_MESSAGES.httpServer.appStatePreferencesRequestFailed);
   }
 }
 
@@ -584,7 +585,7 @@ async function handleAppStatePreferencesSet(
   try {
     const body = await parseJsonObjectBody(req, {
       invalidJsonCode: 'APP_STATE_400_INVALID_JSON',
-      invalidJsonMessage: 'Request body must be a JSON object.',
+      invalidJsonMessage: CLI_MESSAGES.httpServer.requestBodyMustBeJsonObject,
     });
 
     const preference = await repository.setPreference({
@@ -594,7 +595,7 @@ async function handleAppStatePreferencesSet(
 
     writeJson(res, 200, preference);
   } catch (error) {
-    writeAppStateError(res, error, 'app-state/preferences', 'Failed to handle app-state preferences request');
+    writeAppStateError(res, error, 'app-state/preferences', CLI_MESSAGES.httpServer.appStatePreferencesRequestFailed);
   }
 }
 
@@ -603,7 +604,7 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
   const requestedCanvasId = typeof body?.canvasId === 'string' ? body.canvasId.trim() : '';
   if (!requestedCanvasId) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Missing canvasId in body', type: 'VALIDATION_ERROR' }));
+    res.end(JSON.stringify({ error: CLI_MESSAGES.httpServer.missingCanvasId, type: 'VALIDATION_ERROR' }));
     return;
   }
 
@@ -614,7 +615,7 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
       : '';
   if (rawRootPath && !path.isAbsolute(rawRootPath)) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'rootPath must be an absolute path', type: 'VALIDATION_ERROR' }));
+    res.end(JSON.stringify({ error: CLI_MESSAGES.httpServer.rootPathAbsolute, type: 'VALIDATION_ERROR' }));
     return;
   }
 
@@ -647,7 +648,7 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
   const absolutePath = resolvedRequest.absolutePath;
   if (!fs.existsSync(absolutePath)) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: `File not found: ${resolvedRequest.workspacePath}`, type: 'FILE_NOT_FOUND' }));
+    res.end(JSON.stringify({ error: CLI_MESSAGES.httpServer.fileNotFound(resolvedRequest.workspacePath), type: 'FILE_NOT_FOUND' }));
     return;
   }
 
@@ -674,7 +675,7 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
       ...(resolvedWorkspacePath ? { compatibilityFilePath: resolvedWorkspacePath } : {}),
     }));
   } catch (error: any) {
-    console.error('Render Error:', error);
+    console.error(CLI_MESSAGES.httpServer.renderError, error);
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       error: error.message,
@@ -690,21 +691,21 @@ async function handleCreateFile(req: http.IncomingMessage, res: http.ServerRespo
 
   if (!requestedFilePath) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Missing filePath in body', type: 'VALIDATION_ERROR' }));
+    res.end(JSON.stringify({ error: CLI_MESSAGES.httpServer.missingFilePath, type: 'VALIDATION_ERROR' }));
     return;
   }
 
   const workspacePath = normalizeWorkspacePath(targetDir, requestedFilePath, requestedFilePath);
   if (!workspacePath.endsWith('.tsx')) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'filePath must point to a .tsx canvas', type: 'VALIDATION_ERROR' }));
+    res.end(JSON.stringify({ error: CLI_MESSAGES.httpServer.filePathMustBeTsx, type: 'VALIDATION_ERROR' }));
     return;
   }
 
   const absolutePath = path.resolve(targetDir, workspacePath);
   if (fs.existsSync(absolutePath)) {
     res.writeHead(409, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: `File already exists: ${workspacePath}`, type: 'FILE_EXISTS' }));
+    res.end(JSON.stringify({ error: CLI_MESSAGES.httpServer.fileAlreadyExists(workspacePath), type: 'FILE_EXISTS' }));
     return;
   }
 
@@ -752,7 +753,7 @@ async function runRenderPipeline(input: {
   const sourceVersion = sourceVersions[requestedWorkspacePath];
 
   if (!sourceVersion) {
-    throw new Error(`Missing source version for ${requestedWorkspacePath}`);
+    throw new Error(CLI_MESSAGES.httpServer.missingSourceVersion(requestedWorkspacePath));
   }
 
   const graphVersion = hashSourceContent(
@@ -797,7 +798,7 @@ async function runRenderPipeline(input: {
     const executeMs = performance.now() - executeStart;
 
     if (!result.isOk()) {
-      console.error('[HttpServer] Execution failed:', result.error);
+      console.error(CLI_MESSAGES.httpServer.executionFailed, result.error);
       const error = new Error(result.error.message);
       (error as Error & { type?: string; details?: unknown }).type = result.error.type || 'EXECUTION_ERROR';
       (error as Error & { details?: unknown }).details = result.error.originalError;
@@ -921,7 +922,7 @@ async function handleFiles(req: http.IncomingMessage, res: http.ServerResponse, 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ files }));
   } catch (error: any) {
-    console.error('Files Error:', error);
+    console.error(CLI_MESSAGES.httpServer.filesError, error);
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       error: error.message,
@@ -998,7 +999,7 @@ async function handleFileTree(url: URL, res: http.ServerResponse, targetDir: str
     const rawRootPath = url.searchParams.get('rootPath') || url.searchParams.get('root');
     if (rawRootPath && !path.isAbsolute(rawRootPath)) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'rootPath must be an absolute path', type: 'VALIDATION_ERROR' }));
+      res.end(JSON.stringify({ error: CLI_MESSAGES.httpServer.rootPathAbsolute, type: 'VALIDATION_ERROR' }));
       return;
     }
 
@@ -1022,7 +1023,7 @@ async function handleFileTree(url: URL, res: http.ServerResponse, targetDir: str
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ tree }));
   } catch (error: any) {
-    console.error('FileTree Error:', error);
+    console.error(CLI_MESSAGES.httpServer.fileTreeError, error);
     res.writeHead(500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       error: error.message,
@@ -1122,7 +1123,7 @@ function writeApiError(
     return;
   }
 
-  const message = error instanceof Error ? error.message : 'Unknown error';
+  const message = error instanceof Error ? error.message : CLI_MESSAGES.httpServer.unknownError;
   console.error(input.logLabel, message);
   writeJson(res, 500, {
     error: `${input.fallbackMessage}: ${message}`,
@@ -1136,12 +1137,12 @@ function pickRootPath(searchParams: URLSearchParams, fallbackRootPath?: string |
 
 function resolveCanvasRootPath(rawRootPath: unknown): string {
   if (typeof rawRootPath !== 'string') {
-    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath is required');
+    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', CLI_MESSAGES.httpServer.rootPathRequired);
   }
 
   const trimmed = rawRootPath.trim();
   if (!trimmed || !path.isAbsolute(trimmed)) {
-    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath must be an absolute path');
+    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', CLI_MESSAGES.httpServer.rootPathAbsolute);
   }
 
   return trimmed;
@@ -1171,7 +1172,7 @@ async function parseJsonObjectBody(
   try {
     parsed = JSON.parse(rawBody);
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
+    const message = error instanceof Error ? error.message : CLI_MESSAGES.httpServer.unknownError;
     throw new ApiError(400, input.invalidJsonCode, `${input.invalidJsonMessage}: ${message}`);
   }
 
@@ -1190,7 +1191,7 @@ async function handleWorkspaceProbe(
   try {
     const rootPath = pickRootPath(url.searchParams, targetDir);
     if (!rootPath) {
-      throw new ApiError(400, 'WS_400_INVALID_ROOT_PATH', 'rootPath is required');
+      throw new ApiError(400, 'WS_400_INVALID_ROOT_PATH', CLI_MESSAGES.httpServer.rootPathRequired);
     }
 
     const workspace = await probeWorkspace(rootPath);
@@ -1204,9 +1205,9 @@ async function handleWorkspaceProbe(
     );
   } catch (error) {
     writeApiError(res, error, {
-      logLabel: '[workspaces] unexpected error:',
+      logLabel: CLI_MESSAGES.httpServer.workspaceUnexpectedErrorLog,
       fallbackCode: 'WS_500_REQUEST_FAILED',
-      fallbackMessage: 'Failed to handle workspace request',
+      fallbackMessage: CLI_MESSAGES.httpServer.workspaceRequestFailed,
     });
   }
 }
@@ -1215,16 +1216,16 @@ async function handleWorkspaceMutation(req: http.IncomingMessage, res: http.Serv
   try {
     const body = await parseJsonObjectBody(req, {
       invalidJsonCode: 'WS_400_INVALID_JSON',
-      invalidJsonMessage: 'Request body must be a JSON object',
+      invalidJsonMessage: CLI_MESSAGES.httpServer.requestBodyMustBeJsonObject,
     });
     const rawRootPath = body.rootPath;
     if (typeof rawRootPath !== 'string') {
-      throw new ApiError(400, 'WS_400_INVALID_ROOT_PATH', 'rootPath is required');
+      throw new ApiError(400, 'WS_400_INVALID_ROOT_PATH', CLI_MESSAGES.httpServer.rootPathRequired);
     }
 
     const rawAction = body.action;
     if (rawAction !== 'open' && rawAction !== 'reveal' && rawAction !== 'ensure') {
-      throw new ApiError(400, 'WS_400_INVALID_ACTION', 'action must be "ensure", "open", or "reveal"');
+      throw new ApiError(400, 'WS_400_INVALID_ACTION', CLI_MESSAGES.httpServer.actionMustBeOneOf);
     }
 
     if (rawAction === 'ensure') {
@@ -1257,9 +1258,9 @@ async function handleWorkspaceMutation(req: http.IncomingMessage, res: http.Serv
     });
   } catch (error) {
     writeApiError(res, error, {
-      logLabel: '[workspaces] unexpected error:',
+      logLabel: CLI_MESSAGES.httpServer.workspaceUnexpectedErrorLog,
       fallbackCode: 'WS_500_REQUEST_FAILED',
-      fallbackMessage: 'Failed to handle workspace request',
+      fallbackMessage: CLI_MESSAGES.httpServer.workspaceRequestFailed,
     });
   }
 }
@@ -1286,9 +1287,9 @@ async function handleCanvasesList(url: URL, res: http.ServerResponse) {
     });
   } catch (error) {
     writeApiError(res, error, {
-      logLabel: '[canvases] unexpected error:',
+      logLabel: CLI_MESSAGES.httpServer.canvasesUnexpectedErrorLog,
       fallbackCode: 'DOC_500_REQUEST_FAILED',
-      fallbackMessage: 'Failed to handle canvases request',
+      fallbackMessage: CLI_MESSAGES.httpServer.canvasesRequestFailed,
     });
   }
 }
@@ -1297,7 +1298,7 @@ async function handleCanvasesCreate(req: http.IncomingMessage, res: http.ServerR
   try {
     const body = await parseJsonObjectBody(req, {
       invalidJsonCode: 'DOC_400_INVALID_JSON',
-      invalidJsonMessage: 'Request body must be a JSON object',
+      invalidJsonMessage: CLI_MESSAGES.httpServer.requestBodyMustBeJsonObject,
     });
     const rawRootPath = 'rootPath' in body ? body['rootPath'] : body['root'];
     const rootPath = resolveCanvasRootPath(rawRootPath);
@@ -1329,9 +1330,9 @@ async function handleCanvasesCreate(req: http.IncomingMessage, res: http.ServerR
     });
   } catch (error) {
     writeApiError(res, error, {
-      logLabel: '[canvases] unexpected error:',
+      logLabel: CLI_MESSAGES.httpServer.canvasesUnexpectedErrorLog,
       fallbackCode: 'DOC_500_REQUEST_FAILED',
-      fallbackMessage: 'Failed to handle canvases request',
+      fallbackMessage: CLI_MESSAGES.httpServer.canvasesRequestFailed,
     });
   }
 }

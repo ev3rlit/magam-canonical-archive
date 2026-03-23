@@ -3,6 +3,7 @@ import {
   AppStatePersistenceRepository,
   createAppStatePgliteDb,
 } from '../../../../../libs/shared/src/lib/app-state-persistence';
+import { API_SHARED_MESSAGES, formatApiRequestFailure } from '../../_shared/messages';
 import { ApiError } from '../../workspaces/_shared';
 
 export const dynamic = 'force-dynamic';
@@ -29,10 +30,10 @@ function toJsonErrorResponse(error: unknown) {
     );
   }
 
-  const message = error instanceof Error ? error.message : 'Unknown error';
-  console.error('[api/app-state/recent-canvases] unexpected error:', message);
+  const message = error instanceof Error ? error.message : API_SHARED_MESSAGES.unknownError;
+  console.error(API_SHARED_MESSAGES.routeLog.appStateRecentCanvases, message);
   return NextResponse.json(
-    { error: `Failed to handle app-state recent-canvases request: ${message}` },
+    { error: formatApiRequestFailure('app-state recent-canvases', message) },
     { status: 500 },
   );
 }
@@ -40,7 +41,7 @@ function toJsonErrorResponse(error: unknown) {
 async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
   const body = await request.json();
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    throw new ApiError(400, 'APP_STATE_400_INVALID_JSON', 'Request body must be a JSON object.');
+    throw new ApiError(400, 'APP_STATE_400_INVALID_JSON', API_SHARED_MESSAGES.requestBodyMustBeJsonObject);
   }
 
   return body as Record<string, unknown>;
@@ -48,7 +49,7 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
 
 function requireString(value: unknown, fieldName: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new ApiError(400, 'APP_STATE_400_INVALID_FIELD', `${fieldName} is required.`);
+    throw new ApiError(400, 'APP_STATE_400_INVALID_FIELD', API_SHARED_MESSAGES.fieldRequired(fieldName));
   }
 
   return value.trim();
@@ -74,7 +75,7 @@ function parseOptionalDate(value: unknown): Date | null | undefined {
     }
   }
 
-  throw new ApiError(400, 'APP_STATE_400_INVALID_DATE', 'Date fields must be valid date values.');
+  throw new ApiError(400, 'APP_STATE_400_INVALID_DATE', API_SHARED_MESSAGES.validDateFields);
 }
 
 export async function GET(request: Request) {

@@ -9,6 +9,7 @@ import generate from '@babel/generator';
 import * as t from '@babel/types';
 import { getJsxTagStyleEditableKeys } from '@/features/editing/editability';
 import { RPC_ERRORS } from './rpc';
+import { WS_PATCHER_MESSAGES } from './messages';
 
 export interface NodeProps {
     id?: string;
@@ -112,21 +113,21 @@ function assertContentContractPatchAllowed(
 
     if (tagName !== 'Image' && ('src' in patch || 'alt' in patch || 'fit' in patch)) {
         throwContentContractViolation({
-            detail: 'media content fields are only valid for Image nodes.',
+            detail: WS_PATCHER_MESSAGES.imageContentPatchOnly,
             failedAction,
         });
     }
 
     if (tagName !== 'Markdown' && 'source' in patch) {
         throwContentContractViolation({
-            detail: 'markdown source fields are only valid for Markdown nodes.',
+            detail: WS_PATCHER_MESSAGES.markdownSourcePatchOnly,
             failedAction,
         });
     }
 
     if (tagName !== 'Sequence' && ('participants' in patch || 'messages' in patch)) {
         throwContentContractViolation({
-            detail: 'sequence content fields are only valid for Sequence nodes.',
+            detail: WS_PATCHER_MESSAGES.sequenceContentPatchOnly,
             failedAction,
         });
     }

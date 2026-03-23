@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { API_SHARED_MESSAGES } from '../_shared/messages';
 import { proxyCompatibilityRequest } from '@/features/host/rpc';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
       : '';
     if (!isRecord(body) || !requestedCanvasId) {
       return Response.json(
-        { error: 'canvasId is required' },
+        { error: API_SHARED_MESSAGES.renderCanvasIdRequired },
         { status: 400 },
       );
     }
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
         : undefined;
     if (rawRootPath !== undefined && !path.isAbsolute(rawRootPath.trim())) {
       return Response.json(
-        { error: 'rootPath must be an absolute path' },
+        { error: API_SHARED_MESSAGES.rootPathAbsolute },
         { status: 400 },
       );
     }
@@ -48,11 +49,11 @@ export async function POST(request: Request) {
       pathname: '/render',
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[API Proxy] Error:', message);
+    const message = error instanceof Error ? error.message : API_SHARED_MESSAGES.unknownError;
+    console.error(API_SHARED_MESSAGES.routeLog.renderProxy, message);
 
     return Response.json(
-      { error: `Failed to connect to render server: ${message}` },
+      { error: API_SHARED_MESSAGES.renderServerConnectFailed(message) },
       { status: 502 },
     );
   }

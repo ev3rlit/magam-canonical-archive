@@ -7,6 +7,7 @@ import {
   parseCommandOptions,
 } from '../headless/options';
 import type { ResourceCommandResult } from '../headless/json-output';
+import { CLI_MESSAGES } from '../messages';
 
 export async function runCanvasNodeCommand(args: string[]): Promise<ResourceCommandResult> {
   const subcommand = args[0];
@@ -24,7 +25,7 @@ export async function runCanvasNodeCommand(args: string[]): Promise<ResourceComm
         const x = getOptionalNumberFlag(parsed, 'x');
         const y = getOptionalNumberFlag(parsed, 'y');
         if (x === undefined || y === undefined) {
-          throw new Error('--x and --y are required for canvas-node move.');
+          throw new Error(CLI_MESSAGES.command.canvasNodeMoveRequiresCoordinates);
         }
 
         return {
@@ -91,6 +92,6 @@ export async function runCanvasNodeCommand(args: string[]): Promise<ResourceComm
       });
 
     default:
-      throw new Error(`Unknown canvas-node subcommand: ${subcommand ?? '(missing)'}`);
+      throw new Error(CLI_MESSAGES.command.unknownSubcommand('canvas-node', subcommand));
   }
 }

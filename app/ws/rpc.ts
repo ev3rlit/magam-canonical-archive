@@ -1,6 +1,7 @@
 /**
  * JSON-RPC 2.0 Types and Utilities
  */
+import { WS_RPC_MESSAGES } from './messages';
 
 export interface JsonRpcRequest {
     jsonrpc: '2.0';
@@ -30,11 +31,11 @@ export interface JsonRpcError {
 
 // Standard JSON-RPC Error Codes
 export const RPC_ERRORS = {
-    PARSE_ERROR: { code: -32700, message: 'Parse error' },
-    INVALID_REQUEST: { code: -32600, message: 'Invalid Request' },
-    METHOD_NOT_FOUND: { code: -32601, message: 'Method not found' },
+    PARSE_ERROR: { code: -32700, message: WS_RPC_MESSAGES.parseError },
+    INVALID_REQUEST: { code: -32600, message: WS_RPC_MESSAGES.invalidRequest },
+    METHOD_NOT_FOUND: { code: -32601, message: WS_RPC_MESSAGES.methodNotFound },
     INVALID_PARAMS: { code: 40001, message: 'INVALID_PARAMS' },
-    INTERNAL_ERROR: { code: -32603, message: 'Internal error' },
+    INTERNAL_ERROR: { code: -32603, message: WS_RPC_MESSAGES.internalError },
     // Bidirectional-edit contract errors
     FILE_NOT_FOUND: { code: 40401, message: 'FILE_NOT_FOUND' },
     NODE_NOT_FOUND: { code: 40401, message: 'NODE_NOT_FOUND' },

@@ -2,6 +2,7 @@ import { getWorkspace, listWorkspaces } from '@magam/shared';
 import { withHeadlessContext } from '../headless/bootstrap';
 import { parseCommandOptions, getOptionalStringFlag } from '../headless/options';
 import type { ResourceCommandResult } from '../headless/json-output';
+import { CLI_MESSAGES } from '../messages';
 
 export async function runWorkspaceCommand(args: string[]): Promise<ResourceCommandResult> {
   const subcommand = args[0];
@@ -39,6 +40,6 @@ export async function runWorkspaceCommand(args: string[]): Promise<ResourceComma
       }));
 
     default:
-      throw new Error(`Unknown workspace subcommand: ${subcommand ?? '(missing)'}`);
+      throw new Error(CLI_MESSAGES.command.unknownSubcommand('workspace', subcommand));
   }
 }

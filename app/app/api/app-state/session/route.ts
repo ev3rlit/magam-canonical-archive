@@ -3,6 +3,7 @@ import {
   AppStatePersistenceRepository,
   createAppStatePgliteDb,
 } from '../../../../../libs/shared/src/lib/app-state-persistence';
+import { API_SHARED_MESSAGES, formatApiRequestFailure } from '../../_shared/messages';
 import { ApiError } from '../../workspaces/_shared';
 
 export const dynamic = 'force-dynamic';
@@ -29,10 +30,10 @@ function toJsonErrorResponse(error: unknown) {
     );
   }
 
-  const message = error instanceof Error ? error.message : 'Unknown error';
-  console.error('[api/app-state/session] unexpected error:', message);
+  const message = error instanceof Error ? error.message : API_SHARED_MESSAGES.unknownError;
+  console.error(API_SHARED_MESSAGES.routeLog.appStateSession, message);
   return NextResponse.json(
-    { error: `Failed to handle app-state session request: ${message}` },
+    { error: formatApiRequestFailure('app-state session', message) },
     { status: 500 },
   );
 }
@@ -40,7 +41,7 @@ function toJsonErrorResponse(error: unknown) {
 async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
   const body = await request.json();
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    throw new ApiError(400, 'APP_STATE_400_INVALID_JSON', 'Request body must be a JSON object.');
+    throw new ApiError(400, 'APP_STATE_400_INVALID_JSON', API_SHARED_MESSAGES.requestBodyMustBeJsonObject);
   }
 
   return body as Record<string, unknown>;
@@ -62,7 +63,7 @@ function parseNullableString(value: unknown): string | null | undefined {
   throw new ApiError(
     400,
     'APP_STATE_400_INVALID_ACTIVE_WORKSPACE',
-    'activeWorkspaceId must be a string, null, or undefined.',
+    API_SHARED_MESSAGES.activeWorkspaceMustBeNullableString,
   );
 }
 

@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { API_SHARED_MESSAGES } from '../_shared/messages';
 import { proxyCompatibilityRequest } from '@/features/host/rpc';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
   const rootPath = pickRootPath(searchParams);
   if (rootPath && !path.isAbsolute(rootPath.trim())) {
     return Response.json(
-      { error: 'rootPath must be an absolute path' },
+      { error: API_SHARED_MESSAGES.fileTreeRootAbsolute },
       { status: 400 },
     );
   }

@@ -7,10 +7,11 @@ import {
   readJsonValue,
 } from '../headless/options';
 import type { ResourceCommandResult } from '../headless/json-output';
+import { CLI_MESSAGES } from '../messages';
 
 function normalizeMutationBatchInput(input: unknown): Partial<MutationBatch> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    throw new Error('mutation apply input must be a JSON object.');
+    throw new Error(CLI_MESSAGES.command.mutationApplyInputMustBeJsonObject);
   }
 
   return input as Partial<MutationBatch>;
@@ -61,6 +62,6 @@ export async function runMutationCommand(args: string[]): Promise<ResourceComman
       });
 
     default:
-      throw new Error(`Unknown mutation subcommand: ${subcommand ?? '(missing)'}`);
+      throw new Error(CLI_MESSAGES.command.unknownSubcommand('mutation', subcommand));
   }
 }

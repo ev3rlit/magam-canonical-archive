@@ -2,6 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { mkdir, writeFile, stat, unlink, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
+import { API_SHARED_MESSAGES } from '../../_shared/messages';
 
 const WORKSPACE_ROOT = path.resolve(process.env.MAGAM_TARGET_DIR || process.cwd());
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -98,23 +99,23 @@ export async function POST(request: Request) {
 
     if (sourceType === 'url') {
       if (!isUrlAllowed(source)) {
-        return buildError(400, 'IMG_400_INVALID_SOURCE', 'URL source is invalid');
+        return buildError(400, 'IMG_400_INVALID_SOURCE', API_SHARED_MESSAGES.uploadUrlSourceInvalid);
       }
       // URL mode intentionally not implemented in v1: enforce explicit local upload path
-      return buildError(422, 'IMG_422_FETCH_FAILED', 'URL source upload is not supported in v1');
+      return buildError(422, 'IMG_422_FETCH_FAILED', API_SHARED_MESSAGES.uploadUrlSourceUnsupported);
     }
 
     const file = formData.get('file');
     if (!(file instanceof File)) {
-      return buildError(400, 'IMG_400_INVALID_SOURCE', 'File is required');
+      return buildError(400, 'IMG_400_INVALID_SOURCE', API_SHARED_MESSAGES.uploadFileRequired);
     }
 
     if (file.size <= 0) {
-      return buildError(400, 'IMG_400_INVALID_SOURCE', 'Empty file');
+      return buildError(400, 'IMG_400_INVALID_SOURCE', API_SHARED_MESSAGES.uploadEmptyFile);
     }
 
     if (file.size > MAX_BYTES) {
-      return buildError(413, 'IMG_413_TOO_LARGE', 'File size exceeds 10MB');
+      return buildError(413, 'IMG_413_TOO_LARGE', API_SHARED_MESSAGES.uploadFileTooLarge);
     }
 
     const mime = (file.type || '').toLowerCase();
@@ -122,21 +123,21 @@ export async function POST(request: Request) {
     const originalExt = path.extname(originalName).replace(/^\./, '').toLowerCase();
 
     if (!ALLOWED_EXTENSIONS.has(originalExt)) {
-      return buildError(400, 'IMG_400_UNSUPPORTED_TYPE', `unsupported extension: .${originalExt}`);
+      return buildError(400, 'IMG_400_UNSUPPORTED_TYPE', API_SHARED_MESSAGES.uploadUnsupportedExtension(originalExt));
     }
 
     if (!ALLOWED_MIMES.has(mime)) {
-      return buildError(400, 'IMG_400_UNSUPPORTED_TYPE', `unsupported mime type: ${mime}`);
+      return buildError(400, 'IMG_400_UNSUPPORTED_TYPE', API_SHARED_MESSAGES.uploadUnsupportedMime(mime));
     }
 
     const data = Buffer.from(await file.arrayBuffer());
     const detectedExt = detectExtensionByContent(data, originalExt);
     if (!detectedExt) {
-      return buildError(400, 'IMG_400_UNSUPPORTED_TYPE', 'unsupported image signature');
+      return buildError(400, 'IMG_400_UNSUPPORTED_TYPE', API_SHARED_MESSAGES.uploadUnsupportedImageSignature);
     }
 
     if (detectedExt !== originalExt && !(detectedExt === 'jpeg' && originalExt === 'jpg')) {
-      return buildError(400, 'IMG_400_UNSUPPORTED_TYPE', 'mime/ext mismatch');
+      return buildError(400, 'IMG_400_UNSUPPORTED_TYPE', API_SHARED_MESSAGES.uploadMimeExtensionMismatch);
     }
 
     await validateTargetDir();
@@ -151,7 +152,7 @@ export async function POST(request: Request) {
       // If same hash+name already exists, we treat it as already uploaded.
       const existing = await stat(absPath);
       if (!existing.isFile()) {
-        return buildError(500, 'IMG_500_UPLOAD_FAILED', 'Target path is not a file');
+        return buildError(500, 'IMG_500_UPLOAD_FAILED', API_SHARED_MESSAGES.uploadTargetPathNotFile);
       }
     } catch {
       const tmpPath = `${absPath}.${randomUUID()}.tmp`;
@@ -174,8 +175,8 @@ export async function POST(request: Request) {
       code: 'IMG_201_UPLOADED',
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[assets/upload] error:', message);
+    const message = error instanceof Error ? error.message : API_SHARED_MESSAGES.unknownError;
+    console.error(API_SHARED_MESSAGES.routeLog.assetsUpload, message);
     return buildError(500, 'IMG_500_UPLOAD_FAILED', message);
   }
 }

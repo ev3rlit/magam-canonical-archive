@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { API_SHARED_MESSAGES } from '../_shared/messages';
 import {
   ApiError,
   ensureWorkspaceRoot,
@@ -25,10 +26,10 @@ function toJsonErrorResponse(error: unknown) {
     );
   }
 
-  const message = error instanceof Error ? error.message : 'Unknown error';
-  console.error('[api/workspaces] unexpected error:', message);
+  const message = error instanceof Error ? error.message : API_SHARED_MESSAGES.unknownError;
+  console.error(API_SHARED_MESSAGES.routeLog.workspaces, message);
   return NextResponse.json(
-    { error: `Failed to handle workspace request: ${message}`, code: 'WS_500_REQUEST_FAILED' },
+    { error: `${API_SHARED_MESSAGES.routeFailure.workspaces}: ${message}`, code: 'WS_500_REQUEST_FAILED' },
     { status: 500 },
   );
 }
@@ -36,7 +37,7 @@ function toJsonErrorResponse(error: unknown) {
 async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
   const body = await request.json();
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    throw new ApiError(400, 'WS_400_INVALID_JSON', 'Request body must be a JSON object');
+    throw new ApiError(400, 'WS_400_INVALID_JSON', API_SHARED_MESSAGES.requestBodyMustBeJsonObject);
   }
 
   return body as Record<string, unknown>;
@@ -73,12 +74,12 @@ export async function POST(request: Request) {
     const body = await readJsonBody(request);
     const rawRootPath = body.rootPath;
     if (typeof rawRootPath !== 'string') {
-      throw new ApiError(400, 'WS_400_INVALID_ROOT_PATH', 'rootPath is required');
+      throw new ApiError(400, 'WS_400_INVALID_ROOT_PATH', API_SHARED_MESSAGES.rootPathRequired);
     }
 
     const rawAction = body.action;
     if (rawAction !== 'open' && rawAction !== 'reveal' && rawAction !== 'ensure') {
-      throw new ApiError(400, 'WS_400_INVALID_ACTION', 'action must be "ensure", "open", or "reveal"');
+      throw new ApiError(400, 'WS_400_INVALID_ACTION', API_SHARED_MESSAGES.actionRequired);
     }
 
     if (rawAction === 'ensure') {

@@ -5,6 +5,7 @@ import { parse } from '@babel/parser';
 import generate from '@babel/generator';
 import traverse from '@babel/traverse';
 import * as t from '@babel/types';
+import { CLI_MESSAGES } from '../messages';
 
 type InsertMode = 'node' | 'markdown' | 'canvas' | 'shape';
 
@@ -38,7 +39,7 @@ function parseArgs(rawArgs: string[]): ImageInsertOptions {
   for (let i = 0; i < rawArgs.length; i += 1) {
     const token = rawArgs[i];
     if (!token.startsWith('--')) {
-      fail(`Unknown argument: ${token}`);
+      fail(CLI_MESSAGES.image.unknownArgument(token));
     }
 
     const key = token.slice(2);
@@ -59,10 +60,10 @@ function parseArgs(rawArgs: string[]): ImageInsertOptions {
   const target = args.target;
   const alt = args.alt;
 
-  if (!file) fail('--file is required');
-  if (!source) fail('--source is required');
+  if (!file) fail(CLI_MESSAGES.image.fileRequired);
+  if (!source) fail(CLI_MESSAGES.image.sourceRequired);
   if (!mode || !SUPPORTED_MODES.includes(mode)) {
-    fail(`--mode must be one of: ${SUPPORTED_MODES.join(', ')}`);
+    fail(CLI_MESSAGES.image.modeMustBeOneOf(SUPPORTED_MODES));
   }
 
   const width = args.width !== undefined ? Number(args.width) : undefined;
@@ -72,16 +73,16 @@ function parseArgs(rawArgs: string[]): ImageInsertOptions {
   const fit = args.fit as ImageInsertOptions['fit'] | undefined;
   const id = args.id;
 
-  if (width !== undefined && !Number.isFinite(width)) fail('--width must be a number');
-  if (height !== undefined && !Number.isFinite(height)) fail('--height must be a number');
-  if (x !== undefined && !Number.isFinite(x)) fail('--x must be a number');
-  if (y !== undefined && !Number.isFinite(y)) fail('--y must be a number');
+  if (width !== undefined && !Number.isFinite(width)) fail(CLI_MESSAGES.image.widthMustBeNumber);
+  if (height !== undefined && !Number.isFinite(height)) fail(CLI_MESSAGES.image.heightMustBeNumber);
+  if (x !== undefined && !Number.isFinite(x)) fail(CLI_MESSAGES.image.xMustBeNumber);
+  if (y !== undefined && !Number.isFinite(y)) fail(CLI_MESSAGES.image.yMustBeNumber);
   if (fit && !['cover', 'contain', 'fill', 'none', 'scale-down'].includes(fit)) {
-    fail('--fit must be one of cover | contain | fill | none | scale-down');
+    fail(CLI_MESSAGES.image.fitMustBeOneOf);
   }
 
   if ((mode === 'node' || mode === 'markdown' || mode === 'shape') && !target) {
-    fail(`--target is required for mode ${mode}`);
+    fail(CLI_MESSAGES.image.targetRequiredForMode(mode));
   }
 
   return {
@@ -116,7 +117,7 @@ function resolveWorkspaceRoot(): string {
 function resolveFileInWorkspace(root: string, filePath: string): string {
   const absolute = path.isAbsolute(filePath) ? filePath : path.resolve(process.cwd(), filePath);
   if (!absolute.startsWith(root)) {
-    fail(`file must be inside workspace root: ${root}`);
+    fail(CLI_MESSAGES.image.fileMustBeInsideWorkspaceRoot(root));
   }
   return absolute;
 }
@@ -136,9 +137,9 @@ function hashBuffer(buffer: Buffer): string {
 function validateImageSourceName(fileName: string): string {
   const extension = path.extname(fileName).replace(/^\./, '').toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(extension)) {
-    fail(`Unsupported extension: .${extension}`);
+    fail(CLI_MESSAGES.image.unsupportedExtension(extension));
   }
-  if (!extension) fail('source file has no extension');
+  if (!extension) fail(CLI_MESSAGES.image.sourceFileHasNoExtension);
   return extension;
 }
 
@@ -403,7 +404,7 @@ function patchMarkdown(ast: t.File, target: string, token: string): boolean {
     if (updated) return;
 
     const current = getMarkdownText(markdownNode);
-    if (current === null) fail('markdown node content is not supported for patching');
+    if (current === null) fail(CLI_MESSAGES.image.markdownNodeContentNotSupported);
 
     replaceMarkdownContent(markdownNode, `${current}${token}`);
     updated = true;
@@ -452,7 +453,7 @@ function patchMarkdown(ast: t.File, target: string, token: string): boolean {
   });
 
   if (!updated) {
-    fail(`target markdown node not found: ${target}`);
+    fail(CLI_MESSAGES.image.targetMarkdownNodeNotFound(target));
   }
 
   return true;
@@ -480,7 +481,7 @@ async function insertCanvasImage(ast: t.File, imageNode: t.JSXElement) {
     },
   });
 
-  if (!updated) fail('Canvas component not found');
+  if (!updated) fail(CLI_MESSAGES.image.canvasComponentNotFound);
 }
 
 async function uploadLocalSource(
@@ -493,15 +494,15 @@ async function uploadLocalSource(
   const statResult = await stat(absolute);
 
   if (statResult.size <= 0) {
-    fail('source file is empty');
+    fail(CLI_MESSAGES.image.sourceFileEmpty);
   }
   if (statResult.size > MAX_IMAGE_BYTES) {
-    fail('source file is too large (max 10MB)');
+    fail(CLI_MESSAGES.image.sourceFileTooLarge);
   }
 
   const detected = detectImageType(data, ext);
   if (!detected) {
-    fail('file signature verification failed');
+    fail(CLI_MESSAGES.image.signatureVerificationFailed);
   }
 
   const base = sanitizeBaseName(path.parse(absolute).name);
@@ -547,8 +548,8 @@ export async function insertImageCommand(rawArgs: string[]) {
   let sourceLabel: string;
 
   if (isHttpUrl(options.source)) {
-    if (options.source.length > 2048) fail('source URL is too long (max 2048)');
-    if (!/^https?:\/\//i.test(options.source)) fail('source must be http/https url');
+    if (options.source.length > 2048) fail(CLI_MESSAGES.image.sourceUrlTooLong);
+    if (!/^https?:\/\//i.test(options.source)) fail(CLI_MESSAGES.image.sourceMustBeHttpUrl);
     sourceForPatch = options.source;
     sourceLabel = options.source;
   } else {
@@ -571,7 +572,7 @@ export async function insertImageCommand(rawArgs: string[]) {
   switch (options.mode) {
     case 'node': {
       const patched = patchNodeChildren(ast, options.target!, imageNode);
-      if (!patched) fail(`target node not found: ${options.target}`);
+      if (!patched) fail(CLI_MESSAGES.image.targetNodeNotFound(options.target!));
       ensureImageImport(ast);
       break;
     }
@@ -581,19 +582,19 @@ export async function insertImageCommand(rawArgs: string[]) {
       break;
     }
     case 'shape': {
-      if (!options.target) fail('--target is required for shape mode');
+      if (!options.target) fail(CLI_MESSAGES.image.targetRequiredForShapeMode);
       const patched = patchShapeImage(ast, options.target, sourceForPatch, options.fit);
-      if (!patched) fail(`target shape not found: ${options.target}`);
+      if (!patched) fail(CLI_MESSAGES.image.targetShapeNotFound(options.target));
       break;
     }
     case 'markdown': {
-      if (!options.target) fail('--target is required for markdown mode');
+      if (!options.target) fail(CLI_MESSAGES.image.targetRequiredForMarkdownMode);
       const token = createMarkdownToken(sanitizeMarkdownInput(options.alt), sourceForPatch);
       patchMarkdown(ast, options.target, token);
       break;
     }
     default:
-      fail(`unsupported mode: ${options.mode}`);
+      fail(CLI_MESSAGES.image.unsupportedMode(options.mode));
   }
 
   const output = generate(ast, { retainLines: true, retainFunctionParens: true }).code;

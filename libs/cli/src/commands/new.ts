@@ -1,6 +1,7 @@
 import { writeFile, access } from "fs/promises";
 import * as path from "path";
 import { initProject } from "./init";
+import { CLI_MESSAGES } from "../messages";
 
 const COMPATIBILITY_TSX_EXTENSION = ".tsx";
 
@@ -36,7 +37,7 @@ export async function newCommand(fileName: string) {
 
   try {
     await access(fullPath);
-    console.error(`✗ File already exists: ${fileName}`);
+    console.error(CLI_MESSAGES.new.fileExists(fileName));
     process.exit(1);
   } catch {
     // File doesn't exist — proceed
@@ -48,5 +49,5 @@ export async function newCommand(fileName: string) {
     .replace(/^(.)/, (_, c) => c.toUpperCase());
 
   await writeFile(fullPath, createCompatibilityCanvasTemplate(funcName, baseName));
-  console.log(`✓ Created ${fileName}`);
+  console.log(CLI_MESSAGES.new.fileCreated(fileName));
 }

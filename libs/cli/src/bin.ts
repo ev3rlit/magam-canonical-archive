@@ -4,6 +4,7 @@ import { createCoreInterceptor } from '@magam/shared';
 import { cliError } from '@magam/shared';
 import { hasJsonFlag } from './headless/options';
 import { writeFailure, writeSuccess } from './headless/json-output';
+import { CLI_MESSAGES } from './messages';
 
 // Set up module resolution for monorepo/local dev environment
 // From dist/libs/cli/src/bin.js -> dist/libs/core
@@ -23,7 +24,7 @@ type ResourceCommandRunner = (args: string[]) => Promise<{
 function requireArg(args: string[], _name: string, usage: string): string {
   const value = args[0];
   if (!value) {
-    console.error(`Usage: magam ${usage}`);
+    console.error(CLI_MESSAGES.help.usageFor(usage));
     process.exit(1);
   }
   return value;
@@ -32,7 +33,7 @@ function requireArg(args: string[], _name: string, usage: string): string {
 const commands: Record<string, Command> = {
   init: {
     usage: 'init',
-    description: 'Initialize a new project',
+    description: CLI_MESSAGES.command.initDescription,
     run: async () => {
       const { initProject } = await import('./commands/init');
       await initProject(process.cwd());
@@ -40,7 +41,7 @@ const commands: Record<string, Command> = {
   },
   dev: {
     usage: 'dev',
-    description: 'Start development server',
+    description: CLI_MESSAGES.command.devDescription,
     run: async () => {
       const { startDevServer } = await import('./commands/dev');
       await startDevServer(process.cwd());
@@ -48,7 +49,7 @@ const commands: Record<string, Command> = {
   },
   new: {
     usage: 'new <filename>',
-    description: 'Create a new diagram file',
+    description: CLI_MESSAGES.command.newDescription,
     run: async (args) => {
       const fileName = requireArg(args, 'filename', 'new <filename>');
       const { newCommand } = await import('./commands/new');
@@ -57,7 +58,7 @@ const commands: Record<string, Command> = {
   },
   render: {
     usage: 'render <file>',
-    description: 'Render TSX file to Graph AST JSON',
+    description: CLI_MESSAGES.command.renderDescription,
     run: async (args) => {
       const filePath = requireArg(args, 'file', 'render <file>');
       const { renderCommand } = await import('./commands/render');
@@ -66,7 +67,7 @@ const commands: Record<string, Command> = {
   },
   validate: {
     usage: 'validate <file>',
-    description: 'Validate TSX file syntax and execution',
+    description: CLI_MESSAGES.command.validateDescription,
     run: async (args) => {
       const filePath = requireArg(args, 'file', 'validate <file>');
       const { validateCommand } = await import('./commands/validate');
@@ -75,14 +76,14 @@ const commands: Record<string, Command> = {
   },
   serve: {
     usage: 'serve [dir]',
-    description: 'Start HTTP render server only',
+    description: CLI_MESSAGES.command.serveDescription,
     run: async (args) => {
       const targetDir = args[0] || process.cwd();
       const { startHttpServer } = await import('./server/http');
       const server = await startHttpServer({ targetDir });
-      console.log(`HTTP render server started on port ${server.port}`);
+      console.log(CLI_MESSAGES.help.httpServerStarted(server.port));
       process.on('SIGINT', async () => {
-        console.log('\nShutting down HTTP server...');
+        console.log(CLI_MESSAGES.help.shuttingDownHttpServer);
         await server.close();
         process.exit(0);
       });
@@ -90,7 +91,7 @@ const commands: Record<string, Command> = {
   },
   mcp: {
     usage: 'mcp [dir]',
-    description: 'Start MCP server (stdio transport)',
+    description: CLI_MESSAGES.command.mcpDescription,
     run: async (args) => {
       const targetDir = args[0] || process.cwd();
       const { startMcpServer } = await import('./server/mcp');
@@ -100,11 +101,11 @@ const commands: Record<string, Command> = {
 
   image: {
     usage: 'image insert --file <file> --source <path|url> --mode <node|markdown|canvas|shape> [--target <id>]',
-    description: 'Insert an image into Magam source by mode',
+    description: CLI_MESSAGES.command.imageDescription,
     run: async (args) => {
       const sub = args[0];
       if (sub !== 'insert') {
-        console.error('Usage: magam image insert ...');
+        console.error(CLI_MESSAGES.help.imageUsage);
         process.exit(1);
       }
 
@@ -147,27 +148,21 @@ const resourceCommands: Record<string, ResourceCommandRunner> = {
 
 commands['help'] = {
   usage: 'help',
-  description: 'Show this help message',
+  description: CLI_MESSAGES.command.helpDescription,
   run: async () => printHelp(),
 };
 
 function printHelp() {
-  console.log('Usage: magam <command>\n');
-  console.log('Legacy Commands:');
+  console.log(`${CLI_MESSAGES.help.usageHeader}\n`);
+  console.log(CLI_MESSAGES.help.legacyCommandsHeader);
   const maxUsageLen = Math.max(...Object.values(commands).map((c) => c.usage.length));
   for (const cmd of Object.values(commands)) {
     console.log(`  ${cmd.usage.padEnd(maxUsageLen + 2)} ${cmd.description}`);
   }
-  console.log('\nHeadless Resource Commands:');
-  console.log('  workspace list|get [--workspace <id>] [--json]');
-  console.log('  document get --document <id> [--json]');
-  console.log('  surface get|query-nodes --document <id> --surface <id> [--bounds x,y,w,h] [--json]');
-  console.log('  object get|query [filters] [--json]');
-  console.log('  object update-content --workspace <id> --object <id> --kind <kind> --patch <json|@stdin> [--document <id>] [--json]');
-  console.log('  object patch-capability --workspace <id> --object <id> --capability <name> --patch <json|@stdin> [--document <id>] [--json]');
-  console.log('  search objects|documents --text <query> [--workspace <id>] [--json]');
-  console.log('  canvas-node move|reparent --document <id> --node <id> [...] [--json]');
-  console.log('  mutation apply [--workspace <id>] [--document <id>] [--dry-run] [--json] < batch.json');
+  console.log(`\n${CLI_MESSAGES.help.headlessCommandsHeader}`);
+  for (const usage of CLI_MESSAGES.help.headlessCommandUsages) {
+    console.log(`  ${usage}`);
+  }
 }
 
 async function runResourceCommand(command: string, args: string[]): Promise<number> {
@@ -195,7 +190,7 @@ export async function runCli(args: string[]): Promise<number> {
   if (!cmd) {
     printHelp();
     if (command) {
-      console.error(`\nUnknown command: ${command}`);
+      console.error(CLI_MESSAGES.command.unknownCommand(command));
       return 1;
     }
     return 0;

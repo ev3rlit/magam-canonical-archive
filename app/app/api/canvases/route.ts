@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { NextResponse } from 'next/server';
+import { API_SHARED_MESSAGES } from '../_shared/messages';
 import {
   createCanonicalCanvas,
   listCanonicalCanvases,
@@ -23,12 +24,12 @@ function pickRootPath(searchParams: URLSearchParams): string | null {
 
 function resolveCanvasRootPath(rawRootPath: unknown): string {
   if (typeof rawRootPath !== 'string') {
-    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath is required');
+    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', API_SHARED_MESSAGES.rootPathRequired);
   }
 
   const trimmed = rawRootPath.trim();
   if (!trimmed || !path.isAbsolute(trimmed)) {
-    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath must be an absolute path');
+    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', API_SHARED_MESSAGES.rootPathAbsolute);
   }
 
   return trimmed;
@@ -54,10 +55,10 @@ function toJsonErrorResponse(error: unknown) {
     );
   }
 
-  const message = error instanceof Error ? error.message : 'Unknown error';
-  console.error('[api/canvases] unexpected error:', message);
+  const message = error instanceof Error ? error.message : API_SHARED_MESSAGES.unknownError;
+  console.error(API_SHARED_MESSAGES.routeLog.canvases, message);
   return NextResponse.json(
-    { error: `Failed to handle canvases request: ${message}`, code: 'DOC_500_REQUEST_FAILED' },
+    { error: `${API_SHARED_MESSAGES.routeFailure.canvases}: ${message}`, code: 'DOC_500_REQUEST_FAILED' },
     { status: 500 },
   );
 }
@@ -67,12 +68,12 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
   try {
     body = await request.json();
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    throw new ApiError(400, 'DOC_400_INVALID_JSON', `Request body must be valid JSON: ${message}`);
+    const message = error instanceof Error ? error.message : API_SHARED_MESSAGES.unknownError;
+    throw new ApiError(400, 'DOC_400_INVALID_JSON', API_SHARED_MESSAGES.requestBodyMustBeValidJson(message));
   }
 
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    throw new ApiError(400, 'DOC_400_INVALID_JSON', 'Request body must be a JSON object');
+    throw new ApiError(400, 'DOC_400_INVALID_JSON', API_SHARED_MESSAGES.requestBodyMustBeJsonObject);
   }
 
   return body as Record<string, unknown>;
