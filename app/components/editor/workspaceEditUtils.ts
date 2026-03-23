@@ -119,9 +119,19 @@ export function resolveNodeEditContext(
 
 export function resolveNodeActionRoutingContext(
   node: Pick<Node, 'id' | 'data' | 'type'>,
-  currentFile: string | null,
-  selectedNodeIds: string[],
+  currentCanvasIdOrCurrentFile: string | null,
+  currentFileOrSelectedNodeIds: string | null | string[],
+  maybeSelectedNodeIds?: string[],
 ): ActionRoutingResolvedContext {
+  const selectedNodeIds = Array.isArray(currentFileOrSelectedNodeIds)
+    ? currentFileOrSelectedNodeIds
+    : (maybeSelectedNodeIds ?? []);
+  const currentCanvasId = Array.isArray(currentFileOrSelectedNodeIds)
+    ? null
+    : currentCanvasIdOrCurrentFile;
+  const currentFile = Array.isArray(currentFileOrSelectedNodeIds)
+    ? currentCanvasIdOrCurrentFile
+    : currentFileOrSelectedNodeIds;
   const target = resolveNodeEditTarget(node, currentFile);
   const editMeta = getNodeEditMeta(node);
   const data = (node.data || {}) as Record<string, unknown>;
@@ -149,7 +159,8 @@ export function resolveNodeActionRoutingContext(
     target: {
       renderedNodeId: node.id,
       sourceId: target.nodeId,
-      filePath: target.filePath,
+      canvasId: currentCanvasId,
+      compatibilityFilePath: target.filePath,
       nodeType: node.type,
       ...(typeof sourceMeta.scopeId === 'string' ? { scopeId: sourceMeta.scopeId } : {}),
       ...(typeof sourceMeta.frameScope === 'string' ? { frameScope: sourceMeta.frameScope } : {}),
@@ -180,6 +191,7 @@ export function resolveNodeActionRoutingContext(
 }
 
 export function createPaneActionRoutingContext(input: {
+  currentCanvasId: string | null;
   currentFile: string | null;
   selectedNodeIds: string[];
 }): ActionRoutingResolvedContext {
@@ -193,6 +205,14 @@ export function createPaneActionRoutingContext(input: {
     metadata: {
       capabilities: [],
     },
+    ...(input.currentCanvasId
+      ? {
+          target: {
+            canvasId: input.currentCanvasId,
+            compatibilityFilePath: input.currentFile,
+          },
+        }
+      : {}),
     relations: {
       hasParentRelation: false,
       isGroupMember: false,

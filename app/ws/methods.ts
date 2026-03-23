@@ -5,6 +5,7 @@
 import { readFile } from 'fs/promises';
 import { createHash } from 'crypto';
 import { isAbsolute, resolve } from 'path';
+import { resolveCanonicalCanvasCompatibilityFilePath } from '../../libs/shared/src/lib/canonical-canvas-shell';
 import {
     patchFile,
     patchNodeCreate,
@@ -25,6 +26,7 @@ export interface RpcContext {
     ws: unknown;
     subscriptions: Set<string>;
     notifyFileChanged?: (payload: {
+        canvasId?: string;
         filePath: string;
         resolvedFilePath: string;
         version: string;
@@ -243,9 +245,9 @@ function ensurePluginInstanceInput(value: unknown): {
 }
 
 async function mutatePluginRuntimeWithContract<T>(
-    common: { filePath: string; resolvedFilePath: string; rootPath?: string; baseVersion: string; originId: string; commandId: string },
+    common: { canvasId?: string; filePath: string; resolvedFilePath: string; rootPath?: string; baseVersion: string; originId: string; commandId: string },
     mutator: (bucket: Map<string, PluginInstanceRuntimeRecord>) => T,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; resolvedFilePath: string; data: T }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; canvasId?: string; filePath: string; resolvedFilePath: string; data: T }> {
     return runWithOptionalFileMutex(common.resolvedFilePath, async () => {
         await ensureBaseVersion(common.resolvedFilePath, common.baseVersion);
         const bucket = getPluginBucket(common.resolvedFilePath);
@@ -255,6 +257,7 @@ async function mutatePluginRuntimeWithContract<T>(
             success: true,
             newVersion,
             commandId: common.commandId,
+            canvasId: common.canvasId,
             filePath: common.filePath,
             resolvedFilePath: common.resolvedFilePath,
             data,
@@ -329,14 +332,35 @@ function resolveWorkspaceFilePath(filePath: string, rootPath?: string): string {
     return resolve(workspaceRoot, filePath);
 }
 
-function ensureCommonParams(params: Record<string, unknown>) {
-    const filePath = ensureString(params.filePath, 'filePath');
+async function resolveCanvasCompatibilityPath(canvasId: string, rootPath?: string): Promise<{ filePath: string; resolvedFilePath: string }> {
+    const targetDir = resolve(rootPath || process.env.MAGAM_TARGET_DIR || process.cwd());
+    const filePath = await resolveCanonicalCanvasCompatibilityFilePath({
+        targetDir,
+        canvasId,
+    });
+    if (!filePath) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: `canvasId ${canvasId} has no compatibility path` };
+    }
+    return {
+        filePath,
+        resolvedFilePath: resolveWorkspaceFilePath(filePath, targetDir),
+    };
+}
+
+async function ensureCommonParams(params: Record<string, unknown>) {
+    const canvasId = ensureOptionalString(params.canvasId, 'canvasId');
+    const inputFilePath = ensureOptionalString(params.filePath, 'filePath');
+    if (!canvasId && !inputFilePath) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
+    }
     const baseVersion = ensureString(params.baseVersion, 'baseVersion');
     const originId = ensureString(params.originId, 'originId');
     const commandId = ensureString(params.commandId, 'commandId');
     const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
-    const resolvedFilePath = resolveWorkspaceFilePath(filePath, rootPath);
-    return { filePath, resolvedFilePath, rootPath, baseVersion, originId, commandId };
+    const resolved = inputFilePath
+        ? { filePath: inputFilePath, resolvedFilePath: resolveWorkspaceFilePath(inputFilePath, rootPath) }
+        : await resolveCanvasCompatibilityPath(canvasId as string, rootPath);
+    return { canvasId: canvasId ?? undefined, filePath: resolved.filePath, resolvedFilePath: resolved.resolvedFilePath, rootPath, baseVersion, originId, commandId };
 }
 
 async function getFileVersion(filePath: string): Promise<string> {
@@ -357,14 +381,15 @@ async function ensureBaseVersion(filePath: string, baseVersion: string): Promise
 
 async function mutateWithContract(
     ctx: RpcContext,
-    common: { filePath: string; resolvedFilePath: string; rootPath?: string; baseVersion: string; originId: string; commandId: string },
+    common: { canvasId?: string; filePath: string; resolvedFilePath: string; rootPath?: string; baseVersion: string; originId: string; commandId: string },
     mutator: () => Promise<void>,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; resolvedFilePath: string }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; canvasId?: string; filePath: string; resolvedFilePath: string }> {
     return runWithOptionalFileMutex(common.resolvedFilePath, async () => {
         await ensureBaseVersion(common.resolvedFilePath, common.baseVersion);
         await mutator();
         const newVersion = await getFileVersion(common.resolvedFilePath);
         ctx.notifyFileChanged?.({
+            canvasId: common.canvasId,
             filePath: common.filePath,
             resolvedFilePath: common.resolvedFilePath,
             version: newVersion,
@@ -376,6 +401,7 @@ async function mutateWithContract(
             success: true,
             newVersion,
             commandId: common.commandId,
+            canvasId: common.canvasId,
             filePath: common.filePath,
             resolvedFilePath: common.resolvedFilePath,
         };
@@ -383,16 +409,34 @@ async function mutateWithContract(
 }
 
 async function handleFileSubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
-    const filePath = ensureString(params.filePath, 'filePath');
     const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
-    ctx.subscriptions.add(resolveWorkspaceFilePath(filePath, rootPath));
+    const canvasId = ensureOptionalString(params.canvasId, 'canvasId');
+    const filePath = ensureOptionalString(params.filePath, 'filePath');
+    if (!canvasId && !filePath) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
+    }
+    if (filePath) {
+        ctx.subscriptions.add(resolveWorkspaceFilePath(filePath, rootPath));
+        return { success: true };
+    }
+    const resolved = await resolveCanvasCompatibilityPath(canvasId as string, rootPath);
+    ctx.subscriptions.add(resolved.resolvedFilePath);
     return { success: true };
 }
 
 async function handleFileUnsubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
-    const filePath = ensureString(params.filePath, 'filePath');
     const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
-    ctx.subscriptions.delete(resolveWorkspaceFilePath(filePath, rootPath));
+    const canvasId = ensureOptionalString(params.canvasId, 'canvasId');
+    const filePath = ensureOptionalString(params.filePath, 'filePath');
+    if (!canvasId && !filePath) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
+    }
+    if (filePath) {
+        ctx.subscriptions.delete(resolveWorkspaceFilePath(filePath, rootPath));
+        return { success: true };
+    }
+    const resolved = await resolveCanvasCompatibilityPath(canvasId as string, rootPath);
+    ctx.subscriptions.delete(resolved.resolvedFilePath);
     return { success: true };
 }
 
@@ -400,7 +444,7 @@ async function handleNodeUpdate(
     params: Record<string, unknown>,
     ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const props = params.props as NodeProps | undefined;
     const explicitCommandType = ensureOptionalUpdateCommandType(params.commandType);
@@ -480,7 +524,7 @@ async function handleNodeMove(
     params: Record<string, unknown>,
     ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const x = ensureNumber(params.x, 'x');
     const y = ensureNumber(params.y, 'y');
@@ -518,7 +562,7 @@ async function handleNodeCreate(
     params: Record<string, unknown>,
     ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const node = params.node as CreateNodeInput | undefined;
 
     if (!node || typeof node !== 'object') {
@@ -585,7 +629,7 @@ async function handleNodeDelete(
     params: Record<string, unknown>,
     ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
 
     try {
@@ -618,7 +662,7 @@ async function handleNodeReparent(
     params: Record<string, unknown>,
     ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const newParentId = ensureOptionalString(params.newParentId, 'newParentId');
 
@@ -653,7 +697,7 @@ async function handlePluginInstanceCreate(
     params: Record<string, unknown>,
     _ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; instance: PluginInstanceRuntimeRecord }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const input = ensurePluginInstanceInput(params.instance);
 
     try {
@@ -714,7 +758,7 @@ async function handlePluginInstanceUpdateProps(
     params: Record<string, unknown>,
     _ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; instance: PluginInstanceRuntimeRecord }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const instanceId = ensureString(params.instanceId, 'instanceId');
     const patch = ensureRecord(params.patch, 'patch');
 
@@ -772,7 +816,7 @@ async function handlePluginInstanceUpdateBinding(
     params: Record<string, unknown>,
     _ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; instance: PluginInstanceRuntimeRecord }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const instanceId = ensureString(params.instanceId, 'instanceId');
     const bindingConfig = ensureRecord(params.bindingConfig, 'bindingConfig');
 
@@ -827,7 +871,7 @@ async function handlePluginInstanceRemove(
     params: Record<string, unknown>,
     _ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; removedInstanceId: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const instanceId = ensureString(params.instanceId, 'instanceId');
 
     try {

@@ -93,7 +93,9 @@ export interface EditCompletionEvent {
   eventId: string;
   type: EditCompletionEventType;
   nodeId: string;
+  canvasId: string;
   filePath: string;
+  compatibilityFilePath?: string | null;
   commandId: string;
   baseVersion: string;
   nextVersion: string;
@@ -156,7 +158,9 @@ export interface TabSelectionState {
 
 export interface TabState {
   tabId: string;
+  canvasId: string;
   pageId: string;
+  compatibilityFilePath: string | null;
   title: string;
   dirty: boolean;
   lastViewport: TabViewportState | null;
@@ -211,6 +215,7 @@ export interface GraphState {
   fileTree: FileTreeNode | null;
   expandedFolders: Set<string>;
   currentFile: string | null;
+  currentCompatibilityFilePath: string | null;
   currentCanvasId: string | null;
   // Workspace-canvas-shell migration anchor:
   // registry/session/path-health state is owned here so runtime scope follows the active workspace.
@@ -227,6 +232,7 @@ export interface GraphState {
   graphId: string; // Unique ID for the current graph data version
   sourceVersion: string | null;
   sourceVersions: Record<string, string>;
+  canvasVersions: Record<string, string>;
   clientId: string;
   lastAppliedCommandId?: string;
   status: 'idle' | 'loading' | 'error' | 'success' | 'connected';
@@ -258,9 +264,10 @@ export interface GraphState {
   hoveredNodeIdsByGroupId: Record<string, string[]>;
   pendingActionRoutingByKey: Record<string, ActionRoutingPendingRecord>;
   actionRoutingPendingByToken: Record<string, ActionOptimisticLifecycleEvent>;
-  setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null; sourceVersions?: Record<string, string> }) => void;
+  setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null; sourceVersions?: Record<string, string>; canvasVersions?: Record<string, string> }) => void;
   setSourceVersion: (version: string | null) => void;
   setSourceVersionForFile: (filePath: string, version: string | null) => void;
+  setCanvasVersion: (canvasId: string, version: string | null) => void;
   setLastAppliedCommandId: (commandId?: string) => void;
   hydrateWorkspaceRegistry: () => Promise<{
     workspaces: RegisteredWorkspace[];
@@ -295,6 +302,7 @@ export interface GraphState {
   setFileTree: (tree: FileTreeNode | null) => void;
   toggleFolder: (path: string) => void;
   setCurrentFile: (file: string) => void;
+  setCurrentCompatibilityFilePath: (file: string | null) => void;
   setCurrentCanvasId: (canvasId: string | null) => void;
   setStatus: (status: GraphState['status']) => void;
   setError: (error: AppError | null) => void;
@@ -802,6 +810,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   fileTree: null,
   expandedFolders: new Set<string>(),
   currentFile: null,
+  currentCompatibilityFilePath: null,
   currentCanvasId: null,
   registeredWorkspaces: [],
   activeWorkspaceId: null,
@@ -816,6 +825,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   graphId: uuidv4(),
   sourceVersion: null,
   sourceVersions: {},
+  canvasVersions: {},
   clientId: uuidv4(),
   lastAppliedCommandId: undefined,
   status: 'idle',
@@ -859,10 +869,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     canvasFontFamily,
     sourceVersion,
     sourceVersions,
+    canvasVersions,
   }) => set((state) => {
     const nextSourceVersions = sourceVersions
       ? normalizeWorkspaceAwareSourceVersions(state.workspaceRootPath, sourceVersions)
       : state.sourceVersions;
+    const nextCanvasVersions = canvasVersions ?? state.canvasVersions;
     const normalizedMindMapGroups = mindMapGroups.map(normalizeMindMapGroup);
     const resolvedLayoutType = layoutType ?? normalizedMindMapGroups[0]?.layoutType ?? 'compact';
     return {
@@ -874,8 +886,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       graphId: uuidv4(),
       ...(canvasBackground ? { canvasBackground } : {}),
       ...(isFontFamilyPreset(canvasFontFamily) ? { canvasFontFamily } : { canvasFontFamily: undefined }),
-      ...(sourceVersion !== undefined ? { sourceVersion } : {}),
+      ...(sourceVersion !== undefined
+        ? { sourceVersion }
+        : state.currentCanvasId
+          ? { sourceVersion: nextCanvasVersions[state.currentCanvasId] ?? state.sourceVersion }
+          : {}),
       sourceVersions: nextSourceVersions,
+      canvasVersions: nextCanvasVersions,
       activeGroupFocusGroupId: null,
       entrypointRuntime: resetEntrypointRuntimeState({
         current: state.entrypointRuntime,
@@ -884,7 +901,21 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       hoveredNodeIdsByGroupId: {},
     };
   }),
-  setSourceVersion: (sourceVersion) => set({ sourceVersion }),
+  setSourceVersion: (sourceVersion) => set((state) => ({
+    sourceVersion,
+    ...(state.currentCanvasId
+      ? {
+          canvasVersions: sourceVersion
+            ? {
+                ...state.canvasVersions,
+                [state.currentCanvasId]: sourceVersion,
+              }
+            : Object.fromEntries(
+                Object.entries(state.canvasVersions).filter(([canvasId]) => canvasId !== state.currentCanvasId),
+              ),
+        }
+      : {}),
+  })),
   setSourceVersionForFile: (filePath, version) => set((state) => {
     const normalizedFilePath = filePath
       ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, filePath)
@@ -902,7 +933,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
     return {
       sourceVersions: nextSourceVersions,
-      ...(state.currentFile === normalizedFilePath ? { sourceVersion: version } : {}),
+      ...(state.currentCompatibilityFilePath === normalizedFilePath ? { sourceVersion: version } : {}),
       entrypointRuntime: {
         ...state.entrypointRuntime,
         hover: {
@@ -912,6 +943,23 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         },
       },
       hoveredNodeIdsByGroupId: {},
+    };
+  }),
+  setCanvasVersion: (canvasId, version) => set((state) => {
+    if (!canvasId) {
+      return state;
+    }
+
+    const nextCanvasVersions = { ...state.canvasVersions };
+    if (version) {
+      nextCanvasVersions[canvasId] = version;
+    } else {
+      delete nextCanvasVersions[canvasId];
+    }
+
+    return {
+      canvasVersions: nextCanvasVersions,
+      ...(state.currentCanvasId === canvasId ? { sourceVersion: version } : {}),
     };
   }),
   setLastAppliedCommandId: (lastAppliedCommandId) => set({ lastAppliedCommandId }),
@@ -1206,9 +1254,11 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       workspaceSessionKey: normalizedWorkspaceId,
       workspaceRootPath: normalizedWorkspaceRootPath,
       workspaceSessionScopeVersion: state.workspaceSessionScopeVersion + 1,
-      sourceVersion: state.currentFile
-        ? (state.sourceVersions[state.currentFile] ?? null)
-        : null,
+      sourceVersion: state.currentCanvasId
+        ? (state.canvasVersions[state.currentCanvasId] ?? null)
+        : state.currentCompatibilityFilePath
+          ? (state.sourceVersions[state.currentCompatibilityFilePath] ?? null)
+          : null,
     };
   }),
   rememberLastActiveCanvasForWorkspace: async (workspaceId, canvasPath) => {
@@ -1286,8 +1336,12 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       : null;
     return {
       currentFile: normalizedCurrentFile,
-      currentCanvasId: normalizedCurrentFile === state.currentFile ? state.currentCanvasId : null,
-      sourceVersion: normalizedCurrentFile ? (state.sourceVersions[normalizedCurrentFile] ?? null) : null,
+      currentCompatibilityFilePath: normalizedCurrentFile,
+      sourceVersion: normalizedCurrentFile
+        ? (state.sourceVersions[normalizedCurrentFile] ?? state.sourceVersion)
+        : state.currentCanvasId
+          ? (state.canvasVersions[state.currentCanvasId] ?? null)
+          : null,
       activeGroupFocusGroupId: null,
       entrypointRuntime: resetEntrypointRuntimeState({
         current: state.entrypointRuntime,
@@ -1296,8 +1350,26 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       hoveredNodeIdsByGroupId: {},
     };
   }),
-  setCurrentCanvasId: (currentCanvasId) => set({
-    currentCanvasId: currentCanvasId && currentCanvasId.length > 0 ? currentCanvasId : null,
+  setCurrentCompatibilityFilePath: (currentFile) => set((state) => {
+    const normalizedCurrentFile = currentFile
+      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, currentFile)
+      : null;
+    return {
+      currentFile: normalizedCurrentFile,
+      currentCompatibilityFilePath: normalizedCurrentFile,
+      sourceVersion: normalizedCurrentFile
+        ? (state.sourceVersions[normalizedCurrentFile] ?? state.sourceVersion)
+        : state.currentCanvasId
+          ? (state.canvasVersions[state.currentCanvasId] ?? null)
+          : null,
+    };
+  }),
+  setCurrentCanvasId: (currentCanvasId) => set((state) => {
+    const normalizedCanvasId = currentCanvasId && currentCanvasId.length > 0 ? currentCanvasId : null;
+    return {
+      currentCanvasId: normalizedCanvasId,
+      sourceVersion: normalizedCanvasId ? (state.canvasVersions[normalizedCanvasId] ?? null) : null,
+    };
   }),
   setStatus: (status) => set({ status }),
   setError: (error) => set({ error }),
@@ -1431,7 +1503,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     });
   },
   openTab: (pageId) => {
-    const { openTabs, maxTabs, activeTabId, currentFile, workspaceRootPath } = get();
+    const { openTabs, maxTabs, activeTabId, currentCompatibilityFilePath, workspaceRootPath } = get();
     const normalizedPageId = normalizeWorkspaceAwareFilePath(workspaceRootPath, pageId);
     const existingTab = openTabs.find((tab) => tab.pageId === normalizedPageId);
     const now = getNow();
@@ -1446,9 +1518,10 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         openTabs: nextTabs,
         activeTabId: existingTab.tabId,
         currentFile: normalizedPageId,
-        currentCanvasId: null,
+        currentCompatibilityFilePath: existingTab.compatibilityFilePath ?? normalizedPageId,
+        currentCanvasId: existingTab.canvasId,
       });
-      if (activeTabId !== existingTab.tabId || currentFile !== normalizedPageId) {
+      if (activeTabId !== existingTab.tabId || currentCompatibilityFilePath !== normalizedPageId) {
         console.debug('[Telemetry] tabs_switched', { tabId: existingTab.tabId, pageId: normalizedPageId, source: 'openTab' });
       }
       return { status: 'activated', tabId: existingTab.tabId };
@@ -1469,7 +1542,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
 
     const nextTab: TabState = {
       tabId: uuidv4(),
+      canvasId: normalizedPageId,
       pageId: normalizedPageId,
+      compatibilityFilePath: normalizedPageId,
       title: getDefaultTabTitle(normalizedPageId),
       dirty: false,
       lastViewport: null,
@@ -1482,7 +1557,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       openTabs: [...openTabs, nextTab],
       activeTabId: nextTab.tabId,
       currentFile: normalizedPageId,
-      currentCanvasId: null,
+      currentCompatibilityFilePath: normalizedPageId,
+      currentCanvasId: nextTab.canvasId,
     });
     console.debug('[Telemetry] tabs_opened', { tabId: nextTab.tabId, pageId: normalizedPageId, source: 'openTab' });
     return { status: 'opened', tabId: nextTab.tabId };
@@ -1500,7 +1576,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       tab.tabId === replaceTabId
         ? {
             ...tab,
+            canvasId: normalizedPageId,
             pageId: normalizedPageId,
+            compatibilityFilePath: normalizedPageId,
             title: getDefaultTabTitle(normalizedPageId),
             dirty: false,
             lastViewport: null,
@@ -1515,7 +1593,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       openTabs: nextTabs,
       activeTabId: replaceTabId,
       currentFile: normalizedPageId,
-      currentCanvasId: null,
+      currentCompatibilityFilePath: normalizedPageId,
+      currentCanvasId: normalizedPageId,
     });
     console.debug('[Telemetry] tabs_limit_replaced', { tabId: replaceTabId, pageId: normalizedPageId });
   },
@@ -1534,7 +1613,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       )),
       activeTabId: tabId,
       currentFile: tab.pageId,
-      currentCanvasId: null,
+      currentCompatibilityFilePath: tab.compatibilityFilePath,
+      currentCanvasId: tab.canvasId,
     });
     console.debug('[Telemetry] tabs_switched', { tabId, pageId: tab.pageId, source: 'activateTab' });
   },
@@ -1554,7 +1634,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         const now = getNow();
         const fallbackTab: TabState = {
           tabId: uuidv4(),
+          canvasId: fallbackPageId,
           pageId: fallbackPageId,
+          compatibilityFilePath: fallbackPageId,
           title: getDefaultTabTitle(fallbackPageId),
           dirty: false,
           lastViewport: null,
@@ -1566,7 +1648,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           openTabs: [fallbackTab],
           activeTabId: fallbackTab.tabId,
           currentFile: fallbackPageId,
-          currentCanvasId: null,
+          currentCompatibilityFilePath: fallbackPageId,
+          currentCanvasId: fallbackTab.canvasId,
         });
         console.debug('[Telemetry] tabs_fallback_opened', { tabId: fallbackTab.tabId, pageId: fallbackPageId });
         return;
@@ -1576,6 +1659,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         openTabs: [],
         activeTabId: null,
         currentFile: null,
+        currentCompatibilityFilePath: null,
         currentCanvasId: null,
       });
       return;
@@ -1594,7 +1678,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       openTabs: remainingTabs,
       activeTabId: nextActiveTab?.tabId ?? null,
       currentFile: nextActiveTab?.pageId ?? null,
-      currentCanvasId: null,
+      currentCompatibilityFilePath: nextActiveTab?.compatibilityFilePath ?? null,
+      currentCanvasId: nextActiveTab?.canvasId ?? null,
     });
     console.debug('[Telemetry] tabs_closed', { tabId, pageId: targetTab.pageId, dirty: targetTab.dirty });
   },

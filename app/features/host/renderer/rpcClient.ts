@@ -62,7 +62,6 @@ export interface RendererRenderResponse {
   graph?: unknown;
   canvasId?: string;
   title?: string | null;
-  compatibilityFilePath?: string | null;
   sourceVersion?: string;
   sourceVersions?: Record<string, string>;
   error?: string;

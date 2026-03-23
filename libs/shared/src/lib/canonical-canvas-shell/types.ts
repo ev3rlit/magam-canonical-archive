@@ -2,7 +2,6 @@ export interface CanonicalCanvasShellRecord {
   canvasId: string;
   workspaceId: string;
   title: string | null;
-  compatibilityFilePath: string | null;
   surfaceIds: string[];
   nodeCount: number;
   bindingCount: number;

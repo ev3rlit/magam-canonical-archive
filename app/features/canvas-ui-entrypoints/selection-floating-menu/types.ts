@@ -62,7 +62,7 @@ export interface SelectionFloatingMenuInventoryItem extends SelectionMenuItemCon
 export interface SelectionFloatingMenuSelectedNode {
   renderedNodeId: string;
   sourceId: string;
-  filePath: string | null;
+  canvasId: string | null;
   nodeType: string;
   semanticRole?: string;
   label: string;

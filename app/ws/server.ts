@@ -92,14 +92,9 @@ const server = Bun.serve({
             try {
                 const result = await handler(request.params || {}, ctx);
                 if (request.method === 'file.subscribe') {
-                    const rawFilePath = request.params?.filePath;
-                    const rawRootPath = request.params?.rootPath;
-                    if (typeof rawFilePath === 'string' && rawFilePath.length > 0) {
-                        ensureWatchedSubscriptionPath(
-                            rawFilePath,
-                            typeof rawRootPath === 'string' ? rawRootPath : undefined,
-                        );
-                    }
+                    ctx.subscriptions.forEach((subscriptionPath) => {
+                        ensureWatchedSubscriptionPath(subscriptionPath);
+                    });
                 }
                 ws.send(JSON.stringify(createResponse(request.id, result)));
             } catch (error) {
@@ -174,6 +169,7 @@ function broadcastCompatibilityFileListUpdate(event: 'add' | 'unlink', filePath:
 }
 
 function broadcastFileChanged(payload: {
+    canvasId?: string;
     filePath: string;
     resolvedFilePath: string;
     version: string;
@@ -185,6 +181,7 @@ function broadcastFileChanged(payload: {
     recentCommandEvents.set(payload.resolvedFilePath, now);
 
     const notification = createNotification('file.changed', {
+        ...(payload.canvasId ? { canvasId: payload.canvasId } : {}),
         filePath: payload.filePath,
         resolvedFilePath: payload.resolvedFilePath,
         version: payload.version,

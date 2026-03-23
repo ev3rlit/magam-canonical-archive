@@ -7,6 +7,7 @@ import type { HeadlessServiceContext } from '../canonical-cli';
 import {
   getCurrentCanvasRevision,
   getWorkspaceCanvas,
+  getWorkspaceCanvasCompatibilityFilePath,
   listWorkspaceCanvases,
 } from '../canonical-query/workspace-canvas';
 import type {
@@ -79,6 +80,12 @@ export async function getCanonicalCanvas(
 ): Promise<CanonicalCanvasShellRecord> {
   return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context, workspaceId) => (
     getWorkspaceCanvas(context, input.canvasId, workspaceId)
+  ));
+}
+
+export async function resolveCanonicalCanvasCompatibilityFilePath(input: GetCanonicalCanvasShellInput): Promise<string | null> {
+  return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context) => (
+    getWorkspaceCanvasCompatibilityFilePath(context, input.canvasId)
   ));
 }
 

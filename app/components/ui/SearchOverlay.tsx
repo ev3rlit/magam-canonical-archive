@@ -17,6 +17,7 @@ export const SearchOverlay: React.FC = () => {
     activeResultIndex,
     nodes,
     files,
+    currentCanvasId,
     currentFile,
     closeSearch,
     setSearchMode,
@@ -54,7 +55,7 @@ export const SearchOverlay: React.FC = () => {
     const nextResults = buildSearchResults({
       nodes,
       files,
-      currentFile,
+      currentCanvasId,
       query: debouncedQuery,
       mode: searchMode,
     });
@@ -84,7 +85,7 @@ export const SearchOverlay: React.FC = () => {
     isSearchOpen,
     nodes,
     files,
-    currentFile,
+    currentCanvasId,
     searchMode,
     debouncedQuery,
     setSearchActiveIndex,
@@ -148,7 +149,6 @@ export const SearchOverlay: React.FC = () => {
       return;
     }
 
-    const resultFilePath = result.filePath || currentFile;
     const navigate = () => {
       const nodeExists = useGraphStore.getState().nodes.some((node) => node.id === result.key);
       if (!nodeExists) {
@@ -176,12 +176,6 @@ export const SearchOverlay: React.FC = () => {
 
       window.setTimeout(() => waitForNode(remaining - 1), 120);
     };
-
-    if (resultFilePath && resultFilePath !== currentFile) {
-      setCurrentFile(resultFilePath);
-      window.setTimeout(() => waitForNode(6), 120);
-      return;
-    }
 
     waitForNode(6);
   };

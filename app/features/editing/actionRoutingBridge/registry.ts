@@ -39,6 +39,7 @@ import type { Node } from 'reactflow';
 type ResolvedTarget = {
   renderedNodeId: string;
   sourceId: string;
+  canvasId?: string;
   filePath: string;
   scopeId?: string;
   frameScope?: string;
@@ -173,9 +174,10 @@ function resolveTarget(
   const sourceId = typeof sourceMeta.sourceId === 'string' && sourceMeta.sourceId.length > 0
     ? sourceMeta.sourceId
     : deriveLocalSourceId(node.id, sourceMeta.frameScope);
+  const canvasId = envelope.targetRef?.canvasId ?? context.currentCanvasId ?? undefined;
   const filePath = typeof sourceMeta.filePath === 'string' && sourceMeta.filePath.length > 0
     ? sourceMeta.filePath
-    : context.currentFile;
+    : envelope.targetRef?.compatibilityFilePath ?? context.currentCompatibilityFilePath;
 
   if (!filePath) {
     return null;
@@ -184,6 +186,7 @@ function resolveTarget(
   return {
     renderedNodeId: node.id,
     sourceId,
+    canvasId,
     filePath,
     scopeId: typeof sourceMeta.scopeId === 'string' ? sourceMeta.scopeId : undefined,
     frameScope: typeof sourceMeta.frameScope === 'string' ? sourceMeta.frameScope : undefined,
@@ -192,13 +195,21 @@ function resolveTarget(
   };
 }
 
-function requireBaseVersion(context: ActionRoutingContext, filePath: string) {
-  const baseVersion = context.sourceVersions[filePath];
+function requireBaseVersion(context: ActionRoutingContext, canvasId?: string | null) {
+  const resolvedCanvasId = (
+    canvasId
+    && typeof context.canvasVersions[canvasId] === 'string'
+  )
+    ? canvasId
+    : context.currentCanvasId;
+  const baseVersion = resolvedCanvasId
+    ? context.canvasVersions[resolvedCanvasId]
+    : undefined;
   if (!baseVersion) {
     return fail<string>(
       'OPTIMISTIC_CONFLICT',
       'SOURCE_VERSION_NOT_READY',
-      { filePath },
+      { canvasId: resolvedCanvasId ?? canvasId ?? null },
     );
   }
   return ok(baseVersion);

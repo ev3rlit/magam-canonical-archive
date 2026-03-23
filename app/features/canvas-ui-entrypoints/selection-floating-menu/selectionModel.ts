@@ -45,22 +45,22 @@ function resolveLabel(node: Node): string {
   return node.id;
 }
 
-function resolveSelectedNode(node: Node, currentFile: string | null): SelectionFloatingMenuSelectedNode {
+function resolveSelectedNode(node: Node, currentCanvasId: string | null): SelectionFloatingMenuSelectedNode {
   const data = (node.data || {}) as Record<string, unknown>;
   const sourceMeta = isRecord(data.sourceMeta) ? data.sourceMeta : {};
   const sourceId = typeof sourceMeta.sourceId === 'string' && sourceMeta.sourceId.length > 0
     ? sourceMeta.sourceId
     : deriveLocalSourceId(node.id, sourceMeta.frameScope);
-  const filePath = typeof sourceMeta.filePath === 'string' && sourceMeta.filePath.length > 0
-    ? sourceMeta.filePath
-    : currentFile;
+  const canvasId = typeof sourceMeta.canvasId === 'string' && sourceMeta.canvasId.length > 0
+    ? sourceMeta.canvasId
+    : currentCanvasId;
   const editMeta = isEditMeta(data.editMeta) ? data.editMeta : undefined;
   const canonicalObject = isRecord(data.canonicalObject) ? data.canonicalObject : undefined;
 
   return {
     renderedNodeId: node.id,
     sourceId,
-    filePath,
+    canvasId,
     nodeType: node.type ?? 'unknown',
     semanticRole: typeof canonicalObject?.semanticRole === 'string'
       ? canonicalObject.semanticRole
@@ -296,7 +296,7 @@ function createControlState(input: {
 export interface ResolveSelectionFloatingMenuModelInput {
   nodes: Node[];
   selectedNodeIds: string[];
-  currentFile: string | null;
+  currentCanvasId: string | null;
   runtimeState: EntrypointRuntimeState;
   pendingActionRoutingByKey?: Record<string, ActionRoutingPendingRecord>;
 }
@@ -307,7 +307,7 @@ export function resolveSelectionFloatingMenuModel(
   const selectedNodes = input.selectedNodeIds
     .map((nodeId) => input.nodes.find((node) => node.id === nodeId))
     .filter((node): node is Node => Boolean(node))
-    .map((node) => resolveSelectedNode(node, input.currentFile));
+    .map((node) => resolveSelectedNode(node, input.currentCanvasId));
   const selectedNodeIds = selectedNodes.map((node) => node.renderedNodeId);
   const nodeTypeSet = new Set(selectedNodes.map((node) => node.nodeType));
   const isHomogeneous = selectedNodes.length <= 1 || nodeTypeSet.size === 1;

@@ -79,7 +79,7 @@ export interface GraphCanvasToolbarContributionInput extends GraphCanvasHostBind
 export interface GraphCanvasSelectionFloatingMenuContributionInput extends GraphCanvasHostBindingContract {
   nodes: FlowNode[];
   selectedNodeIds: string[];
-  currentFile: string | null;
+  currentCanvasId: string | null;
   activeTextEditNodeId: string | null;
   runtimeState: EntrypointRuntimeState;
   pendingActionRoutingByKey: Record<string, ActionRoutingPendingRecord>;
@@ -302,7 +302,7 @@ export function createGraphCanvasSelectionFloatingMenuContribution(
     resolveSelectionFloatingMenuModel({
       nodes: input.nodes,
       selectedNodeIds: input.selectedNodeIds,
-      currentFile: input.currentFile,
+      currentCanvasId: input.currentCanvasId,
       runtimeState: input.runtimeState,
       pendingActionRoutingByKey: input.pendingActionRoutingByKey,
     }),

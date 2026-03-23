@@ -918,7 +918,7 @@ describe('GraphCanvas overlay host wiring helpers', () => {
     expect(resolveToolbarAnchor({ width: 1440, height: 900 })).toEqual({
       type: 'viewport-fixed',
       x: 720,
-      y: 868,
+      y: 76,
     });
   });
 

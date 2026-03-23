@@ -24,7 +24,6 @@ export interface WorkspaceCanvasShellSummary {
   canvasId: string;
   workspaceId: string;
   title: string | null;
-  compatibilityFilePath: string | null;
   surfaceIds: string[];
   nodeCount: number;
   bindingCount: number;
@@ -234,7 +233,6 @@ export async function getWorkspaceCanvas(
     canvasId,
     workspaceId: latestMetadata?.workspaceId ?? workspaceId,
     title: latestMetadata?.title ?? null,
-    compatibilityFilePath: latestMetadata?.filePath ?? null,
     surfaceIds: uniqueStrings(nodes.map((node) => node.surfaceId)),
     nodeCount: nodes.length,
     bindingCount: bindings.length,
@@ -242,6 +240,25 @@ export async function getWorkspaceCanvas(
     createdAt: revisions.length > 0 ? revisions[revisions.length - 1]?.createdAt ?? null : null,
     updatedAt: revisions[0]?.createdAt ?? null,
   };
+}
+
+export async function getWorkspaceCanvasCompatibilityFilePath(
+  context: HeadlessServiceContext,
+  canvasId: string,
+): Promise<string | null> {
+  const revisions = await context.db.query.canvasRevisions.findMany({
+    where: eq(canvasRevisions.canvasId, canvasId),
+    columns: {
+      mutationBatch: true,
+    },
+    orderBy: [desc(canvasRevisions.revisionNo)],
+  });
+
+  const latestMetadata = revisions
+    .map((revision) => readCanvasShellMetadata(revision.mutationBatch))
+    .find((metadata) => metadata !== null) ?? null;
+
+  return latestMetadata?.filePath ?? null;
 }
 
 export async function listWorkspaceCanvases(

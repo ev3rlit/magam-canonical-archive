@@ -22,6 +22,11 @@ afterEach(() => {
 describe('actionRoutingBridge', () => {
   it('pane create intent uses bridge catalog and emits optimistic apply/commit lifecycle', async () => {
     const runtime = {
+      currentCanvasId: 'canvas-bridge',
+      currentCompatibilityFilePath: 'examples/bridge.tsx',
+      canvasVersions: {
+        'canvas-bridge': 'sha256:base',
+      },
       currentFile: 'examples/bridge.tsx',
       sourceVersions: {
         'examples/bridge.tsx': 'sha256:base',
@@ -39,6 +44,7 @@ describe('actionRoutingBridge', () => {
       surface: 'pane-context-menu',
       intent: 'create-node',
       resolvedContext: createPaneActionRoutingContext({
+        currentCanvasId: runtime.currentCanvasId,
         currentFile: runtime.currentFile,
         selectedNodeIds: runtime.selectedNodeIds,
       }),
@@ -58,11 +64,16 @@ describe('actionRoutingBridge', () => {
       'commit:create-node',
     ]);
     expect(deps.createNode).toHaveBeenCalledTimes(1);
-    expect(deps.setPendingSelectionNodeIdMock).toHaveBeenCalledWith('shape-new-shape');
+    expect(deps.setPendingSelectionNodeIdMock).toHaveBeenCalledWith('shape-shape');
   });
 
   it('style update rejects disallowed patch keys with explicit bridge error', async () => {
     const runtime = {
+      currentCanvasId: 'canvas-bridge',
+      currentCompatibilityFilePath: 'examples/bridge.tsx',
+      canvasVersions: {
+        'canvas-bridge': 'sha256:base',
+      },
       currentFile: 'examples/bridge.tsx',
       sourceVersions: {
         'examples/bridge.tsx': 'sha256:base',
@@ -77,6 +88,7 @@ describe('actionRoutingBridge', () => {
       intent: 'style-update',
       resolvedContext: resolveNodeActionRoutingContext(
         stickerBridgeNodeFixture,
+        runtime.currentCanvasId,
         runtime.currentFile,
         runtime.selectedNodeIds,
       ),
@@ -95,6 +107,11 @@ describe('actionRoutingBridge', () => {
 
   it('node context child create keeps source scope and bridge contract stable', async () => {
     const runtime = {
+      currentCanvasId: 'canvas-mindmap',
+      currentCompatibilityFilePath: 'examples/mindmap.tsx',
+      canvasVersions: {
+        'canvas-mindmap': 'sha256:base-mindmap',
+      },
       currentFile: 'examples/mindmap.tsx',
       sourceVersions: {
         'examples/mindmap.tsx': 'sha256:base-mindmap',
@@ -109,6 +126,7 @@ describe('actionRoutingBridge', () => {
       intent: 'create-mindmap-child',
       resolvedContext: resolveNodeActionRoutingContext(
         mindmapBridgeNodeFixture,
+        runtime.currentCanvasId,
         runtime.currentFile,
         runtime.selectedNodeIds,
       ),
@@ -130,6 +148,11 @@ describe('actionRoutingBridge', () => {
 
   it('unregistered surface intent returns INVALID_INTENT contract response', async () => {
     const runtime = {
+      currentCanvasId: 'canvas-bridge',
+      currentCompatibilityFilePath: 'examples/bridge.tsx',
+      canvasVersions: {
+        'canvas-bridge': 'sha256:base',
+      },
       currentFile: 'examples/bridge.tsx',
       sourceVersions: {
         'examples/bridge.tsx': 'sha256:base',
@@ -143,6 +166,7 @@ describe('actionRoutingBridge', () => {
       surface: 'canvas-toolbar',
       intent: 'rename-node',
       resolvedContext: createPaneActionRoutingContext({
+        currentCanvasId: runtime.currentCanvasId,
         currentFile: runtime.currentFile,
         selectedNodeIds: runtime.selectedNodeIds,
       }),
@@ -157,8 +181,8 @@ describe('actionRoutingBridge', () => {
     });
   });
 
-  it('WorkspaceClient no longer uses direct create/rename/style command builders for bridge-owned intents', async () => {
-    const source = await Bun.file(new URL('../../components/editor/WorkspaceClient.tsx', import.meta.url)).text();
+  it('CanvasEditorPage no longer uses direct create/rename/style command builders for bridge-owned intents', async () => {
+    const source = await Bun.file(new URL('../editor/pages/CanvasEditorPage.tsx', import.meta.url)).text();
 
     expect(source).toContain('dispatchActionRoutingIntentOrThrow');
     expect(source).not.toContain('buildCreateCommand(');

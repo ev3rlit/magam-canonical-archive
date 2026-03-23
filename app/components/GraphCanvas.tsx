@@ -2010,7 +2010,7 @@ function GraphCanvasContent({
     selectionFloatingMenuSlot: canvasRuntime.slots.selectionFloatingMenu,
     nodes,
     selectedNodeIds,
-    currentFile,
+    currentCanvasId,
     activeTextEditNodeId,
     runtimeState: entrypointRuntime,
     pendingActionRoutingByKey,
@@ -2018,7 +2018,7 @@ function GraphCanvasContent({
     onApplyStylePatch: handleSelectionStylePatch,
     onCommitContent: handleSelectionContentCommit,
   }), [
-    currentFile,
+    currentCanvasId,
     activeTextEditNodeId,
     entrypointRuntime,
     handleSelectionContentCommit,
