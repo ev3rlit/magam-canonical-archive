@@ -1,5 +1,6 @@
 import type { FileTreeNode } from '@/store/graph';
 import type { RpcAdapterDescriptor } from '@/features/host/contracts';
+import type { WorkspaceProbeResponse } from '@/components/editor/workspaceRegistry';
 
 export interface RendererFileListResponse {
   files: string[];
@@ -8,6 +9,38 @@ export interface RendererFileListResponse {
 export interface RendererFileCreateResponse {
   filePath: string;
   sourceVersion: string;
+}
+
+export interface CreateWorkspaceDocumentResult {
+  filePath: string;
+  sourceVersion: string;
+}
+
+export interface WorkspaceDocumentCreateInput {
+  rootPath: string;
+  filePath?: string | null;
+}
+
+export interface WorkspaceFileBrowserActionInput {
+  rootPath: string;
+  action: 'open' | 'reveal';
+  filePath?: string | null;
+  targetPath?: string | null;
+}
+
+export function isCreateWorkspaceDocumentResult(
+  value: unknown,
+): value is CreateWorkspaceDocumentResult {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.filePath === 'string'
+    && typeof record.sourceVersion === 'string'
+    && record.sourceVersion.startsWith('sha256:')
+  );
 }
 
 export interface RendererRenderResponse {
@@ -67,8 +100,13 @@ export interface RendererRpcClient {
   descriptor: RpcAdapterDescriptor;
   healthCheck: () => Promise<boolean>;
   listFiles: () => Promise<RendererFileListResponse>;
+  probeWorkspace: (rootPath?: string | null) => Promise<WorkspaceProbeResponse>;
+  ensureWorkspace: (rootPath: string) => Promise<WorkspaceProbeResponse>;
+  listWorkspaceDocuments: (rootPath: string) => Promise<WorkspaceProbeResponse>;
+  createWorkspaceDocument: (input: WorkspaceDocumentCreateInput) => Promise<CreateWorkspaceDocumentResult>;
+  launchWorkspaceFileBrowser: (input: WorkspaceFileBrowserActionInput) => Promise<void>;
   createFile: (filePath: string) => Promise<RendererFileCreateResponse>;
-  getFileTree: () => Promise<{ tree: FileTreeNode | null }>;
+  getFileTree: (rootPath?: string | null) => Promise<{ tree: FileTreeNode | null }>;
   renderFile: (filePath: string) => Promise<RendererRenderResponse>;
   getChatProviders: () => Promise<{ providers: unknown[] }>;
   sendChat: (request: ChatStreamRequest, options?: { signal?: AbortSignal }) => Promise<Response>;

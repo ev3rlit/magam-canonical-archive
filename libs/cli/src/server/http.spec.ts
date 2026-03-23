@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 const {
   mockGlob,
@@ -122,11 +125,16 @@ import * as fs from 'fs';
 
 describe('HTTP Render Server', () => {
   let serverResult: HttpServerResult;
+  let baseUrl: string;
+  let port: number;
   const targetDir = '/tmp/test';
-  const port = 4001; // Use different port to avoid conflicts
+  let nextPort = 4001;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    port = nextPort;
+    nextPort += 1;
+    baseUrl = `http://localhost:${port}`;
 
     mockChatGetProviders.mockResolvedValue([
       { id: 'claude', displayName: 'Claude Code', isInstalled: true },
@@ -171,8 +179,6 @@ describe('HTTP Render Server', () => {
   afterEach(async () => {
     await serverResult.close();
   });
-
-  const baseUrl = `http://localhost:${port}`;
 
   describe('GET /health', () => {
     it('should return ok status', async () => {
@@ -250,6 +256,48 @@ describe('HTTP Render Server', () => {
 
       expect(response.status).toBe(409);
       expect(body.type).toBe('FILE_EXISTS');
+    });
+  });
+
+  describe('Workspace shell endpoints', () => {
+    it('reports workspace metadata through GET /workspaces', async () => {
+      const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'magam-http-workspace-'));
+      await mkdir(path.join(workspaceRoot, 'docs'), { recursive: true });
+      await writeFile(path.join(workspaceRoot, 'docs', 'alpha.graph.tsx'), 'export default function Alpha() { return null; }');
+
+      try {
+        const response = await fetch(`${baseUrl}/workspaces?rootPath=${encodeURIComponent(workspaceRoot)}`);
+        const body = await response.json();
+
+        expect(response.status).toBe(200);
+        expect(body.code).toBe('WS_200_HEALTHY');
+        expect(body.rootPath).toBe(workspaceRoot);
+        expect(body.health.state).toBe('ok');
+        expect(body.documentCount).toBe(1);
+      } finally {
+        await rm(workspaceRoot, { recursive: true, force: true });
+      }
+    });
+
+    it('creates workspace documents through POST /documents', async () => {
+      const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'magam-http-documents-'));
+
+      try {
+        const response = await fetch(`${baseUrl}/documents`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rootPath: workspaceRoot }),
+        });
+        const body = await response.json();
+
+        expect(response.status).toBe(201);
+        expect(body.code).toBe('DOC_201_CREATED');
+        expect(body.rootPath).toBe(workspaceRoot);
+        expect(body.filePath).toBe('untitled-1.graph.tsx');
+        expect(body.sourceVersion).toMatch(/^sha256:/);
+      } finally {
+        await rm(workspaceRoot, { recursive: true, force: true });
+      }
     });
   });
 

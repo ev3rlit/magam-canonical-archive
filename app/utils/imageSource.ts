@@ -1,3 +1,5 @@
+import { resolveHostApiPath } from '@/features/host/renderer/resolveHostApiPath';
+
 export const IMAGE_API_PATH = '/api/assets/file';
 
 const REMOTE_IMAGE_RE = /^(?:https?:\/\/|data:)/i;
@@ -60,6 +62,5 @@ export function toAssetApiUrl(currentFilePath: string | null, rawSrc: string): s
         return resolved;
     }
 
-    return `${IMAGE_API_PATH}?path=${encodeURIComponent(resolved)}`;
+    return `${resolveHostApiPath(IMAGE_API_PATH)}?path=${encodeURIComponent(resolved)}`;
 }
-

@@ -1,11 +1,15 @@
-import type {
+import {
   ChatGroupCreateInput,
   ChatGroupUpdateInput,
   ChatSessionCreateInput,
   ChatSessionQuery,
+  CreateWorkspaceDocumentResult,
   ChatSessionUpdateInput,
   ChatStreamRequest,
   RendererRpcClient,
+  WorkspaceDocumentCreateInput,
+  WorkspaceFileBrowserActionInput,
+  isCreateWorkspaceDocumentResult,
 } from '@/features/host/renderer/rpcClient';
 import {
   CORE_RPC_LOGICAL_METHODS,
@@ -13,9 +17,12 @@ import {
   type RpcAdapterDescriptor,
 } from '@/features/host/contracts';
 
-function resolveHttpBaseUrl(runtimeConfig?: DesktopRuntimeConfig | null): string {
-  return runtimeConfig?.httpBaseUrl
-    ?? `http://127.0.0.1:${process.env.NEXT_PUBLIC_MAGAM_HTTP_PORT || '3002'}`;
+function requireHttpBaseUrl(runtimeConfig?: DesktopRuntimeConfig | null): string {
+  if (!runtimeConfig) {
+    throw new Error('Desktop runtime config is missing.');
+  }
+
+  return runtimeConfig.httpBaseUrl;
 }
 
 function createJsonHeaders(extra?: HeadersInit): Headers {
@@ -66,17 +73,35 @@ async function requestRenderJson<T>(
   return response.json() as Promise<T>;
 }
 
+async function requestWorkspaceDocumentCreate(
+  baseUrl: string,
+  pathname: string,
+  init?: RequestInit,
+): Promise<CreateWorkspaceDocumentResult> {
+  const data = await fetch(`${baseUrl}${pathname}`, {
+    cache: 'no-store',
+    ...init,
+  }).then(parseJsonResponse<unknown>);
+  if (!isCreateWorkspaceDocumentResult(data)) {
+    throw new Error('새 문서 생성 응답이 올바르지 않습니다.');
+  }
+  return data;
+}
+
 export function createDesktopRpcAdapter(input?: {
   runtimeConfig?: DesktopRuntimeConfig | null;
 }): RendererRpcClient {
-  const baseUrl = resolveHttpBaseUrl(input?.runtimeConfig);
   const descriptor: RpcAdapterDescriptor = {
     hostMode: 'desktop-primary',
     transport: 'http',
     methods: CORE_RPC_LOGICAL_METHODS,
     async healthCheck() {
+      if (!input?.runtimeConfig) {
+        return false;
+      }
+
       try {
-        const response = await fetch(`${baseUrl}/health`, { cache: 'no-store' });
+        const response = await fetch(`${input.runtimeConfig.httpBaseUrl}/health`, { cache: 'no-store' });
         return response.ok;
       } catch {
         return false;
@@ -84,32 +109,68 @@ export function createDesktopRpcAdapter(input?: {
     },
   };
 
+  const getBaseUrl = () => requireHttpBaseUrl(input?.runtimeConfig);
   const requestJson = <T,>(pathname: string, init?: RequestInit) =>
-    fetch(`${baseUrl}${pathname}`, {
+    fetch(`${getBaseUrl()}${pathname}`, {
       cache: 'no-store',
       ...init,
     }).then(parseJsonResponse<T>);
+  const buildRootPathQuery = (rootPath?: string | null) => (
+    rootPath ? `?rootPath=${encodeURIComponent(rootPath)}` : ''
+  );
 
   return {
     descriptor,
     healthCheck: descriptor.healthCheck,
     listFiles: () => requestJson('/files'),
+    probeWorkspace: (rootPath?: string | null) =>
+      requestJson(`/workspaces${buildRootPathQuery(rootPath)}`),
+    ensureWorkspace: (rootPath: string) =>
+      requestJson('/workspaces', {
+        method: 'POST',
+        body: JSON.stringify({ rootPath, action: 'ensure' }),
+        headers: createJsonHeaders(),
+      }),
+    listWorkspaceDocuments: (rootPath: string) =>
+      requestJson(`/documents?rootPath=${encodeURIComponent(rootPath)}`),
+    createWorkspaceDocument: (input: WorkspaceDocumentCreateInput) =>
+      requestWorkspaceDocumentCreate(getBaseUrl(), '/documents', {
+        method: 'POST',
+        body: JSON.stringify({
+          rootPath: input.rootPath,
+          ...(input.filePath ? { filePath: input.filePath } : {}),
+        }),
+        headers: createJsonHeaders(),
+      }),
+    async launchWorkspaceFileBrowser(input: WorkspaceFileBrowserActionInput) {
+      await requestJson('/workspaces', {
+        method: 'POST',
+        body: JSON.stringify({
+          rootPath: input.rootPath,
+          action: input.action,
+          ...(input.filePath ? { filePath: input.filePath } : {}),
+          ...(input.targetPath ? { targetPath: input.targetPath } : {}),
+        }),
+        headers: createJsonHeaders(),
+      });
+    },
     createFile: (filePath) =>
       requestJson('/files', {
         method: 'POST',
         body: JSON.stringify({ filePath }),
         headers: createJsonHeaders(),
       }),
-    getFileTree: () => requestJson('/file-tree'),
+    getFileTree: (rootPath?: string | null) =>
+      requestJson(`/file-tree${buildRootPathQuery(rootPath)}`),
     renderFile: (filePath) =>
-      requestRenderJson(baseUrl, '/render', {
+      requestRenderJson(getBaseUrl(), '/render', {
         method: 'POST',
         body: JSON.stringify({ filePath }),
         headers: createJsonHeaders(),
       }),
     getChatProviders: () => requestJson('/chat/providers'),
     sendChat: (request: ChatStreamRequest, options) =>
-      fetch(`${baseUrl}/chat/send`, {
+      fetch(`${getBaseUrl()}/chat/send`, {
         method: 'POST',
         body: JSON.stringify(request),
         headers: createJsonHeaders(),

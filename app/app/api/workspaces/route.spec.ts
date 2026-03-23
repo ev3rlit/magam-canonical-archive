@@ -29,7 +29,7 @@ describe('workspaces route', () => {
     expect(response.status).toBe(200);
     expect(body.code).toBe('WS_200_HEALTHY');
     expect(body.rootPath).toBe(root);
-    expect(body.health.state).toBe('healthy');
+    expect(body.health.state).toBe('ok');
     expect(body.health.documentCount).toBe(1);
   });
 

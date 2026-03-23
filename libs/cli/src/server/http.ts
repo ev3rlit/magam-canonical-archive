@@ -6,7 +6,20 @@ import glob from 'fast-glob';
 import { transpileWithMetadata } from '../core/transpiler';
 import { execute } from '../core/executor';
 import { ChatHandler } from '../chat/handler';
-import type { ChatPermissionMode, ProviderId, SendChatRequest, StopChatRequest } from '@magam/shared';
+import {
+  ApiError,
+  createWorkspaceDocument as createWorkspaceShellDocument,
+  ensureWorkspaceRoot,
+  openWorkspaceInFileBrowser,
+  probeWorkspace,
+  requireWorkspaceRoot,
+} from '../../../shared/src/lib/workspace-shell';
+import type {
+  ChatPermissionMode,
+  ProviderId,
+  SendChatRequest,
+  StopChatRequest,
+} from '@magam/shared';
 
 const DEFAULT_PORT = 3002;
 
@@ -234,6 +247,14 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
         await handleCreateFile(req, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/files') {
         await handleFiles(req, res, config.targetDir);
+      } else if (req.method === 'GET' && url.pathname === '/workspaces') {
+        await handleWorkspaceProbe(url, res, config.targetDir);
+      } else if (req.method === 'POST' && url.pathname === '/workspaces') {
+        await handleWorkspaceMutation(req, res);
+      } else if (req.method === 'GET' && url.pathname === '/documents') {
+        await handleDocumentsList(url, res);
+      } else if (req.method === 'POST' && url.pathname === '/documents') {
+        await handleDocumentsCreate(req, res);
       } else if (req.method === 'GET' && url.pathname === '/file-tree') {
         await handleFileTree(url, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/chat/providers') {
@@ -699,6 +720,253 @@ async function handleFileTree(url: URL, res: http.ServerResponse, targetDir: str
       error: error.message,
       type: 'FILE_TREE_ERROR'
     }));
+  }
+}
+
+function writeJson(res: http.ServerResponse, status: number, payload: unknown): void {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(payload));
+}
+
+function toWorkspaceResponsePayload(workspace: Awaited<ReturnType<typeof probeWorkspace>>, code: string) {
+  return {
+    code,
+    rootPath: workspace.rootPath,
+    root: workspace.rootPath,
+    workspaceName: workspace.workspaceName,
+    name: workspace.workspaceName,
+    health: {
+      state: workspace.health.status,
+      message: workspace.health.message,
+      documentCount: workspace.documentCount,
+    },
+    documentCount: workspace.documentCount,
+    documents: workspace.documents,
+    lastModifiedAt: workspace.lastModifiedAt,
+  };
+}
+
+function toDocumentsResponsePayload(workspace: Awaited<ReturnType<typeof requireWorkspaceRoot>>, code: string) {
+  return {
+    code,
+    rootPath: workspace.rootPath,
+    root: workspace.rootPath,
+    workspaceName: workspace.workspaceName,
+    documentCount: workspace.documentCount,
+    documents: workspace.documents,
+    lastModifiedAt: workspace.lastModifiedAt,
+  };
+}
+
+function writeApiError(
+  res: http.ServerResponse,
+  error: unknown,
+  input: {
+    logLabel: string;
+    fallbackCode: string;
+    fallbackMessage: string;
+  },
+): void {
+  if (error instanceof ApiError) {
+    writeJson(res, error.status, {
+      error: error.message,
+      code: error.code,
+      details: error.details,
+    });
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : 'Unknown error';
+  console.error(input.logLabel, message);
+  writeJson(res, 500, {
+    error: `${input.fallbackMessage}: ${message}`,
+    code: input.fallbackCode,
+  });
+}
+
+function pickRootPath(searchParams: URLSearchParams, fallbackRootPath?: string | null): string | null {
+  return searchParams.get('rootPath') || searchParams.get('root') || fallbackRootPath || null;
+}
+
+function resolveDocumentRootPath(rawRootPath: unknown): string {
+  if (typeof rawRootPath !== 'string') {
+    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath is required');
+  }
+
+  const trimmed = rawRootPath.trim();
+  if (!trimmed || !path.isAbsolute(trimmed)) {
+    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath must be an absolute path');
+  }
+
+  return trimmed;
+}
+
+async function parseJsonObjectBody(
+  req: http.IncomingMessage,
+  input: {
+    invalidJsonCode: string;
+    invalidJsonMessage: string;
+  },
+): Promise<Record<string, unknown>> {
+  const rawBody = await new Promise<string>((resolve, reject) => {
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk.toString();
+    });
+    req.on('end', () => resolve(body));
+    req.on('error', reject);
+  });
+
+  if (!rawBody.trim()) {
+    return {};
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawBody);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    throw new ApiError(400, input.invalidJsonCode, `${input.invalidJsonMessage}: ${message}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new ApiError(400, input.invalidJsonCode, input.invalidJsonMessage);
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
+async function handleWorkspaceProbe(
+  url: URL,
+  res: http.ServerResponse,
+  targetDir: string,
+) {
+  try {
+    const rootPath = pickRootPath(url.searchParams, targetDir);
+    if (!rootPath) {
+      throw new ApiError(400, 'WS_400_INVALID_ROOT_PATH', 'rootPath is required');
+    }
+
+    const workspace = await probeWorkspace(rootPath);
+    writeJson(
+      res,
+      200,
+      toWorkspaceResponsePayload(
+        workspace,
+        workspace.health.status === 'ok' ? 'WS_200_HEALTHY' : 'WS_200_PROBED',
+      ),
+    );
+  } catch (error) {
+    writeApiError(res, error, {
+      logLabel: '[workspaces] unexpected error:',
+      fallbackCode: 'WS_500_REQUEST_FAILED',
+      fallbackMessage: 'Failed to handle workspace request',
+    });
+  }
+}
+
+async function handleWorkspaceMutation(req: http.IncomingMessage, res: http.ServerResponse) {
+  try {
+    const body = await parseJsonObjectBody(req, {
+      invalidJsonCode: 'WS_400_INVALID_JSON',
+      invalidJsonMessage: 'Request body must be a JSON object',
+    });
+    const rawRootPath = body.rootPath;
+    if (typeof rawRootPath !== 'string') {
+      throw new ApiError(400, 'WS_400_INVALID_ROOT_PATH', 'rootPath is required');
+    }
+
+    const rawAction = body.action;
+    if (rawAction !== 'open' && rawAction !== 'reveal' && rawAction !== 'ensure') {
+      throw new ApiError(400, 'WS_400_INVALID_ACTION', 'action must be "ensure", "open", or "reveal"');
+    }
+
+    if (rawAction === 'ensure') {
+      const ensured = await ensureWorkspaceRoot(rawRootPath);
+      writeJson(res, 200, toWorkspaceResponsePayload(ensured, 'WS_200_READY'));
+      return;
+    }
+
+    const workspace = await requireWorkspaceRoot(rawRootPath);
+    const rawTargetPath = typeof body.filePath === 'string'
+      ? body.filePath
+      : typeof body.targetPath === 'string'
+        ? body.targetPath
+        : null;
+    const result = await openWorkspaceInFileBrowser({
+      platform: process.platform,
+      rootPath: workspace.rootPath,
+      targetPath: rawTargetPath,
+      action: rawAction,
+    });
+    const { rootPath: _resultRootPath, ...resultPayload } = result;
+
+    writeJson(res, 200, {
+      code: rawAction === 'reveal' ? 'WS_200_REVEALED' : 'WS_200_OPENED',
+      rootPath: workspace.rootPath,
+      root: workspace.rootPath,
+      workspaceName: workspace.workspaceName,
+      name: workspace.workspaceName,
+      ...resultPayload,
+    });
+  } catch (error) {
+    writeApiError(res, error, {
+      logLabel: '[workspaces] unexpected error:',
+      fallbackCode: 'WS_500_REQUEST_FAILED',
+      fallbackMessage: 'Failed to handle workspace request',
+    });
+  }
+}
+
+async function handleDocumentsList(url: URL, res: http.ServerResponse) {
+  try {
+    const rootPath = resolveDocumentRootPath(pickRootPath(url.searchParams));
+
+    const workspace = await requireWorkspaceRoot(rootPath);
+    writeJson(res, 200, toDocumentsResponsePayload(workspace, 'DOC_200_LISTED'));
+  } catch (error) {
+    writeApiError(res, error, {
+      logLabel: '[documents] unexpected error:',
+      fallbackCode: 'DOC_500_REQUEST_FAILED',
+      fallbackMessage: 'Failed to handle documents request',
+    });
+  }
+}
+
+async function handleDocumentsCreate(req: http.IncomingMessage, res: http.ServerResponse) {
+  try {
+    const body = await parseJsonObjectBody(req, {
+      invalidJsonCode: 'DOC_400_INVALID_JSON',
+      invalidJsonMessage: 'Request body must be a JSON object',
+    });
+    const rawRootPath = 'rootPath' in body ? body['rootPath'] : body['root'];
+    const rootPath = resolveDocumentRootPath(rawRootPath);
+
+    const workspace = await requireWorkspaceRoot(rootPath);
+    const rawFilePath = typeof body.filePath === 'string'
+      ? body.filePath
+      : typeof body.path === 'string'
+        ? body.path
+        : null;
+    const created = await createWorkspaceShellDocument({
+      rootPath: workspace.rootPath,
+      filePath: rawFilePath,
+    });
+
+    writeJson(res, 201, {
+      code: 'DOC_201_CREATED',
+      rootPath: workspace.rootPath,
+      root: workspace.rootPath,
+      workspaceName: workspace.workspaceName,
+      created: true,
+      ...created,
+    });
+  } catch (error) {
+    writeApiError(res, error, {
+      logLabel: '[documents] unexpected error:',
+      fallbackCode: 'DOC_500_REQUEST_FAILED',
+      fallbackMessage: 'Failed to handle documents request',
+    });
   }
 }
 

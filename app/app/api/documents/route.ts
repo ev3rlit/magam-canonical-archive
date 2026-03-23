@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { NextResponse } from 'next/server';
 import {
   ApiError,
@@ -12,6 +13,19 @@ export const revalidate = 0;
 
 function pickRootPath(searchParams: URLSearchParams): string | null {
   return searchParams.get('rootPath') || searchParams.get('root');
+}
+
+function resolveDocumentRootPath(rawRootPath: unknown): string {
+  if (typeof rawRootPath !== 'string') {
+    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath is required');
+  }
+
+  const trimmed = rawRootPath.trim();
+  if (!trimmed || !path.isAbsolute(trimmed)) {
+    throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath must be an absolute path');
+  }
+
+  return trimmed;
 }
 
 function toJsonErrorResponse(error: unknown) {
@@ -49,10 +63,7 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const rootPath = pickRootPath(searchParams);
-    if (!rootPath) {
-      throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath is required');
-    }
+    const rootPath = resolveDocumentRootPath(pickRootPath(searchParams));
 
     const workspace = await requireWorkspaceRoot(rootPath);
     return NextResponse.json({
@@ -72,12 +83,10 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);
-    const rawRootPath = body.rootPath;
-    if (typeof rawRootPath !== 'string') {
-      throw new ApiError(400, 'DOC_400_INVALID_ROOT_PATH', 'rootPath is required');
-    }
+    const rawRootPath = 'rootPath' in body ? body.rootPath : body.root;
+    const rootPath = resolveDocumentRootPath(rawRootPath);
 
-    const workspace = await requireWorkspaceRoot(rawRootPath);
+    const workspace = await requireWorkspaceRoot(rootPath);
     const rawFilePath = typeof body.filePath === 'string'
       ? body.filePath
       : typeof body.path === 'string'

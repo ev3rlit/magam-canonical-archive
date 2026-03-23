@@ -2,6 +2,11 @@ import type { HostMode } from './hostCapabilities';
 
 export const CORE_RPC_LOGICAL_METHODS = [
   'files.list',
+  'workspace.probe',
+  'workspace.ensure',
+  'workspace.documents.list',
+  'workspace.document.create',
+  'workspace.fileBrowser.launch',
   'fileTree.list',
   'render.generate',
   'edit.apply',

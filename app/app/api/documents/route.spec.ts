@@ -51,7 +51,7 @@ describe('documents route', () => {
     const response = await POST(new Request('http://localhost/api/documents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ root }),
+      body: JSON.stringify({ rootPath: root }),
     }));
     const body = await response.json();
 
@@ -65,7 +65,7 @@ describe('documents route', () => {
     const response = await POST(new Request('http://localhost/api/documents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ root, path: 'notes/overview.graph.tsx' }),
+      body: JSON.stringify({ rootPath: root, path: 'notes/overview.graph.tsx' }),
     }));
     const body = await response.json();
 
@@ -77,7 +77,7 @@ describe('documents route', () => {
     const response = await POST(new Request('http://localhost/api/documents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ root, path: '../escape.graph.tsx' }),
+      body: JSON.stringify({ rootPath: root, path: '../escape.graph.tsx' }),
     }));
     const body = await response.json();
 

@@ -1,11 +1,15 @@
-import type {
+import {
   ChatGroupCreateInput,
   ChatGroupUpdateInput,
   ChatSessionCreateInput,
   ChatSessionQuery,
+  CreateWorkspaceDocumentResult,
   ChatSessionUpdateInput,
   ChatStreamRequest,
   RendererRpcClient,
+  WorkspaceDocumentCreateInput,
+  WorkspaceFileBrowserActionInput,
+  isCreateWorkspaceDocumentResult,
 } from '@/features/host/renderer/rpcClient';
 import {
   CORE_RPC_LOGICAL_METHODS,
@@ -46,6 +50,17 @@ async function requestRenderJson<T>(path: string, init?: RequestInit): Promise<T
   return response.json() as Promise<T>;
 }
 
+async function requestWorkspaceDocumentCreate(
+  path: string,
+  init?: RequestInit,
+): Promise<CreateWorkspaceDocumentResult> {
+  const data = await requestJson<unknown>(path, init);
+  if (!isCreateWorkspaceDocumentResult(data)) {
+    throw new Error('새 문서 생성 응답이 올바르지 않습니다.');
+  }
+  return data;
+}
+
 function createDescriptor(): RpcAdapterDescriptor {
   return {
     hostMode: 'web-secondary',
@@ -82,18 +97,53 @@ function toSearchParams(query?: ChatSessionQuery | { limit?: number }): string {
 
 export function createWebRpcAdapter(): RendererRpcClient {
   const descriptor = createDescriptor();
+  const buildRootPathQuery = (rootPath?: string | null) => (
+    rootPath ? `?rootPath=${encodeURIComponent(rootPath)}` : ''
+  );
 
   return {
     descriptor,
     healthCheck: descriptor.healthCheck,
     listFiles: () => requestJson('/api/files'),
+    probeWorkspace: (rootPath?: string | null) =>
+      requestJson(`/api/workspaces${buildRootPathQuery(rootPath)}`),
+    ensureWorkspace: (rootPath: string) =>
+      requestJson('/api/workspaces', {
+        method: 'POST',
+        body: JSON.stringify({ rootPath, action: 'ensure' }),
+        headers: createJsonHeaders(),
+      }),
+    listWorkspaceDocuments: (rootPath: string) =>
+      requestJson(`/api/documents?rootPath=${encodeURIComponent(rootPath)}`),
+    createWorkspaceDocument: (input: WorkspaceDocumentCreateInput) =>
+      requestWorkspaceDocumentCreate('/api/documents', {
+        method: 'POST',
+        body: JSON.stringify({
+          rootPath: input.rootPath,
+          ...(input.filePath ? { filePath: input.filePath } : {}),
+        }),
+        headers: createJsonHeaders(),
+      }),
+    async launchWorkspaceFileBrowser(input: WorkspaceFileBrowserActionInput) {
+      await requestJson('/api/workspaces', {
+        method: 'POST',
+        body: JSON.stringify({
+          rootPath: input.rootPath,
+          action: input.action,
+          ...(input.filePath ? { filePath: input.filePath } : {}),
+          ...(input.targetPath ? { targetPath: input.targetPath } : {}),
+        }),
+        headers: createJsonHeaders(),
+      });
+    },
     createFile: (filePath) =>
       requestJson('/api/files', {
         method: 'POST',
         body: JSON.stringify({ filePath }),
         headers: createJsonHeaders(),
       }),
-    getFileTree: () => requestJson('/api/file-tree'),
+    getFileTree: (rootPath?: string | null) =>
+      requestJson(`/api/file-tree${buildRootPathQuery(rootPath)}`),
     renderFile: (filePath) =>
       requestRenderJson('/api/render', {
         method: 'POST',
