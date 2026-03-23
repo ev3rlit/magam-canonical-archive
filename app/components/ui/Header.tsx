@@ -12,7 +12,6 @@ import {
 import { clsx } from 'clsx';
 import { Badge } from './Badge';
 import { Button } from './Button';
-import { ThemeModeToggle } from './ThemeModeToggle';
 
 interface HeaderProps {
   onCreateDocument?: () => void;
@@ -59,8 +58,6 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       <div className="flex items-center gap-3">
-        <ThemeModeToggle />
-
         <Button
           onClick={onCreateDocument}
           size="sm"
