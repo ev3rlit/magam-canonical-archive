@@ -4,6 +4,7 @@ import React from 'react';
 import { ChevronRight, ChevronDown, FileIcon, FolderIcon, FolderOpen } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useGraphStore, FileTreeNode } from '@/store/graph';
+import { navigateToDocument } from '@/features/host/renderer/navigation';
 
 interface FolderTreeItemProps {
     node: FileTreeNode;
@@ -12,7 +13,7 @@ interface FolderTreeItemProps {
 }
 
 export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({ node, depth = 0, onOpenFile }) => {
-    const { currentFile, openTab, expandedFolders, toggleFolder } = useGraphStore();
+    const { currentFile, expandedFolders, toggleFolder } = useGraphStore();
 
     const isExpanded = expandedFolders.has(node.path);
     const isDirectory = node.type === 'directory';
@@ -27,7 +28,7 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({ node, depth = 0,
         if (onOpenFile) {
             onOpenFile(node.path);
         } else {
-            openTab(node.path);
+            navigateToDocument(node.path);
         }
     };
 

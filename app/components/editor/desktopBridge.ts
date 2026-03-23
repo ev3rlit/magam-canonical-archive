@@ -1,6 +1,7 @@
 'use client';
 
 import type { MagamDesktopBridge } from '@/lib/desktop/bridge-contract';
+import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
 
 declare global {
   interface Window {
@@ -12,6 +13,14 @@ export async function pickWorkspaceRootPath(input: {
   title: string;
   defaultPath?: string | null;
 }): Promise<string | null> {
+  // try new host runtime payload first
+  const runtime = typeof window !== 'undefined' ? getHostRuntime() : undefined;
+  if (runtime?.capabilities?.workspace?.selectWorkspace) {
+    const selection = await runtime.capabilities.workspace.selectWorkspace();
+    return selection?.path?.trim() || null;
+  }
+  
+  // fallback to old bridge
   const bridge = typeof window !== 'undefined' ? window.magamDesktop : undefined;
   if (bridge?.pickDirectory) {
     const selection = await bridge.pickDirectory({

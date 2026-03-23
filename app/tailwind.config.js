@@ -8,6 +8,8 @@ module.exports = {
   content: [
     join(__dirname, 'app/**/*.{js,ts,jsx,tsx,mdx}'),
     join(__dirname, 'components/**/*.{js,ts,jsx,tsx,mdx}'),
+    join(__dirname, 'features/**/*.{js,ts,jsx,tsx,mdx}'),
+    join(__dirname, 'ws/**/*.{js,ts,jsx,tsx,mdx}'),
   ],
   darkMode: 'class',
   theme: {

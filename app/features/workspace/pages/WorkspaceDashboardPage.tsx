@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { useGraphStore } from '@/store/graph';
 import { pickWorkspaceRootPath } from '@/components/editor/desktopBridge';
 import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
+import { navigateToWorkspaceDetail } from '@/features/host/renderer/navigation';
 import { DashboardSidebar } from '../components/DashboardSidebar';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { WorkspaceCard } from '../components/WorkspaceCard';
@@ -36,11 +37,7 @@ export function WorkspaceDashboardPage() {
   };
 
   const handleWorkspaceClick = (id: string) => {
-    if (typeof window !== 'undefined' && 'electron' in window) {
-      window.location.hash = `/workspace/${id}`;
-    } else {
-      window.location.href = `/app/workspace/${id}`;
-    }
+    navigateToWorkspaceDetail(id);
   };
 
   const filteredWorkspaces = registeredWorkspaces.filter(ws => 
