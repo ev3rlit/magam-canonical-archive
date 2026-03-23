@@ -21,9 +21,6 @@ export function CanvasListItem({ canvas, onClick }: CanvasListItemProps) {
         <h3 className="font-manrope font-semibold text-sm text-on-surface group-hover:text-primary transition-colors truncate">
           {canvas.title || 'Untitled Canvas'}
         </h3>
-        <p className="font-inter text-xs text-on-surface-variant truncate hidden sm:block">
-          {canvas.relativePath}
-        </p>
       </div>
 
       <div className="flex items-center gap-4">

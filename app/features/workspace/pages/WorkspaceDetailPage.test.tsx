@@ -8,7 +8,7 @@ import { useGraphStore } from '@/store/graph';
 const createWorkspaceCanvasMock = mock(async (_input: { rootPath: string }) => ({
   canvasId: 'doc-2',
   workspaceId: 'ws-1',
-  filePath: 'documents/doc-2.graph.tsx',
+  title: null,
   sourceVersion: 'sha256:doc-2',
   latestRevision: 1,
 }));
@@ -23,7 +23,7 @@ const listWorkspaceCanvasesMock = mock(async (_rootPath: string) => ({
     canvasId: 'doc-1',
     workspaceId: 'ws-1',
     latestRevision: 3,
-    filePath: 'docs/alpha.graph.tsx',
+    title: 'Untitled Canvas',
   }],
   lastModifiedAt: Date.now(),
 }));
@@ -45,7 +45,6 @@ const setAppStatePreferenceMock = mock(async (input: { key: string; valueJson: u
   updatedAt: new Date('2026-03-23T00:00:00Z'),
 }));
 const navigateToCanvasMock = mock((_path: string) => {});
-const navigateToWorkspaceCanvasMock = mock((_rootPath: string, _canvas: { filePath: string }) => {});
 const navigateToDashboardMock = mock(() => {});
 
 mock.module('@/features/host/renderer/createHostRuntime', () => ({
@@ -64,7 +63,6 @@ mock.module('@/features/host/renderer/createHostRuntime', () => ({
 mock.module('@/features/host/renderer/navigation', () => ({
   navigateToDashboard: navigateToDashboardMock,
   navigateToCanvas: navigateToCanvasMock,
-  navigateToWorkspaceCanvas: navigateToWorkspaceCanvasMock,
 }));
 
 mock.module('../components/DashboardSidebar', () => ({
@@ -93,7 +91,7 @@ mock.module('../components/DashboardHeader', () => ({
 
 mock.module('../components/CanvasCard', () => ({
   CanvasCard: (props: {
-    canvas: { title: string; absolutePath: string };
+    canvas: { title: string; canvasId: string };
     onClick: () => void;
   }) => React.createElement(
     'button',
@@ -108,7 +106,7 @@ mock.module('../components/CanvasCard', () => ({
 
 mock.module('../components/CanvasListItem', () => ({
   CanvasListItem: (props: {
-    canvas: { title: string; absolutePath: string };
+    canvas: { title: string; canvasId: string };
     onClick: () => void;
   }) => React.createElement(
     'button',
@@ -200,7 +198,6 @@ describe('WorkspaceDetailPage canonical navigation flows', () => {
     setAppStateWorkspaceSessionMock.mockClear();
     setAppStatePreferenceMock.mockClear();
     navigateToCanvasMock.mockClear();
-    navigateToWorkspaceCanvasMock.mockClear();
     navigateToDashboardMock.mockClear();
   });
 
@@ -219,12 +216,12 @@ describe('WorkspaceDetailPage canonical navigation flows', () => {
 
     expect(listWorkspaceCanvasesMock).toHaveBeenCalledWith('/tmp/ws-1');
 
-    const trigger = environment.dom.window.document.querySelector('[data-testid="canvas-card:alpha.graph.tsx"]');
+    const trigger = environment.dom.window.document.querySelector('[data-testid="canvas-card:Untitled Canvas"]');
     await act(async () => {
       trigger?.dispatchEvent(new environment.dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    expect(navigateToCanvasMock).toHaveBeenCalledWith('/tmp/ws-1/docs/alpha.graph.tsx');
+    expect(navigateToCanvasMock).toHaveBeenCalledWith('doc-1');
   });
 
   it('navigates newly created canvases through the canonical workspace canvas helper', async () => {
@@ -238,9 +235,6 @@ describe('WorkspaceDetailPage canonical navigation flows', () => {
     });
 
     expect(createWorkspaceCanvasMock).toHaveBeenCalledWith({ rootPath: '/tmp/ws-1' });
-    expect(navigateToWorkspaceCanvasMock).toHaveBeenCalledWith('/tmp/ws-1', expect.objectContaining({
-      canvasId: 'doc-2',
-      filePath: 'documents/doc-2.graph.tsx',
-    }));
+    expect(navigateToCanvasMock).toHaveBeenCalledWith('doc-2');
   });
 });

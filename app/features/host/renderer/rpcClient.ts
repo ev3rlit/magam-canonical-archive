@@ -22,16 +22,16 @@ export interface RendererFileCreateResponse {
 }
 
 export interface CreateWorkspaceCanvasResult {
-  filePath: string;
   sourceVersion: string;
   canvasId: string;
   workspaceId: string;
+  title?: string | null;
   latestRevision: number | null;
 }
 
 export interface WorkspaceCanvasCreateInput {
   rootPath: string;
-  filePath?: string | null;
+  title?: string | null;
 }
 
 export interface WorkspaceFileBrowserActionInput {
@@ -50,8 +50,7 @@ export function isCreateWorkspaceCanvasResult(
 
   const record = value as Record<string, unknown>;
   return (
-    typeof record.filePath === 'string'
-    && typeof record.sourceVersion === 'string'
+    typeof record.sourceVersion === 'string'
     && typeof record.canvasId === 'string'
     && typeof record.workspaceId === 'string'
     && (typeof record.latestRevision === 'number' || record.latestRevision === null)
@@ -61,6 +60,9 @@ export function isCreateWorkspaceCanvasResult(
 
 export interface RendererRenderResponse {
   graph?: unknown;
+  canvasId?: string;
+  title?: string | null;
+  compatibilityFilePath?: string | null;
   sourceVersion?: string;
   sourceVersions?: Record<string, string>;
   error?: string;
@@ -89,5 +91,5 @@ export interface RendererRpcClient {
   launchWorkspaceFileBrowser: (input: WorkspaceFileBrowserActionInput) => Promise<void>;
   createFile: (filePath: string) => Promise<RendererFileCreateResponse>;
   getFileTree: (rootPath?: string | null) => Promise<{ tree: FileTreeNode | null }>;
-  renderFile: (filePath: string) => Promise<RendererRenderResponse>;
+  renderCanvas: (input: { canvasId: string; rootPath?: string | null }) => Promise<RendererRenderResponse>;
 }

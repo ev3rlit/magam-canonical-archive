@@ -112,7 +112,7 @@ describe('graph metadata state', () => {
   });
 });
 
-describe('document session persistence', () => {
+describe('canvas session persistence', () => {
   beforeEach(() => {
     useGraphStore.setState(initialGraphState);
   });
@@ -246,12 +246,12 @@ describe('document session persistence', () => {
     expect(clearedTab?.lastSelection).toBeNull();
   });
 
-  it('persists lastActive document metadata per workspace source', () => {
+  it('persists lastActive canvas metadata per workspace source', () => {
     useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
-    useGraphStore.getState().hydrateDocumentSession('workspace:docs/resume.graph.tsx');
+    useGraphStore.getState().hydrateCanvasSession('workspace:docs/resume.graph.tsx', '/tmp/ws-1');
     useGraphStore.getState().rememberLastActiveCanvas('docs/resume.graph.tsx');
 
-    expect(useGraphStore.getState().lastActiveDocumentPath).toBe('docs/resume.graph.tsx');
+    expect(useGraphStore.getState().lastActiveCanvasPath).toBe('/tmp/ws-1/docs/resume.graph.tsx');
   });
 
   it('tracks new-canvas empty-canvas entry state without requiring a pre-open naming gate', () => {
@@ -276,10 +276,10 @@ describe('document session persistence', () => {
       ],
     });
 
-    useGraphStore.getState().registerDraftDocument('docs/untitled-1.graph.tsx');
+    useGraphStore.getState().registerDraftCanvas('docs/untitled-1.graph.tsx');
 
     expect(useGraphStore.getState().files).toContain('docs/untitled-1.graph.tsx');
-    expect(useGraphStore.getState().draftDocuments).toContain('docs/untitled-1.graph.tsx');
+    expect(useGraphStore.getState().draftCanvases).toContain('docs/untitled-1.graph.tsx');
     expect(useGraphStore.getState().fileTree?.children?.[0]?.children).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: 'docs/untitled-1.graph.tsx', type: 'file' }),
@@ -293,24 +293,22 @@ describe('document session persistence', () => {
       canvasId: 'doc-1',
       workspaceId: 'ws-1',
       latestRevision: 1,
-      absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',
-      relativePath: 'docs/alpha.graph.tsx',
-      title: 'alpha.graph.tsx',
+      compatibilityFilePath: '/tmp/ws-1/docs/alpha.graph.tsx',
+      title: '',
     }]);
 
     useGraphStore.getState().registerWorkspaceCanvas('ws-1', {
       canvasId: 'doc-1',
       workspaceId: 'ws-1',
       latestRevision: 2,
-      absolutePath: '/tmp/ws-1/docs/renamed-alpha.graph.tsx',
-      relativePath: 'docs/renamed-alpha.graph.tsx',
-      title: 'renamed-alpha.graph.tsx',
+      compatibilityFilePath: '/tmp/ws-1/docs/renamed-alpha.graph.tsx',
+      title: 'Renamed alpha',
     });
 
     expect(useGraphStore.getState().workspaceCanvasesByWorkspaceId['ws-1']).toEqual([
       expect.objectContaining({
         canvasId: 'doc-1',
-        absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',
+        compatibilityFilePath: '/tmp/ws-1/docs/alpha.graph.tsx',
       }),
     ]);
   });

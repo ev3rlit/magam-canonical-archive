@@ -21,12 +21,11 @@ export interface SidebarWorkspaceEntry {
 }
 
 export interface SidebarCanvasEntry {
-  canvasId?: string;
+  canvasId: string;
   workspaceId?: string;
   latestRevision?: number | null;
-  absolutePath: string;
-  relativePath: string;
   title: string;
+  compatibilityFilePath?: string | null;
 }
 
 interface SidebarProps {
@@ -40,7 +39,7 @@ interface SidebarProps {
   onCreateWorkspace?: () => void;
   onAddWorkspace?: () => void;
   onCreateCanvas?: () => void;
-  onOpenCanvas?: (absolutePath: string) => boolean | void;
+  onOpenCanvas?: (canvasId: string) => boolean | void;
   onCopyWorkspacePath?: () => void;
   onRevealWorkspace?: () => void;
   onReconnectWorkspace?: () => void;
@@ -64,12 +63,8 @@ function workspaceStatusLabel(status: SidebarWorkspaceStatus): string {
 }
 
 function getCanvasSubtitle(canvas: SidebarCanvasEntry): string | null {
-  const normalizedTitle = canvas.title.trim();
-  if (!normalizedTitle || normalizedTitle === canvas.relativePath) {
-    return null;
-  }
-
-  return canvas.relativePath;
+  void canvas;
+  return null;
 }
 
 const sectionLabelClassName =
@@ -271,9 +266,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   const subtitle = getCanvasSubtitle(canvas);
                   return (
                     <button
-                      key={canvas.absolutePath}
+                      key={canvas.canvasId}
                       type="button"
-                      onClick={() => onOpenCanvas?.(canvas.absolutePath)}
+                      onClick={() => onOpenCanvas?.(canvas.canvasId)}
                       className="w-full rounded-lg bg-card px-3 py-2 text-left text-foreground shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)] transition-[background-color,color,box-shadow] duration-fast hover:bg-card/88 hover:shadow-[inset_0_0_0_1px_rgb(var(--color-primary)/0.14)]"
                     >
                       <div className="truncate text-sm font-medium">

@@ -159,7 +159,7 @@ export function createWebRpcAdapter(): RendererRpcClient {
         method: 'POST',
         body: JSON.stringify({
           rootPath: input.rootPath,
-          ...(input.filePath ? { filePath: input.filePath } : {}),
+          ...(typeof input.title === 'string' ? { title: input.title } : {}),
         }),
         headers: createJsonHeaders(),
       }),
@@ -183,10 +183,13 @@ export function createWebRpcAdapter(): RendererRpcClient {
       }),
     getFileTree: (rootPath?: string | null) =>
       requestJson(`/api/file-tree${buildRootPathQuery(rootPath)}`),
-    renderFile: (filePath) =>
+    renderCanvas: (input) =>
       requestRenderJson('/api/render', {
         method: 'POST',
-        body: JSON.stringify({ filePath }),
+        body: JSON.stringify({
+          canvasId: input.canvasId,
+          ...(input.rootPath ? { rootPath: input.rootPath } : {}),
+        }),
         headers: createJsonHeaders(),
       }),
   };

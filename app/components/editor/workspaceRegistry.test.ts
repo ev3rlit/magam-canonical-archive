@@ -87,7 +87,7 @@ function buildRpcMock(overrides?: Partial<WorkspaceRegistryAppStateRpcClient>): 
     listAppStateRecentCanvases: vi.fn(async () => []),
     upsertAppStateRecentCanvas: vi.fn(async (input) => ({
       workspaceId: input.workspaceId,
-      documentPath: input.documentPath,
+      canvasPath: input.canvasPath,
       lastOpenedAt: input.lastOpenedAt ?? null,
       updatedAt: new Date('2026-03-23T00:00:00Z'),
     })),
@@ -155,10 +155,10 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
         return null;
       }),
       listAppStateRecentCanvases: vi.fn(async (workspaceId: string) => {
-        const recentCanvases: Record<string, { workspaceId: string; documentPath: string; lastOpenedAt: Date }[]> = {
+        const recentCanvases: Record<string, { workspaceId: string; canvasPath: string; lastOpenedAt: Date }[]> = {
           'ws-1': [{
             workspaceId: 'ws-1',
-            documentPath: '/tmp/ws-1/doc-recent.tsx',
+            canvasPath: '/tmp/ws-1/doc-recent.tsx',
             lastOpenedAt: new Date('2026-03-23T00:00:00Z'),
           }],
           'ws-2': [],
@@ -175,6 +175,7 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
     ]);
     expect(result.activeWorkspaceId).toBe('ws-2');
     expect(result.lastActiveCanvases).toEqual({
+      'ws-1': '/tmp/ws-1/doc-recent.tsx',
       'ws-2': '/tmp/ws-2/doc-pref.tsx',
     });
     expect(result.migratedFromLegacyStorage).toBe(false);
@@ -315,10 +316,11 @@ describe('hydrateWorkspaceRegistryFromAppState', () => {
 });
 
 describe('buildSidebarCanvases', () => {
-  it('preserves canonical document metadata while projecting absolute paths', () => {
+  it('projects canvas metadata without exposing path-derived titles', () => {
     expect(buildSidebarCanvases('/tmp/ws-1', [{
       canvasId: 'doc-1',
       workspaceId: 'ws-1',
+      title: '',
       filePath: 'docs/alpha.graph.tsx',
       latestRevision: 3,
     }])).toEqual([
@@ -326,9 +328,8 @@ describe('buildSidebarCanvases', () => {
         canvasId: 'doc-1',
         workspaceId: 'ws-1',
         latestRevision: 3,
-        absolutePath: '/tmp/ws-1/docs/alpha.graph.tsx',
-        relativePath: 'docs/alpha.graph.tsx',
-        title: 'alpha.graph.tsx',
+        title: '',
+        compatibilityFilePath: '/tmp/ws-1/docs/alpha.graph.tsx',
       },
     ]);
   });

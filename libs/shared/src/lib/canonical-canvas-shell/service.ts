@@ -34,20 +34,9 @@ function resolveMigrationsFolder(): string {
   return fileURLToPath(new URL('../canonical-persistence/drizzle/', import.meta.url));
 }
 
-function normalizeCompatibilityFilePath(canvasId: string, rawFilePath?: string | null): string {
+function createCompatibilityFilePath(canvasId: string): string {
   const fallback = `canvases/${canvasId}.graph.tsx`;
-  if (!rawFilePath) {
-    return fallback;
-  }
-
-  const normalized = path.posix.normalize(rawFilePath.replace(/\\/g, '/').trim()).replace(/^\/+/, '');
-  if (!normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../')) {
-    throw cliError('INVALID_ARGUMENT', 'filePath must stay within the workspace-relative compatibility shell.', {
-      details: { filePath: rawFilePath },
-    });
-  }
-
-  return normalized;
+  return fallback;
 }
 
 async function withCanonicalCanvasContext<T>(
@@ -98,7 +87,10 @@ export async function createCanonicalCanvas(
 ): Promise<CanonicalCanvasShellRecord> {
   return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context, workspaceId) => {
     const canvasId = input.canvasId?.trim() || `doc-${randomUUID()}`;
-    const filePath = normalizeCompatibilityFilePath(canvasId, input.filePath);
+    const compatibilityFilePath = createCompatibilityFilePath(canvasId);
+    const title = typeof input.title === 'string' && input.title.trim().length > 0
+      ? input.title.trim()
+      : null;
     const revisionNo = (await getCurrentCanvasRevision(context, canvasId)) + 1;
     const createdAt = new Date();
     const appendResult = await context.repository.appendCanvasRevision({
@@ -111,7 +103,8 @@ export async function createCanonicalCanvas(
         op: 'canvas.create',
         canvasShell: {
           workspaceId,
-          filePath,
+          title,
+          filePath: compatibilityFilePath,
           createdAt: createdAt.toISOString(),
         },
       },

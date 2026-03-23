@@ -1,5 +1,79 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+type RouteSpecMocks = {
+  mockClose: ReturnType<typeof vi.fn>;
+  mockCreateAppStatePgliteDb: ReturnType<typeof vi.fn>;
+  mockGetPreference: ReturnType<typeof vi.fn>;
+  mockGetWorkspaceSession: ReturnType<typeof vi.fn>;
+  mockListRecentCanvases: ReturnType<typeof vi.fn>;
+  mockListWorkspaces: ReturnType<typeof vi.fn>;
+  mockRemoveWorkspace: ReturnType<typeof vi.fn>;
+  mockSetPreference: ReturnType<typeof vi.fn>;
+  mockSetWorkspaceSession: ReturnType<typeof vi.fn>;
+  mockUpsertRecentCanvas: ReturnType<typeof vi.fn>;
+  mockUpsertWorkspace: ReturnType<typeof vi.fn>;
+  mockClearRecentCanvases: ReturnType<typeof vi.fn>;
+};
+
+function getRouteSpecMocks(): RouteSpecMocks {
+  const globalState = globalThis as typeof globalThis & { __APP_STATE_ROUTE_SPEC_MOCKS__?: RouteSpecMocks };
+  if (!globalState.__APP_STATE_ROUTE_SPEC_MOCKS__) {
+    globalState.__APP_STATE_ROUTE_SPEC_MOCKS__ = {
+      mockClose: vi.fn(),
+      mockCreateAppStatePgliteDb: vi.fn(),
+      mockGetPreference: vi.fn(),
+      mockGetWorkspaceSession: vi.fn(),
+      mockListRecentCanvases: vi.fn(),
+      mockListWorkspaces: vi.fn(),
+      mockRemoveWorkspace: vi.fn(),
+      mockSetPreference: vi.fn(),
+      mockSetWorkspaceSession: vi.fn(),
+      mockUpsertRecentCanvas: vi.fn(),
+      mockUpsertWorkspace: vi.fn(),
+      mockClearRecentCanvases: vi.fn(),
+    };
+  }
+
+  return globalState.__APP_STATE_ROUTE_SPEC_MOCKS__;
+}
+
+vi.mock('../../../../../libs/shared/src/lib/app-state-persistence', () => ({
+  createAppStatePgliteDb: getRouteSpecMocks().mockCreateAppStatePgliteDb,
+  AppStatePersistenceRepository: class {
+    constructor(_db: unknown) {}
+    listWorkspaces() {
+      return getRouteSpecMocks().mockListWorkspaces();
+    }
+    upsertWorkspace(input: unknown) {
+      return getRouteSpecMocks().mockUpsertWorkspace(input);
+    }
+    removeWorkspace(workspaceId: string) {
+      return getRouteSpecMocks().mockRemoveWorkspace(workspaceId);
+    }
+    getWorkspaceSession() {
+      return getRouteSpecMocks().mockGetWorkspaceSession();
+    }
+    setWorkspaceSession(input: unknown) {
+      return getRouteSpecMocks().mockSetWorkspaceSession(input);
+    }
+    listRecentCanvases(workspaceId: string) {
+      return getRouteSpecMocks().mockListRecentCanvases(workspaceId);
+    }
+    upsertRecentCanvas(input: unknown) {
+      return getRouteSpecMocks().mockUpsertRecentCanvas(input);
+    }
+    clearRecentCanvases(workspaceId: string) {
+      return getRouteSpecMocks().mockClearRecentCanvases(workspaceId);
+    }
+    getPreference(key: string) {
+      return getRouteSpecMocks().mockGetPreference(key);
+    }
+    setPreference(input: unknown) {
+      return getRouteSpecMocks().mockSetPreference(input);
+    }
+  },
+}));
+
 const {
   mockClose,
   mockCreateAppStatePgliteDb,
@@ -10,60 +84,10 @@ const {
   mockRemoveWorkspace,
   mockSetPreference,
   mockSetWorkspaceSession,
-  mockUpsertRecentDocument,
+  mockUpsertRecentCanvas,
   mockUpsertWorkspace,
   mockClearRecentCanvases,
-} = vi.hoisted(() => ({
-  mockClose: vi.fn(),
-  mockCreateAppStatePgliteDb: vi.fn(),
-  mockGetPreference: vi.fn(),
-  mockGetWorkspaceSession: vi.fn(),
-  mockListRecentCanvases: vi.fn(),
-  mockListWorkspaces: vi.fn(),
-  mockRemoveWorkspace: vi.fn(),
-  mockSetPreference: vi.fn(),
-  mockSetWorkspaceSession: vi.fn(),
-  mockUpsertRecentDocument: vi.fn(),
-  mockUpsertWorkspace: vi.fn(),
-  mockClearRecentCanvases: vi.fn(),
-}));
-
-vi.mock('../../../../../libs/shared/src/lib/app-state-persistence', () => ({
-  createAppStatePgliteDb: mockCreateAppStatePgliteDb,
-  AppStatePersistenceRepository: class {
-    constructor(_db: unknown) {}
-    listWorkspaces() {
-      return mockListWorkspaces();
-    }
-    upsertWorkspace(input: unknown) {
-      return mockUpsertWorkspace(input);
-    }
-    removeWorkspace(workspaceId: string) {
-      return mockRemoveWorkspace(workspaceId);
-    }
-    getWorkspaceSession() {
-      return mockGetWorkspaceSession();
-    }
-    setWorkspaceSession(input: unknown) {
-      return mockSetWorkspaceSession(input);
-    }
-    listRecentCanvases(workspaceId: string) {
-      return mockListRecentCanvases(workspaceId);
-    }
-    upsertRecentDocument(input: unknown) {
-      return mockUpsertRecentDocument(input);
-    }
-    clearRecentCanvases(workspaceId: string) {
-      return mockClearRecentCanvases(workspaceId);
-    }
-    getPreference(key: string) {
-      return mockGetPreference(key);
-    }
-    setPreference(input: unknown) {
-      return mockSetPreference(input);
-    }
-  },
-}));
+} = getRouteSpecMocks();
 
 import * as workspacesRoute from './route';
 import * as sessionRoute from '../session/route';
@@ -172,13 +196,13 @@ describe('app-state routes', () => {
     );
   });
 
-  it('lists, upserts, and clears recent documents', async () => {
+  it('lists, upserts, and clears recent canvases', async () => {
     mockListRecentCanvases.mockResolvedValueOnce([
-      { workspaceId: 'ws-1', documentPath: 'docs/alpha.graph.tsx' },
+      { workspaceId: 'ws-1', canvasPath: 'docs/alpha.graph.tsx' },
     ]);
-    mockUpsertRecentDocument.mockResolvedValueOnce({
+    mockUpsertRecentCanvas.mockResolvedValueOnce({
       workspaceId: 'ws-1',
-      documentPath: 'docs/beta.graph.tsx',
+      canvasPath: 'docs/beta.graph.tsx',
     });
 
     const listResponse = await recentCanvasesRoute.GET(
@@ -187,7 +211,7 @@ describe('app-state routes', () => {
     expect(listResponse.status).toBe(200);
     expect(mockListRecentCanvases).toHaveBeenCalledWith('ws-1');
     expect(await listResponse.json()).toEqual([
-      expect.objectContaining({ documentPath: 'docs/alpha.graph.tsx' }),
+      expect.objectContaining({ canvasPath: 'docs/alpha.graph.tsx' }),
     ]);
 
     const upsertResponse = await recentCanvasesRoute.POST(new Request('http://localhost/api/app-state/recent-canvases', {
@@ -195,13 +219,13 @@ describe('app-state routes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         workspaceId: 'ws-1',
-        documentPath: 'docs/beta.graph.tsx',
+        canvasPath: 'docs/beta.graph.tsx',
       }),
     }));
     expect(upsertResponse.status).toBe(200);
-    expect(mockUpsertRecentDocument).toHaveBeenCalledWith({
+    expect(mockUpsertRecentCanvas).toHaveBeenCalledWith({
       workspaceId: 'ws-1',
-      documentPath: 'docs/beta.graph.tsx',
+      canvasPath: 'docs/beta.graph.tsx',
       lastOpenedAt: undefined,
     });
 

@@ -177,7 +177,7 @@ export function createDesktopRpcAdapter(input?: {
         method: 'POST',
         body: JSON.stringify({
           rootPath: input.rootPath,
-          ...(input.filePath ? { filePath: input.filePath } : {}),
+          ...(typeof input.title === 'string' ? { title: input.title } : {}),
         }),
         headers: createJsonHeaders(),
       }),
@@ -201,10 +201,13 @@ export function createDesktopRpcAdapter(input?: {
       }),
     getFileTree: (rootPath?: string | null) =>
       requestJson(`/file-tree${buildRootPathQuery(rootPath)}`),
-    renderFile: (filePath) =>
+    renderCanvas: (input) =>
       requestRenderJson(getBaseUrl(), '/render', {
         method: 'POST',
-        body: JSON.stringify({ filePath }),
+        body: JSON.stringify({
+          canvasId: input.canvasId,
+          ...(input.rootPath ? { rootPath: input.rootPath } : {}),
+        }),
         headers: createJsonHeaders(),
       }),
   };

@@ -102,11 +102,11 @@ describe('renderer navigation', () => {
     navigateToWorkspaceDetail('ws-1');
     expect(location.hash).toBe('/workspace/ws-1');
 
-    navigateToCanvas('/tmp/workspace/docs/alpha.graph.tsx');
-    expect(location.hash).toBe(`/${'canvas'}/${encodeURIComponent('/tmp/workspace/docs/alpha.graph.tsx')}`);
+    navigateToCanvas('doc-1');
+    expect(location.hash).toBe(`/${'canvas'}/${encodeURIComponent('doc-1')}`);
 
-    navigateToWorkspaceCanvas('/tmp/workspace', { filePath: 'docs/beta.graph.tsx' });
-    expect(location.hash).toBe(`/${'canvas'}/${encodeURIComponent('/tmp/workspace/docs/beta.graph.tsx')}`);
+    navigateToWorkspaceCanvas('doc-2');
+    expect(location.hash).toBe(`/${'canvas'}/${encodeURIComponent('doc-2')}`);
 
     navigateToDashboard();
     expect(location.hash).toBe('/');

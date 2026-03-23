@@ -27,7 +27,7 @@ export function CanvasCard({ canvas, onClick }: CanvasCardProps) {
         </h3>
         <div className="flex items-center justify-between mt-1">
           <p className="font-inter text-xs text-on-surface-variant truncate">
-            {canvas.relativePath}
+            Canvas
           </p>
           <span className="text-[10px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full whitespace-nowrap ml-2">
             Canvas

@@ -1,7 +1,8 @@
 export interface CanonicalCanvasShellRecord {
   canvasId: string;
   workspaceId: string;
-  filePath: string | null;
+  title: string | null;
+  compatibilityFilePath: string | null;
   surfaceIds: string[];
   nodeCount: number;
   bindingCount: number;
@@ -25,7 +26,7 @@ export interface CreateCanonicalCanvasShellInput {
   targetDir: string;
   workspaceId?: string;
   canvasId?: string;
-  filePath?: string | null;
+  title?: string | null;
   actor?: {
     kind: 'user' | 'agent' | 'system';
     id: string;

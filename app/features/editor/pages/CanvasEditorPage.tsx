@@ -105,12 +105,12 @@ function resolveWorkspaceCanvasesHealth(
 
 
 
-export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
+export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
   const hostRpc = useMemo(() => getHostRuntime().rpc, []);
 
   useEffect(() => {
-    useGraphStore.getState().setCurrentFile(canvasPath);
-  }, [canvasPath]);
+    useGraphStore.getState().setCurrentCanvasId(canvasId);
+  }, [canvasId]);
 
   // Workspace-canvas-shell migration anchor:
   // workspace registry/session state now lives in the graph store instead of local component state.
@@ -118,6 +118,8 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
     setFiles,
     setGraph,
     currentFile,
+    currentCanvasId,
+    setCurrentFile,
     setCurrentCanvasId,
     workspaceRootPath,
     registeredWorkspaces,
@@ -171,8 +173,8 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
     [activeWorkspaceId, workspaceCanvasesByWorkspaceId],
   );
   const activeWorkspaceCanvas = useMemo(
-    () => workspaceCanvases.find((canvas) => canvas.absolutePath === currentFile) ?? null,
-    [currentFile, workspaceCanvases],
+    () => workspaceCanvases.find((canvas) => canvas.canvasId === currentCanvasId) ?? null,
+    [currentCanvasId, workspaceCanvases],
   );
 
 
@@ -273,17 +275,19 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
         });
       }
       const sidebarCanvases = buildSidebarCanvases(workspace.rootPath, data.canvases);
-      const absoluteFiles = sidebarCanvases.map((canvas) => canvas.absolutePath);
+      const compatibilityFiles = sidebarCanvases
+        .map((canvas) => canvas.compatibilityFilePath)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0);
       const resumeTarget = useGraphStore.getState().lastActiveCanvasesByWorkspaceId[workspace.id];
       const initialCanvas = (
         typeof resumeTarget === 'string'
-        && absoluteFiles.includes(resumeTarget)
+        && compatibilityFiles.includes(resumeTarget)
       )
         ? resumeTarget
-        : absoluteFiles[0] ?? null;
+        : compatibilityFiles[0] ?? null;
 
       setWorkspaceCanvases(workspace.id, sidebarCanvases);
-      setFiles(absoluteFiles);
+      setFiles(compatibilityFiles);
       setFileTree(legacyTree.tree);
       await syncWorkspaceEntry(data, { existingId: workspace.id });
       setWorkspacePathStatus({
@@ -419,38 +423,28 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
       const createdCanvas = await hostRpc.createWorkspaceCanvas({
         rootPath: activeWorkspace.rootPath,
       });
-      const absoluteFilePath = resolveWorkspaceCanvasAbsolutePath(activeWorkspace.rootPath, createdCanvas.filePath);
-      useGraphStore.getState().setSourceVersionForFile(
-        absoluteFilePath,
-        createdCanvas.sourceVersion,
-      );
       setCurrentCanvasId(createdCanvas.canvasId);
       registerWorkspaceCanvas(activeWorkspace.id, {
         canvasId: createdCanvas.canvasId,
         workspaceId: createdCanvas.workspaceId,
         latestRevision: createdCanvas.latestRevision,
-        absolutePath: absoluteFilePath,
-        relativePath: createdCanvas.filePath,
-        title: createdCanvas.filePath.split('/').filter(Boolean).at(-1) ?? createdCanvas.filePath,
+        title: '',
+        compatibilityFilePath: null,
       });
 
-      const opened = openTabByPath(absoluteFilePath);
+      const opened = openTabByPath(createdCanvas.canvasId);
       if (opened) {
-        const nextSourceVersions = {
-          ...useGraphStore.getState().sourceVersions,
-          [absoluteFilePath]: createdCanvas.sourceVersion,
-        };
         setGraph({
           nodes: [],
           edges: [],
-          sourceVersion: createdCanvas.sourceVersion,
-          sourceVersions: nextSourceVersions,
+          sourceVersion: null,
+          sourceVersions: {},
         });
         setGraphError(null);
       }
 
       await loadActiveWorkspaceCanvases(activeWorkspace);
-      navigateToWorkspaceCanvas(activeWorkspace.rootPath, createdCanvas);
+      navigateToWorkspaceCanvas(createdCanvas.canvasId);
       return opened;
     } catch (error) {
       const message = error instanceof Error
@@ -1411,9 +1405,8 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
   }, [activeWorkspace]);
 
   const currentCanvasTitle = useMemo(() => (
-    activeWorkspaceCanvas?.title
-    ?? (currentFile ? currentFile.split('/').filter(Boolean).at(-1) ?? currentFile : null)
-  ), [activeWorkspaceCanvas?.title, currentFile]);
+    activeWorkspaceCanvas?.title || null
+  ), [activeWorkspaceCanvas?.title]);
 
 
 
@@ -1539,9 +1532,9 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
 
   useEffect(() => {
     async function renderFile() {
-      if (!currentFile) return;
+      if (!currentCanvasId) return;
 
-      if (draftCanvases.includes(currentFile)) {
+      if (currentFile && draftCanvases.includes(currentFile)) {
         setGraph({
           nodes: [],
           edges: [],
@@ -1562,10 +1555,7 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            filePath: currentFile,
-            ...(activeWorkspaceCanvas?.canvasId
-              ? { canvasId: activeWorkspaceCanvas.canvasId }
-              : {}),
+            canvasId: currentCanvasId,
             ...(activeWorkspace?.rootPath ?? workspaceRootPath
               ? { rootPath: activeWorkspace?.rootPath ?? workspaceRootPath }
               : {}),
@@ -1608,9 +1598,12 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
 
         const parsed = parseRenderGraph(data);
         if (parsed) {
+          if (typeof data.compatibilityFilePath === 'string' && data.compatibilityFilePath.length > 0) {
+            setCurrentFile(data.compatibilityFilePath);
+          }
           setCurrentCanvasId(typeof data.canvasId === 'string'
             ? data.canvasId
-            : activeWorkspaceCanvas?.canvasId ?? null);
+            : currentCanvasId);
           setGraph(parsed);
           if (pendingSelectionNodeIdRef.current) {
             const createdNodeId = pendingSelectionNodeIdRef.current;
@@ -1636,7 +1629,7 @@ export function CanvasEditorPage({ canvasPath }: { canvasPath: string }) {
     }
 
     renderFile();
-  }, [activeWorkspace?.rootPath, activeWorkspaceCanvas?.canvasId, currentFile, draftCanvases, refreshKey, setCurrentCanvasId, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on file changes
+  }, [activeWorkspace?.rootPath, currentCanvasId, currentFile, draftCanvases, refreshKey, setCurrentCanvasId, setCurrentFile, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on file changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">

@@ -13,10 +13,11 @@ import type {
 export type WorkspaceHealthState = 'ok' | 'missing' | 'not-directory' | 'unreadable';
 
 export interface WorkspaceCanvasSummary {
-  filePath: string;
+  title?: string | null;
   canvasId?: string;
   workspaceId?: string;
   latestRevision?: number | null;
+  filePath?: string | null;
   size?: number;
   modifiedAt?: number;
 }
@@ -45,12 +46,11 @@ export interface RegisteredWorkspace {
 }
 
 export interface WorkspaceSidebarCanvas {
-  canvasId?: string;
+  canvasId: string;
   workspaceId?: string;
   latestRevision?: number | null;
-  absolutePath: string;
-  relativePath: string;
   title: string;
+  compatibilityFilePath?: string | null;
 }
 
 export interface LastActiveCanvasMap {
@@ -400,12 +400,6 @@ function normalizePathSeparators(value: string): string {
   return value.replace(/\\/g, '/');
 }
 
-function basename(value: string): string {
-  const normalized = normalizePathSeparators(value);
-  const segments = normalized.split('/').filter(Boolean);
-  return segments[segments.length - 1] ?? normalized;
-}
-
 export function updateWorkspaceFromProbe(
   current: RegisteredWorkspace,
   probe: WorkspaceProbeResponse,
@@ -445,14 +439,19 @@ export function buildSidebarCanvases(
   rootPath: string,
   canvases: WorkspaceCanvasSummary[],
 ): WorkspaceSidebarCanvas[] {
-  return canvases.map((canvas) => ({
-    ...(typeof canvas.canvasId === 'string' ? { canvasId: canvas.canvasId } : {}),
-    ...(typeof canvas.workspaceId === 'string' ? { workspaceId: canvas.workspaceId } : {}),
-    ...(canvas.latestRevision !== undefined ? { latestRevision: canvas.latestRevision } : {}),
-    absolutePath: resolveWorkspaceCanvasAbsolutePath(rootPath, canvas.filePath),
-    relativePath: canvas.filePath,
-    title: basename(canvas.filePath),
-  }));
+  return canvases
+    .filter((canvas): canvas is WorkspaceCanvasSummary & { canvasId: string } => (
+      typeof canvas.canvasId === 'string' && canvas.canvasId.length > 0
+    ))
+    .map((canvas) => ({
+      canvasId: canvas.canvasId,
+      ...(typeof canvas.workspaceId === 'string' ? { workspaceId: canvas.workspaceId } : {}),
+      ...(canvas.latestRevision !== undefined ? { latestRevision: canvas.latestRevision } : {}),
+      title: typeof canvas.title === 'string' ? canvas.title : '',
+      compatibilityFilePath: typeof canvas.filePath === 'string'
+        ? resolveWorkspaceCanvasAbsolutePath(rootPath, canvas.filePath)
+        : null,
+    }));
 }
 
 export function sortWorkspaces(workspaces: RegisteredWorkspace[]): RegisteredWorkspace[] {

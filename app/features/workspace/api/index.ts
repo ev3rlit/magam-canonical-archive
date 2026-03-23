@@ -8,7 +8,7 @@ export type { CreateWorkspaceCanvasResult } from '@/features/host/renderer/rpcCl
 export async function createWorkspaceCanvas(
   input: {
     rootPath: string;
-    filePath?: string | null;
+    title?: string | null;
   },
   _fetchImpl: typeof fetch = fetch,
 ): Promise<CreateWorkspaceCanvasResult> {

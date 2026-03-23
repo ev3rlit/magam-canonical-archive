@@ -20,8 +20,8 @@ export function RendererAppShell() {
   }, []);
 
   if (hash.startsWith('#/canvas/')) {
-    const canvasPath = decodeURIComponent(hash.replace('#/canvas/', ''));
-    return <CanvasEditorPage canvasPath={canvasPath} />;
+    const canvasId = decodeURIComponent(hash.replace('#/canvas/', ''));
+    return <CanvasEditorPage canvasId={canvasId} />;
   }
 
   if (hash.startsWith('#/workspace/')) {

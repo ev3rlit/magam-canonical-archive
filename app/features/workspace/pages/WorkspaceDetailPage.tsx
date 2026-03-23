@@ -6,7 +6,6 @@ import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
 import {
   navigateToDashboard,
   navigateToCanvas,
-  navigateToWorkspaceCanvas,
 } from '@/features/host/renderer/navigation';
 import { buildSidebarCanvases } from '@/components/editor/workspaceRegistry';
 import { DashboardSidebar } from '../components/DashboardSidebar';
@@ -69,15 +68,15 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
     }
   }, [hostRpc, setError, setWorkspaceCanvases]);
 
-  const handleCanvasClick = (path: string) => {
-    navigateToCanvas(path);
+  const handleCanvasClick = (targetCanvasId: string) => {
+    navigateToCanvas(targetCanvasId);
   };
 
   const handleCreateCanvas = async () => {
     if (!activeWorkspace) return;
     try {
       const result = await hostRpc.createWorkspaceCanvas({ rootPath: activeWorkspace.rootPath });
-      navigateToWorkspaceCanvas(activeWorkspace.rootPath, result);
+      navigateToCanvas(result.canvasId);
     } catch {
       setError({ message: '캔버스 생성 실패' });
     }
@@ -126,7 +125,6 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
     ? workspaceCanvases
     : workspaceCanvases.filter((canvas) =>
       (canvas.title || '').toLowerCase().includes(normalizedSearchTerm)
-      || (canvas.relativePath || '').toLowerCase().includes(normalizedSearchTerm),
     );
 
   return (
@@ -170,15 +168,15 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
               {filteredCanvases.map((canvas) =>
                 viewMode === 'grid' ? (
                   <CanvasCard
-                    key={canvas.absolutePath}
+                    key={canvas.canvasId}
                     canvas={canvas}
-                    onClick={() => handleCanvasClick(canvas.absolutePath)}
+                    onClick={() => handleCanvasClick(canvas.canvasId)}
                   />
                 ) : (
                   <CanvasListItem
-                    key={canvas.absolutePath}
+                    key={canvas.canvasId}
                     canvas={canvas}
-                    onClick={() => handleCanvasClick(canvas.absolutePath)}
+                    onClick={() => handleCanvasClick(canvas.canvasId)}
                   />
                 )
               )}

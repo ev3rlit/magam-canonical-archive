@@ -1092,16 +1092,11 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   registerWorkspaceCanvas: (workspaceId, canvas) => set((state) => {
     const currentCanvases = state.workspaceCanvasesByWorkspaceId[workspaceId] ?? [];
     if (currentCanvases.some((entry) => (
-      (entry.canvasId && canvas.canvasId && entry.canvasId === canvas.canvasId)
-      || entry.absolutePath === canvas.absolutePath
+      entry.canvasId === canvas.canvasId
     ))) {
       return state;
     }
 
-    const normalizedCanvasPath = normalizeWorkspaceAwareFilePath(
-      state.workspaceRootPath,
-      canvas.absolutePath,
-    );
     const nextCanvases = [canvas, ...currentCanvases];
     const nextWorkspaces = state.registeredWorkspaces.map((workspace) => (
       workspace.id === workspaceId
@@ -1118,11 +1113,15 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       registeredWorkspaces: nextWorkspaces,
       ...(isActiveWorkspace
         ? {
-            files: normalizeWorkspaceAwareFileList(
-              state.workspaceRootPath,
-              [...state.files, normalizedCanvasPath],
-            ),
-            fileTree: insertFileIntoTree(state.fileTree, normalizedCanvasPath),
+            ...(typeof canvas.compatibilityFilePath === 'string' && canvas.compatibilityFilePath.length > 0
+              ? {
+                  files: normalizeWorkspaceAwareFileList(
+                    state.workspaceRootPath,
+                    [...state.files, canvas.compatibilityFilePath],
+                  ),
+                  fileTree: insertFileIntoTree(state.fileTree, canvas.compatibilityFilePath),
+                }
+              : {}),
           }
         : {}),
     };

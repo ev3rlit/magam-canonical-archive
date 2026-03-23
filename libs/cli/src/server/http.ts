@@ -630,7 +630,7 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
         canvasId: requestedCanvasId,
       });
       resolvedCanvasId = canonicalCanvas.canvasId;
-      resolvedWorkspacePath = canonicalCanvas.filePath ?? `canvases/${canonicalCanvas.canvasId}.graph.tsx`;
+      resolvedWorkspacePath = canonicalCanvas.compatibilityFilePath ?? `canvases/${canonicalCanvas.canvasId}.graph.tsx`;
       const materializedAbsolutePath = path.resolve(requestTargetDir, resolvedWorkspacePath);
       if (!fs.existsSync(materializedAbsolutePath)) {
         fs.mkdirSync(path.dirname(materializedAbsolutePath), { recursive: true });
@@ -674,6 +674,7 @@ async function handleRender(req: http.IncomingMessage, res: http.ServerResponse,
       sourceVersion: pipelineResult.sourceVersion,
       sourceVersions: pipelineResult.sourceVersions,
       ...(resolvedCanvasId ? { canvasId: resolvedCanvasId } : {}),
+      ...(resolvedWorkspacePath ? { compatibilityFilePath: resolvedWorkspacePath } : {}),
     }));
   } catch (error: any) {
     console.error('Render Error:', error);
@@ -1078,7 +1079,7 @@ function toCanonicalCanvasSummary(canvas: CanonicalCanvasShellRecord) {
   return {
     canvasId: canvas.canvasId,
     workspaceId: canvas.workspaceId,
-    filePath: canvas.filePath ?? `canvases/${canvas.canvasId}.graph.tsx`,
+    title: canvas.title,
     modifiedAt: canvas.updatedAt?.getTime() ?? canvas.createdAt?.getTime() ?? null,
     latestRevision: canvas.latestRevision,
   };
@@ -1305,25 +1306,18 @@ async function handleCanvasesCreate(req: http.IncomingMessage, res: http.ServerR
     const rootPath = resolveCanvasRootPath(rawRootPath);
 
     const workspace = await requireWorkspaceRoot(rootPath);
-    const rawFilePath = typeof body.filePath === 'string'
-      ? body.filePath
-      : typeof body.path === 'string'
-        ? body.path
-        : null;
+    const rawTitle = typeof body.title === 'string' ? body.title : null;
     let created: CanonicalCanvasShellRecord;
     try {
       created = await createCanonicalCanvas({
         targetDir: workspace.rootPath,
-        filePath: rawFilePath,
+        title: rawTitle,
         actor: {
           kind: 'system',
           id: 'desktop.http',
         },
       });
     } catch (error) {
-      if (isCanonicalCliError(error) && error.code === 'INVALID_ARGUMENT') {
-        throw new ApiError(400, 'DOC_400_INVALID_PATH', error.message, error.details);
-      }
       throw error;
     }
 

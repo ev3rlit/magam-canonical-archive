@@ -55,13 +55,13 @@ describe('host RPC adapters', () => {
         workspaceName: 'workspace',
         health: { state: 'ok' },
         canvasCount: 1,
-        documents: [{ filePath: 'docs/alpha.graph.tsx' }],
+        canvases: [{ canvasId: 'doc-0', workspaceId: 'ws-1', title: 'Alpha', latestRevision: 1 }],
         lastModifiedAt: 10,
       }))
       .mockResolvedValueOnce(jsonResponse({
         canvasId: 'doc-1',
         workspaceId: 'ws-1',
-        filePath: 'docs/untitled-1.graph.tsx',
+        title: null,
         sourceVersion: 'sha256:created-document',
         latestRevision: 1,
       }, 201));
@@ -75,7 +75,7 @@ describe('host RPC adapters', () => {
     await expect(adapter.createWorkspaceCanvas({ rootPath: '/tmp/workspace' })).resolves.toEqual({
       canvasId: 'doc-1',
       workspaceId: 'ws-1',
-      filePath: 'docs/untitled-1.graph.tsx',
+      title: null,
       sourceVersion: 'sha256:created-document',
       latestRevision: 1,
     });
@@ -194,7 +194,7 @@ describe('host RPC adapters', () => {
       .mockResolvedValueOnce(jsonResponse([
         {
           workspaceId: 'ws-1',
-          documentPath: 'docs/alpha.graph.tsx',
+          canvasPath: 'docs/alpha.graph.tsx',
         },
       ]))
       .mockResolvedValueOnce(jsonResponse({
@@ -215,7 +215,7 @@ describe('host RPC adapters', () => {
       expect.objectContaining({ activeWorkspaceId: 'ws-1' }),
     );
     await expect(adapter.listAppStateRecentCanvases('ws-1')).resolves.toEqual([
-      expect.objectContaining({ documentPath: 'docs/alpha.graph.tsx' }),
+      expect.objectContaining({ canvasPath: 'docs/alpha.graph.tsx' }),
     ]);
     await expect(adapter.getAppStatePreference('theme.mode')).resolves.toEqual(
       expect.objectContaining({ key: 'theme.mode', valueJson: 'light' }),
@@ -261,7 +261,7 @@ describe('host RPC adapters', () => {
       .mockResolvedValueOnce(jsonResponse([
         {
           workspaceId: 'ws-1',
-          documentPath: 'docs/alpha.graph.tsx',
+          canvasPath: 'docs/alpha.graph.tsx',
         },
       ]))
       .mockResolvedValueOnce(jsonResponse({

@@ -82,7 +82,7 @@ function toRouteCanvasSummary(canvas: CanonicalCanvasShellRecord) {
   return {
     canvasId: canvas.canvasId,
     workspaceId: canvas.workspaceId,
-    filePath: canvas.filePath ?? `canvases/${canvas.canvasId}.graph.tsx`,
+    title: canvas.title,
     modifiedAt: canvas.updatedAt?.getTime() ?? canvas.createdAt?.getTime() ?? null,
     latestRevision: canvas.latestRevision,
   };
@@ -138,26 +138,19 @@ export async function POST(request: Request) {
     const rootPath = resolveCanvasRootPath(rawRootPath);
 
     const workspace = await requireWorkspaceRoot(rootPath);
-    const rawFilePath = typeof body.filePath === 'string'
-      ? body.filePath
-      : typeof body.path === 'string'
-        ? body.path
-        : null;
+    const rawTitle = typeof body.title === 'string' ? body.title : null;
 
     let created: CanonicalCanvasShellRecord;
     try {
       created = await createCanonicalCanvas({
         targetDir: workspace.rootPath,
-        filePath: rawFilePath,
+        title: rawTitle,
         actor: {
           kind: 'system',
           id: 'api.canvases',
         },
       });
     } catch (error) {
-      if (isCanonicalCliError(error) && error.code === 'INVALID_ARGUMENT') {
-        throw new ApiError(400, 'DOC_400_INVALID_PATH', error.message, error.details);
-      }
       throw error;
     }
 

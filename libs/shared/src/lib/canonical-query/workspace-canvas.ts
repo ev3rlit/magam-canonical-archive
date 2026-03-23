@@ -23,7 +23,8 @@ export interface CanvasSummary {
 export interface WorkspaceCanvasShellSummary {
   canvasId: string;
   workspaceId: string;
-  filePath: string | null;
+  title: string | null;
+  compatibilityFilePath: string | null;
   surfaceIds: string[];
   nodeCount: number;
   bindingCount: number;
@@ -38,7 +39,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readCanvasShellMetadata(
   mutationBatch: Record<string, unknown> | null | undefined,
-): { workspaceId?: string; filePath?: string | null } | null {
+): { workspaceId?: string; title?: string | null; filePath?: string | null } | null {
   if (!isRecord(mutationBatch)) {
     return null;
   }
@@ -55,6 +56,7 @@ function readCanvasShellMetadata(
 
   return {
     ...(typeof shell.workspaceId === 'string' ? { workspaceId: shell.workspaceId } : {}),
+    ...(typeof shell.title === 'string' ? { title: shell.title } : { title: null }),
     ...(typeof shell.filePath === 'string' ? { filePath: shell.filePath } : { filePath: null }),
   };
 }
@@ -231,7 +233,8 @@ export async function getWorkspaceCanvas(
   return {
     canvasId,
     workspaceId: latestMetadata?.workspaceId ?? workspaceId,
-    filePath: latestMetadata?.filePath ?? null,
+    title: latestMetadata?.title ?? null,
+    compatibilityFilePath: latestMetadata?.filePath ?? null,
     surfaceIds: uniqueStrings(nodes.map((node) => node.surfaceId)),
     nodeCount: nodes.length,
     bindingCount: bindings.length,
