@@ -8,6 +8,7 @@ export const FONT_FAMILY_PRESETS: FontFamilyPreset[] = [
 
 export const DEFAULT_GLOBAL_FONT_FAMILY: FontFamilyPreset = 'hand-gaegu';
 export const GLOBAL_FONT_STORAGE_KEY = 'magam.font.globalFamily';
+export const GLOBAL_FONT_PREFERENCE_KEY = 'font.globalFamily';
 
 const FONT_FAMILY_CSS_VAR_MAP: Record<FontFamilyPreset, string> = {
   'hand-gaegu': '--font-preset-hand-gaegu',
@@ -45,6 +46,10 @@ export function persistGlobalFontFamily(value: FontFamilyPreset): void {
   } catch {
     // noop: localStorage may be unavailable
   }
+}
+
+export function parseGlobalFontPreferenceValue(value: unknown): FontFamilyPreset | null {
+  return isFontFamilyPreset(value) ? value : null;
 }
 
 export function hasExplicitFontFamilyClass(className?: string): boolean {

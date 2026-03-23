@@ -41,6 +41,9 @@ export function assertDesktopRuntimeConfig(config: DesktopRuntimeConfig): Deskto
   if (config.workspacePath) {
     assertAbsolutePath(config.workspacePath, 'workspacePath');
   }
+  if (config.appStateDbPath) {
+    assertAbsolutePath(config.appStateDbPath, 'appStateDbPath');
+  }
 
   return config;
 }

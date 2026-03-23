@@ -30,6 +30,7 @@ export interface DesktopHostOrchestrator {
 }
 
 export interface DesktopHostOrchestratorConfig {
+  appStateDbPath: string;
   bunBin: string;
   httpPort: number;
   repoRoot: string;
@@ -48,6 +49,7 @@ export function createDesktopHostOrchestrator(
     mode: 'desktop-primary',
     httpBaseUrl: `http://127.0.0.1:${config.httpPort}`,
     wsUrl: `ws://127.0.0.1:${config.wsPort}`,
+    appStateDbPath: config.appStateDbPath,
     workspacePath,
   };
 
@@ -74,6 +76,7 @@ export function createDesktopHostOrchestrator(
 
     try {
       backend = await startDesktopBackend({
+        appStateDbPath: config.appStateDbPath,
         bunBin: config.bunBin,
         httpPort: config.httpPort,
         repoRoot: config.repoRoot,
@@ -85,6 +88,7 @@ export function createDesktopHostOrchestrator(
         mode: 'desktop-primary',
         httpBaseUrl: backend.httpBaseUrl,
         wsUrl: backend.wsUrl,
+        appStateDbPath: config.appStateDbPath,
         workspacePath,
       };
       updateSession({

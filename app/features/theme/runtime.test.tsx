@@ -3,8 +3,10 @@ import React from 'react';
 import { act } from 'react';
 import { JSDOM } from 'jsdom';
 import { createRoot, type Root } from 'react-dom/client';
+import { resetHostRuntimeForTests } from '@/features/host/renderer/createHostRuntime';
 import { ThemeProvider, useTheme } from './provider';
 import {
+  THEME_PREFERENCE_KEY,
   THEME_STORAGE_KEY,
   getThemeBootstrapScript,
   readStoredThemeMode,
@@ -16,6 +18,8 @@ type TestEnvironment = {
   dom: JSDOM;
   root: Root;
 };
+
+const originalFetch = globalThis.fetch;
 
 type MediaQueryController = {
   matchMedia: (query: string) => MediaQueryList;
@@ -151,9 +155,42 @@ describe('theme runtime helpers', () => {
 
 describe('theme bootstrap and provider', () => {
   let environment: ReturnType<typeof createEnvironment>;
+  let storedThemeModePreference: string | null;
 
   beforeEach(() => {
     environment = createEnvironment(false);
+    storedThemeModePreference = null;
+    globalThis.fetch = (async (input, init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (!url.includes('/api/app-state/preferences')) {
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }
+
+      if ((init?.method ?? 'GET') === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { key?: string; valueJson?: unknown };
+        if (body.key === THEME_PREFERENCE_KEY && typeof body.valueJson === 'string') {
+          storedThemeModePreference = body.valueJson;
+        }
+
+        return new Response(JSON.stringify({
+          key: body.key,
+          valueJson: body.valueJson,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(
+        storedThemeModePreference
+          ? { key: THEME_PREFERENCE_KEY, valueJson: storedThemeModePreference }
+          : null,
+      ), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+    resetHostRuntimeForTests();
   });
 
   afterEach(async () => {
@@ -162,6 +199,8 @@ describe('theme bootstrap and provider', () => {
     });
     environment.container.remove();
     environment.dom.window.close();
+    globalThis.fetch = originalFetch;
+    resetHostRuntimeForTests();
   });
 
   it('applies the bootstrap script before hydration using stored system preference', () => {
@@ -199,6 +238,7 @@ describe('theme bootstrap and provider', () => {
 
     expect(documentElement.dataset.theme).toBe('light');
     expect(environment.dom.window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+    expect(storedThemeModePreference).toBe('light');
 
     const systemButton = environment.dom.window.document.getElementById('theme-system');
     await act(async () => {

@@ -24,7 +24,7 @@ export function WorkspaceDetailPage({ workspaceId }: { workspaceId: string }) {
   } = useGraphStore();
 
   useEffect(() => {
-    setActiveWorkspaceId(workspaceId);
+    void setActiveWorkspaceId(workspaceId);
   }, [workspaceId, setActiveWorkspaceId]);
 
   const activeWorkspace = useMemo(

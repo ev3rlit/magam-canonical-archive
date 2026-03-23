@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 
 export interface DesktopBackendLifecycleConfig {
+  appStateDbPath: string;
   bunBin: string;
   httpPort: number;
   repoRoot: string;
@@ -83,6 +84,7 @@ export async function startDesktopBackend(
 ): Promise<DesktopBackendHandle> {
   const env = {
     ...process.env,
+    MAGAM_APP_STATE_DB_PATH: config.appStateDbPath,
     MAGAM_HTTP_PORT: String(config.httpPort),
     MAGAM_TARGET_DIR: config.workspacePath,
     MAGAM_WS_PORT: String(config.wsPort),

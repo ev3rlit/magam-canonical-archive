@@ -1,12 +1,37 @@
-import { beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { SearchResult } from '../utils/search';
-import {
-  LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY,
-  useGraphStore,
-} from './graph';
+import { resetHostRuntimeForTests } from '@/features/host/renderer/createHostRuntime';
+import { useGraphStore } from './graph';
 import { GLOBAL_FONT_STORAGE_KEY } from '../utils/fontHierarchy';
 
 const initialGraphState = useGraphStore.getState();
+const originalFetch = globalThis.fetch;
+const originalWindow = (globalThis as { window?: unknown }).window;
+
+function createMemoryStorage(seed?: Record<string, string>): Storage {
+  const state = new Map(Object.entries(seed ?? {}));
+
+  return {
+    getItem(key: string) {
+      return state.get(key) ?? null;
+    },
+    setItem(key: string, value: string) {
+      state.set(key, value);
+    },
+    removeItem(key: string) {
+      state.delete(key);
+    },
+    clear() {
+      state.clear();
+    },
+    key(index: number) {
+      return Array.from(state.keys())[index] ?? null;
+    },
+    get length() {
+      return state.size;
+    },
+  } as Storage;
+}
 
 const getFixtureResults = (): SearchResult[] => ([
   { type: 'element', key: 'node-a', title: 'A', score: 100, matchKind: 'exact' },
@@ -77,9 +102,6 @@ describe('graph metadata state', () => {
 
 describe('document session persistence', () => {
   beforeEach(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY);
-    }
     useGraphStore.setState(initialGraphState);
   });
 
@@ -218,11 +240,6 @@ describe('document session persistence', () => {
     useGraphStore.getState().rememberLastActiveDocument('docs/resume.graph.tsx');
 
     expect(useGraphStore.getState().lastActiveDocumentPath).toBe('docs/resume.graph.tsx');
-    if (typeof window !== 'undefined') {
-      expect(
-        window.localStorage.getItem(LAST_ACTIVE_DOCUMENT_SESSION_STORAGE_KEY),
-      ).toContain('docs/resume.graph.tsx');
-    }
   });
 
   it('tracks new-document empty-canvas entry state without requiring a pre-open naming gate', () => {
@@ -268,10 +285,87 @@ describe('document session persistence', () => {
 });
 
 describe('font hierarchy state', () => {
+  let storedFontPreference: string | null;
+
   beforeEach(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(GLOBAL_FONT_STORAGE_KEY);
-    }
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        localStorage: createMemoryStorage(),
+        __MAGAM_DESKTOP_HOST__: {
+          runtime: {
+            mode: 'desktop-primary',
+            httpBaseUrl: 'http://127.0.0.1:3003',
+            wsUrl: 'ws://127.0.0.1:3004',
+            appStateDbPath: '/tmp/app-state-pgdata',
+            workspacePath: null,
+          },
+          capabilities: {
+            workspace: {
+              async selectWorkspace() {
+                return null;
+              },
+              async revealInOs() {
+                return;
+              },
+            },
+            shell: {
+              async openExternal() {
+                return;
+              },
+            },
+            lifecycle: {
+              onAppEvent() {
+                return () => undefined;
+              },
+            },
+          },
+          bootstrap: {
+            async getSession() {
+              return null;
+            },
+            async markRendererLoading() {
+              return null;
+            },
+            async markRendererReady() {
+              return null;
+            },
+            async markRendererFailed() {
+              return null;
+            },
+          },
+        },
+      },
+    });
+    storedFontPreference = 'sans-inter';
+    globalThis.fetch = (async (input, init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (!url.includes('/app-state/preferences')) {
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }
+
+      if ((init?.method ?? 'GET') === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { valueJson?: unknown };
+        storedFontPreference = typeof body.valueJson === 'string' ? body.valueJson : null;
+        return new Response(JSON.stringify({
+          key: 'font.globalFamily',
+          valueJson: body.valueJson,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(
+        storedFontPreference
+          ? { key: 'font.globalFamily', valueJson: storedFontPreference }
+          : null,
+      ), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+    resetHostRuntimeForTests();
 
     useGraphStore.setState((state) => ({
       ...state,
@@ -280,14 +374,38 @@ describe('font hierarchy state', () => {
     }));
   });
 
-  it('setGlobalFontFamily stores value in state and localStorage', () => {
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    if (originalWindow === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      });
+    }
+    resetHostRuntimeForTests();
+  });
+
+  it('setGlobalFontFamily stores value in state, localStorage cache, and app-state preference', async () => {
     useGraphStore.getState().setGlobalFontFamily('hand-caveat');
+    await Promise.resolve();
 
     const state = useGraphStore.getState();
     expect(state.globalFontFamily).toBe('hand-caveat');
 
     if (typeof window !== 'undefined') {
       expect(window.localStorage.getItem(GLOBAL_FONT_STORAGE_KEY)).toBe('hand-caveat');
+    }
+    expect(storedFontPreference).toBe('hand-caveat');
+  });
+
+  it('hydrateGlobalFontFamilyPreference restores the app-state value into store and local cache', async () => {
+    await useGraphStore.getState().hydrateGlobalFontFamilyPreference();
+
+    expect(useGraphStore.getState().globalFontFamily).toBe('sans-inter');
+    if (typeof window !== 'undefined') {
+      expect(window.localStorage.getItem(GLOBAL_FONT_STORAGE_KEY)).toBe('sans-inter');
     }
   });
 

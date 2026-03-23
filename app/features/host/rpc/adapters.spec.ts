@@ -26,6 +26,7 @@ describe('host RPC adapters', () => {
         mode: 'desktop-primary',
         httpBaseUrl: 'http://127.0.0.1:3003',
         wsUrl: 'ws://127.0.0.1:3004',
+        appStateDbPath: '/tmp/app-state-pgdata',
         workspacePath: null,
       },
     });
@@ -102,6 +103,7 @@ describe('host RPC adapters', () => {
         mode: 'desktop-primary',
         httpBaseUrl: 'http://127.0.0.1:3003',
         wsUrl: 'ws://127.0.0.1:3004',
+        appStateDbPath: '/tmp/app-state-pgdata',
         workspacePath: null,
       },
     });
@@ -146,6 +148,7 @@ describe('host RPC adapters', () => {
         mode: 'desktop-primary',
         httpBaseUrl: 'http://127.0.0.1:3003',
         wsUrl: 'ws://127.0.0.1:3004',
+        appStateDbPath: '/tmp/app-state-pgdata',
         workspacePath: null,
       },
     }).getFileTree('/tmp/workspace');
@@ -159,6 +162,148 @@ describe('host RPC adapters', () => {
       2,
       'http://127.0.0.1:3003/file-tree?rootPath=%2Ftmp%2Fworkspace',
       expect.objectContaining({ cache: 'no-store' }),
+    );
+  });
+
+  it('maps app-state requests through same-origin web API routes', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse([
+        {
+          id: 'ws-1',
+          rootPath: '/tmp/workspace',
+          displayName: 'workspace',
+          status: 'ok',
+          isPinned: false,
+        },
+      ]))
+      .mockResolvedValueOnce(jsonResponse({
+        singletonKey: 'global',
+        activeWorkspaceId: 'ws-1',
+      }))
+      .mockResolvedValueOnce(jsonResponse([
+        {
+          workspaceId: 'ws-1',
+          documentPath: 'docs/alpha.graph.tsx',
+        },
+      ]))
+      .mockResolvedValueOnce(jsonResponse({
+        key: 'theme.mode',
+        valueJson: 'light',
+      }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const adapter = createWebRpcAdapter();
+
+    await expect(adapter.listAppStateWorkspaces()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'ws-1',
+        rootPath: '/tmp/workspace',
+      }),
+    ]);
+    await expect(adapter.getAppStateWorkspaceSession()).resolves.toEqual(
+      expect.objectContaining({ activeWorkspaceId: 'ws-1' }),
+    );
+    await expect(adapter.listAppStateRecentDocuments('ws-1')).resolves.toEqual([
+      expect.objectContaining({ documentPath: 'docs/alpha.graph.tsx' }),
+    ]);
+    await expect(adapter.getAppStatePreference('theme.mode')).resolves.toEqual(
+      expect.objectContaining({ key: 'theme.mode', valueJson: 'light' }),
+    );
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/app-state/workspaces',
+      expect.objectContaining({ cache: 'no-store' }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/api/app-state/session',
+      expect.objectContaining({ cache: 'no-store' }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/app-state/recent-documents?workspaceId=ws-1',
+      expect.objectContaining({ cache: 'no-store' }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      '/api/app-state/preferences?key=theme.mode',
+      expect.objectContaining({ cache: 'no-store' }),
+    );
+  });
+
+  it('uses the desktop runtime HTTP base URL for app-state requests without falling back to 3002', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse([
+        {
+          id: 'ws-1',
+          rootPath: '/tmp/workspace',
+          displayName: 'workspace',
+          status: 'ok',
+          isPinned: false,
+        },
+      ]))
+      .mockResolvedValueOnce(jsonResponse({
+        singletonKey: 'global',
+        activeWorkspaceId: 'ws-1',
+      }))
+      .mockResolvedValueOnce(jsonResponse([
+        {
+          workspaceId: 'ws-1',
+          documentPath: 'docs/alpha.graph.tsx',
+        },
+      ]))
+      .mockResolvedValueOnce(jsonResponse({
+        key: 'theme.mode',
+        valueJson: 'dark',
+      }))
+      .mockResolvedValueOnce(jsonResponse({ deleted: true }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const adapter = createDesktopRpcAdapter({
+      runtimeConfig: {
+        mode: 'desktop-primary',
+        httpBaseUrl: 'http://127.0.0.1:3003',
+        wsUrl: 'ws://127.0.0.1:3004',
+        appStateDbPath: '/tmp/app-state-pgdata',
+        workspacePath: null,
+      },
+    });
+
+    await adapter.listAppStateWorkspaces();
+    await adapter.getAppStateWorkspaceSession();
+    await adapter.listAppStateRecentDocuments('ws-1');
+    await adapter.getAppStatePreference('theme.mode');
+    await adapter.removeAppStateWorkspace('ws-1');
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'http://127.0.0.1:3003/app-state/workspaces',
+      expect.objectContaining({ cache: 'no-store' }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      'http://127.0.0.1:3003/app-state/session',
+      expect.objectContaining({ cache: 'no-store' }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      'http://127.0.0.1:3003/app-state/recent-documents?workspaceId=ws-1',
+      expect.objectContaining({ cache: 'no-store' }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      'http://127.0.0.1:3003/app-state/preferences?key=theme.mode',
+      expect.objectContaining({ cache: 'no-store' }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      'http://127.0.0.1:3003/app-state/workspaces?workspaceId=ws-1',
+      expect.objectContaining({ method: 'DELETE', cache: 'no-store' }),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('127.0.0.1:3002'),
+      expect.anything(),
     );
   });
 });

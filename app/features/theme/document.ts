@@ -31,6 +31,8 @@ export function ensureFontPresetStyle(doc: Document): void {
 }
 
 export function initializeThemeDocument(win: Window, doc: Document): void {
+  // Theme bootstrap still uses localStorage as a synchronous cache so the first paint
+  // does not wait on async app-state RPC.
   const initialState = resolveInitialThemeState({
     storedMode: readStoredThemeMode(win.localStorage),
     systemPrefersDark: typeof win.matchMedia === 'function'

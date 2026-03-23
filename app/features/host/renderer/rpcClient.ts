@@ -1,6 +1,16 @@
 import type { FileTreeNode } from '@/store/graph';
 import type { RpcAdapterDescriptor } from '@/features/host/contracts';
 import type { WorkspaceProbeResponse } from '@/components/editor/workspaceRegistry';
+import type {
+  AppPreferenceRecord,
+  AppPreferenceUpsertInput,
+  AppRecentDocumentRecord,
+  AppRecentDocumentUpsertInput,
+  AppWorkspaceRecord,
+  AppWorkspaceSessionRecord,
+  AppWorkspaceSessionUpdateInput,
+  AppWorkspaceUpsertInput,
+} from '../../../../libs/shared/src/lib/app-state-persistence/contracts/types';
 
 export interface RendererFileListResponse {
   files: string[];
@@ -100,6 +110,16 @@ export interface RendererRpcClient {
   descriptor: RpcAdapterDescriptor;
   healthCheck: () => Promise<boolean>;
   listFiles: () => Promise<RendererFileListResponse>;
+  listAppStateWorkspaces: () => Promise<AppWorkspaceRecord[]>;
+  upsertAppStateWorkspace: (input: AppWorkspaceUpsertInput) => Promise<AppWorkspaceRecord>;
+  removeAppStateWorkspace: (workspaceId: string) => Promise<void>;
+  getAppStateWorkspaceSession: () => Promise<AppWorkspaceSessionRecord | null>;
+  setAppStateWorkspaceSession: (input: AppWorkspaceSessionUpdateInput) => Promise<AppWorkspaceSessionRecord>;
+  listAppStateRecentDocuments: (workspaceId: string) => Promise<AppRecentDocumentRecord[]>;
+  upsertAppStateRecentDocument: (input: AppRecentDocumentUpsertInput) => Promise<AppRecentDocumentRecord>;
+  clearAppStateRecentDocuments: (workspaceId: string) => Promise<void>;
+  getAppStatePreference: (key: string) => Promise<AppPreferenceRecord | null>;
+  setAppStatePreference: (input: AppPreferenceUpsertInput) => Promise<AppPreferenceRecord>;
   probeWorkspace: (rootPath?: string | null) => Promise<WorkspaceProbeResponse>;
   ensureWorkspace: (rootPath: string) => Promise<WorkspaceProbeResponse>;
   listWorkspaceDocuments: (rootPath: string) => Promise<WorkspaceProbeResponse>;

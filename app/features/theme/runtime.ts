@@ -1,4 +1,5 @@
 export const THEME_STORAGE_KEY = 'theme';
+export const THEME_PREFERENCE_KEY = 'theme.mode';
 
 export const THEME_MEDIA_QUERY = '(prefers-color-scheme: dark)';
 
@@ -21,6 +22,10 @@ export function readStoredThemeMode(
 
   const rawValue = storage.getItem(THEME_STORAGE_KEY);
   return isThemeMode(rawValue) ? rawValue : null;
+}
+
+export function parseThemePreferenceValue(value: unknown): ThemeMode | null {
+  return isThemeMode(value) ? value : null;
 }
 
 export function resolveSystemTheme(

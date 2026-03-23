@@ -64,6 +64,14 @@
 - workspace 데이터는 해당 root 아래의 로컬 PGlite 저장소와 workspace metadata로 유지한다.
 - 앱 전역에는 registry, 최근 항목, UI state 같은 lightweight metadata만 저장한다.
 
+현재 구현 정렬:
+
+- registered workspace list
+- active workspace
+- workspace별 last active document
+
+위 상태는 app-global `PGlite`에 저장되고, renderer `localStorage`는 legacy import source 또는 bootstrap cache로만 남는다.
+
 이 구조에서 사용자는 "내 데이터가 앱 내부 어딘가"가 아니라 "내가 고른 폴더 안"에 결과물을 소유한다.
 
 ## 4. prior art 해석

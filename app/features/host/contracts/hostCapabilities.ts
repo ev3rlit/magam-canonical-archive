@@ -39,6 +39,7 @@ export interface DesktopRuntimeConfig {
   mode: 'desktop-primary';
   httpBaseUrl: string;
   wsUrl: string;
+  appStateDbPath: string | null;
   workspacePath: string | null;
 }
 

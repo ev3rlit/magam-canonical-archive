@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const {
+  actualFsRef,
   mockGlob,
   mockTranspileWithMetadata,
   mockExecute,
@@ -26,6 +27,7 @@ const {
   mockChatDeleteGroup,
   mockChatAppendSystemMessage,
 } = vi.hoisted(() => ({
+  actualFsRef: { current: null as null | typeof import('fs') },
   mockGlob: vi.fn(),
   mockTranspileWithMetadata: vi.fn(),
   mockExecute: vi.fn(),
@@ -64,12 +66,17 @@ vi.mock('../core/executor', () => ({
   execute: mockExecute,
 }));
 
-vi.mock('fs', () => ({
-  existsSync: mockExistsSync,
-  readFileSync: mockReadFileSync,
-  mkdirSync: mockMkdirSync,
-  writeFileSync: mockWriteFileSync,
-}));
+vi.mock('fs', async () => {
+  const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
+  actualFsRef.current = actual;
+  return {
+    ...actual,
+    existsSync: mockExistsSync,
+    readFileSync: mockReadFileSync,
+    mkdirSync: mockMkdirSync,
+    writeFileSync: mockWriteFileSync,
+  };
+});
 
 vi.mock('../chat/handler', () => ({
   ChatHandler: class {
@@ -127,14 +134,22 @@ describe('HTTP Render Server', () => {
   let serverResult: HttpServerResult;
   let baseUrl: string;
   let port: number;
-  const targetDir = '/tmp/test';
+  let targetDir: string;
   let nextPort = 4001;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    targetDir = await mkdtemp(path.join(os.tmpdir(), 'magam-http-target-'));
     port = nextPort;
     nextPort += 1;
     baseUrl = `http://localhost:${port}`;
+    if (!actualFsRef.current) {
+      throw new Error('Expected actual fs implementation to be initialized.');
+    }
+    mockExistsSync.mockImplementation(actualFsRef.current.existsSync);
+    mockReadFileSync.mockImplementation(actualFsRef.current.readFileSync as any);
+    mockMkdirSync.mockImplementation(actualFsRef.current.mkdirSync as any);
+    mockWriteFileSync.mockImplementation(actualFsRef.current.writeFileSync as any);
 
     mockChatGetProviders.mockResolvedValue([
       { id: 'claude', displayName: 'Claude Code', isInstalled: true },
@@ -160,7 +175,13 @@ describe('HTTP Render Server', () => {
     });
 
     mockChatStop.mockImplementation(() => ({ stopped: false }));
-    mockReadFileSync.mockReturnValue('export default function Test() { return null; }');
+    mockReadFileSync.mockImplementation((filePath: fs.PathLike, options?: any) => {
+      const normalizedPath = String(filePath);
+      if (normalizedPath.endsWith('.sql') || normalizedPath.includes('/drizzle/')) {
+        return actualFsRef.current?.readFileSync(filePath, options);
+      }
+      return 'export default function Test() { return null; }';
+    });
     mockChatListSessions.mockResolvedValue([]);
     mockChatGetSession.mockResolvedValue(undefined);
     mockChatCreateSession.mockResolvedValue({ id: 's-new', providerId: 'claude', title: 'New Chat', createdAt: Date.now(), updatedAt: Date.now(), groupId: null, archivedAt: null });
@@ -177,8 +198,17 @@ describe('HTTP Render Server', () => {
   });
 
   afterEach(async () => {
-    await serverResult.close();
+    if (serverResult) {
+      await serverResult.close();
+    }
+    await rm(targetDir, { recursive: true, force: true });
   });
+
+  async function requestJson(pathname: string, init?: RequestInit) {
+    const response = await fetch(`${baseUrl}${pathname}`, init);
+    const body = await response.json();
+    return { response, body };
+  }
 
   describe('GET /health', () => {
     it('should return ok status', async () => {
@@ -301,6 +331,138 @@ describe('HTTP Render Server', () => {
     });
   });
 
+  describe('App-state endpoints', () => {
+    it('lists, upserts, and deletes workspaces', async () => {
+      const initial = await requestJson('/app-state/workspaces');
+      expect(initial.response.status).toBe(200);
+      expect(initial.body).toEqual([]);
+
+      const upsert = await requestJson('/app-state/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: 'workspace-1',
+          rootPath: '/tmp/workspace-1',
+          displayName: 'Workspace 1',
+          status: 'ok',
+          isPinned: true,
+        }),
+      });
+      expect(upsert.response.status).toBe(200);
+      expect(upsert.body).toMatchObject({
+        id: 'workspace-1',
+        rootPath: '/tmp/workspace-1',
+        displayName: 'Workspace 1',
+        status: 'ok',
+        isPinned: true,
+      });
+
+      const listed = await requestJson('/app-state/workspaces');
+      expect(listed.response.status).toBe(200);
+      expect(listed.body).toHaveLength(1);
+      expect(listed.body[0]).toMatchObject({ id: 'workspace-1' });
+
+      const deleted = await requestJson('/app-state/workspaces?workspaceId=workspace-1', {
+        method: 'DELETE',
+      });
+      expect(deleted.response.status).toBe(200);
+      expect(deleted.body).toEqual({ deleted: true });
+
+      const afterDelete = await requestJson('/app-state/workspaces');
+      expect(afterDelete.response.status).toBe(200);
+      expect(afterDelete.body).toEqual([]);
+    });
+
+    it('gets and sets session', async () => {
+      const initial = await requestJson('/app-state/session');
+      expect(initial.response.status).toBe(200);
+      expect(initial.body).toBeNull();
+
+      const updated = await requestJson('/app-state/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activeWorkspaceId: 'workspace-2' }),
+      });
+      expect(updated.response.status).toBe(200);
+      expect(updated.body).toMatchObject({
+        singletonKey: 'global',
+        activeWorkspaceId: 'workspace-2',
+      });
+
+      const fetched = await requestJson('/app-state/session');
+      expect(fetched.response.status).toBe(200);
+      expect(fetched.body).toMatchObject({
+        singletonKey: 'global',
+        activeWorkspaceId: 'workspace-2',
+      });
+    });
+
+    it('lists, upserts, and clears recent documents', async () => {
+      const initial = await requestJson('/app-state/recent-documents?workspaceId=workspace-3');
+      expect(initial.response.status).toBe(200);
+      expect(initial.body).toEqual([]);
+
+      const upsert = await requestJson('/app-state/recent-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workspaceId: 'workspace-3',
+          documentPath: 'docs/alpha.graph.tsx',
+        }),
+      });
+      expect(upsert.response.status).toBe(200);
+      expect(upsert.body).toMatchObject({
+        workspaceId: 'workspace-3',
+        documentPath: 'docs/alpha.graph.tsx',
+      });
+
+      const listed = await requestJson('/app-state/recent-documents?workspaceId=workspace-3');
+      expect(listed.response.status).toBe(200);
+      expect(listed.body).toHaveLength(1);
+      expect(listed.body[0]).toMatchObject({
+        workspaceId: 'workspace-3',
+        documentPath: 'docs/alpha.graph.tsx',
+      });
+
+      const cleared = await requestJson('/app-state/recent-documents?workspaceId=workspace-3', {
+        method: 'DELETE',
+      });
+      expect(cleared.response.status).toBe(200);
+      expect(cleared.body).toEqual({ deleted: true });
+
+      const afterClear = await requestJson('/app-state/recent-documents?workspaceId=workspace-3');
+      expect(afterClear.response.status).toBe(200);
+      expect(afterClear.body).toEqual([]);
+    });
+
+    it('gets and sets preferences', async () => {
+      const initial = await requestJson('/app-state/preferences?key=theme.mode');
+      expect(initial.response.status).toBe(200);
+      expect(initial.body).toBeNull();
+
+      const updated = await requestJson('/app-state/preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'theme.mode',
+          valueJson: { mode: 'dark' },
+        }),
+      });
+      expect(updated.response.status).toBe(200);
+      expect(updated.body).toMatchObject({
+        key: 'theme.mode',
+        valueJson: { mode: 'dark' },
+      });
+
+      const fetched = await requestJson('/app-state/preferences?key=theme.mode');
+      expect(fetched.response.status).toBe(200);
+      expect(fetched.body).toMatchObject({
+        key: 'theme.mode',
+        valueJson: { mode: 'dark' },
+      });
+    });
+  });
+
   describe('POST /render', () => {
     it('should return 400 if filePath is missing', async () => {
       const response = await fetch(`${baseUrl}/render`, {
@@ -353,6 +515,7 @@ describe('HTTP Render Server', () => {
     });
 
     it('should normalize duplicated workspace prefixes in render requests', async () => {
+      const workspaceName = path.basename(targetDir);
       mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
         String(candidatePath) === `${targetDir}/nested/example.tsx`
       ));
@@ -364,7 +527,7 @@ describe('HTTP Render Server', () => {
 
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
-        body: JSON.stringify({ filePath: 'test/test/nested/example.tsx' }),
+        body: JSON.stringify({ filePath: `${workspaceName}/${workspaceName}/nested/example.tsx` }),
       });
       const body = await response.json();
 
@@ -394,7 +557,7 @@ describe('HTTP Render Server', () => {
               type: 'graph-node',
               props: {
                 id: 'root',
-                __source: { fileName: '/tmp/test/components/auth.tsx' },
+                __source: { fileName: `${targetDir}/components/auth.tsx` },
               },
               children: [],
             },
@@ -439,7 +602,7 @@ describe('HTTP Render Server', () => {
               props: {
                 id: 'auth.cache.worker',
                 __magamScope: 'auth.cache',
-                __source: { fileName: '/tmp/test/components/service-frame.tsx' },
+                __source: { fileName: `${targetDir}/components/service-frame.tsx` },
               },
               children: [],
             },

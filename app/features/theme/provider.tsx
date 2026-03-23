@@ -1,10 +1,13 @@
 'use client';
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
 import {
   THEME_MEDIA_QUERY,
+  THEME_PREFERENCE_KEY,
   THEME_STORAGE_KEY,
   applyResolvedTheme,
+  parseThemePreferenceValue,
   readStoredThemeMode,
   resolveInitialThemeState,
   resolveResolvedTheme,
@@ -64,6 +67,7 @@ export function ThemeProvider({
 }: {
   children: React.ReactNode;
 }) {
+  const hostRpc = useMemo(() => getHostRuntime().rpc, []);
   const initialState = getInitialClientState();
   const [mode, setMode] = useState<ThemeMode>(initialState.mode);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(
@@ -78,9 +82,41 @@ export function ThemeProvider({
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, mode);
     } catch (_error) {
-      // Ignore persistence failures and keep the current session theme in memory.
+      console.error('[theme] failed to persist bootstrap cache');
     }
   }, [mode]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void hostRpc.getAppStatePreference(THEME_PREFERENCE_KEY)
+      .then((preference) => {
+        if (cancelled) {
+          return;
+        }
+
+        const nextMode = parseThemePreferenceValue(preference?.valueJson);
+        if (nextMode) {
+          setMode(nextMode);
+        }
+      })
+      .catch((error) => {
+        console.error('[theme] failed to read app-state preference', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hostRpc]);
+
+  useEffect(() => {
+    void hostRpc.setAppStatePreference({
+      key: THEME_PREFERENCE_KEY,
+      valueJson: mode,
+    }).catch((error) => {
+      console.error('[theme] failed to write app-state preference', error);
+    });
+  }, [hostRpc, mode]);
 
   useEffect(() => {
     if (typeof document === 'undefined') {

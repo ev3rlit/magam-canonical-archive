@@ -29,7 +29,7 @@ export function WorkspaceDashboardPage() {
 
     try {
       const probe = await hostRpc.ensureWorkspace(rootPath);
-      upsertWorkspaceFromProbe(probe, { activate: true });
+      await upsertWorkspaceFromProbe(probe, { activate: true });
     } catch {
       setError({ message: '워크스페이스 추가 실패' });
     }

@@ -2,6 +2,16 @@ import type { HostMode } from './hostCapabilities';
 
 export const CORE_RPC_LOGICAL_METHODS = [
   'files.list',
+  'appState.workspaces.list',
+  'appState.workspaces.upsert',
+  'appState.workspaces.remove',
+  'appState.session.get',
+  'appState.session.set',
+  'appState.recentDocuments.list',
+  'appState.recentDocuments.upsert',
+  'appState.recentDocuments.clear',
+  'appState.preferences.get',
+  'appState.preferences.set',
   'workspace.probe',
   'workspace.ensure',
   'workspace.documents.list',

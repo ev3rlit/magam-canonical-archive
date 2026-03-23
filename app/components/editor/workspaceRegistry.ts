@@ -1,3 +1,15 @@
+import type { RendererRpcClient } from '../../features/host/renderer/rpcClient';
+import type {
+  AppPreferenceRecord,
+  AppPreferenceUpsertInput,
+  AppRecentDocumentRecord,
+  AppRecentDocumentUpsertInput,
+  AppWorkspaceRecord,
+  AppWorkspaceSessionRecord,
+  AppWorkspaceSessionUpdateInput,
+  AppWorkspaceUpsertInput,
+} from '../../../libs/shared/src/lib/app-state-persistence/contracts/types';
+
 export type WorkspaceHealthState = 'ok' | 'missing' | 'not-directory' | 'unreadable';
 
 export interface WorkspaceDocumentSummary {
@@ -42,6 +54,27 @@ export interface LastActiveDocumentMap {
 const WORKSPACE_REGISTRY_STORAGE_KEY = 'magam:workspaceRegistry:v1';
 const ACTIVE_WORKSPACE_STORAGE_KEY = 'magam:activeWorkspaceId:v1';
 const LAST_ACTIVE_DOCUMENTS_STORAGE_KEY = 'magam:lastActiveDocuments:v1';
+export const LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY = 'workspace.lastActiveDocumentSession';
+export const LEGACY_WORKSPACE_REGISTRY_IMPORT_PREFERENCE_KEY = 'workspace.registryLegacyImportCompleted';
+
+export type WorkspaceRegistryAppStateRpcClient = Pick<
+  RendererRpcClient,
+  | 'listAppStateWorkspaces'
+  | 'upsertAppStateWorkspace'
+  | 'getAppStateWorkspaceSession'
+  | 'setAppStateWorkspaceSession'
+  | 'listAppStateRecentDocuments'
+  | 'upsertAppStateRecentDocument'
+  | 'getAppStatePreference'
+  | 'setAppStatePreference'
+>;
+
+export interface WorkspaceRegistryHydrationResult {
+  workspaces: RegisteredWorkspace[];
+  activeWorkspaceId: string | null;
+  lastActiveDocuments: LastActiveDocumentMap;
+  migratedFromLegacyStorage: boolean;
+}
 
 function safeReadJson<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') {
@@ -99,6 +132,224 @@ export function readLastActiveDocumentMap(): LastActiveDocumentMap {
 
 export function writeLastActiveDocumentMap(map: LastActiveDocumentMap): void {
   safeWriteJson(LAST_ACTIVE_DOCUMENTS_STORAGE_KEY, map);
+}
+
+export function registeredWorkspaceToAppStateWorkspaceInput(
+  workspace: RegisteredWorkspace,
+): AppWorkspaceUpsertInput {
+  return {
+    id: workspace.id,
+    rootPath: workspace.rootPath,
+    displayName: workspace.name,
+    status: workspace.status,
+    lastOpenedAt: new Date(workspace.lastOpenedAt),
+    lastSeenAt: workspace.lastModifiedAt === null ? null : new Date(workspace.lastModifiedAt),
+  };
+}
+
+export function appStateWorkspaceToRegisteredWorkspace(
+  workspace: AppWorkspaceRecord,
+): RegisteredWorkspace {
+  return {
+    id: workspace.id,
+    name: workspace.displayName,
+    rootPath: workspace.rootPath,
+    status: workspace.status,
+    documentCount: 0,
+    lastModifiedAt: workspace.lastSeenAt?.getTime() ?? null,
+    lastOpenedAt: workspace.lastOpenedAt?.getTime() ?? 0,
+  };
+}
+
+export function activeWorkspaceIdToAppStateSessionInput(
+  activeWorkspaceId: string | null,
+): AppWorkspaceSessionUpdateInput {
+  return {
+    activeWorkspaceId,
+  };
+}
+
+export function appStateSessionToActiveWorkspaceId(
+  session: AppWorkspaceSessionRecord | null,
+  workspaces: RegisteredWorkspace[],
+): string | null {
+  const activeWorkspaceId = session?.activeWorkspaceId ?? null;
+  if (activeWorkspaceId && workspaces.some((workspace) => workspace.id === activeWorkspaceId)) {
+    return activeWorkspaceId;
+  }
+
+  return workspaces[0]?.id ?? null;
+}
+
+export function lastActiveDocumentMapToRecentDocumentInputs(
+  lastActiveDocuments: LastActiveDocumentMap,
+  workspaces: RegisteredWorkspace[],
+): AppRecentDocumentUpsertInput[] {
+  const knownWorkspaceIds = new Set(workspaces.map((workspace) => workspace.id));
+
+  return Object.entries(lastActiveDocuments)
+    .filter(([workspaceId, documentPath]) => knownWorkspaceIds.has(workspaceId) && !!documentPath)
+    .map(([workspaceId, documentPath]) => ({
+      workspaceId,
+      documentPath,
+      lastOpenedAt: new Date(),
+    }));
+}
+
+export function recentDocumentsToLastActiveDocumentMap(
+  recentDocumentsByWorkspace: Record<string, AppRecentDocumentRecord[]>,
+): LastActiveDocumentMap {
+  const lastActiveDocuments: LastActiveDocumentMap = {};
+
+  for (const [workspaceId, recentDocuments] of Object.entries(recentDocumentsByWorkspace)) {
+    const currentDocument = recentDocuments[0]?.documentPath;
+    if (currentDocument) {
+      lastActiveDocuments[workspaceId] = currentDocument;
+    }
+  }
+
+  return lastActiveDocuments;
+}
+
+export function lastActiveDocumentMapToPreferenceInput(
+  lastActiveDocuments: LastActiveDocumentMap,
+): AppPreferenceUpsertInput {
+  return {
+    key: LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY,
+    valueJson: lastActiveDocuments,
+  };
+}
+
+export function preferenceToLastActiveDocumentMap(
+  preference: AppPreferenceRecord | null,
+): LastActiveDocumentMap {
+  const value = preference?.valueJson;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const lastActiveDocuments: LastActiveDocumentMap = {};
+
+  for (const [workspaceId, documentPath] of Object.entries(value)) {
+    if (typeof documentPath === 'string') {
+      lastActiveDocuments[workspaceId] = documentPath;
+    }
+  }
+
+  return lastActiveDocuments;
+}
+
+export function isLegacyWorkspaceRegistryImportCompleted(
+  preference: AppPreferenceRecord | null,
+): boolean {
+  return preference?.valueJson === true;
+}
+
+function sanitizeLastActiveDocumentMap(
+  map: LastActiveDocumentMap,
+  workspaces: RegisteredWorkspace[],
+): LastActiveDocumentMap {
+  const knownWorkspaceIds = new Set(workspaces.map((workspace) => workspace.id));
+
+  return Object.fromEntries(
+    Object.entries(map).filter(
+      ([workspaceId, documentPath]) => knownWorkspaceIds.has(workspaceId) && typeof documentPath === 'string' && documentPath.length > 0,
+    ),
+  );
+}
+
+async function importLegacyWorkspaceRegistryToAppState(
+  rpc: WorkspaceRegistryAppStateRpcClient,
+  workspaces: RegisteredWorkspace[],
+  activeWorkspaceId: string | null,
+  lastActiveDocuments: LastActiveDocumentMap,
+): Promise<WorkspaceRegistryHydrationResult> {
+  const importedWorkspaces = sortWorkspaces(
+    await Promise.all(
+      workspaces.map(async (workspace) => appStateWorkspaceToRegisteredWorkspace(
+        await rpc.upsertAppStateWorkspace(registeredWorkspaceToAppStateWorkspaceInput(workspace)),
+      )),
+    ),
+  );
+  const sanitizedLastActiveDocuments = sanitizeLastActiveDocumentMap(lastActiveDocuments, importedWorkspaces);
+
+  await Promise.all(
+    lastActiveDocumentMapToRecentDocumentInputs(sanitizedLastActiveDocuments, importedWorkspaces).map(
+      (input) => rpc.upsertAppStateRecentDocument(input),
+    ),
+  );
+  await rpc.setAppStatePreference(lastActiveDocumentMapToPreferenceInput(sanitizedLastActiveDocuments));
+  await rpc.setAppStatePreference({
+    key: LEGACY_WORKSPACE_REGISTRY_IMPORT_PREFERENCE_KEY,
+    valueJson: true,
+  });
+
+  const nextActiveWorkspaceId = appStateSessionToActiveWorkspaceId(
+    await rpc.setAppStateWorkspaceSession(
+      activeWorkspaceIdToAppStateSessionInput(
+        importedWorkspaces.some((workspace) => workspace.id === activeWorkspaceId) ? activeWorkspaceId : null,
+      ),
+    ),
+    importedWorkspaces,
+  );
+
+  return {
+    workspaces: importedWorkspaces,
+    activeWorkspaceId: nextActiveWorkspaceId,
+    lastActiveDocuments: sanitizedLastActiveDocuments,
+    migratedFromLegacyStorage: true,
+  };
+}
+
+export async function hydrateWorkspaceRegistryFromAppState(
+  rpc: WorkspaceRegistryAppStateRpcClient,
+): Promise<WorkspaceRegistryHydrationResult> {
+  const [appStateWorkspaces, legacyImportPreference] = await Promise.all([
+    rpc.listAppStateWorkspaces(),
+    rpc.getAppStatePreference(LEGACY_WORKSPACE_REGISTRY_IMPORT_PREFERENCE_KEY),
+  ]);
+
+  if (appStateWorkspaces.length === 0 && !isLegacyWorkspaceRegistryImportCompleted(legacyImportPreference)) {
+    const legacyWorkspaces = sortWorkspaces(readStoredWorkspaces());
+    const legacyActiveWorkspaceId = readStoredActiveWorkspaceId();
+    const legacyLastActiveDocuments = sanitizeLastActiveDocumentMap(
+      readLastActiveDocumentMap(),
+      legacyWorkspaces,
+    );
+
+    return importLegacyWorkspaceRegistryToAppState(
+      rpc,
+      legacyWorkspaces,
+      legacyActiveWorkspaceId,
+      legacyLastActiveDocuments,
+    );
+  }
+
+  const workspaces = sortWorkspaces(appStateWorkspaces.map(appStateWorkspaceToRegisteredWorkspace));
+  const [session, lastActivePreference, recentDocumentsByWorkspaceEntries] = await Promise.all([
+    rpc.getAppStateWorkspaceSession(),
+    rpc.getAppStatePreference(LAST_ACTIVE_DOCUMENT_SESSION_PREFERENCE_KEY),
+    Promise.all(
+      workspaces.map(async (workspace) => [
+        workspace.id,
+        await rpc.listAppStateRecentDocuments(workspace.id),
+      ] as const),
+    ),
+  ]);
+
+  const activeWorkspaceId = appStateSessionToActiveWorkspaceId(session, workspaces);
+  const recentDocumentsByWorkspace = Object.fromEntries(recentDocumentsByWorkspaceEntries);
+  const lastActiveDocuments = {
+    ...recentDocumentsToLastActiveDocumentMap(recentDocumentsByWorkspace),
+    ...sanitizeLastActiveDocumentMap(preferenceToLastActiveDocumentMap(lastActivePreference), workspaces),
+  };
+
+  return {
+    workspaces,
+    activeWorkspaceId,
+    lastActiveDocuments,
+    migratedFromLegacyStorage: false,
+  };
 }
 
 export function buildRegisteredWorkspace(

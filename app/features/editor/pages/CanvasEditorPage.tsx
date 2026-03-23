@@ -68,7 +68,6 @@ import {
 } from '@/components/editor/workspaceEditUtils';
 import {
   buildSidebarDocuments,
-  readLastActiveDocumentMap,
   resolveWorkspaceDocumentAbsolutePath,
   type RegisteredWorkspace,
   type WorkspaceProbeResponse,
@@ -115,6 +114,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     workspaceRootPath,
     registeredWorkspaces,
     activeWorkspaceId,
+    lastActiveDocumentsByWorkspaceId,
     workspaceDocumentsByWorkspaceId,
     sourceVersions,
     files,
@@ -149,6 +149,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     registerWorkspaceDocument,
     setWorkspacePathStatus,
     rememberLastActiveDocumentForWorkspace,
+    hydrateGlobalFontFamilyPreference,
   } = useGraphStore();
   const isChatOpen = useChatUiStore((state) => state.isOpen);
   const toggleChat = useChatUiStore((state) => state.toggleOpen);
@@ -206,7 +207,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     setWorkspaceSession,
   ]);
 
-  const syncWorkspaceEntry = useCallback((probe: WorkspaceProbeResponse, options?: {
+  const syncWorkspaceEntry = useCallback(async (probe: WorkspaceProbeResponse, options?: {
     existingId?: string;
     activate?: boolean;
   }) => upsertWorkspaceFromProbe(probe, options), [upsertWorkspaceFromProbe]);
@@ -214,7 +215,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
   const bootstrapWorkspaceRegistry = useCallback(async () => {
     setIsWorkspaceLoading(true);
     try {
-      const { workspaces: storedWorkspaces } = hydrateWorkspaceRegistry();
+      const { workspaces: storedWorkspaces } = await hydrateWorkspaceRegistry();
 
       if (storedWorkspaces.length === 0) {
         return;
@@ -231,7 +232,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
         }),
       );
 
-      replaceRegisteredWorkspaces(refreshed);
+      await replaceRegisteredWorkspaces(refreshed);
     } catch (error) {
       const message = error instanceof Error ? error.message : '워크스페이스를 초기화하는 데 실패했습니다.';
       setGraphError({
@@ -262,8 +263,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       ]);
       const sidebarDocuments = buildSidebarDocuments(workspace.rootPath, data.documents);
       const absoluteFiles = sidebarDocuments.map((document) => document.absolutePath);
-      const lastActiveDocuments = readLastActiveDocumentMap();
-      const resumeTarget = lastActiveDocuments[workspace.id];
+      const resumeTarget = lastActiveDocumentsByWorkspaceId[workspace.id];
       const initialDocument = (
         typeof resumeTarget === 'string'
         && absoluteFiles.includes(resumeTarget)
@@ -274,7 +274,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       setWorkspaceDocuments(workspace.id, sidebarDocuments);
       setFiles(absoluteFiles);
       setFileTree(legacyTree.tree);
-      syncWorkspaceEntry(data, { existingId: workspace.id });
+      await syncWorkspaceEntry(data, { existingId: workspace.id });
       setWorkspacePathStatus({
         workspaceId: workspace.id,
         rootPath: data.rootPath,
@@ -297,7 +297,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     } catch (error) {
       try {
         const probe = await hostRpc.probeWorkspace(workspace.rootPath);
-        syncWorkspaceEntry(probe, { existingId: workspace.id });
+        await syncWorkspaceEntry(probe, { existingId: workspace.id });
         setWorkspacePathStatus({
           workspaceId: workspace.id,
           rootPath: probe.rootPath,
@@ -319,7 +319,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
         details: error,
       });
     }
-  }, [hostRpc, setFileTree, setFiles, setGraphError, setWorkspaceDocuments, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
+  }, [hostRpc, lastActiveDocumentsByWorkspaceId, setFileTree, setFiles, setGraphError, setWorkspaceDocuments, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
 
   const dependencyFiles = useMemo(
     () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentFile),
@@ -350,6 +350,10 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
   }, [bootstrapWorkspaceRegistry]);
 
   useEffect(() => {
+    void hydrateGlobalFontFamilyPreference();
+  }, [hydrateGlobalFontFamilyPreference]);
+
+  useEffect(() => {
     if (!activeWorkspace) {
       resetWorkspaceShellState(null, null);
       return;
@@ -367,7 +371,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       return;
     }
 
-    rememberLastActiveDocumentForWorkspace(activeWorkspace.id, currentFile);
+    void rememberLastActiveDocumentForWorkspace(activeWorkspace.id, currentFile);
   }, [activeWorkspace, currentFile, rememberLastActiveDocumentForWorkspace]);
 
 
@@ -381,7 +385,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
   );
 
   const handleSelectWorkspace = useCallback((workspaceId: string) => {
-    setGraphActiveWorkspaceId(workspaceId);
+    void setGraphActiveWorkspaceId(workspaceId);
   }, [setGraphActiveWorkspaceId]);
 
   const handleCreateWorkspace = useCallback(async () => {
@@ -395,7 +399,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
 
     try {
       const probe = await hostRpc.ensureWorkspace(rootPath);
-      syncWorkspaceEntry(probe, { activate: true });
+      await syncWorkspaceEntry(probe, { activate: true });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : '새 workspace를 만드는 데 실패했습니다.';
@@ -419,7 +423,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
 
     try {
       const probe = await hostRpc.probeWorkspace(rootPath);
-      syncWorkspaceEntry(probe, { activate: true });
+      await syncWorkspaceEntry(probe, { activate: true });
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : '기존 workspace를 등록하는 데 실패했습니다.';
@@ -447,7 +451,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
 
     try {
       const probe = await hostRpc.probeWorkspace(nextRootPath);
-      reconnectWorkspaceFromProbe(activeWorkspace.id, probe);
+      await reconnectWorkspaceFromProbe(activeWorkspace.id, probe);
       return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'workspace를 다시 연결하는 데 실패했습니다.';
@@ -460,7 +464,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
     }
   }, [activeWorkspace, hostRpc, reconnectWorkspaceFromProbe, setGraphError]);
 
-  const handleRemoveWorkspace = useCallback(() => {
+  const handleRemoveWorkspace = useCallback(async () => {
     if (!activeWorkspace) {
       return false;
     }
@@ -470,7 +474,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
       return false;
     }
 
-    removeRegisteredWorkspace(activeWorkspace.id);
+    await removeRegisteredWorkspace(activeWorkspace.id);
     return true;
   }, [activeWorkspace, removeRegisteredWorkspace]);
 
@@ -522,7 +526,7 @@ export function CanvasEditorPage({ documentPath }: { documentPath: string }) {
 
     if (activeWorkspace.status !== 'ok') {
       const probe = await hostRpc.probeWorkspace(activeWorkspace.rootPath);
-      reconnectWorkspaceFromProbe(activeWorkspace.id, probe);
+      await reconnectWorkspaceFromProbe(activeWorkspace.id, probe);
       return;
     }
 

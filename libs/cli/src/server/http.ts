@@ -14,12 +14,20 @@ import {
   probeWorkspace,
   requireWorkspaceRoot,
 } from '../../../shared/src/lib/workspace-shell';
+import {
+  AppStatePersistenceRepository,
+  createAppStatePgliteDb,
+} from '../../../shared/src/lib/app-state-persistence';
 import type {
   ChatPermissionMode,
   ProviderId,
   SendChatRequest,
   StopChatRequest,
 } from '@magam/shared';
+import type {
+  AppPreferenceValue,
+  AppWorkspaceStatus,
+} from '../../../shared/src/lib/app-state-persistence';
 
 const DEFAULT_PORT = 3002;
 
@@ -222,6 +230,8 @@ export interface FileTreeNode {
 export async function startHttpServer(config: HttpServerConfig): Promise<HttpServerResult> {
   const port = config.port ?? (parseInt(process.env.MAGAM_HTTP_PORT || '') || DEFAULT_PORT);
   const chatHandler = new ChatHandler({ targetDir: config.targetDir });
+  const appStateHandle = await createAppStatePgliteDb(config.targetDir, { runMigrations: true });
+  const appStateRepository = new AppStatePersistenceRepository(appStateHandle.db);
 
   const server = http.createServer(async (req, res) => {
     // CORS headers
@@ -247,6 +257,26 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
         await handleCreateFile(req, res, config.targetDir);
       } else if (req.method === 'GET' && url.pathname === '/files') {
         await handleFiles(req, res, config.targetDir);
+      } else if (req.method === 'GET' && url.pathname === '/app-state/workspaces') {
+        await handleAppStateWorkspacesList(res, appStateRepository);
+      } else if (req.method === 'POST' && url.pathname === '/app-state/workspaces') {
+        await handleAppStateWorkspacesUpsert(req, res, appStateRepository);
+      } else if (req.method === 'DELETE' && url.pathname === '/app-state/workspaces') {
+        await handleAppStateWorkspacesDelete(url, res, appStateRepository);
+      } else if (req.method === 'GET' && url.pathname === '/app-state/session') {
+        await handleAppStateSessionGet(res, appStateRepository);
+      } else if (req.method === 'POST' && url.pathname === '/app-state/session') {
+        await handleAppStateSessionSet(req, res, appStateRepository);
+      } else if (req.method === 'GET' && url.pathname === '/app-state/recent-documents') {
+        await handleAppStateRecentDocumentsList(url, res, appStateRepository);
+      } else if (req.method === 'POST' && url.pathname === '/app-state/recent-documents') {
+        await handleAppStateRecentDocumentsUpsert(req, res, appStateRepository);
+      } else if (req.method === 'DELETE' && url.pathname === '/app-state/recent-documents') {
+        await handleAppStateRecentDocumentsDelete(url, res, appStateRepository);
+      } else if (req.method === 'GET' && url.pathname === '/app-state/preferences') {
+        await handleAppStatePreferencesGet(url, res, appStateRepository);
+      } else if (req.method === 'POST' && url.pathname === '/app-state/preferences') {
+        await handleAppStatePreferencesSet(req, res, appStateRepository);
       } else if (req.method === 'GET' && url.pathname === '/workspaces') {
         await handleWorkspaceProbe(url, res, config.targetDir);
       } else if (req.method === 'POST' && url.pathname === '/workspaces') {
@@ -306,7 +336,10 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
       console.log(`HTTP render server listening on port ${port}`);
       resolve({
         port,
-        close: () => new Promise((r) => server.close(() => r()))
+        close: async () => {
+          await new Promise<void>((r) => server.close(() => r()));
+          await appStateHandle.close();
+        },
       });
     });
 
@@ -314,6 +347,295 @@ export async function startHttpServer(config: HttpServerConfig): Promise<HttpSer
       reject(err);
     });
   });
+}
+
+function requireAppStateString(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new ApiError(400, 'APP_STATE_400_INVALID_FIELD', `${fieldName} is required.`);
+  }
+
+  return value.trim();
+}
+
+function parseAppStateWorkspaceStatus(value: unknown): AppWorkspaceStatus {
+  if (
+    value === 'ok'
+    || value === 'missing'
+    || value === 'not-directory'
+    || value === 'unreadable'
+  ) {
+    return value;
+  }
+
+  throw new ApiError(
+    400,
+    'APP_STATE_400_INVALID_STATUS',
+    'status must be one of ok, missing, not-directory, unreadable.',
+  );
+}
+
+function parseAppStateOptionalDate(value: unknown): Date | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value;
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    const next = new Date(value);
+    if (!Number.isNaN(next.getTime())) {
+      return next;
+    }
+  }
+
+  throw new ApiError(400, 'APP_STATE_400_INVALID_DATE', 'Date fields must be valid date values.');
+}
+
+function parseAppStateNullableString(value: unknown, fieldName: string): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    return value.trim() || null;
+  }
+
+  throw new ApiError(
+    400,
+    `APP_STATE_400_INVALID_${fieldName.toUpperCase()}`,
+    `${fieldName} must be a string, null, or undefined.`,
+  );
+}
+
+function parseAppStatePreferenceValue(value: unknown): AppPreferenceValue {
+  if (
+    value === null
+    || typeof value === 'string'
+    || typeof value === 'number'
+    || typeof value === 'boolean'
+  ) {
+    return value as string | number | boolean | null;
+  }
+
+  if (typeof value === 'object') {
+    return value as Record<string, unknown>;
+  }
+
+  throw new ApiError(
+    400,
+    'APP_STATE_400_INVALID_VALUE',
+    'valueJson must be a JSON-compatible primitive, object, or null.',
+  );
+}
+
+function writeAppStateError(
+  res: http.ServerResponse,
+  error: unknown,
+  routeLabel: string,
+  fallbackMessage: string,
+): void {
+  writeApiError(res, error, {
+    logLabel: `[${routeLabel}] unexpected error:`,
+    fallbackCode: 'APP_STATE_500_REQUEST_FAILED',
+    fallbackMessage,
+  });
+}
+
+async function handleAppStateWorkspacesList(
+  res: http.ServerResponse,
+  repository: AppStatePersistenceRepository,
+) {
+  try {
+    writeJson(res, 200, await repository.listWorkspaces());
+  } catch (error) {
+    writeAppStateError(res, error, 'app-state/workspaces', 'Failed to handle app-state workspaces request');
+  }
+}
+
+async function handleAppStateWorkspacesUpsert(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  repository: AppStatePersistenceRepository,
+) {
+  try {
+    const body = await parseJsonObjectBody(req, {
+      invalidJsonCode: 'APP_STATE_400_INVALID_JSON',
+      invalidJsonMessage: 'Request body must be a JSON object.',
+    });
+
+    const workspace = await repository.upsertWorkspace({
+      id: requireAppStateString(body.id, 'id'),
+      rootPath: requireAppStateString(body.rootPath, 'rootPath'),
+      displayName: requireAppStateString(body.displayName, 'displayName'),
+      status: parseAppStateWorkspaceStatus(body.status),
+      isPinned: typeof body.isPinned === 'boolean' ? body.isPinned : undefined,
+      lastOpenedAt: parseAppStateOptionalDate(body.lastOpenedAt),
+      lastSeenAt: parseAppStateOptionalDate(body.lastSeenAt),
+    });
+
+    writeJson(res, 200, workspace);
+  } catch (error) {
+    writeAppStateError(res, error, 'app-state/workspaces', 'Failed to handle app-state workspaces request');
+  }
+}
+
+async function handleAppStateWorkspacesDelete(
+  url: URL,
+  res: http.ServerResponse,
+  repository: AppStatePersistenceRepository,
+) {
+  try {
+    const workspaceId = requireAppStateString(url.searchParams.get('workspaceId'), 'workspaceId');
+    await repository.removeWorkspace(workspaceId);
+    writeJson(res, 200, { deleted: true });
+  } catch (error) {
+    writeAppStateError(res, error, 'app-state/workspaces', 'Failed to handle app-state workspaces request');
+  }
+}
+
+async function handleAppStateSessionGet(
+  res: http.ServerResponse,
+  repository: AppStatePersistenceRepository,
+) {
+  try {
+    writeJson(res, 200, await repository.getWorkspaceSession());
+  } catch (error) {
+    writeAppStateError(res, error, 'app-state/session', 'Failed to handle app-state session request');
+  }
+}
+
+async function handleAppStateSessionSet(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  repository: AppStatePersistenceRepository,
+) {
+  try {
+    const body = await parseJsonObjectBody(req, {
+      invalidJsonCode: 'APP_STATE_400_INVALID_JSON',
+      invalidJsonMessage: 'Request body must be a JSON object.',
+    });
+
+    const session = await repository.setWorkspaceSession({
+      activeWorkspaceId: parseAppStateNullableString(
+        'activeWorkspaceId' in body ? body.activeWorkspaceId : body.workspaceId,
+        'activeWorkspaceId',
+      ),
+    });
+
+    writeJson(res, 200, session);
+  } catch (error) {
+    writeAppStateError(res, error, 'app-state/session', 'Failed to handle app-state session request');
+  }
+}
+
+async function handleAppStateRecentDocumentsList(
+  url: URL,
+  res: http.ServerResponse,
+  repository: AppStatePersistenceRepository,
+) {
+  try {
+    const workspaceId = requireAppStateString(url.searchParams.get('workspaceId'), 'workspaceId');
+    writeJson(res, 200, await repository.listRecentDocuments(workspaceId));
+  } catch (error) {
+    writeAppStateError(
+      res,
+      error,
+      'app-state/recent-documents',
+      'Failed to handle app-state recent-documents request',
+    );
+  }
+}
+
+async function handleAppStateRecentDocumentsUpsert(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  repository: AppStatePersistenceRepository,
+) {
+  try {
+    const body = await parseJsonObjectBody(req, {
+      invalidJsonCode: 'APP_STATE_400_INVALID_JSON',
+      invalidJsonMessage: 'Request body must be a JSON object.',
+    });
+
+    const recentDocument = await repository.upsertRecentDocument({
+      workspaceId: requireAppStateString(body.workspaceId, 'workspaceId'),
+      documentPath: requireAppStateString(body.documentPath, 'documentPath'),
+      lastOpenedAt: parseAppStateOptionalDate(body.lastOpenedAt),
+    });
+
+    writeJson(res, 200, recentDocument);
+  } catch (error) {
+    writeAppStateError(
+      res,
+      error,
+      'app-state/recent-documents',
+      'Failed to handle app-state recent-documents request',
+    );
+  }
+}
+
+async function handleAppStateRecentDocumentsDelete(
+  url: URL,
+  res: http.ServerResponse,
+  repository: AppStatePersistenceRepository,
+) {
+  try {
+    const workspaceId = requireAppStateString(url.searchParams.get('workspaceId'), 'workspaceId');
+    await repository.clearRecentDocuments(workspaceId);
+    writeJson(res, 200, { deleted: true });
+  } catch (error) {
+    writeAppStateError(
+      res,
+      error,
+      'app-state/recent-documents',
+      'Failed to handle app-state recent-documents request',
+    );
+  }
+}
+
+async function handleAppStatePreferencesGet(
+  url: URL,
+  res: http.ServerResponse,
+  repository: AppStatePersistenceRepository,
+) {
+  try {
+    const key = requireAppStateString(url.searchParams.get('key'), 'key');
+    writeJson(res, 200, await repository.getPreference(key));
+  } catch (error) {
+    writeAppStateError(res, error, 'app-state/preferences', 'Failed to handle app-state preferences request');
+  }
+}
+
+async function handleAppStatePreferencesSet(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  repository: AppStatePersistenceRepository,
+) {
+  try {
+    const body = await parseJsonObjectBody(req, {
+      invalidJsonCode: 'APP_STATE_400_INVALID_JSON',
+      invalidJsonMessage: 'Request body must be a JSON object.',
+    });
+
+    const preference = await repository.setPreference({
+      key: requireAppStateString(body.key, 'key'),
+      valueJson: parseAppStatePreferenceValue(body.valueJson),
+    });
+
+    writeJson(res, 200, preference);
+  } catch (error) {
+    writeAppStateError(res, error, 'app-state/preferences', 'Failed to handle app-state preferences request');
+  }
 }
 
 async function handleRender(req: http.IncomingMessage, res: http.ServerResponse, targetDir: string) {

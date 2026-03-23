@@ -11,6 +11,16 @@ import {
   WorkspaceFileBrowserActionInput,
   isCreateWorkspaceDocumentResult,
 } from '@/features/host/renderer/rpcClient';
+import type {
+  AppPreferenceRecord,
+  AppPreferenceUpsertInput,
+  AppRecentDocumentRecord,
+  AppRecentDocumentUpsertInput,
+  AppWorkspaceRecord,
+  AppWorkspaceSessionRecord,
+  AppWorkspaceSessionUpdateInput,
+  AppWorkspaceUpsertInput,
+} from '../../../../libs/shared/src/lib/app-state-persistence/contracts/types';
 import {
   CORE_RPC_LOGICAL_METHODS,
   type RpcAdapterDescriptor,
@@ -100,11 +110,64 @@ export function createWebRpcAdapter(): RendererRpcClient {
   const buildRootPathQuery = (rootPath?: string | null) => (
     rootPath ? `?rootPath=${encodeURIComponent(rootPath)}` : ''
   );
+  const buildQuery = (input: Record<string, string | null | undefined>) => {
+    const params = new URLSearchParams();
+    Object.entries(input).forEach(([key, value]) => {
+      if (typeof value === 'string' && value.length > 0) {
+        params.set(key, value);
+      }
+    });
+    const serialized = params.toString();
+    return serialized ? `?${serialized}` : '';
+  };
 
   return {
     descriptor,
     healthCheck: descriptor.healthCheck,
     listFiles: () => requestJson('/api/files'),
+    listAppStateWorkspaces: () => requestJson<AppWorkspaceRecord[]>('/api/app-state/workspaces'),
+    upsertAppStateWorkspace: (input: AppWorkspaceUpsertInput) =>
+      requestJson('/api/app-state/workspaces', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        headers: createJsonHeaders(),
+      }),
+    async removeAppStateWorkspace(workspaceId: string) {
+      await requestJson(`/api/app-state/workspaces${buildQuery({ workspaceId })}`, {
+        method: 'DELETE',
+      });
+    },
+    getAppStateWorkspaceSession: () =>
+      requestJson<AppWorkspaceSessionRecord | null>('/api/app-state/session'),
+    setAppStateWorkspaceSession: (input: AppWorkspaceSessionUpdateInput) =>
+      requestJson('/api/app-state/session', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        headers: createJsonHeaders(),
+      }),
+    listAppStateRecentDocuments: (workspaceId: string) =>
+      requestJson<AppRecentDocumentRecord[]>(
+        `/api/app-state/recent-documents${buildQuery({ workspaceId })}`,
+      ),
+    upsertAppStateRecentDocument: (input: AppRecentDocumentUpsertInput) =>
+      requestJson('/api/app-state/recent-documents', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        headers: createJsonHeaders(),
+      }),
+    async clearAppStateRecentDocuments(workspaceId: string) {
+      await requestJson(`/api/app-state/recent-documents${buildQuery({ workspaceId })}`, {
+        method: 'DELETE',
+      });
+    },
+    getAppStatePreference: (key: string) =>
+      requestJson<AppPreferenceRecord | null>(`/api/app-state/preferences${buildQuery({ key })}`),
+    setAppStatePreference: (input: AppPreferenceUpsertInput) =>
+      requestJson('/api/app-state/preferences', {
+        method: 'POST',
+        body: JSON.stringify(input),
+        headers: createJsonHeaders(),
+      }),
     probeWorkspace: (rootPath?: string | null) =>
       requestJson(`/api/workspaces${buildRootPathQuery(rootPath)}`),
     ensureWorkspace: (rootPath: string) =>

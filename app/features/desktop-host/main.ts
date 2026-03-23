@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { watch } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
 import {
   assertAbsolutePath,
   assertAllowedExternalUrl,
@@ -40,10 +40,24 @@ function shouldEnableDevTools(): boolean {
   return process.env.MAGAM_DESKTOP_DEVTOOLS === '1';
 }
 
+function resolveAppStateDbPath(): string {
+  const explicit = process.env.MAGAM_APP_STATE_DB_PATH?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  return join(app.getPath('userData'), 'app-state-pgdata');
+}
+
 async function main(): Promise<void> {
+  await app.whenReady();
+
   const repoRoot = resolveRepoRoot();
   const headless = process.env.MAGAM_DESKTOP_HEADLESS === '1';
+  const appStateDbPath = resolveAppStateDbPath();
+  process.env.MAGAM_APP_STATE_DB_PATH = appStateDbPath;
   const orchestrator = createDesktopHostOrchestrator({
+    appStateDbPath,
     bunBin: process.env.MAGAM_BUN_BIN || 'bun',
     httpPort: parseInt(process.env.MAGAM_HTTP_PORT || '3002', 10),
     repoRoot,
@@ -267,7 +281,6 @@ async function main(): Promise<void> {
     void shutdown(0);
   });
 
-  await app.whenReady();
   await orchestrator.start();
   await createWindow();
   if (headless) {
