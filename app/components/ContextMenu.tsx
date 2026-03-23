@@ -3,6 +3,7 @@ import { createSlotContribution } from '@/features/overlay-host';
 import type { OverlayDismissReason } from '@/features/overlay-host';
 import { cn } from '@/utils/cn';
 import type { ContextMenuItem, ContextMenuContext } from '@/types/contextMenu';
+import { Menu, MenuItem, MenuSeparator } from './ui/Menu';
 
 interface ContextMenuProps {
   items: ContextMenuItem[];
@@ -29,14 +30,10 @@ export function clampContextMenuPosition(input: {
 
 export function ContextMenu({ items, context, onClose }: ContextMenuProps) {
   return (
-    <div
+    <Menu
       role="menu"
       data-context-menu-root
       className={cn(
-        'min-w-[200px] py-1',
-        'bg-white dark:bg-slate-900',
-        'border border-slate-200 dark:border-slate-700',
-        'rounded-lg shadow-xl',
         'animate-in fade-in zoom-in-95 duration-100',
       )}
       onContextMenu={(event) => event.preventDefault()}
@@ -44,10 +41,7 @@ export function ContextMenu({ items, context, onClose }: ContextMenuProps) {
       {items.map((item, idx) => {
         if (item.type === 'separator') {
           return (
-            <div
-              key={`sep-${idx}`}
-              className="h-px mx-2 my-1 bg-slate-200 dark:bg-slate-700"
-            />
+            <MenuSeparator key={`sep-${idx}`} className="bg-transparent" />
           );
         }
 
@@ -60,22 +54,11 @@ export function ContextMenu({ items, context, onClose }: ContextMenuProps) {
             : item.disabledReason;
 
           return (
-            <button
+            <MenuItem
               key={item.id}
-              type="button"
               role="menuitem"
               data-overlay-actionable={disabled ? undefined : 'true'}
               data-context-menu-action={disabled ? undefined : 'true'}
-              className={cn(
-                'w-full px-3 py-2 text-left text-sm flex items-center gap-2',
-                'text-slate-700 dark:text-slate-300',
-                disabled
-                  ? 'cursor-not-allowed opacity-50'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800',
-                disabled
-                  ? ''
-                  : 'focus-visible:outline-none focus-visible:bg-slate-100 dark:focus-visible:bg-slate-800',
-              )}
               disabled={disabled}
               aria-disabled={disabled}
               title={disabled ? disabledReason ?? item.label : undefined}
@@ -87,18 +70,18 @@ export function ContextMenu({ items, context, onClose }: ContextMenuProps) {
                 onClose('programmatic-close');
               }}
             >
-              {item.icon ? <item.icon className="w-4 h-4 text-slate-400" /> : null}
+              {item.icon ? <item.icon className="w-4 h-4 text-foreground/40" /> : null}
               <span className="flex-1">{item.label}</span>
               {item.shortcut ? (
-                <span className="text-xs text-slate-400 ml-4">{item.shortcut}</span>
+                <span className="ml-4 text-xs text-foreground/40">{item.shortcut}</span>
               ) : null}
-            </button>
+            </MenuItem>
           );
         }
 
         return null;
       })}
-    </div>
+    </Menu>
   );
 }
 

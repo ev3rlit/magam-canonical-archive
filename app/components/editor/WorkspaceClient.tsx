@@ -17,6 +17,9 @@ import {
 } from '@/components/ui/Sidebar';
 import { Header } from '@/components/ui/Header';
 import { Footer } from '@/components/ui/Footer';
+import { Menu, MenuItem } from '@/components/ui/Menu';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { TabBar } from '@/components/ui/TabBar';
 import { type QuickOpenCommand } from '@/components/ui/QuickOpenDialog';
 import { ErrorOverlay } from '@/components/ui/ErrorOverlay';
@@ -2127,7 +2130,7 @@ export function WorkspaceClient() {
   }, [activeWorkspace?.rootPath, currentFile, draftDocuments, refreshKey, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on file changes
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-white text-slate-900">
+    <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
       <Sidebar
         activeWorkspace={activeWorkspace as SidebarWorkspaceEntry | null}
         workspaces={registeredWorkspaces as SidebarWorkspaceEntry[]}
@@ -2199,10 +2202,10 @@ export function WorkspaceClient() {
 
         {/* Workspace-level overlays stay outside the canvas overlay host boundary. */}
         {tabContextMenu && (
-          <div
+          <Menu
             ref={tabContextMenuRef}
             role="menu"
-            className="fixed z-50 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl py-1"
+            className="fixed z-50 w-48"
             style={{
               left: `${Math.max(8, Math.min(tabContextMenu.x, window.innerWidth - 200))}px`,
               top: `${Math.max(8, Math.min(tabContextMenu.y, window.innerHeight - 130))}px`,
@@ -2214,36 +2217,30 @@ export function WorkspaceClient() {
               }
             }}
           >
-            <button
-              type="button"
+            <MenuItem
               role="menuitem"
               onClick={requestCloseCurrentTabFromMenu}
-              className="w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               탭 닫기
-            </button>
-            <button
-              type="button"
+            </MenuItem>
+            <MenuItem
               role="menuitem"
               onClick={requestCloseOtherTabsFromMenu}
-              className="w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               다른 탭 닫기
-            </button>
-            <button
-              type="button"
+            </MenuItem>
+            <MenuItem
               role="menuitem"
               onClick={requestCloseAllTabsFromMenu}
-              className="w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               모든 탭 닫기
-            </button>
-          </div>
+            </MenuItem>
+          </Menu>
         )}
 
         {pendingCloseRequest && (
           <div
-            className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center px-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(var(--overlay-scrim)/0.45)] px-4 backdrop-blur-sm"
             tabIndex={0}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
@@ -2257,19 +2254,19 @@ export function WorkspaceClient() {
               }
             }}
           >
-            <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl p-4 space-y-4">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            <Card className="w-full max-w-md space-y-4 p-4" variant="floating">
+              <h2 className="text-sm font-semibold text-foreground">
                 {pendingCloseTabInfos?.total === 1
                   ? '변경사항이 저장되지 않았습니다'
                   : `${pendingCloseTabInfos?.total ?? 0}개 탭에 저장되지 않은 변경사항이 있습니다`}
               </h2>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
+              <p className="text-sm text-foreground/62">
                 {pendingCloseTabInfos?.total === 1
                   ? '현재 탭을 닫으면 편집한 내용이 손실될 수 있습니다.'
                   : `${pendingCloseTabInfos?.dirtyTotal ?? 0}개 탭의 저장되지 않은 내용이 있습니다. 선택한 탭들을 닫으면 변경사항이 손실될 수 있습니다.`}
               </p>
               {!!pendingCloseTabInfos?.tabNames.length && (
-                <ul className="space-y-1 text-xs text-slate-700 dark:text-slate-300">
+                <ul className="space-y-1 text-xs text-foreground/72">
                   {pendingCloseTabInfos.tabNames.slice(0, 5).map((tabName) => (
                     <li key={tabName} className="truncate">
                       {tabName}
@@ -2278,36 +2275,23 @@ export function WorkspaceClient() {
                 </ul>
               )}
               <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => confirmTabClose(false)}
-                  className="rounded border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
+                <Button onClick={() => confirmTabClose(false)} size="sm" variant="ghost">
                   저장 안 함
-                </button>
-                <button
-                  type="button"
-                  onClick={() => confirmTabClose(true)}
-                  className="rounded border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/40 px-3 py-1.5 text-xs font-medium hover:bg-blue-100 dark:hover:bg-blue-800"
-                >
+                </Button>
+                <Button onClick={() => confirmTabClose(true)} size="sm" variant="primary">
                   저장 후 닫기
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelTabClose}
-                  className="rounded bg-slate-900 text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-700"
-                  autoFocus
-                >
+                </Button>
+                <Button onClick={cancelTabClose} size="sm" variant="secondary" autoFocus>
                   취소
-                </button>
+                </Button>
               </div>
-            </div>
+            </Card>
           </div>
         )}
 
         {pendingReplaceRequest && (
           <div
-            className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center px-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(var(--overlay-scrim)/0.45)] px-4 backdrop-blur-sm"
             tabIndex={0}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
@@ -2316,32 +2300,23 @@ export function WorkspaceClient() {
               }
             }}
           >
-            <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl p-4 space-y-4">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            <Card className="w-full max-w-md space-y-4 p-4" variant="floating">
+              <h2 className="text-sm font-semibold text-foreground">
                 탭 개수 제한
               </h2>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
+              <p className="text-sm text-foreground/62">
                 최대 10개 탭이 열려 있습니다. 가장 오래 사용하지 않은 탭을
                 교체하고 새 탭을 열까요?
               </p>
               <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={cancelLimitReplace}
-                  className="rounded border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
+                <Button onClick={cancelLimitReplace} size="sm" variant="ghost">
                   취소
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmLimitReplace}
-                  className="rounded bg-slate-900 text-white px-3 py-1.5 text-xs font-medium hover:bg-slate-700"
-                  autoFocus
-                >
+                </Button>
+                <Button onClick={confirmLimitReplace} size="sm" variant="primary" autoFocus>
                   교체 후 열기
-                </button>
+                </Button>
               </div>
-            </div>
+            </Card>
           </div>
         )}
       </div>

@@ -106,7 +106,7 @@ export default function FloatingEdge({
                             pointerEvents: 'all',
                             ...labelBgStyle,
                         }}
-                        className="nodrag nopan px-2 py-1 rounded text-xs font-medium bg-white/90 backdrop-blur-sm shadow-sm"
+                        className="nodrag nopan rounded-pill bg-card/88 px-2 py-1 text-xs font-medium text-foreground shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)] backdrop-blur-glass"
                     >
                         <span style={{ ...labelStyle, fontFamily: resolvedLabelFontFamily }}>{label}</span>
                     </div>

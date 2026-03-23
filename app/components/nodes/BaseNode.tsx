@@ -29,6 +29,12 @@ export interface PaperSurfaceState {
     textColor?: string;
 }
 
+export const NODE_EDIT_BUTTON_CLASS =
+    'pointer-events-auto absolute right-3 top-3 z-10 rounded-pill bg-card/88 px-2.5 py-1 text-[11px] font-medium text-foreground/78 shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)] backdrop-blur-glass transition-[background-color,color,box-shadow] duration-fast hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60';
+
+export const NODE_INLINE_LABEL_CLASS =
+    'pointer-events-none relative z-10 rounded-pill bg-card/88 px-2 py-0.5 text-xs font-medium text-foreground/78 shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)] backdrop-blur-glass';
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

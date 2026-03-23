@@ -19,10 +19,10 @@ export function ErrorOverlay() {
 
   return (
     <div className="absolute bottom-4 left-4 right-4 z-50 flex flex-col animate-in slide-in-from-bottom-5 duration-300">
-      <div className="bg-red-50 border border-red-200 rounded-lg shadow-lg overflow-hidden max-w-4xl mx-auto w-full">
+      <div className="mx-auto w-full max-w-4xl overflow-hidden rounded-lg bg-danger/10 shadow-floating shadow-[inset_0_0_0_1px_rgb(var(--color-danger)/0.18)]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 bg-red-100/50 border-b border-red-200">
-          <div className="flex items-center gap-2 text-red-700">
+        <div className="flex items-center justify-between p-4 shadow-[inset_0_-1px_0_rgb(var(--color-danger)/0.16)]">
+          <div className="flex items-center gap-2 text-danger">
             <AlertCircle className="w-5 h-5" />
             <h3 className="font-semibold text-lg">
               {error.type || 'Error'}
@@ -30,7 +30,7 @@ export function ErrorOverlay() {
           </div>
           <button
             onClick={handleDismiss}
-            className="p-1 hover:bg-red-200/50 rounded-full text-red-600 transition-colors"
+            className="rounded-full p-1 text-danger transition-colors hover:bg-danger/12"
           >
             <X className="w-5 h-5" />
           </button>
@@ -39,17 +39,17 @@ export function ErrorOverlay() {
         {/* Body */}
         <div className="p-4 space-y-3">
           {/* Main Message */}
-          <div className="text-red-900 font-mono text-sm whitespace-pre-wrap break-words">
+          <div className="font-mono text-sm whitespace-pre-wrap break-words text-danger">
             {error.message}
           </div>
 
           {/* Location Info */}
           {hasLocation && (
-            <div className="flex items-center gap-2 p-2 bg-white rounded border border-red-100 text-sm font-mono text-slate-600">
-              <FileCode className="w-4 h-4 text-slate-400" />
-              <span className="font-semibold text-slate-800">{locationString}</span>
+            <div className="flex items-center gap-2 rounded bg-card p-2 text-sm font-mono text-foreground/62 shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)]">
+              <FileCode className="w-4 h-4 text-foreground/38" />
+              <span className="font-semibold text-foreground">{locationString}</span>
               {error.location?.lineText && (
-                <span className="ml-2 text-slate-500 border-l border-slate-200 pl-2 italic">
+                <span className="ml-2 border-l border-border/20 pl-2 italic text-foreground/48">
                   "{error.location.lineText.trim()}"
                 </span>
               )}
@@ -61,14 +61,14 @@ export function ErrorOverlay() {
             <div className="mt-2">
               <button
                 onClick={() => setIsStackOpen(!isStackOpen)}
-                className="flex items-center gap-1 text-xs font-semibold text-red-700 hover:text-red-800 transition-colors"
+                className="flex items-center gap-1 text-xs font-semibold text-danger transition-colors hover:text-danger/80"
               >
                 {isStackOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                 {isStackOpen ? 'Hide Details' : 'Show Details'}
               </button>
 
               {isStackOpen && (
-                <div className="mt-2 p-3 bg-slate-900 text-slate-200 rounded text-xs font-mono overflow-auto max-h-48 whitespace-pre custom-scrollbar">
+                <div className="custom-scrollbar mt-2 max-h-48 overflow-auto whitespace-pre rounded bg-card p-3 text-xs font-mono text-foreground shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)]">
                   {typeof error.details === 'string'
                     ? error.details
                     : JSON.stringify(error.details, null, 2)}

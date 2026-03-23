@@ -1,7 +1,8 @@
 import React, { memo, useCallback } from 'react';
 import { NodeProps, useNodeId } from 'reactflow';
 import { twMerge } from 'tailwind-merge';
-import { BaseNode } from './BaseNode';
+import { BaseNode, NODE_EDIT_BUTTON_CLASS } from './BaseNode';
+import { getInputClassName } from '@/components/ui/Input';
 import type { RenderableChild } from '@/utils/childComposition';
 import {
     renderNodeContent,
@@ -80,7 +81,7 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
         <BaseNode
             className={twMerge(
                 "p-2 min-w-[50px] text-center select-none",
-                selected && "ring-1 ring-brand-500/50 rounded bg-brand-50/50",
+                selected && "rounded-lg bg-primary/8 shadow-[0_0_0_1px_rgb(var(--color-primary)/0.22),0_0_0_10px_rgb(var(--color-primary)/0.08)]",
             )}
             style={{ pointerEvents: 'auto' }}
         >
@@ -88,7 +89,7 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
                 <button
                     type="button"
                     aria-label="Edit content"
-                    className="pointer-events-auto absolute right-2 top-2 z-10 rounded-full border border-slate-300 bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur"
+                    className={NODE_EDIT_BUTTON_CLASS}
                     onPointerDown={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -121,7 +122,10 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
                         }
                     }}
                     placeholder="Write markdown..."
-                    className="w-[220px] min-h-[72px] rounded border border-slate-300 px-2 py-1 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                    className={getInputClassName({
+                        className: 'w-[220px] min-h-[72px]',
+                        multiline: true,
+                    })}
                 />
             ) : (
                 <div
@@ -129,7 +133,7 @@ const TextNode = ({ data, selected }: NodeProps<TextNodeData>) => {
                     style={{
                         fontSize: typography.fontSizePx,
                         lineHeight: `${typography.lineHeightPx}px`,
-                        color: data.color || '#374151', // text-gray-700
+                        color: data.color || 'rgb(var(--color-foreground) / 0.82)',
                         fontWeight: (isZoomBold || data.bold) ? 'bold' : 'normal',
                         fontStyle: data.italic ? 'italic' : 'normal',
                         fontFamily: resolvedFontFamily,

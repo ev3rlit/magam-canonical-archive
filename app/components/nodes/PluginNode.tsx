@@ -135,8 +135,8 @@ function ReadyPluginNodeFrame({
   return (
     <BaseNode
       className={twMerge(
-        'min-w-[280px] rounded-xl border-2 border-slate-200 bg-white p-2 shadow-node',
-        selected ? 'ring-2 ring-brand-500/25 border-brand-400' : '',
+        'min-w-[280px] rounded-xl bg-card p-2 shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.16)]',
+        selected ? 'shadow-[0_0_0_1px_rgb(var(--color-primary)/0.24),0_0_0_12px_rgb(var(--color-primary)/0.08),0_18px_56px_-28px_rgb(var(--shadow-color)/0.42)]' : '',
       )}
       selected={selected}
       bubble={false}
@@ -144,7 +144,7 @@ function ReadyPluginNodeFrame({
       endHandle={false}
     >
       <div className="flex flex-col gap-2">
-        <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        <div className="px-1 text-[11px] font-semibold uppercase tracking-wide text-foreground/46">
           {label}
         </div>
         <iframe
@@ -152,7 +152,7 @@ function ReadyPluginNodeFrame({
           title={label}
           srcDoc={runtime.srcDoc}
           sandbox="allow-scripts"
-          className="w-full rounded-lg border border-slate-200 bg-white"
+          className="w-full rounded-lg bg-card shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)]"
           style={{ height: `${runtime.iframeHeight}px` }}
         />
       </div>
@@ -252,13 +252,13 @@ const PluginNode = ({ data, selected }: NodeProps<PluginNodeData>) => {
   if (!hydration) {
     return (
       <BaseNode
-        className="min-w-[280px] rounded-xl border-2 border-slate-200 bg-white p-3 shadow-node"
+        className="min-w-[280px] rounded-xl bg-card p-3 shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.16)]"
         selected={selected}
         bubble={false}
         startHandle={false}
         endHandle={false}
       >
-        <div className="text-xs text-slate-500">Loading plugin runtime...</div>
+        <div className="text-xs text-foreground/48">Loading plugin runtime...</div>
       </BaseNode>
     );
   }

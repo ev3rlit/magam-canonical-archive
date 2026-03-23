@@ -11,6 +11,11 @@ import {
   extractFileMentions,
   parseNodeMentionsFromClipboardText,
 } from '@/utils/chatInputMentions';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { getInputClassName, Input } from '@/components/ui/Input';
+import { Menu, MenuItem } from '@/components/ui/Menu';
+import { Select } from '@/components/ui/Select';
 
 interface ChatInputProps {
   providers: ChatProvider[];
@@ -113,7 +118,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   return (
-    <div className="border-t border-slate-200 dark:border-slate-800 p-3 space-y-2">
+    <div className="space-y-2 p-3 shadow-[inset_0_1px_0_rgb(var(--color-border)/0.08)]">
       <div className="relative">
         <textarea
           ref={textareaRef}
@@ -131,7 +136,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             setNodeMentions((prev) => [...prev, ...parsedNodes]);
           }}
           placeholder="Ask Local AI…"
-          className="w-full min-h-20 resize-none rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+          className={getInputClassName({
+            className: 'resize-none',
+            multiline: true,
+          })}
           disabled={disabled || isSending}
           onKeyDown={(event) => {
             const hasMentionMenu = Boolean(
@@ -175,33 +183,29 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         />
 
         {mentionState && mentionState.suggestions.length > 0 && (
-          <ul className="absolute left-0 right-0 z-10 mt-1 max-h-36 overflow-y-auto rounded-md border border-slate-200 bg-white p-1 shadow-md dark:border-slate-700 dark:bg-slate-900">
+          <Menu className="absolute left-0 right-0 z-10 mt-1 max-h-36 overflow-y-auto">
             {mentionState.suggestions.map((filePath, index) => (
-              <li key={filePath}>
-                <button
-                  type="button"
-                  className={`w-full rounded px-2 py-1 text-left text-xs ${
-                    index === mentionIndex
-                      ? 'bg-slate-100 dark:bg-slate-800'
-                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/70'
-                  }`}
+              <div key={filePath}>
+                <MenuItem
+                  active={index === mentionIndex}
+                  className="text-xs"
                   onMouseDown={(event) => {
                     event.preventDefault();
                     insertMention(filePath);
                   }}
                 >
                   @{filePath}
-                </button>
-              </li>
+                </MenuItem>
+              </div>
             ))}
-          </ul>
+          </Menu>
         )}
       </div>
 
       <div className="grid grid-cols-3 gap-1.5">
-        <select
+        <Select
           aria-label="Provider"
-          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+          className="h-9 px-2 text-[11px]"
           value={selectedProviderId ?? ''}
           disabled={disabled || isSending || providers.length === 0}
           onChange={(event) => onSelectProvider(event.target.value)}
@@ -216,11 +220,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               {provider.name}
             </option>
           ))}
-        </select>
+        </Select>
 
-        <select
+        <Select
           aria-label="Model"
-          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+          className="h-9 px-2 text-[11px]"
           value={isCustomModel ? '__custom__' : selectedModel}
           disabled={disabled || isSending || !selectedProviderId}
           onChange={(event) => {
@@ -238,11 +242,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             </option>
           ))}
           <option value="__custom__">Custom…</option>
-        </select>
+        </Select>
 
-        <select
+        <Select
           aria-label="Reasoning effort"
-          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+          className="h-9 px-2 text-[11px]"
           value={reasoningEffort}
           disabled={disabled || isSending || !selectedProviderId}
           onChange={(event) => onSelectEffort(event.target.value as ChatReasoningEffort)}
@@ -250,15 +254,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           <option value="low">Low</option>
           <option value="medium">Default</option>
           <option value="high">Deep</option>
-        </select>
+        </Select>
       </div>
 
       {isCustomModel && (
-        <input
+        <Input
           type="text"
           aria-label="Custom model"
           placeholder="Enter custom model"
-          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-[11px] text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+          className="h-9 px-2 text-[11px]"
           value={selectedModel}
           onChange={(event) => onSelectModel(event.target.value)}
           disabled={disabled || isSending}
@@ -266,38 +270,30 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       )}
 
       {nodeMentions.length > 0 && (
-        <div className="flex items-center gap-2 text-[11px] text-slate-600 dark:text-slate-300">
-          <span className="inline-flex items-center rounded-full border border-slate-200 px-2 py-0.5 dark:border-slate-700">
+        <div className="flex items-center gap-2 text-[11px] text-foreground/62">
+          <Badge variant="neutral">
             노드 첨부 {nodeMentions.length}개
-          </span>
-          <button
-            type="button"
-            className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
-            onClick={() => setNodeMentions([])}
-          >
+          </Badge>
+          <Button size="sm" variant="ghost" onClick={() => setNodeMentions([])}>
             제거
-          </button>
+          </Button>
         </div>
       )}
 
       <div className="flex justify-end gap-2">
         {isSending ? (
-          <button
-            type="button"
-            onClick={() => void onStop()}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-xs dark:border-slate-700"
-          >
+          <Button onClick={() => void onStop()} size="sm" variant="secondary">
             Stop
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
+          <Button
             onClick={() => void handleSubmit()}
             disabled={disabled || !selectedProviderId || value.trim().length === 0}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-xs text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
+            size="sm"
+            variant="primary"
           >
             Send
-          </button>
+          </Button>
         )}
       </div>
     </div>

@@ -2268,10 +2268,10 @@ function GraphCanvasContent({
   return (
     <>
       {isLayouting && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-2">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-            <p className="text-sm font-medium text-slate-600">Optimizing layout...</p>
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <p className="text-sm font-medium text-foreground/62">Optimizing layout...</p>
           </div>
         </div>
       )}
@@ -2282,7 +2282,7 @@ function GraphCanvasContent({
       */}
       <div
         ref={canvasWrapperRef}
-        className="w-full h-full min-h-[500px] flex-1 bg-white transition-opacity duration-300"
+        className="w-full h-full min-h-[500px] flex-1 bg-background transition-opacity duration-300"
         onMouseDownCapture={onCanvasMouseDownCapture}
         style={{
           opacity: isGraphVisible ? 1 : 0,
@@ -2366,7 +2366,7 @@ function GraphCanvasContent({
             ) : (
               <div
                 className={[
-                  'absolute border-2 border-sky-500/80 bg-sky-200/20',
+                  'absolute border-2 border-primary/70 bg-primary/10',
                   createGesture?.nodeType === 'ellipse' ? 'rounded-full' : '',
                 ].join(' ')}
                 style={{
@@ -2378,7 +2378,7 @@ function GraphCanvasContent({
                     ? 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)'
                     : undefined,
                   backgroundColor: createGesture?.nodeType === 'sticky'
-                    ? 'rgba(252, 229, 136, 0.35)'
+                    ? 'rgb(var(--color-card) / 0.45)'
                     : undefined,
                 }}
               />
@@ -2391,8 +2391,8 @@ function GraphCanvasContent({
             <div
               data-testid="graph-canvas-selection-shell"
               className={[
-                'absolute rounded-2xl border border-sky-500/80 bg-sky-500/5 shadow-[0_0_0_1px_rgba(255,255,255,0.7)] transition-colors',
-                selectionShell.activeGesture ? 'border-sky-600 bg-sky-500/10' : '',
+                'absolute rounded-2xl border border-primary/70 bg-primary/6 shadow-[0_0_0_1px_rgb(var(--color-card)/0.72)] transition-colors',
+                selectionShell.activeGesture ? 'border-primary bg-primary/10' : '',
               ].join(' ')}
               style={{
                 left: selectionShell.screenBounds.left,
@@ -2406,7 +2406,7 @@ function GraphCanvasContent({
                   type="button"
                   data-testid="graph-canvas-rotate-handle"
                   aria-label="Rotate selection"
-                  className="pointer-events-auto absolute left-1/2 top-0 h-4 w-4 -translate-x-1/2 -translate-y-6 rounded-full border border-sky-500 bg-white shadow-sm"
+                  className="pointer-events-auto absolute left-1/2 top-0 h-4 w-4 -translate-x-1/2 -translate-y-6 rounded-full border border-primary/70 bg-card shadow-raised"
                   onPointerDown={beginSelectionRotateGesture}
                 >
                   <span className="sr-only">Rotate selection</span>
@@ -2417,7 +2417,7 @@ function GraphCanvasContent({
                   type="button"
                   data-testid="graph-canvas-resize-handle"
                   aria-label="Resize selection"
-                  className="pointer-events-auto absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 rounded-full border border-sky-500 bg-white shadow-sm cursor-se-resize"
+                  className="pointer-events-auto absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-se-resize rounded-full border border-primary/70 bg-card shadow-raised"
                   onPointerDown={beginSelectionResizeGesture}
                 >
                   <span className="sr-only">Resize selection</span>
@@ -2440,10 +2440,10 @@ function GraphCanvasContent({
         {dragFeedback && (
           <div className="absolute top-24 left-1/2 z-[100] -translate-x-1/2 animate-in fade-in slide-in-from-top-2">
             <div className={[
-              'rounded-full border px-4 py-2 text-sm font-medium shadow-lg backdrop-blur',
+              'rounded-full border px-4 py-2 text-sm font-medium shadow-floating backdrop-blur-glass',
               dragFeedback.kind === 'reparent-ready'
-                ? 'border-emerald-200 bg-emerald-50/95 text-emerald-700'
-                : 'border-amber-200 bg-amber-50/95 text-amber-700',
+                ? 'border-success/24 bg-success/12 text-success'
+                : 'border-danger/24 bg-danger/12 text-danger',
             ].join(' ')}>
               {dragFeedback.kind === 'reparent-ready'
                 ? `${dragFeedback.parentLabel} 아래로 놓으면 부모가 바뀝니다.`
@@ -2455,8 +2455,8 @@ function GraphCanvasContent({
         {/* Toast Notification */}
         {toastMessage && (
           <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-bottom-2">
-            <div className="bg-slate-800 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium">
-              <Check className="w-4 h-4 text-green-400" />
+            <div className="flex items-center gap-2 rounded-full bg-card/92 px-4 py-2 text-sm font-medium text-foreground shadow-floating shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)] backdrop-blur-glass">
+              <Check className="w-4 h-4 text-success" />
               {toastMessage}
             </div>
           </div>

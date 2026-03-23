@@ -33,6 +33,12 @@ import {
   TOOLBAR_PRESET_ANCHOR_ID,
   type ToolbarPresenterWashiPresetOption,
 } from '@/processes/canvas-runtime/bindings/toolbarPresenter';
+import { Menu, MenuItem, MenuLabel } from './ui/Menu';
+import {
+  Toolbar as ToolbarSurface,
+  ToolbarButton as PrimitiveToolbarButton,
+  ToolbarDivider,
+} from './ui/Toolbar';
 
 export type InteractionMode = EntrypointInteractionMode;
 
@@ -177,14 +183,13 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   }, [isCreateMenuOpen, toolbarSurfaceApi]);
 
   return (
-    <div
+    <ToolbarSurface
       className={cn(
-        'flex items-center gap-1 p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-full shadow-xl',
         positioning === 'canvas' ? 'absolute bottom-8 left-1/2 -translate-x-1/2 z-50' : 'relative',
         className,
       )}
     >
-      <ToolbarButton
+      <PrimitiveToolbarButton
         active={resolvedInteractionMode === 'pointer'}
         onClick={() => selectToolbarInteractionMode({
           mode: 'pointer',
@@ -192,9 +197,10 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
           onInteractionModeChange,
         })}
         title="Selection Mode (V)"
-        icon={<MousePointer2 className="w-4 h-4" />}
-      />
-      <ToolbarButton
+      >
+        <MousePointer2 className="w-4 h-4" />
+      </PrimitiveToolbarButton>
+      <PrimitiveToolbarButton
         active={resolvedInteractionMode === 'hand'}
         onClick={() => selectToolbarInteractionMode({
           mode: 'hand',
@@ -202,13 +208,14 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
           onInteractionModeChange,
         })}
         title="Pan Mode (H)"
-        icon={<Hand className="w-4 h-4" />}
-      />
+      >
+        <Hand className="w-4 h-4" />
+      </PrimitiveToolbarButton>
 
-      <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+      <ToolbarDivider />
 
       <div className="relative" ref={createMenuRef}>
-        <ToolbarButton
+        <PrimitiveToolbarButton
           active={isCreateMenuOpen || resolvedCreateMode !== null}
           disabled={hasPendingEntrypointActions}
           data-floating-toolbar-create-toggle
@@ -219,26 +226,21 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
             api: toolbarSurfaceApi,
           })}
           title={activeCreateLabel ? `Create Mode: ${activeCreateLabel}` : 'Open Create Modes'}
-          icon={<Plus className="w-4 h-4" />}
-        />
+        >
+          <Plus className="w-4 h-4" />
+        </PrimitiveToolbarButton>
 
         {isCreateMenuOpen && (
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-12 w-56 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
-            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+          <Menu className="absolute bottom-12 left-1/2 w-56 -translate-x-1/2 overflow-hidden">
+            <MenuLabel>
               Create on pane click
-            </div>
-            <div className="py-1">
+            </MenuLabel>
+            <div className="space-y-1 pb-1">
               {TOOLBAR_CREATE_OPTIONS.map((option) => (
-                <button
+                <MenuItem
                   key={option.id}
-                  type="button"
-                  className={cn(
-                    'w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-2',
-                    'hover:bg-slate-100 dark:hover:bg-slate-800/80',
-                    resolvedCreateMode === option.id
-                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                      : 'text-slate-700 dark:text-slate-200',
-                  )}
+                  active={resolvedCreateMode === option.id}
+                  className="justify-between gap-2"
                   onClick={() => {
                     selectToolbarCreateMode({
                       mode: option.id,
@@ -253,12 +255,11 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                     {option.label}
                   </span>
                   {resolvedCreateMode === option.id && <Check className="w-3.5 h-3.5 shrink-0" />}
-                </button>
+                </MenuItem>
               ))}
             </div>
-            <button
-              type="button"
-              className="w-full border-t border-slate-200 dark:border-slate-700 px-3 py-2 text-left text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            <MenuItem
+              className="text-xs text-foreground/56"
               onClick={() => {
                 selectToolbarCreateMode({
                   mode: null,
@@ -269,17 +270,17 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
               }}
             >
               Create mode off
-            </button>
-          </div>
+            </MenuItem>
+          </Menu>
         )}
       </div>
 
       {shouldRenderWashiPresetToggle ? (
         <>
-          <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+          <ToolbarDivider />
 
           <div className="relative" ref={presetMenuRef}>
-            <ToolbarButton
+            <PrimitiveToolbarButton
               active={isWashiPresetMenuOpen}
               disabled={!canOpenWashiPreset || hasPendingEntrypointActions}
               data-floating-toolbar-preset-toggle
@@ -295,27 +296,22 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                   ? 'Washi Preset Catalog'
                   : 'Select a Washi Tape node to open preset catalog'
               }
-              icon={<Bookmark className="w-4 h-4" />}
               className={!canOpenWashiPreset ? 'opacity-40 cursor-not-allowed' : undefined}
-            />
+            >
+              <Bookmark className="w-4 h-4" />
+            </PrimitiveToolbarButton>
 
             {isWashiPresetMenuOpen && (
-              <div className="absolute left-1/2 -translate-x-1/2 bottom-12 w-60 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
-                <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+              <Menu className="absolute bottom-12 left-1/2 w-60 -translate-x-1/2 overflow-hidden">
+                <MenuLabel>
                   PresetPattern Catalog
-                </div>
-                <div className="max-h-56 overflow-y-auto py-1">
+                </MenuLabel>
+                <div className="max-h-56 space-y-1 overflow-y-auto pb-1">
                   {washiPresets.map((preset) => (
-                    <button
+                    <MenuItem
                       key={preset.id}
-                      type="button"
-                      className={cn(
-                        'w-full px-3 py-2 text-left text-sm flex items-center justify-between',
-                        'hover:bg-slate-100 dark:hover:bg-slate-800/80',
-                        preset.id === activeWashiPresetId
-                          ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                          : 'text-slate-700 dark:text-slate-200',
-                      )}
+                      active={preset.id === activeWashiPresetId}
+                      className="justify-between"
                       data-washi-preset-id={preset.id}
                       onClick={() => {
                         selectToolbarPreset({
@@ -324,73 +320,52 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                           api: toolbarSurfaceApi,
                         });
                       }}
-                    >
+                      >
                       <span className="truncate">
                         {preset.label}
-                        <span className="ml-1 text-xs text-slate-500">({preset.id})</span>
+                        <span className="ml-1 text-xs text-foreground/42">({preset.id})</span>
                       </span>
                       {preset.id === activeWashiPresetId && (
                         <Check className="w-3.5 h-3.5 shrink-0" />
                       )}
-                    </button>
+                    </MenuItem>
                   ))}
                 </div>
                 {activeWashiPresetLabel && (
-                  <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 truncate">
+                  <div className="px-3 py-2 text-xs text-foreground/52 truncate">
                     Active: {activeWashiPresetLabel}
                   </div>
                 )}
-              </div>
+              </Menu>
             )}
           </div>
         </>
       ) : null}
 
-      <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+      <ToolbarDivider />
 
-      <ToolbarButton
+      <PrimitiveToolbarButton
         onClick={onZoomIn}
         title="Zoom In (+)"
-        icon={<ZoomIn className="w-4 h-4" />}
-      />
-      <ToolbarButton
+      >
+        <ZoomIn className="w-4 h-4" />
+      </PrimitiveToolbarButton>
+      <PrimitiveToolbarButton
         onClick={onZoomOut}
         title="Zoom Out (-)"
-        icon={<ZoomOut className="w-4 h-4" />}
-      />
-      <ToolbarButton
+      >
+        <ZoomOut className="w-4 h-4" />
+      </PrimitiveToolbarButton>
+      <PrimitiveToolbarButton
         onClick={onFitView}
         title="Fit View (Space)"
-        icon={<Maximize className="w-4 h-4" />}
-      />
+      >
+        <Maximize className="w-4 h-4" />
+      </PrimitiveToolbarButton>
 
-      <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+      <ToolbarDivider />
 
       <FontSelector />
-    </div>
-  );
-};
-
-interface ToolbarButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  active?: boolean;
-  icon: React.ReactNode;
-}
-
-const ToolbarButton: React.FC<ToolbarButtonProps> = ({ active, icon, className, ...props }) => {
-  return (
-    <button
-      type="button"
-      className={cn(
-        'p-2 rounded-md transition-all duration-200',
-        'hover:bg-slate-100 dark:hover:bg-slate-800',
-        active
-          ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400'
-          : 'text-slate-500 dark:text-slate-400',
-        className,
-      )}
-      {...props}
-    >
-      {icon}
-    </button>
+    </ToolbarSurface>
   );
 };

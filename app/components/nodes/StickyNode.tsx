@@ -5,9 +5,11 @@ import { twMerge } from 'tailwind-merge';
 import {
   BaseNode,
   NoiseOverlay,
+  NODE_EDIT_BUTTON_CLASS,
   resolvePaperSurface,
   resolveStickyLikeShapeStyle,
 } from './BaseNode';
+import { getInputClassName } from '@/components/ui/Input';
 import type { RenderableChild } from '@/utils/childComposition';
 import {
   renderNodeContent,
@@ -166,7 +168,7 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     if (typeof paperSurface.textColor === 'string' && paperSurface.textColor.trim() !== '') {
       return paperSurface.textColor;
     }
-    return '#1f2937';
+    return 'rgb(var(--color-foreground) / 0.82)';
   })();
 
   const stickyStyle: React.CSSProperties = {
@@ -188,7 +190,7 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
     backgroundColor: raw.fill
       ?? (typeof raw.color === 'string' && isCssColorLike(raw.color) ? raw.color : undefined)
       ?? paperSurface.surfaceStyle.backgroundColor
-      ?? '#fce588',
+      ?? 'rgb(var(--color-card))',
   };
   const beginEditing = useCallback(() => {
     if (!selected || !bodyEditSession) return;
@@ -220,7 +222,7 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
         <button
           type="button"
           aria-label="Edit content"
-          className="pointer-events-auto absolute right-3 top-3 z-10 rounded-full border border-slate-700/10 bg-white/85 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur"
+          className={NODE_EDIT_BUTTON_CLASS}
           onPointerDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -253,7 +255,10 @@ const StickyNode = ({ data, selected }: NodeProps<StickyNodeData>) => {
             }
           }}
           placeholder="Write markdown..."
-          className="pointer-events-auto w-[220px] min-h-[120px] rounded border border-slate-300 bg-white/95 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+          className={getInputClassName({
+            className: 'pointer-events-auto w-[220px] min-h-[120px]',
+            multiline: true,
+          })}
           style={{ fontFamily: resolvedFontFamily, color: textColor }}
         />
       ) : (() => {

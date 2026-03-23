@@ -44,26 +44,26 @@ const PluginFallbackNode = ({ data, selected }: PluginFallbackNodeProps) => {
   return (
     <BaseNode
       className={twMerge(
-        'min-w-[260px] max-w-[360px] rounded-xl border-2 border-amber-200 bg-amber-50 p-3 shadow-node',
-        selected ? 'ring-2 ring-amber-300' : '',
+        'min-w-[260px] max-w-[360px] rounded-xl bg-danger/10 p-3 shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-danger)/0.18)]',
+        selected ? 'shadow-[0_0_0_1px_rgb(var(--color-danger)/0.24),0_0_0_12px_rgb(var(--color-danger)/0.08)]' : '',
       )}
       selected={selected}
       bubble={false}
       startHandle={false}
       endHandle={false}
     >
-      <div className="space-y-2 text-slate-700">
-        <div className="text-sm font-semibold text-amber-700">{title}</div>
-        <div className="text-xs text-amber-800/80">
+      <div className="space-y-2 text-foreground/82">
+        <div className="text-sm font-semibold text-danger">{title}</div>
+        <div className="text-xs text-danger/80">
           plugin runtime unavailable
         </div>
         {packageRef.length > 0 ? (
-          <div className="rounded border border-amber-200 bg-white px-2 py-1 text-[11px] text-slate-600">
+          <div className="rounded bg-card px-2 py-1 text-[11px] text-foreground/58 shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)]">
             {packageRef}
           </div>
         ) : null}
         {diagnostic ? (
-          <div className="rounded border border-amber-300 bg-white px-2 py-1 text-[11px] text-slate-700">
+          <div className="rounded bg-card px-2 py-1 text-[11px] text-foreground/72 shadow-[inset_0_0_0_1px_rgb(var(--color-danger)/0.18)]">
             <div className="font-semibold">{diagnostic.code}</div>
             <div>{diagnostic.message}</div>
           </div>

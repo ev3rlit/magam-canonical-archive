@@ -5,9 +5,12 @@ import { twMerge } from 'tailwind-merge';
 import {
   BaseNode,
   NoiseOverlay,
+  NODE_EDIT_BUTTON_CLASS,
+  NODE_INLINE_LABEL_CLASS,
   resolvePaperSurface,
   resolveStickyLikeShapeStyle,
 } from './BaseNode';
+import { getInputClassName } from '@/components/ui/Input';
 import { useGraphStore } from '@/store/graph';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import type { RenderableChild } from '@/utils/childComposition';
@@ -207,12 +210,10 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
       resolvedObjectSize
         ? 'w-auto h-auto flex items-center justify-center p-4'
         : 'w-auto h-auto flex items-center justify-center px-3 py-2',
-      'border-2 border-node-border text-node-text transition-all duration-300',
-      'shadow-node rounded-lg',
-      // Only apply hover effects if NOT selected
-      !selected && 'hover:shadow-node-hover hover:-translate-y-1 hover:border-brand-100',
+      'rounded-lg text-foreground shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.14)] transition-all duration-base',
+      !selected && 'hover:-translate-y-1 hover:shadow-floating',
       {
-        'border-brand-500 shadow-node-selected scale-105': selected,
+        'scale-105 shadow-[0_0_0_1px_rgb(var(--color-primary)/0.24),0_0_0_12px_rgb(var(--color-primary)/0.08),0_18px_56px_-28px_rgb(var(--shadow-color)/0.42)]': selected,
       },
       shapeClasses,
     ),
@@ -256,7 +257,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     <button
       type="button"
       aria-label="Edit content"
-      className="pointer-events-auto absolute right-3 top-3 z-10 rounded-full border border-slate-300 bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur"
+      className={NODE_EDIT_BUTTON_CLASS}
       onPointerDown={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -290,7 +291,10 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
         }
       }}
       placeholder="Write markdown..."
-      className="pointer-events-auto relative z-10 w-full min-h-[72px] rounded border border-slate-300 bg-white/95 px-2 py-1 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+      className={getInputClassName({
+        className: 'pointer-events-auto relative z-10 w-full min-h-[72px]',
+        multiline: true,
+      })}
     />
   ) : null;
 
@@ -307,7 +311,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
           id={port.id}
           type="source" // In ReactFlow, handles are often source/target agnostic if connectionMode is loose, but let's default to source
           position={position}
-          className="w-3 h-3 bg-slate-400 border-2 border-white"
+          className="w-3 h-3 border-2 border-card bg-foreground/35"
           style={{ ...posStyle, ...port.style }}
         />
       );
@@ -364,20 +368,20 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
             y1={lineDirection === 'up' ? '92%' : '8%'}
             x2="94"
             y2={lineDirection === 'up' ? '8%' : '92%'}
-            stroke={data.stroke ?? '#475569'}
+            stroke={data.stroke ?? 'rgb(var(--color-foreground) / 0.68)'}
             strokeWidth={data.strokeWidth ?? 3}
             strokeLinecap="round"
           />
         </svg>
         {bodyEditor ?? (data.label ? (
           <div
-            className="pointer-events-none relative z-10 rounded-full bg-white/90 px-2 py-0.5 text-xs font-medium text-slate-700 shadow-sm"
+            className={NODE_INLINE_LABEL_CLASS}
             style={{ fontFamily: resolvedFontFamily }}
           >
             {renderNodeContent({
               children: data.children,
               fallbackLabel: data.label,
-              iconClassName: 'w-4 h-4 text-slate-500 shrink-0',
+              iconClassName: 'w-4 h-4 text-foreground/42 shrink-0',
               textClassName: 'whitespace-pre-wrap leading-tight',
               textStyle: labelStyle,
             })}
@@ -410,8 +414,8 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
           <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
             <polygon
               points="50,0 100,100 0,100"
-              fill={data.fill ?? '#ffffff'}
-              stroke={data.stroke ?? '#e2e8f0'}
+              fill={data.fill ?? 'rgb(var(--color-card))'}
+              stroke={data.stroke ?? 'rgb(var(--color-border) / 0.32)'}
               strokeWidth={data.strokeWidth ?? 2}
             />
           </svg>
@@ -420,9 +424,9 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
               {bodyEditor ?? renderNodeContent({
                 children: data.children,
                 fallbackLabel: data.label,
-                iconClassName: 'w-4 h-4 text-slate-500 shrink-0',
+                iconClassName: 'w-4 h-4 text-foreground/42 shrink-0',
                 textClassName:
-                  'text-sm font-medium leading-tight text-center text-slate-700 whitespace-pre-wrap',
+                  'text-sm font-medium leading-tight text-center text-foreground/78 whitespace-pre-wrap',
                 textStyle: labelStyle,
               })}
             </div>
@@ -460,11 +464,11 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
           {bodyEditor ?? renderNodeContent({
             children: data.children,
             fallbackLabel: data.label,
-            iconClassName: 'w-4 h-4 text-slate-500 shrink-0',
+            iconClassName: 'w-4 h-4 text-foreground/42 shrink-0',
             textClassName:
               isContentDrivenAuto
-                ? 'text-sm font-medium leading-normal text-slate-700 whitespace-pre-wrap'
-                : 'text-sm font-medium leading-relaxed text-slate-700 whitespace-pre-wrap',
+                ? 'text-sm font-medium leading-normal text-foreground/78 whitespace-pre-wrap'
+                : 'text-sm font-medium leading-relaxed text-foreground/78 whitespace-pre-wrap',
             textStyle: labelStyle,
           })}
         </div>

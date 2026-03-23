@@ -2,8 +2,9 @@ import React, { isValidElement, memo, useCallback, useMemo } from 'react';
 import { NodeProps, useNodeId } from 'reactflow';
 import type { Components } from 'react-markdown';
 import { twMerge } from 'tailwind-merge';
-import { BaseNode } from './BaseNode';
+import { BaseNode, NODE_EDIT_BUTTON_CLASS } from './BaseNode';
 import { CodeBlock } from '../ui/CodeBlock';
+import { getInputClassName } from '@/components/ui/Input';
 import { useNodeNavigation } from '@/contexts/NavigationContext';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import { useGraphStore } from '@/store/graph';
@@ -117,8 +118,8 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
                     className={twMerge(
                         "cursor-pointer pointer-events-auto",
                         isNodeLink
-                            ? "text-indigo-600 hover:text-indigo-800 font-medium underline decoration-indigo-300 hover:decoration-indigo-500"
-                            : "text-blue-500 hover:underline"
+                            ? "font-medium text-primary underline decoration-primary/40 hover:decoration-primary"
+                            : "text-primary hover:underline"
                     )}
                     onClick={(e) => handleLinkClick(e, actualHref)}
                     {...props}
@@ -131,7 +132,7 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
         code: ({ node, children, ...props }) => {
             void node;
             return (
-                <code className="bg-slate-100 rounded px-1.5 py-0.5 text-[0.9em] font-mono text-pink-600 border border-slate-200" {...props}>
+                <code className="rounded-md bg-muted px-1.5 py-0.5 text-[0.9em] font-mono text-primary shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)]" {...props}>
                     {children}
                 </code>
             );
@@ -147,7 +148,7 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
     const markdownContent = useMemo(() => (
         <div
             className={twMerge(
-                "prose prose-sm prose-slate max-w-none pointer-events-none select-none",
+                "prose prose-sm max-w-none pointer-events-none select-none text-foreground",
                 isContentDrivenAuto
                     && "prose-headings:my-1.5 prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5"
             )}
@@ -196,10 +197,9 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
                 isContentDrivenAuto
                     ? "w-auto h-auto flex flex-col justify-center px-4 py-3 text-left"
                     : "min-w-64 min-h-20 w-auto h-auto flex flex-col justify-center p-6 text-left",
-                "bg-white border-2 border-slate-200 text-slate-800 transition-all duration-300",
-                "shadow-lg rounded-xl",
-                !selected && "hover:border-indigo-300 hover:shadow-xl hover:-translate-y-1",
-                selected && "border-brand-500 ring-2 ring-brand-500/20 shadow-xl"
+                "rounded-xl bg-card text-foreground shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.14)] transition-all duration-base",
+                !selected && "hover:-translate-y-1 hover:shadow-floating",
+                selected && "shadow-[0_0_0_1px_rgb(var(--color-primary)/0.24),0_0_0_12px_rgb(var(--color-primary)/0.08),0_18px_56px_-28px_rgb(var(--shadow-color)/0.42)]"
             )}
             bubble={data.bubble}
             label={data.label}
@@ -208,7 +208,7 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
                 <button
                     type="button"
                     aria-label="Edit content"
-                    className="pointer-events-auto absolute right-3 top-3 z-10 rounded-full border border-slate-300 bg-white/90 px-2 py-1 text-[11px] font-medium text-slate-700 shadow-sm backdrop-blur"
+                    className={NODE_EDIT_BUTTON_CLASS}
                     onPointerDown={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
@@ -236,15 +236,18 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
                                 return;
                             }
                             const isCommitShortcut = (event.metaKey || event.ctrlKey) && event.key === 'Enter';
-                            if (isCommitShortcut) {
-                                event.preventDefault();
-                                commitEditing();
-                            }
-                        }}
-                        className="w-full min-h-[120px] rounded border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        if (isCommitShortcut) {
+                            event.preventDefault();
+                            commitEditing();
+                        }
+                    }}
+                        className={getInputClassName({
+                            className: 'w-full min-h-[120px]',
+                            multiline: true,
+                        })}
                     />
                     <div
-                        className="prose prose-sm prose-slate max-w-none rounded border border-dashed border-slate-300 bg-slate-50 p-3"
+                        className="prose prose-sm max-w-none rounded-lg bg-muted p-3 text-foreground shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)]"
                         style={{ fontFamily: resolvedFontFamily, ...typographyStyle }}
                     >
                         <LazyMarkdownRenderer

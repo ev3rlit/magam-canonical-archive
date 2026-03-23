@@ -39,15 +39,15 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({ node, depth = 0,
                 onClick={handleClick}
                 style={{ paddingLeft: `${paddingLeft}px` }}
                 className={clsx(
-                    'w-full flex items-center gap-1.5 py-1 pr-2 text-sm transition-colors duration-150 text-left',
-                    'cursor-pointer outline-none hover:bg-slate-200/60 dark:hover:bg-slate-800/60',
-                    'focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-inset',
-                    isActive && !isDirectory && 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300',
+                    'w-full cursor-pointer text-left text-sm transition-[background-color,color,box-shadow] duration-fast',
+                    'flex items-center gap-1.5 rounded-md py-1.5 pr-2 outline-none',
+                    'hover:bg-card/82 focus-visible:bg-card focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset',
+                    isActive && !isDirectory && 'bg-primary/12 text-primary shadow-[inset_0_0_0_1px_rgb(var(--color-primary)/0.18)]',
                 )}
             >
                 {/* Chevron for folders */}
                 {isDirectory ? (
-                    <span className="w-4 h-4 flex items-center justify-center text-slate-400">
+                    <span className="flex h-4 w-4 items-center justify-center text-foreground/38">
                         {isExpanded ? (
                             <ChevronDown className="w-3.5 h-3.5" />
                         ) : (
@@ -61,21 +61,21 @@ export const FolderTreeItem: React.FC<FolderTreeItemProps> = ({ node, depth = 0,
                 {/* Icon */}
                 {isDirectory ? (
                     isExpanded ? (
-                        <FolderOpen className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                        <FolderOpen className="w-4 h-4 flex-shrink-0 text-primary" />
                     ) : (
-                        <FolderIcon className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                        <FolderIcon className="w-4 h-4 flex-shrink-0 text-primary" />
                     )
                 ) : (
                     <FileIcon className={clsx(
                         'w-4 h-4 flex-shrink-0',
-                        isActive ? 'text-blue-500' : 'text-slate-400'
+                        isActive ? 'text-primary' : 'text-foreground/38'
                     )} />
                 )}
 
                 {/* Name */}
                 <span className={clsx(
                     'truncate font-mono text-xs',
-                    isDirectory ? 'font-medium text-slate-700 dark:text-slate-300' : '',
+                    isDirectory ? 'font-medium text-foreground/78' : 'text-foreground/68',
                 )}>
                     {node.name}
                 </span>
