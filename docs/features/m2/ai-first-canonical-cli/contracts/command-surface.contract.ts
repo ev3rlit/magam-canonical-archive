@@ -1,0 +1,345 @@
+// Public CLI command surface contract for the AI-first canonical CLI.
+// This file defines the nouns, aliases, and which contract each command consumes.
+
+export type CliCommandAudienceV1 = 'ai-primary' | 'shared' | 'human-secondary';
+export type CliInputModeV1 = 'flags-only' | 'input-json' | 'input-file-json' | 'flags-and-json';
+
+export interface CliCommandContractV1 {
+  noun: 'workspace' | 'canvas' | 'document' | 'canvas-node' | 'object' | 'mutation';
+  subcommand: string;
+  primaryAudience: CliCommandAudienceV1;
+  status: 'planned' | 'required-v1' | 'compatibility-alias';
+  inputMode: CliInputModeV1;
+  batchCapable: boolean;
+  canonicalPath:
+    | 'query.workspace'
+    | 'query.canvas'
+    | 'query.canvas-node'
+    | 'query.object'
+    | 'mutation.canvas-node'
+    | 'mutation.object'
+    | 'mutation.batch';
+  operatorNames?: readonly string[];
+  aliasOf?: {
+    noun: string;
+    subcommand: string;
+  };
+  notes?: string[];
+}
+
+export const CLI_COMMAND_SURFACE_V1: readonly CliCommandContractV1[] = [
+  {
+    noun: 'workspace',
+    subcommand: 'list',
+    primaryAudience: 'shared',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.workspace',
+  },
+  {
+    noun: 'workspace',
+    subcommand: 'get',
+    primaryAudience: 'shared',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.workspace',
+  },
+  {
+    noun: 'workspace',
+    subcommand: 'ensure',
+    primaryAudience: 'shared',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.workspace',
+    notes: [
+      'Workspace lifecycle stays explicit and path-based.',
+      'The command should not create raw DB records outside canonical service bootstrapping rules.',
+    ],
+  },
+  {
+    noun: 'canvas',
+    subcommand: 'list',
+    primaryAudience: 'shared',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.canvas',
+  },
+  {
+    noun: 'canvas',
+    subcommand: 'get',
+    primaryAudience: 'shared',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.canvas',
+  },
+  {
+    noun: 'canvas',
+    subcommand: 'create',
+    primaryAudience: 'shared',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.canvas',
+  },
+  {
+    noun: 'document',
+    subcommand: 'list',
+    primaryAudience: 'human-secondary',
+    status: 'compatibility-alias',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.canvas',
+    aliasOf: {
+      noun: 'canvas',
+      subcommand: 'list',
+    },
+  },
+  {
+    noun: 'document',
+    subcommand: 'get',
+    primaryAudience: 'human-secondary',
+    status: 'compatibility-alias',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.canvas',
+    aliasOf: {
+      noun: 'canvas',
+      subcommand: 'get',
+    },
+  },
+  {
+    noun: 'document',
+    subcommand: 'create',
+    primaryAudience: 'human-secondary',
+    status: 'compatibility-alias',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.canvas',
+    aliasOf: {
+      noun: 'canvas',
+      subcommand: 'create',
+    },
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'get',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.canvas-node',
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'query',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.canvas-node',
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'tree',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.canvas-node',
+    notes: [
+      'Primary hierarchy read surface for AI understanding.',
+      'Must expose logical parent-child structure similar to a 2D scene hierarchy.',
+    ],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'create',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-and-json',
+    batchCapable: false,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$createNode'],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'move',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$moveNode'],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'move-many',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'input-file-json',
+    batchCapable: true,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$moveNode'],
+    notes: [
+      'Convenience command only.',
+      'Implementation must translate into the same canonical batch executor used by mutation apply.',
+    ],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'reparent',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$reparentNode'],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'reparent-many',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'input-file-json',
+    batchCapable: true,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$reparentNode'],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'update',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-and-json',
+    batchCapable: false,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$updateNode'],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'update-many',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'input-file-json',
+    batchCapable: true,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$updateNode'],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'rename',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$renameNode'],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'delete',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$deleteNode'],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'delete-many',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'input-file-json',
+    batchCapable: true,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$deleteNode'],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'z-order',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$updateNodeZOrder'],
+  },
+  {
+    noun: 'canvas-node',
+    subcommand: 'z-order-many',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'input-file-json',
+    batchCapable: true,
+    canonicalPath: 'mutation.canvas-node',
+    operatorNames: ['$updateNodeZOrder'],
+  },
+  {
+    noun: 'object',
+    subcommand: 'get',
+    primaryAudience: 'shared',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.object',
+  },
+  {
+    noun: 'object',
+    subcommand: 'query',
+    primaryAudience: 'shared',
+    status: 'required-v1',
+    inputMode: 'flags-only',
+    batchCapable: false,
+    canonicalPath: 'query.object',
+  },
+  {
+    noun: 'object',
+    subcommand: 'update-content',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-and-json',
+    batchCapable: false,
+    canonicalPath: 'mutation.object',
+    operatorNames: ['$updateObjectContent'],
+  },
+  {
+    noun: 'object',
+    subcommand: 'patch-capability',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'flags-and-json',
+    batchCapable: false,
+    canonicalPath: 'mutation.object',
+    operatorNames: ['$patchObjectCapability'],
+  },
+  {
+    noun: 'mutation',
+    subcommand: 'apply',
+    primaryAudience: 'ai-primary',
+    status: 'required-v1',
+    inputMode: 'input-file-json',
+    batchCapable: true,
+    canonicalPath: 'mutation.batch',
+    operatorNames: [
+      '$createNode',
+      '$moveNode',
+      '$reparentNode',
+      '$updateNode',
+      '$renameNode',
+      '$deleteNode',
+      '$updateNodeZOrder',
+      '$updateObjectContent',
+      '$patchObjectCapability',
+    ],
+    notes: [
+      'This is the canonical bulk editing path.',
+      'All convenience bulk commands should translate to this contract.',
+    ],
+  },
+] as const;

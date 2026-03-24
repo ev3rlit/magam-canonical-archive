@@ -1,0 +1,269 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://magam.dev/contracts/ai-first-canonical-cli/bulk-mutation.v1.schema.json",
+  "title": "BulkMutationRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workspaceRef", "$operations"],
+  "properties": {
+    "workspaceRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "canvasRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "enum": ["agent", "user", "system"]
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "preconditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "canvasRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "$operations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["$createNode"],
+            "properties": {
+              "$createNode": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nodeId", "nodeType", "placement"],
+                "properties": {
+                  "nodeId": { "type": "string", "minLength": 1 },
+                  "nodeType": {
+                    "enum": ["shape", "rectangle", "ellipse", "diamond", "line", "text", "markdown", "sticky", "sticker", "washi-tape", "image"]
+                  },
+                  "props": {
+                    "type": "object"
+                  },
+                  "placement": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["mode", "x", "y"],
+                        "properties": {
+                          "mode": { "const": "canvas-absolute" },
+                          "x": { "type": "number" },
+                          "y": { "type": "number" }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["mode", "x", "y", "mindmapId"],
+                        "properties": {
+                          "mode": { "const": "mindmap-root" },
+                          "x": { "type": "number" },
+                          "y": { "type": "number" },
+                          "mindmapId": { "type": "string", "minLength": 1 }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["mode", "parentId"],
+                        "properties": {
+                          "mode": { "const": "mindmap-child" },
+                          "parentId": { "type": "string", "minLength": 1 }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["mode", "siblingOf", "parentId"],
+                        "properties": {
+                          "mode": { "const": "mindmap-sibling" },
+                          "siblingOf": { "type": "string", "minLength": 1 },
+                          "parentId": {
+                            "type": ["string", "null"]
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["$moveNode"],
+            "properties": {
+              "$moveNode": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nodeId", "x", "y"],
+                "properties": {
+                  "nodeId": { "type": "string", "minLength": 1 },
+                  "x": { "type": "number" },
+                  "y": { "type": "number" }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["$reparentNode"],
+            "properties": {
+              "$reparentNode": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nodeId", "parentNodeId"],
+                "properties": {
+                  "nodeId": { "type": "string", "minLength": 1 },
+                  "parentNodeId": {
+                    "type": ["string", "null"]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["$updateNode"],
+            "properties": {
+              "$updateNode": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nodeId"],
+                "properties": {
+                  "nodeId": { "type": "string", "minLength": 1 },
+                  "props": { "type": "object" },
+                  "style": { "type": "object" }
+                },
+                "anyOf": [
+                  { "required": ["props"] },
+                  { "required": ["style"] }
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["$renameNode"],
+            "properties": {
+              "$renameNode": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nodeId", "nextNodeId"],
+                "properties": {
+                  "nodeId": { "type": "string", "minLength": 1 },
+                  "nextNodeId": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["$deleteNode"],
+            "properties": {
+              "$deleteNode": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nodeId"],
+                "properties": {
+                  "nodeId": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["$updateNodeZOrder"],
+            "properties": {
+              "$updateNodeZOrder": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["nodeId", "zIndex"],
+                "properties": {
+                  "nodeId": { "type": "string", "minLength": 1 },
+                  "zIndex": { "type": "integer" }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["$updateObjectContent"],
+            "properties": {
+              "$updateObjectContent": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["objectId", "kind", "patch"],
+                "properties": {
+                  "objectId": { "type": "string", "minLength": 1 },
+                  "kind": {
+                    "enum": ["text", "markdown", "media", "sequence"]
+                  },
+                  "patch": {
+                    "type": "object"
+                  },
+                  "expectedContentKind": {
+                    "enum": ["text", "markdown", "media", "sequence"]
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["$patchObjectCapability"],
+            "properties": {
+              "$patchObjectCapability": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["objectId", "capability", "patch"],
+                "properties": {
+                  "objectId": { "type": "string", "minLength": 1 },
+                  "capability": {
+                    "enum": ["frame", "material", "texture", "attach", "ports", "bubble", "content"]
+                  },
+                  "patch": {
+                    "type": ["object", "null"]
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
