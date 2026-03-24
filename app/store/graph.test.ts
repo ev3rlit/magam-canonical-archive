@@ -1,7 +1,37 @@
-import { beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import type { SearchResult } from '../utils/search';
+import { resetHostRuntimeForTests } from '@/features/host/renderer/createHostRuntime';
 import { useGraphStore } from './graph';
 import { GLOBAL_FONT_STORAGE_KEY } from '../utils/fontHierarchy';
+
+const initialGraphState = useGraphStore.getState();
+const originalFetch = globalThis.fetch;
+const originalWindow = (globalThis as { window?: unknown }).window;
+
+function createMemoryStorage(seed?: Record<string, string>): Storage {
+  const state = new Map(Object.entries(seed ?? {}));
+
+  return {
+    getItem(key: string) {
+      return state.get(key) ?? null;
+    },
+    setItem(key: string, value: string) {
+      state.set(key, value);
+    },
+    removeItem(key: string) {
+      state.delete(key);
+    },
+    clear() {
+      state.clear();
+    },
+    key(index: number) {
+      return Array.from(state.keys())[index] ?? null;
+    },
+    get length() {
+      return state.size;
+    },
+  } as Storage;
+}
 
 const getFixtureResults = (): SearchResult[] => ([
   { type: 'element', key: 'node-a', title: 'A', score: 100, matchKind: 'exact' },
@@ -45,13 +75,335 @@ describe('graph metadata state', () => {
     expect(state.sourceVersions['examples/components/auth.tsx']).toBe('sha256:v3');
     expect(state.lastAppliedCommandId).toBe('cmd-1');
   });
+
+  it('currentCanvasId는 currentFile 전환 시 초기화되고 별도로 갱신할 수 있다', () => {
+    useGraphStore.getState().setCurrentFile('examples/main.tsx');
+    useGraphStore.getState().setCurrentCanvasId('doc-1');
+    expect(useGraphStore.getState().currentCanvasId).toBe('doc-1');
+
+    useGraphStore.getState().setCurrentFile('examples/other.tsx');
+    expect(useGraphStore.getState().currentCanvasId).toBeNull();
+
+    useGraphStore.getState().setCurrentCanvasId('doc-2');
+    expect(useGraphStore.getState().currentCanvasId).toBe('doc-2');
+  });
+
+  it('pendingActionRoutingByKey는 register/clear lifecycle을 유지한다', () => {
+    useGraphStore.getState().registerPendingActionRouting({
+      pendingKey: 'selection-floating-menu:selection.style.update:shape-1:sha256:v1',
+      baseVersion: 'sha256:v1',
+      intentId: 'selection.style.update',
+      surfaceId: 'selection-floating-menu',
+      filePath: 'examples/main.tsx',
+      nodeId: 'shape-1',
+      rollbackSteps: [],
+      startedAt: 10,
+    });
+
+    expect(
+      useGraphStore.getState().pendingActionRoutingByKey['selection-floating-menu:selection.style.update:shape-1:sha256:v1'],
+    ).toBeDefined();
+
+    useGraphStore.getState().clearPendingActionRouting('selection-floating-menu:selection.style.update:shape-1:sha256:v1');
+
+    expect(
+      useGraphStore.getState().pendingActionRoutingByKey['selection-floating-menu:selection.style.update:shape-1:sha256:v1'],
+    ).toBeUndefined();
+  });
+});
+
+describe('canvas session persistence', () => {
+  beforeEach(() => {
+    useGraphStore.setState(initialGraphState);
+  });
+
+  it('re-activates the same document tab instead of duplicating it', () => {
+    const firstOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const secondOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const state = useGraphStore.getState();
+
+    expect(firstOpen.status).toBe('opened');
+    expect(secondOpen).toEqual({
+      status: 'activated',
+      tabId: firstOpen.status === 'opened' ? firstOpen.tabId : secondOpen.tabId,
+    });
+    expect(state.openTabs).toHaveLength(1);
+    expect(state.activeTabId).toBe(firstOpen.status === 'opened' ? firstOpen.tabId : null);
+    expect(state.currentFile).toBe('docs/overview.graph.tsx');
+  });
+
+  it('keeps the stored viewport and selection snapshot when switching away and back', () => {
+    const firstOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const secondOpen = useGraphStore.getState().openTab('docs/guide.graph.tsx');
+
+    expect(firstOpen.status).toBe('opened');
+    expect(secondOpen.status).toBe('opened');
+
+    if (firstOpen.status !== 'opened' || secondOpen.status !== 'opened') {
+      throw new Error('expected tabs to open during snapshot test');
+    }
+
+    useGraphStore.getState().updateTabSnapshot(firstOpen.tabId, {
+      lastViewport: { x: 120, y: 48, zoom: 1.25 },
+      lastSelection: {
+        nodeIds: ['node-a'],
+        edgeIds: ['edge-a'],
+        updatedAt: 100,
+      },
+    });
+
+    useGraphStore.getState().activateTab(secondOpen.tabId);
+    useGraphStore.getState().activateTab(firstOpen.tabId);
+
+    const restoredTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === firstOpen.tabId);
+    expect(restoredTab?.lastViewport).toEqual({ x: 120, y: 48, zoom: 1.25 });
+    expect(restoredTab?.lastSelection).toEqual({
+      nodeIds: ['node-a'],
+      edgeIds: ['edge-a'],
+      updatedAt: 100,
+    });
+  });
+
+  it('treats repeated tab snapshot writes as a no-op when values are unchanged', () => {
+    const opened = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    if (opened.status !== 'opened') {
+      throw new Error('expected tab to open for snapshot no-op test');
+    }
+
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: { x: 12, y: 24, zoom: 1.1 },
+      lastSelection: {
+        nodeIds: ['node-a'],
+        edgeIds: [],
+        updatedAt: 10,
+      },
+    });
+
+    const before = useGraphStore.getState();
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: { x: 12, y: 24, zoom: 1.1 },
+      lastSelection: {
+        nodeIds: ['node-a'],
+        edgeIds: [],
+        updatedAt: 10,
+      },
+    });
+    const after = useGraphStore.getState();
+
+    expect(after).toBe(before);
+  });
+
+  it('updates tab selection snapshots without mutating unrelated tab metadata', () => {
+    const firstOpen = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    const secondOpen = useGraphStore.getState().openTab('docs/guide.graph.tsx');
+
+    if (firstOpen.status !== 'opened' || secondOpen.status !== 'opened') {
+      throw new Error('expected tabs to open for selection snapshot test');
+    }
+
+    const beforeSecondTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === secondOpen.tabId);
+    useGraphStore.getState().updateTabSnapshot(firstOpen.tabId, {
+      lastSelection: {
+        nodeIds: ['shape-1', 'shape-2'],
+        edgeIds: [],
+        updatedAt: 42,
+      },
+    });
+
+    const firstTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === firstOpen.tabId);
+    const secondTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === secondOpen.tabId);
+
+    expect(firstTab?.lastSelection).toEqual({
+      nodeIds: ['shape-1', 'shape-2'],
+      edgeIds: [],
+      updatedAt: 42,
+    });
+    expect(secondTab).toEqual(beforeSecondTab);
+  });
+
+  it('allows tab viewport and selection snapshots to be cleared explicitly', () => {
+    const opened = useGraphStore.getState().openTab('docs/overview.graph.tsx');
+    if (opened.status !== 'opened') {
+      throw new Error('expected tab to open for snapshot clear test');
+    }
+
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: { x: 20, y: 40, zoom: 1.2 },
+      lastSelection: {
+        nodeIds: ['shape-1'],
+        edgeIds: [],
+        updatedAt: 12,
+      },
+    });
+
+    useGraphStore.getState().updateTabSnapshot(opened.tabId, {
+      lastViewport: null,
+      lastSelection: null,
+    });
+
+    const clearedTab = useGraphStore.getState().openTabs.find((tab) => tab.tabId === opened.tabId);
+    expect(clearedTab?.lastViewport).toBeNull();
+    expect(clearedTab?.lastSelection).toBeNull();
+  });
+
+  it('persists lastActive canvas metadata per workspace source', () => {
+    useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
+    useGraphStore.getState().hydrateCanvasSession('workspace:docs/resume.graph.tsx', '/tmp/ws-1');
+    useGraphStore.getState().rememberLastActiveCanvas('docs/resume.graph.tsx');
+
+    expect(useGraphStore.getState().lastActiveCanvasPath).toBe('/tmp/ws-1/docs/resume.graph.tsx');
+  });
+
+  it('tracks new-canvas empty-canvas entry state without requiring a pre-open naming gate', () => {
+    useGraphStore.getState().setFiles(['docs/resume.graph.tsx']);
+    useGraphStore.getState().setFileTree({
+      name: 'workspace',
+      path: '/',
+      type: 'directory',
+      children: [
+        {
+          name: 'docs',
+          path: 'docs',
+          type: 'directory',
+          children: [
+            {
+              name: 'resume.graph.tsx',
+              path: 'docs/resume.graph.tsx',
+              type: 'file',
+            },
+          ],
+        },
+      ],
+    });
+
+    useGraphStore.getState().registerDraftCanvas('docs/untitled-1.graph.tsx');
+
+    expect(useGraphStore.getState().files).toContain('docs/untitled-1.graph.tsx');
+    expect(useGraphStore.getState().draftCanvases).toContain('docs/untitled-1.graph.tsx');
+    expect(useGraphStore.getState().fileTree?.children?.[0]?.children).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: 'docs/untitled-1.graph.tsx', type: 'file' }),
+      ]),
+    );
+  });
+
+  it('deduplicates registered workspace documents by canonical document id', () => {
+    useGraphStore.setState(initialGraphState);
+    useGraphStore.getState().setWorkspaceCanvases('ws-1', [{
+      canvasId: 'doc-1',
+      workspaceId: 'ws-1',
+      latestRevision: 1,
+      compatibilityFilePath: '/tmp/ws-1/docs/alpha.graph.tsx',
+      title: '',
+    }]);
+
+    useGraphStore.getState().registerWorkspaceCanvas('ws-1', {
+      canvasId: 'doc-1',
+      workspaceId: 'ws-1',
+      latestRevision: 2,
+      compatibilityFilePath: '/tmp/ws-1/docs/renamed-alpha.graph.tsx',
+      title: 'Renamed alpha',
+    });
+
+    expect(useGraphStore.getState().workspaceCanvasesByWorkspaceId['ws-1']).toEqual([
+      expect.objectContaining({
+        canvasId: 'doc-1',
+        compatibilityFilePath: '/tmp/ws-1/docs/alpha.graph.tsx',
+      }),
+    ]);
+  });
+
+  it('ignores repeated empty selection commits to avoid render loops', () => {
+    const before = useGraphStore.getState();
+    useGraphStore.getState().setSelectedNodes([]);
+    const after = useGraphStore.getState();
+
+    expect(after).toBe(before);
+  });
 });
 
 describe('font hierarchy state', () => {
+  let storedFontPreference: string | null;
+
   beforeEach(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem(GLOBAL_FONT_STORAGE_KEY);
-    }
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        localStorage: createMemoryStorage(),
+        __MAGAM_DESKTOP_HOST__: {
+          runtime: {
+            mode: 'desktop-primary',
+            httpBaseUrl: 'http://127.0.0.1:3003',
+            wsUrl: 'ws://127.0.0.1:3004',
+            appStateDbPath: '/tmp/app-state-pgdata',
+            workspacePath: null,
+          },
+          capabilities: {
+            workspace: {
+              async selectWorkspace() {
+                return null;
+              },
+              async revealInOs() {
+                return;
+              },
+            },
+            shell: {
+              async openExternal() {
+                return;
+              },
+            },
+            lifecycle: {
+              onAppEvent() {
+                return () => undefined;
+              },
+            },
+          },
+          bootstrap: {
+            async getSession() {
+              return null;
+            },
+            async markRendererLoading() {
+              return null;
+            },
+            async markRendererReady() {
+              return null;
+            },
+            async markRendererFailed() {
+              return null;
+            },
+          },
+        },
+      },
+    });
+    storedFontPreference = 'sans-inter';
+    globalThis.fetch = (async (input, init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (!url.includes('/app-state/preferences')) {
+        throw new Error(`Unexpected fetch request: ${url}`);
+      }
+
+      if ((init?.method ?? 'GET') === 'POST') {
+        const body = JSON.parse(String(init?.body ?? '{}')) as { valueJson?: unknown };
+        storedFontPreference = typeof body.valueJson === 'string' ? body.valueJson : null;
+        return new Response(JSON.stringify({
+          key: 'font.globalFamily',
+          valueJson: body.valueJson,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify(
+        storedFontPreference
+          ? { key: 'font.globalFamily', valueJson: storedFontPreference }
+          : null,
+      ), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+    resetHostRuntimeForTests();
 
     useGraphStore.setState((state) => ({
       ...state,
@@ -60,14 +412,38 @@ describe('font hierarchy state', () => {
     }));
   });
 
-  it('setGlobalFontFamily stores value in state and localStorage', () => {
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    if (originalWindow === undefined) {
+      delete (globalThis as { window?: unknown }).window;
+    } else {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: originalWindow,
+      });
+    }
+    resetHostRuntimeForTests();
+  });
+
+  it('setGlobalFontFamily stores value in state, localStorage cache, and app-state preference', async () => {
     useGraphStore.getState().setGlobalFontFamily('hand-caveat');
+    await Promise.resolve();
 
     const state = useGraphStore.getState();
     expect(state.globalFontFamily).toBe('hand-caveat');
 
     if (typeof window !== 'undefined') {
       expect(window.localStorage.getItem(GLOBAL_FONT_STORAGE_KEY)).toBe('hand-caveat');
+    }
+    expect(storedFontPreference).toBe('hand-caveat');
+  });
+
+  it('hydrateGlobalFontFamilyPreference restores the app-state value into store and local cache', async () => {
+    await useGraphStore.getState().hydrateGlobalFontFamilyPreference();
+
+    expect(useGraphStore.getState().globalFontFamily).toBe('sans-inter');
+    if (typeof window !== 'undefined') {
+      expect(window.localStorage.getItem(GLOBAL_FONT_STORAGE_KEY)).toBe('sans-inter');
     }
   });
 
@@ -335,6 +711,217 @@ describe('group hover registry', () => {
   });
 });
 
+describe('entrypoint runtime state', () => {
+  it('기본 runtime-only slice를 제공한다', () => {
+    const state = useGraphStore.getState();
+
+    expect(state.entrypointRuntime.activeTool).toEqual({
+      interactionMode: 'pointer',
+      createMode: null,
+    });
+    expect(state.entrypointRuntime.openSurface).toBeNull();
+    expect(state.entrypointRuntime.anchorsById).toEqual({});
+    expect(state.entrypointRuntime.hover).toEqual({
+      nodeIdsByGroupId: {},
+      targetNodeId: null,
+    });
+    expect(state.entrypointRuntime.pendingByRequestId).toEqual({});
+  });
+
+  it('active tool을 graph store 단일 owner로 업데이트한다', () => {
+    useGraphStore.getState().setEntrypointInteractionMode('hand');
+    useGraphStore.getState().setEntrypointCreateMode('shape');
+
+    expect(useGraphStore.getState().entrypointRuntime.activeTool).toEqual({
+      interactionMode: 'hand',
+      createMode: 'shape',
+    });
+  });
+
+  it('anchor가 없는 surface는 열지 않고 anchor 등록 후에는 연다', () => {
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'missing-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
+
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 10, y: 20 },
+    });
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+
+    expect(useGraphStore.getState().entrypointRuntime.openSurface?.kind).toBe('pane-context-menu');
+
+    useGraphStore.getState().closeEntrypointSurface();
+    expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
+  });
+
+  it('동일한 anchor와 surface 재등록은 runtime state를 다시 만들지 않는다', () => {
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 10, y: 20 },
+    });
+    const afterAnchor = useGraphStore.getState().entrypointRuntime;
+
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 10, y: 20 },
+    });
+    expect(useGraphStore.getState().entrypointRuntime).toBe(afterAnchor);
+
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    const afterOpenSurface = useGraphStore.getState().entrypointRuntime;
+
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    expect(useGraphStore.getState().entrypointRuntime).toBe(afterOpenSurface);
+  });
+
+  it('selection 변경 시 selection 의존 surface를 닫고 stale selection anchor를 정리한다', () => {
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'selection-floating-menu:selection-bounds',
+      kind: 'selection-bounds',
+      nodeIds: ['node-a'],
+      flow: { x: 0, y: 0 },
+    });
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'selection-floating-menu',
+      anchorId: 'selection-floating-menu:selection-bounds',
+      dismissOnSelectionChange: true,
+      dismissOnViewportChange: false,
+    });
+
+    useGraphStore.getState().setSelectedNodes(['node-b']);
+
+    expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
+    expect(
+      useGraphStore.getState().entrypointRuntime.anchorsById['selection-floating-menu:selection-bounds'],
+    ).toBeUndefined();
+  });
+
+  it('viewport change dismiss는 viewport-sensitive surface만 닫는다', () => {
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 8, y: 8 },
+    });
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+
+    useGraphStore.getState().dismissEntrypointSurfaceOnViewportChange();
+    expect(useGraphStore.getState().entrypointRuntime.openSurface).toBeNull();
+  });
+
+  it('hover registry를 기존 hoveredNodeIdsByGroupId와 동기화한다', () => {
+    useGraphStore.getState().registerGroupHover('map-2', 'node-a');
+    useGraphStore.getState().registerGroupHover('map-2', 'node-b');
+
+    expect(useGraphStore.getState().entrypointRuntime.hover.nodeIdsByGroupId).toEqual({
+      'map-2': ['node-a', 'node-b'],
+    });
+
+    useGraphStore.getState().unregisterGroupHover('map-2', 'node-a');
+    useGraphStore.getState().unregisterGroupHover('map-2', 'node-b');
+    expect(useGraphStore.getState().entrypointRuntime.hover.nodeIdsByGroupId).toEqual({});
+  });
+
+  it('pending lifecycle을 request id 기준으로 기록하고 정리한다', () => {
+    useGraphStore.getState().beginPendingUiAction({
+      requestId: 'request-1',
+      actionType: 'node.create',
+      targetIds: ['shape'],
+      startedAt: 1,
+    });
+    expect(useGraphStore.getState().entrypointRuntime.pendingByRequestId['request-1']?.status).toBe('pending');
+
+    useGraphStore.getState().failPendingUiAction('request-1', 'boom');
+    expect(useGraphStore.getState().entrypointRuntime.pendingByRequestId['request-1']?.status).toBe('failed');
+
+    useGraphStore.getState().clearPendingUiAction('request-1');
+    expect(useGraphStore.getState().entrypointRuntime.pendingByRequestId['request-1']).toBeUndefined();
+  });
+
+  it('edit completion은 matching command id pending entry를 자동으로 정리한다', () => {
+    useGraphStore.getState().beginPendingUiAction({
+      requestId: 'cmd-1',
+      actionType: 'node.move.absolute',
+      targetIds: ['node-1'],
+      startedAt: 1,
+    });
+
+    useGraphStore.getState().pushEditCompletionEvent({
+      eventId: 'event-1',
+      type: 'ABSOLUTE_MOVE_COMMITTED',
+      nodeId: 'node-1',
+      filePath: 'examples/a.tsx',
+      commandId: 'cmd-1',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: { x: 0, y: 0 },
+      after: { x: 10, y: 20 },
+      committedAt: Date.now(),
+    });
+
+    expect(useGraphStore.getState().entrypointRuntime.pendingByRequestId['cmd-1']).toBeUndefined();
+  });
+
+  it('graph reload는 active tool만 유지하고 open surface/anchor/pending을 초기화한다', () => {
+    useGraphStore.getState().setEntrypointInteractionMode('hand');
+    useGraphStore.getState().registerEntrypointAnchor({
+      anchorId: 'pane-anchor',
+      kind: 'pointer',
+      screen: { x: 20, y: 30 },
+    });
+    useGraphStore.getState().openEntrypointSurface({
+      kind: 'pane-context-menu',
+      anchorId: 'pane-anchor',
+      dismissOnSelectionChange: false,
+      dismissOnViewportChange: true,
+    });
+    useGraphStore.getState().beginPendingUiAction({
+      requestId: 'request-2',
+      actionType: 'node.create',
+      targetIds: ['shape'],
+      startedAt: 2,
+    });
+
+    useGraphStore.getState().setGraph({
+      nodes: [],
+      edges: [],
+    });
+
+    const state = useGraphStore.getState().entrypointRuntime;
+    expect(state.activeTool.interactionMode).toBe('hand');
+    expect(state.openSurface).toBeNull();
+    expect(state.anchorsById).toEqual({});
+    expect(state.pendingByRequestId).toEqual({});
+  });
+});
+
 describe('text edit session state', () => {
   it('active node id 기반으로 draft를 관리하고 commit 요청을 생성한다', () => {
     useGraphStore.getState().startTextEditSession({
@@ -353,6 +940,26 @@ describe('text edit session state', () => {
     expect(state.pendingTextEditAction?.nodeId).toBe('md-1');
   });
 
+  it('cancel 요청은 같은 active node session에만 기록되고 clear로 정리된다', () => {
+    useGraphStore.getState().startTextEditSession({
+      nodeId: 'sticky-1',
+      initialDraft: '- task',
+      mode: 'markdown-wysiwyg',
+    });
+
+    useGraphStore.getState().requestTextEditCancel('sticky-1');
+    expect(useGraphStore.getState().pendingTextEditAction).toMatchObject({
+      type: 'cancel',
+      nodeId: 'sticky-1',
+    });
+
+    useGraphStore.getState().clearTextEditSession();
+    const state = useGraphStore.getState();
+    expect(state.activeTextEditNodeId).toBeNull();
+    expect(state.textEditMode).toBeNull();
+    expect(state.pendingTextEditAction).toBeNull();
+  });
+
   it('선택이 다른 노드로 바뀌면 편집 세션을 정리한다', () => {
     useGraphStore.getState().startTextEditSession({
       nodeId: 'text-1',
@@ -369,6 +976,18 @@ describe('text edit session state', () => {
 });
 
 describe('edit completion history', () => {
+  beforeEach(() => {
+    useGraphStore.setState((state) => ({
+      ...state,
+      editHistoryPast: [],
+      editHistoryFuture: [],
+      entrypointRuntime: {
+        ...state.entrypointRuntime,
+        pendingByRequestId: {},
+      },
+    }));
+  });
+
   it('undo/redo는 이벤트 1건 단위로 past/future를 이동한다', () => {
     const event = {
       eventId: 'event-1',
@@ -431,5 +1050,97 @@ describe('edit completion history', () => {
     useGraphStore.getState().commitUndoEventSuccess('event-reparent');
     expect(useGraphStore.getState().peekUndoEditEvent()?.eventId).toBe('event-create');
     expect(useGraphStore.getState().peekRedoEditEvent()?.eventId).toBe('event-reparent');
+  });
+});
+
+describe('action routing optimistic lifecycle state', () => {
+  it('apply 이벤트는 pending token을 저장하고 commit/reject는 제거한다', () => {
+    useGraphStore.getState().applyActionRoutingLifecycleEvent({
+      phase: 'apply',
+      surface: 'pane-context-menu',
+      intent: 'create-node',
+      optimisticToken: 'opt-1',
+      rollbackToken: 'rb-1',
+    });
+
+    expect(useGraphStore.getState().actionRoutingPendingByToken).toEqual({
+      'opt-1': {
+        phase: 'apply',
+        surface: 'pane-context-menu',
+        intent: 'create-node',
+        optimisticToken: 'opt-1',
+        rollbackToken: 'rb-1',
+      },
+    });
+
+    useGraphStore.getState().applyActionRoutingLifecycleEvent({
+      phase: 'commit',
+      surface: 'pane-context-menu',
+      intent: 'create-node',
+      optimisticToken: 'opt-1',
+      rollbackToken: 'rb-1',
+    });
+    expect(useGraphStore.getState().actionRoutingPendingByToken).toEqual({});
+
+    useGraphStore.getState().applyActionRoutingLifecycleEvent({
+      phase: 'apply',
+      surface: 'selection-floating-menu',
+      intent: 'style-update',
+      optimisticToken: 'opt-2',
+      rollbackToken: 'rb-2',
+    });
+    useGraphStore.getState().applyActionRoutingLifecycleEvent({
+      phase: 'reject',
+      surface: 'selection-floating-menu',
+      intent: 'style-update',
+      optimisticToken: 'opt-2',
+      rollbackToken: 'rb-2',
+      reason: 'PATCH_SURFACE_VIOLATION',
+    });
+
+    expect(useGraphStore.getState().actionRoutingPendingByToken).toEqual({});
+  });
+});
+
+describe('group focus state', () => {
+  beforeEach(() => {
+    useGraphStore.setState(initialGraphState);
+  });
+
+  it('retains inner group focus only while the selection stays inside a partial grouped subset', () => {
+    useGraphStore.getState().setGraph({
+      nodes: [
+        {
+          id: 'shape-a',
+          type: 'shape',
+          position: { x: 0, y: 0 },
+          data: { groupId: 'group-1' },
+        } as any,
+        {
+          id: 'shape-b',
+          type: 'shape',
+          position: { x: 100, y: 0 },
+          data: { groupId: 'group-1' },
+        } as any,
+        {
+          id: 'shape-c',
+          type: 'shape',
+          position: { x: 200, y: 0 },
+          data: {},
+        } as any,
+      ],
+      edges: [],
+    });
+
+    useGraphStore.getState().setActiveGroupFocusGroupId('group-1');
+    useGraphStore.getState().setSelectedNodes(['shape-a']);
+    expect(useGraphStore.getState().activeGroupFocusGroupId).toBe('group-1');
+
+    useGraphStore.getState().setSelectedNodes(['shape-a', 'shape-b']);
+    expect(useGraphStore.getState().activeGroupFocusGroupId).toBeNull();
+
+    useGraphStore.getState().setActiveGroupFocusGroupId('group-1');
+    useGraphStore.getState().setSelectedNodes(['shape-c']);
+    expect(useGraphStore.getState().activeGroupFocusGroupId).toBeNull();
   });
 });

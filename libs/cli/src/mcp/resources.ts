@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as fs from "fs";
 import * as path from "path";
+import { CLI_MESSAGES } from "../messages";
 
 export function registerResources(server: McpServer, targetDir: string) {
   server.registerResource(
@@ -8,7 +9,7 @@ export function registerResources(server: McpServer, targetDir: string) {
     "magam://skill",
     {
       mimeType: "text/markdown",
-      description: "Magam 컴포넌트 문서 (SKILL.md)",
+      description: CLI_MESSAGES.mcp.resourceDescription,
     },
     async () => {
       // Try multiple locations for SKILL.md
@@ -36,7 +37,7 @@ export function registerResources(server: McpServer, targetDir: string) {
           {
             uri: "magam://skill",
             mimeType: "text/plain",
-            text: "SKILL.md를 찾을 수 없습니다.",
+            text: CLI_MESSAGES.mcp.resourceNotFound,
           },
         ],
       };

@@ -5,7 +5,7 @@
  */
 
 import { watch } from 'chokidar';
-import { resolve } from 'path';
+import { isAbsolute, resolve } from 'path';
 import { readFile } from 'fs/promises';
 import { createHash } from 'crypto';
 import {
@@ -17,17 +17,19 @@ import {
     type JsonRpcRequest,
 } from './rpc';
 import { methods, type RpcContext } from './methods';
+import { WS_SERVER_MESSAGES } from './messages';
 
 const PORT = parseInt(process.env.MAGAM_WS_PORT || '3001', 10);
 const WATCH_DIR = process.env.MAGAM_TARGET_DIR || './examples';
 
 // Client connections with their subscriptions
 const clients = new Map<unknown, Set<string>>();
+const watchedCompatibilitySubscriptionPaths = new Set<string>();
 
 const COMMAND_EVENT_TTL_MS = 3000;
 const recentCommandEvents = new Map<string, number>();
 
-console.log(`[WS] Starting JSON-RPC WebSocket server on port ${PORT}...`);
+console.log(WS_SERVER_MESSAGES.starting(PORT));
 
 const server = Bun.serve({
     port: PORT,
@@ -37,7 +39,7 @@ const server = Bun.serve({
         if (success) return undefined;
 
         // Non-WebSocket request
-        return new Response('Magam File Sync Server (JSON-RPC 2.0)', {
+        return new Response(WS_SERVER_MESSAGES.serverBanner, {
             status: 200,
             headers: { 'Content-Type': 'text/plain' },
         });
@@ -45,7 +47,7 @@ const server = Bun.serve({
     websocket: {
         open(ws) {
             clients.set(ws, new Set());
-            console.log(`[WS] Client connected. Total: ${clients.size}`);
+            console.log(WS_SERVER_MESSAGES.clientConnected(clients.size));
         },
 
         async message(ws, msg) {
@@ -66,7 +68,7 @@ const server = Bun.serve({
 
             // Notification (no id) - no response needed
             if (request.id === undefined) {
-                console.log(`[WS] Received notification: ${request.method}`);
+                console.log(WS_SERVER_MESSAGES.notificationReceived(request.method));
                 return;
             }
 
@@ -90,6 +92,11 @@ const server = Bun.serve({
 
             try {
                 const result = await handler(request.params || {}, ctx);
+                if (request.method === 'file.subscribe') {
+                    ctx.subscriptions.forEach((subscriptionPath) => {
+                        ensureWatchedSubscriptionPath(subscriptionPath);
+                    });
+                }
                 ws.send(JSON.stringify(createResponse(request.id, result)));
             } catch (error) {
                 const err = error as { code?: number; message?: string; data?: unknown };
@@ -104,28 +111,48 @@ const server = Bun.serve({
 
         close(ws) {
             clients.delete(ws);
-            console.log(`[WS] Client disconnected. Total: ${clients.size}`);
+            console.log(WS_SERVER_MESSAGES.clientDisconnected(clients.size));
         },
     },
 });
 
-console.log(`[WS] Server running at ws://localhost:${PORT}`);
+console.log(WS_SERVER_MESSAGES.runningAt(PORT));
 
 // File watcher
 const watchPath = resolve(process.cwd(), WATCH_DIR);
-console.log(`[WS] Watching for file changes in: ${watchPath}`);
+console.log(WS_SERVER_MESSAGES.watchingPath(watchPath));
 
 const watcher = watch(watchPath, {
     ignoreInitial: true,
     ignored: /(^|[\/\\])\../, // ignore dotfiles
 });
 
+function resolveCompatibilitySubscribedWatchPath(filePath: string, rootPath?: string): string {
+    if (isAbsolute(filePath)) {
+        return filePath;
+    }
+
+    return resolve(rootPath || watchPath, filePath);
+}
+
+function ensureWatchedSubscriptionPath(filePath: string, rootPath?: string): void {
+    const resolvedPath = resolveCompatibilitySubscribedWatchPath(filePath, rootPath);
+    if (watchedCompatibilitySubscriptionPaths.has(resolvedPath)) {
+        return;
+    }
+
+    watcher.add(resolvedPath);
+    watchedCompatibilitySubscriptionPaths.add(resolvedPath);
+}
+
 /**
  * Broadcast file list update to all connected clients
  */
-function broadcastFileListUpdate(event: 'add' | 'unlink', filePath: string) {
+function broadcastCompatibilityFileListUpdate(event: 'add' | 'unlink', filePath: string) {
     // Extract relative path from the full path
-    const relativePath = filePath.replace(watchPath + '/', '');
+    const relativePath = filePath.startsWith(`${watchPath}/`)
+        ? filePath.replace(`${watchPath}/`, '')
+        : filePath;
 
     const notification = createNotification('files.changed', {
         event,
@@ -139,24 +166,30 @@ function broadcastFileListUpdate(event: 'add' | 'unlink', filePath: string) {
         (ws as { send: (data: string) => void }).send(message);
     });
 
-    console.log(`[WS] Broadcasted files.changed: ${event} - ${relativePath}`);
+    console.log(WS_SERVER_MESSAGES.broadcastCompatibilityFilesChanged(event, relativePath));
 }
 
 function broadcastFileChanged(payload: {
+    canvasId?: string;
     filePath: string;
+    resolvedFilePath: string;
     version: string;
     originId: string;
     commandId: string;
+    rootPath?: string;
 }) {
     const now = Date.now();
-    recentCommandEvents.set(payload.filePath, now);
+    recentCommandEvents.set(payload.resolvedFilePath, now);
 
     const notification = createNotification('file.changed', {
+        ...(payload.canvasId ? { canvasId: payload.canvasId } : {}),
         filePath: payload.filePath,
+        resolvedFilePath: payload.resolvedFilePath,
         version: payload.version,
         originId: payload.originId,
         commandId: payload.commandId,
         timestamp: now,
+        ...(payload.rootPath ? { rootPath: payload.rootPath } : {}),
     });
     const message = JSON.stringify(notification);
 
@@ -164,9 +197,9 @@ function broadcastFileChanged(payload: {
         let matched = false;
         for (const sub of subscriptions) {
             if (
-                payload.filePath === sub ||
-                payload.filePath.endsWith(sub) ||
-                sub.endsWith(payload.filePath)
+                payload.resolvedFilePath === sub ||
+                payload.resolvedFilePath.endsWith(sub) ||
+                sub.endsWith(payload.resolvedFilePath)
             ) {
                 matched = true;
                 break;
@@ -178,11 +211,11 @@ function broadcastFileChanged(payload: {
         }
     });
 
-    console.log(`[WS] Broadcasted file.changed (command): ${payload.filePath}`);
+    console.log(WS_SERVER_MESSAGES.broadcastFileChanged(payload.resolvedFilePath));
 }
 
 watcher.on('change', async (filePath) => {
-    console.log(`[WS] File changed: ${filePath}`);
+    console.log(WS_SERVER_MESSAGES.fileChanged(filePath));
 
     const now = Date.now();
     const lastCommandEventAt = recentCommandEvents.get(filePath);
@@ -197,7 +230,7 @@ watcher.on('change', async (filePath) => {
         const content = await readFile(filePath, 'utf-8');
         version = `sha256:${createHash('sha256').update(content).digest('hex')}`;
     } catch (error) {
-        console.warn('[WS] Failed to hash changed file:', filePath, error);
+        console.warn(WS_SERVER_MESSAGES.failedToHashChangedFile, filePath, error);
     }
 
     // Broadcast to subscribed clients
@@ -216,13 +249,14 @@ watcher.on('change', async (filePath) => {
         if (matchedSubscription) {
             const notification = createNotification('file.changed', {
                 filePath: matchedSubscription, // Send back the subscription path
+                resolvedFilePath: matchedSubscription,
                 version,
                 originId: 'external',
                 commandId: `watch:${now}`,
                 timestamp: now,
             });
             (ws as { send: (data: string) => void }).send(JSON.stringify(notification));
-            console.log(`[WS] Notified client about: ${matchedSubscription}`);
+            console.log(WS_SERVER_MESSAGES.notifiedClientAbout(matchedSubscription));
         }
     });
 });
@@ -230,26 +264,26 @@ watcher.on('change', async (filePath) => {
 watcher.on('add', (filePath) => {
     // Only handle .tsx files
     if (!filePath.endsWith('.tsx')) return;
-    console.log(`[WS] File added: ${filePath}`);
-    broadcastFileListUpdate('add', filePath);
+    console.log(WS_SERVER_MESSAGES.fileAdded(filePath));
+    broadcastCompatibilityFileListUpdate('add', filePath);
 });
 
 watcher.on('unlink', (filePath) => {
     // Only handle .tsx files
     if (!filePath.endsWith('.tsx')) return;
-    console.log(`[WS] File deleted: ${filePath}`);
-    broadcastFileListUpdate('unlink', filePath);
+    console.log(WS_SERVER_MESSAGES.fileDeleted(filePath));
+    broadcastCompatibilityFileListUpdate('unlink', filePath);
 });
 
 watcher.on('error', (error) => {
-    console.error('[WS] Watcher error:', error);
+    console.error(WS_SERVER_MESSAGES.watcherError, error);
 });
 
-console.log('[WS] File watcher initialized');
+console.log(WS_SERVER_MESSAGES.watcherInitialized);
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\n[WS] Shutting down...');
+    console.log(WS_SERVER_MESSAGES.shuttingDown);
     watcher.close();
     server.stop();
     process.exit(0);

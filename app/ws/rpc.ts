@@ -1,6 +1,7 @@
 /**
  * JSON-RPC 2.0 Types and Utilities
  */
+import { WS_RPC_MESSAGES } from './messages';
 
 export interface JsonRpcRequest {
     jsonrpc: '2.0';
@@ -30,18 +31,19 @@ export interface JsonRpcError {
 
 // Standard JSON-RPC Error Codes
 export const RPC_ERRORS = {
-    PARSE_ERROR: { code: -32700, message: 'Parse error' },
-    INVALID_REQUEST: { code: -32600, message: 'Invalid Request' },
-    METHOD_NOT_FOUND: { code: -32601, message: 'Method not found' },
+    PARSE_ERROR: { code: -32700, message: WS_RPC_MESSAGES.parseError },
+    INVALID_REQUEST: { code: -32600, message: WS_RPC_MESSAGES.invalidRequest },
+    METHOD_NOT_FOUND: { code: -32601, message: WS_RPC_MESSAGES.methodNotFound },
     INVALID_PARAMS: { code: 40001, message: 'INVALID_PARAMS' },
-    INTERNAL_ERROR: { code: -32603, message: 'Internal error' },
+    INTERNAL_ERROR: { code: -32603, message: WS_RPC_MESSAGES.internalError },
     // Bidirectional-edit contract errors
     FILE_NOT_FOUND: { code: 40401, message: 'FILE_NOT_FOUND' },
     NODE_NOT_FOUND: { code: 40401, message: 'NODE_NOT_FOUND' },
+    PLUGIN_INSTANCE_NOT_FOUND: { code: 40402, message: 'PLUGIN_INSTANCE_NOT_FOUND' },
     VERSION_CONFLICT: { code: 40901, message: 'VERSION_CONFLICT' },
-    VERSION_BASE_REQUIRED: { code: 40904, message: 'VERSION_BASE_REQUIRED' },
     MINDMAP_CYCLE: { code: 40902, message: 'MINDMAP_CYCLE' },
     ID_COLLISION: { code: 40903, message: 'ID_COLLISION' },
+    PLUGIN_INSTANCE_ID_CONFLICT: { code: 40904, message: 'PLUGIN_INSTANCE_ID_CONFLICT' },
     EDIT_NOT_ALLOWED: { code: 42201, message: 'EDIT_NOT_ALLOWED' },
     INVALID_OBJECT_CORE: { code: 42202, message: 'INVALID_OBJECT_CORE' },
     INVALID_CAPABILITY: { code: 42203, message: 'INVALID_CAPABILITY' },
@@ -53,17 +55,21 @@ export const RPC_ERRORS = {
     INVALID_CONTENT_ROLE_BINDING: { code: 42209, message: 'INVALID_CONTENT_ROLE_BINDING' },
     RENDER_ROUTE_UNRESOLVED: { code: 42210, message: 'RENDER_ROUTE_UNRESOLVED' },
     PATCH_SURFACE_VIOLATION: { code: 42211, message: 'PATCH_SURFACE_VIOLATION' },
-    INVALID_QUERY_INCLUDE: { code: 42212, message: 'INVALID_QUERY_INCLUDE' },
-    INVALID_QUERY_FILTER: { code: 42213, message: 'INVALID_QUERY_FILTER' },
-    INVALID_QUERY_BOUNDS: { code: 42214, message: 'INVALID_QUERY_BOUNDS' },
-    INVALID_QUERY_CURSOR: { code: 42215, message: 'INVALID_QUERY_CURSOR' },
-    QUERY_SCOPE_NOT_FOUND: { code: 40402, message: 'QUERY_SCOPE_NOT_FOUND' },
-    INVALID_MUTATION_OPERATION: { code: 42216, message: 'INVALID_MUTATION_OPERATION' },
-    INVALID_REVISION_TOKEN: { code: 42217, message: 'INVALID_REVISION_TOKEN' },
-    REVISION_APPEND_FAILED: { code: 50002, message: 'REVISION_APPEND_FAILED' },
-    INTERNAL_QUERY_ERROR: { code: 50003, message: 'INTERNAL_QUERY_ERROR' },
-    INTERNAL_MUTATION_ERROR: { code: 50004, message: 'INTERNAL_MUTATION_ERROR' },
+    INTENT_NOT_REGISTERED: { code: 42212, message: 'INTENT_NOT_REGISTERED' },
+    INTENT_SURFACE_NOT_ALLOWED: { code: 42213, message: 'INTENT_SURFACE_NOT_ALLOWED' },
+    INTENT_GATING_DENIED: { code: 42214, message: 'INTENT_GATING_DENIED' },
+    INTENT_PAYLOAD_INVALID: { code: 42215, message: 'INTENT_PAYLOAD_INVALID' },
+    DISPATCH_PLAN_INVALID: { code: 42216, message: 'DISPATCH_PLAN_INVALID' },
+    OPTIMISTIC_CONFLICT: { code: 40904, message: 'OPTIMISTIC_CONFLICT' },
+    INVALID_INTENT: { code: 42212, message: 'INVALID_INTENT' },
+    NORMALIZATION_FAILED: { code: 42213, message: 'NORMALIZATION_FAILED' },
+    GATE_BLOCKED: { code: 42214, message: 'GATE_BLOCKED' },
+    PLUGIN_STATE_PATCH_REQUIRES_RUNTIME: { code: 42215, message: 'PLUGIN_STATE_PATCH_REQUIRES_RUNTIME' },
+    INVALID_PLUGIN_INSTANCE: { code: 42216, message: 'INVALID_PLUGIN_INSTANCE' },
     PATCH_FAILED: { code: 50001, message: 'PATCH_FAILED' },
+    EXECUTION_FAILED: { code: 50002, message: 'EXECUTION_FAILED' },
+    ADOPTION_VIOLATION: { code: 50003, message: 'ADOPTION_VIOLATION' },
+    PLUGIN_RUNTIME_UNAVAILABLE: { code: 50004, message: 'PLUGIN_RUNTIME_UNAVAILABLE' },
 } as const;
 
 export function createResponse(id: number | string, result: unknown): JsonRpcResponse {

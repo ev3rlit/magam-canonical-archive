@@ -1,44 +1,58 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  FileText,
   MousePointer2,
   Hand,
-  ZoomIn,
-  ZoomOut,
-  Maximize,
   Bookmark,
   Check,
   Plus,
-  Square,
-  Sticker,
-  Ticket,
-  Type,
 } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { FontSelector } from './FontSelector';
-import type { GraphCanvasCreateMode } from './GraphCanvas.drag';
+import type { CanvasEntrypointCreateMode } from '@/features/canvas-ui-entrypoints/contracts';
+import { useGraphStore } from '@/store/graph';
+import { getCanvasUiCopy } from '@/features/canvas-ui-entrypoints/copy';
+import type { EntrypointInteractionMode } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
+import { canvasRuntime } from '@/processes/canvas-runtime/createCanvasRuntime';
+import {
+  closeToolbarSurface,
+  resolveToolbarPresenterState,
+  selectToolbarCreateMode,
+  selectToolbarInteractionMode,
+  selectToolbarPreset,
+  shouldCloseToolbarSurface,
+  syncToolbarCreateMode,
+  syncToolbarInteractionMode,
+  toggleToolbarCreateSurface,
+  toggleToolbarPresetSurface,
+  TOOLBAR_CREATE_ANCHOR_ID,
+  TOOLBAR_CREATE_OPTIONS,
+  TOOLBAR_PRESET_ANCHOR_ID,
+  type ToolbarPresenterWashiPresetOption,
+} from '@/processes/canvas-runtime/bindings/toolbarPresenter';
+import { Menu, MenuItem, MenuLabel } from './ui/Menu';
+import {
+  Toolbar as ToolbarSurface,
+  ToolbarButton as PrimitiveToolbarButton,
+  ToolbarDivider,
+} from './ui/Toolbar';
 
-export type InteractionMode = 'pointer' | 'hand';
+export type InteractionMode = EntrypointInteractionMode;
 
-interface WashiPresetOption {
-  id: string;
-  label: string;
-}
+type WashiPresetOption = ToolbarPresenterWashiPresetOption;
 
 interface FloatingToolbarProps {
   interactionMode: InteractionMode;
   onInteractionModeChange: (mode: InteractionMode) => void;
-  createMode: GraphCanvasCreateMode;
-  onCreateModeChange: (mode: GraphCanvasCreateMode) => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onFitView: () => void;
+  createMode: CanvasEntrypointCreateMode;
+  onCreateModeChange: (mode: CanvasEntrypointCreateMode) => void;
   washiPresets?: WashiPresetOption[];
   washiPresetEnabled?: boolean;
   activeWashiPresetId?: string | null;
   onSelectWashiPreset?: (presetId: string) => void;
+  positioning?: 'canvas' | 'hosted';
+  className?: string;
 }
 
 export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
@@ -46,23 +60,70 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   onInteractionModeChange,
   createMode,
   onCreateModeChange,
-  onZoomIn,
-  onZoomOut,
-  onFitView,
   washiPresets = [],
   washiPresetEnabled = false,
   activeWashiPresetId = null,
   onSelectWashiPreset,
+  positioning = 'canvas',
+  className,
 }) => {
-  const [isWashiPresetMenuOpen, setIsWashiPresetMenuOpen] = useState(false);
-  const [isCreateMenuOpen, setIsCreateMenuOpen] = useState(false);
+  const copy = getCanvasUiCopy();
+  const entrypointRuntime = useGraphStore((store) => store.entrypointRuntime);
+  const setEntrypointInteractionMode = useGraphStore((store) => store.setEntrypointInteractionMode);
+  const setEntrypointCreateMode = useGraphStore((store) => store.setEntrypointCreateMode);
+  const registerEntrypointAnchor = useGraphStore((store) => store.registerEntrypointAnchor);
+  const clearEntrypointAnchor = useGraphStore((store) => store.clearEntrypointAnchor);
+  const openEntrypointSurface = useGraphStore((store) => store.openEntrypointSurface);
+  const closeEntrypointSurface = useGraphStore((store) => store.closeEntrypointSurface);
+
   const presetMenuRef = useRef<HTMLDivElement>(null);
   const createMenuRef = useRef<HTMLDivElement>(null);
-  const canOpenWashiPreset = washiPresetEnabled && washiPresets.length > 0;
-  const activeWashiPresetLabel = useMemo(
-    () => washiPresets.find((preset) => preset.id === activeWashiPresetId)?.label ?? null,
-    [activeWashiPresetId, washiPresets],
+  const toolbarSurfaceApi = {
+    registerEntrypointAnchor,
+    clearEntrypointAnchor,
+    openEntrypointSurface,
+    closeEntrypointSurface,
+  };
+  const {
+    activeCreateLabel,
+    activeWashiPresetLabel,
+    canOpenWashiPreset,
+    hasPendingEntrypointActions,
+    isCreateMenuOpen,
+    isWashiPresetMenuOpen,
+    resolvedCreateMode,
+    resolvedInteractionMode,
+  } = resolveToolbarPresenterState({
+    runtime: canvasRuntime,
+    toolbarSlot: canvasRuntime.slots.canvasToolbar,
+    runtimeState: entrypointRuntime,
+    interactionMode,
+    createMode,
+    washiPresets,
+    washiPresetEnabled,
+    activeWashiPresetId,
+  });
+  const shouldRenderWashiPresetToggle = (
+    washiPresets.length > 0
+    || washiPresetEnabled
+    || activeWashiPresetId !== null
   );
+
+  useEffect(() => {
+    syncToolbarInteractionMode({
+      runtimeInteractionMode: entrypointRuntime.activeTool.interactionMode,
+      interactionMode,
+      setEntrypointInteractionMode,
+    });
+  }, [entrypointRuntime.activeTool.interactionMode, interactionMode, setEntrypointInteractionMode]);
+
+  useEffect(() => {
+    syncToolbarCreateMode({
+      runtimeCreateMode: entrypointRuntime.activeTool.createMode,
+      createMode,
+      setEntrypointCreateMode,
+    });
+  }, [createMode, entrypointRuntime.activeTool.createMode, setEntrypointCreateMode]);
 
   useEffect(() => {
     if (!isWashiPresetMenuOpen) {
@@ -70,11 +131,14 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     }
 
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      if (!presetMenuRef.current || !event.target) {
-        return;
-      }
-      if (!presetMenuRef.current.contains(event.target as Node)) {
-        setIsWashiPresetMenuOpen(false);
+      if (shouldCloseToolbarSurface({
+        menuElement: presetMenuRef.current,
+        target: event.target,
+      })) {
+        closeToolbarSurface({
+          anchorId: TOOLBAR_PRESET_ANCHOR_ID,
+          api: toolbarSurfaceApi,
+        });
       }
     };
 
@@ -84,7 +148,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('touchstart', handlePointerDown);
     };
-  }, [isWashiPresetMenuOpen]);
+  }, [isWashiPresetMenuOpen, toolbarSurfaceApi]);
 
   useEffect(() => {
     if (!isCreateMenuOpen) {
@@ -92,11 +156,14 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     }
 
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
-      if (!createMenuRef.current || !event.target) {
-        return;
-      }
-      if (!createMenuRef.current.contains(event.target as Node)) {
-        setIsCreateMenuOpen(false);
+      if (shouldCloseToolbarSurface({
+        menuElement: createMenuRef.current,
+        target: event.target,
+      })) {
+        closeToolbarSurface({
+          anchorId: TOOLBAR_CREATE_ANCHOR_ID,
+          api: toolbarSurfaceApi,
+        });
       }
     };
 
@@ -106,193 +173,171 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       document.removeEventListener('mousedown', handlePointerDown);
       document.removeEventListener('touchstart', handlePointerDown);
     };
-  }, [isCreateMenuOpen]);
-
-  const createOptions: Array<{
-    id: Exclude<GraphCanvasCreateMode, null>;
-    label: string;
-    icon: React.ReactNode;
-  }> = [
-    { id: 'shape', label: 'Shape', icon: <Square className="w-4 h-4" /> },
-    { id: 'text', label: 'Text', icon: <Type className="w-4 h-4" /> },
-    { id: 'markdown', label: 'Markdown', icon: <FileText className="w-4 h-4" /> },
-    { id: 'sticker', label: 'Sticker', icon: <Sticker className="w-4 h-4" /> },
-    { id: 'washi-tape', label: 'Washi', icon: <Ticket className="w-4 h-4" /> },
-  ];
-  const activeCreateLabel = createOptions.find((option) => option.id === createMode)?.label ?? null;
+  }, [isCreateMenuOpen, toolbarSurfaceApi]);
 
   return (
-    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 p-1.5 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-full shadow-xl">
-      <ToolbarButton
-        active={interactionMode === 'pointer'}
-        onClick={() => onInteractionModeChange('pointer')}
-        title="Selection Mode (V)"
-        icon={<MousePointer2 className="w-4 h-4" />}
-      />
-      <ToolbarButton
-        active={interactionMode === 'hand'}
-        onClick={() => onInteractionModeChange('hand')}
-        title="Pan Mode (H)"
-        icon={<Hand className="w-4 h-4" />}
-      />
+    <ToolbarSurface
+      className={cn(
+        positioning === 'canvas' ? 'absolute top-6 left-1/2 -translate-x-1/2 z-50' : 'relative',
+        className,
+      )}
+    >
+      <PrimitiveToolbarButton
+        active={resolvedInteractionMode === 'pointer'}
+        onClick={() => selectToolbarInteractionMode({
+          mode: 'pointer',
+          setEntrypointInteractionMode,
+          onInteractionModeChange,
+        })}
+        title={copy.floatingToolbar.selectionModeTitle}
+      >
+        <MousePointer2 className="w-4 h-4" />
+      </PrimitiveToolbarButton>
+      <PrimitiveToolbarButton
+        active={resolvedInteractionMode === 'hand'}
+        onClick={() => selectToolbarInteractionMode({
+          mode: 'hand',
+          setEntrypointInteractionMode,
+          onInteractionModeChange,
+        })}
+        title={copy.floatingToolbar.panModeTitle}
+      >
+        <Hand className="w-4 h-4" />
+      </PrimitiveToolbarButton>
 
-      <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+      <ToolbarDivider />
 
       <div className="relative" ref={createMenuRef}>
-        <ToolbarButton
-          active={isCreateMenuOpen || createMode !== null}
-          onClick={() => setIsCreateMenuOpen((prev) => !prev)}
-          title={activeCreateLabel ? `Create Mode: ${activeCreateLabel}` : 'Open Create Modes'}
-          icon={<Plus className="w-4 h-4" />}
-        />
+        <PrimitiveToolbarButton
+          active={isCreateMenuOpen || resolvedCreateMode !== null}
+          disabled={hasPendingEntrypointActions}
+          data-floating-toolbar-create-toggle
+          onClick={() => toggleToolbarCreateSurface({
+            isCreateMenuOpen,
+            hasPendingEntrypointActions,
+            createMenuElement: createMenuRef.current,
+            api: toolbarSurfaceApi,
+          })}
+          title={activeCreateLabel ? copy.floatingToolbar.createModeTitle(activeCreateLabel) : copy.floatingToolbar.openCreateModesTitle}
+        >
+          <Plus className="w-4 h-4" />
+        </PrimitiveToolbarButton>
 
         {isCreateMenuOpen && (
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-12 w-56 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
-            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
-              Create on pane click
-            </div>
-            <div className="py-1">
-              {createOptions.map((option) => (
-                <button
+          <Menu className="absolute left-1/2 top-12 w-56 -translate-x-1/2 overflow-hidden">
+            <MenuLabel>
+              {copy.floatingToolbar.createOnPaneClick}
+            </MenuLabel>
+            <div className="space-y-1 pb-1">
+              {TOOLBAR_CREATE_OPTIONS.map((option) => (
+                <MenuItem
                   key={option.id}
-                  type="button"
-                  className={cn(
-                    'w-full px-3 py-2 text-left text-sm flex items-center justify-between gap-2',
-                    'hover:bg-slate-100 dark:hover:bg-slate-800/80',
-                    createMode === option.id
-                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                      : 'text-slate-700 dark:text-slate-200',
-                  )}
+                  active={resolvedCreateMode === option.id}
+                  className="justify-between gap-2"
                   onClick={() => {
-                    onCreateModeChange(option.id);
-                    setIsCreateMenuOpen(false);
+                    selectToolbarCreateMode({
+                      mode: option.id,
+                      setEntrypointCreateMode,
+                      onCreateModeChange,
+                      api: toolbarSurfaceApi,
+                    });
                   }}
                 >
                   <span className="flex items-center gap-2">
                     {option.icon}
                     {option.label}
                   </span>
-                  {createMode === option.id && <Check className="w-3.5 h-3.5 shrink-0" />}
-                </button>
+                  {resolvedCreateMode === option.id && <Check className="w-3.5 h-3.5 shrink-0" />}
+                </MenuItem>
               ))}
             </div>
-            <button
-              type="button"
-              className="w-full border-t border-slate-200 dark:border-slate-700 px-3 py-2 text-left text-xs text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+            <MenuItem
+              className="text-xs text-foreground/56"
               onClick={() => {
-                onCreateModeChange(null);
-                setIsCreateMenuOpen(false);
+                selectToolbarCreateMode({
+                  mode: null,
+                  setEntrypointCreateMode,
+                  onCreateModeChange,
+                  api: toolbarSurfaceApi,
+                });
               }}
             >
-              Create mode off
-            </button>
-          </div>
+              {copy.floatingToolbar.createModeOff}
+            </MenuItem>
+          </Menu>
         )}
       </div>
 
-      <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+      {shouldRenderWashiPresetToggle ? (
+        <>
+          <ToolbarDivider />
 
-      <div className="relative" ref={presetMenuRef}>
-        <ToolbarButton
-          active={isWashiPresetMenuOpen}
-          disabled={!canOpenWashiPreset}
-          onClick={() => setIsWashiPresetMenuOpen((prev) => !prev)}
-          title={
-            canOpenWashiPreset
-              ? 'Washi Preset Catalog'
-              : 'Select a Washi Tape node to open preset catalog'
-          }
-          icon={<Bookmark className="w-4 h-4" />}
-          className={!canOpenWashiPreset ? 'opacity-40 cursor-not-allowed' : undefined}
-        />
+          <div className="relative" ref={presetMenuRef}>
+            <PrimitiveToolbarButton
+              active={isWashiPresetMenuOpen}
+              disabled={!canOpenWashiPreset || hasPendingEntrypointActions}
+              data-floating-toolbar-preset-toggle
+              onClick={() => toggleToolbarPresetSurface({
+                canOpenWashiPreset,
+                hasPendingEntrypointActions,
+                isWashiPresetMenuOpen,
+                presetMenuElement: presetMenuRef.current,
+                api: toolbarSurfaceApi,
+              })}
+              title={
+                canOpenWashiPreset
+                  ? copy.floatingToolbar.washiPresetCatalogTitle
+                  : copy.floatingToolbar.washiPresetCatalogDisabledTitle
+              }
+              className={!canOpenWashiPreset ? 'opacity-40 cursor-not-allowed' : undefined}
+            >
+              <Bookmark className="w-4 h-4" />
+            </PrimitiveToolbarButton>
 
-        {isWashiPresetMenuOpen && (
-          <div className="absolute left-1/2 -translate-x-1/2 bottom-12 w-60 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl overflow-hidden">
-            <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
-              PresetPattern Catalog
-            </div>
-            <div className="max-h-56 overflow-y-auto py-1">
-              {washiPresets.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={cn(
-                    'w-full px-3 py-2 text-left text-sm flex items-center justify-between',
-                    'hover:bg-slate-100 dark:hover:bg-slate-800/80',
-                    preset.id === activeWashiPresetId
-                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-                      : 'text-slate-700 dark:text-slate-200',
-                  )}
-                  data-washi-preset-id={preset.id}
-                  onClick={() => {
-                    onSelectWashiPreset?.(preset.id);
-                    setIsWashiPresetMenuOpen(false);
-                  }}
-                >
-                  <span className="truncate">
-                    {preset.label}
-                    <span className="ml-1 text-xs text-slate-500">({preset.id})</span>
-                  </span>
-                  {preset.id === activeWashiPresetId && (
-                    <Check className="w-3.5 h-3.5 shrink-0" />
-                  )}
-                </button>
-              ))}
-            </div>
-            {activeWashiPresetLabel && (
-              <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400 truncate">
-                Active: {activeWashiPresetLabel}
-              </div>
+            {isWashiPresetMenuOpen && (
+              <Menu className="absolute left-1/2 top-12 w-60 -translate-x-1/2 overflow-hidden">
+                <MenuLabel>
+                  {copy.floatingToolbar.washiPresetMenuLabel}
+                </MenuLabel>
+                <div className="max-h-56 space-y-1 overflow-y-auto pb-1">
+                  {washiPresets.map((preset) => (
+                    <MenuItem
+                      key={preset.id}
+                      active={preset.id === activeWashiPresetId}
+                      className="justify-between"
+                      data-washi-preset-id={preset.id}
+                      onClick={() => {
+                        selectToolbarPreset({
+                          presetId: preset.id,
+                          onSelectWashiPreset,
+                          api: toolbarSurfaceApi,
+                        });
+                      }}
+                      >
+                      <span className="truncate">
+                        {preset.label}
+                        <span className="ml-1 text-xs text-foreground/42">({preset.id})</span>
+                      </span>
+                      {preset.id === activeWashiPresetId && (
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                      )}
+                    </MenuItem>
+                  ))}
+                </div>
+                {activeWashiPresetLabel && (
+                  <div className="px-3 py-2 text-xs text-foreground/52 truncate">
+                    {copy.floatingToolbar.activePresetLabel(activeWashiPresetLabel)}
+                  </div>
+                )}
+              </Menu>
             )}
           </div>
-        )}
-      </div>
+        </>
+      ) : null}
 
-      <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
-
-      <ToolbarButton
-        onClick={onZoomIn}
-        title="Zoom In (+)"
-        icon={<ZoomIn className="w-4 h-4" />}
-      />
-      <ToolbarButton
-        onClick={onZoomOut}
-        title="Zoom Out (-)"
-        icon={<ZoomOut className="w-4 h-4" />}
-      />
-      <ToolbarButton
-        onClick={onFitView}
-        title="Fit View (Space)"
-        icon={<Maximize className="w-4 h-4" />}
-      />
-
-      <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 mx-1" />
+      <ToolbarDivider />
 
       <FontSelector />
-    </div>
-  );
-};
-
-interface ToolbarButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  active?: boolean;
-  icon: React.ReactNode;
-}
-
-const ToolbarButton: React.FC<ToolbarButtonProps> = ({ active, icon, className, ...props }) => {
-  return (
-    <button
-      type="button"
-      className={cn(
-        'p-2 rounded-md transition-all duration-200',
-        'hover:bg-slate-100 dark:hover:bg-slate-800',
-        active
-          ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400'
-          : 'text-slate-500 dark:text-slate-400',
-        className,
-      )}
-      {...props}
-    >
-      {icon}
-    </button>
+    </ToolbarSurface>
   );
 };

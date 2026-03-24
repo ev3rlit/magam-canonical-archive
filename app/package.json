@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "bun run ../scripts/dev/app-dev.ts",
+    "dev": "bun run ../scripts/desktop/dev.ts",
     "dev:next": "next dev",
+    "web:dev": "bun run ../scripts/dev/app-dev.ts",
     "build": "node ./node_modules/next/dist/bin/next build",
     "start": "next start"
   },

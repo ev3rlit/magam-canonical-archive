@@ -10,6 +10,15 @@ interface FloatingEdgeData {
     targetType?: string;
 }
 
+function resolveNodeShapeType(nodeData: unknown): string | undefined {
+    if (!nodeData || typeof nodeData !== 'object') {
+        return undefined;
+    }
+
+    const { type } = nodeData as { type?: unknown };
+    return typeof type === 'string' ? type : undefined;
+}
+
 export default function FloatingEdge({
     id,
     source,
@@ -47,13 +56,13 @@ export default function FloatingEdge({
         const sourceIntersection = getNodeIntersection(
             sourceNode,
             targetCenter,
-            data?.sourceType || (sourceNode.data as any)?.type
+            data?.sourceType ?? resolveNodeShapeType(sourceNode.data)
         );
 
         const targetIntersection = getNodeIntersection(
             targetNode,
             sourceCenter,
-            data?.targetType || (targetNode.data as any)?.type
+            data?.targetType ?? resolveNodeShapeType(targetNode.data)
         );
 
         // Generate path
@@ -97,7 +106,7 @@ export default function FloatingEdge({
                             pointerEvents: 'all',
                             ...labelBgStyle,
                         }}
-                        className="nodrag nopan px-2 py-1 rounded text-xs font-medium bg-white/90 backdrop-blur-sm shadow-sm"
+                        className="nodrag nopan rounded-pill bg-card/88 px-2 py-1 text-xs font-medium text-foreground shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)] backdrop-blur-glass"
                     >
                         <span style={{ ...labelStyle, fontFamily: resolvedLabelFontFamily }}>{label}</span>
                     </div>

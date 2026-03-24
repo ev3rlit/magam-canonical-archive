@@ -3,14 +3,14 @@ import { z } from "zod";
 import * as fs from "fs/promises";
 import { transpile } from "../core/transpiler";
 import { execute } from "../core/executor";
+import { CLI_MESSAGES } from "../messages";
 import { resolvePath, validateFileSize, toMcpError, toMcpSuccess } from "./utils";
 
 export function registerTools(server: McpServer, targetDir: string) {
   // --- render ---
   server.registerTool("render", {
-    description:
-      "다이어그램 TSX 파일을 렌더링하여 Graph AST(노드, 엣지, 레이아웃 그룹)를 반환합니다.",
-    inputSchema: { filePath: z.string().describe("렌더링할 파일 경로") },
+    description: CLI_MESSAGES.mcp.renderDescription,
+    inputSchema: { filePath: z.string().describe(CLI_MESSAGES.mcp.renderFilePath) },
   }, async ({ filePath }) => {
     try {
       const fullPath = resolvePath(targetDir, filePath);
@@ -28,20 +28,20 @@ export function registerTools(server: McpServer, targetDir: string) {
 
   // --- validate ---
   server.registerTool("validate", {
-    description: "TSX 코드의 문법과 실행 가능성을 검증합니다.",
+    description: CLI_MESSAGES.mcp.validateDescription,
     inputSchema: {
       filePath: z
         .string()
         .optional()
-        .describe("검증할 파일 경로 (code와 택1)"),
+        .describe(CLI_MESSAGES.mcp.validateFilePath),
       code: z
         .string()
         .optional()
-        .describe("검증할 TSX 코드 문자열 (filePath와 택1)"),
+        .describe(CLI_MESSAGES.mcp.validateCode),
     },
   }, async ({ filePath, code }) => {
     if (!filePath && !code) {
-      return toMcpError(new Error("filePath 또는 code 중 하나는 필수입니다."));
+      return toMcpError(new Error(CLI_MESSAGES.mcp.validateFileOrCodeRequired));
     }
 
     let targetPath: string;
@@ -62,7 +62,7 @@ export function registerTools(server: McpServer, targetDir: string) {
       const transpiled = await transpile(targetPath);
       const result = await execute(transpiled);
 
-      if (result.isOk()) return toMcpSuccess("검증 성공");
+      if (result.isOk()) return toMcpSuccess(CLI_MESSAGES.mcp.validateSuccess);
       return toMcpError(result.error);
     } catch (error: any) {
       return toMcpError(error);
@@ -73,11 +73,10 @@ export function registerTools(server: McpServer, targetDir: string) {
 
   // --- write_and_render ---
   server.registerTool("write_and_render", {
-    description:
-      "TSX 코드를 파일로 저장하고 렌더링 결과를 반환합니다. 파일 시스템 접근이 없는 환경용.",
+    description: CLI_MESSAGES.mcp.writeAndRenderDescription,
     inputSchema: {
-      filePath: z.string().describe("저장할 파일 경로"),
-      code: z.string().describe("Magam TSX 코드"),
+      filePath: z.string().describe(CLI_MESSAGES.mcp.writeAndRenderFilePath),
+      code: z.string().describe(CLI_MESSAGES.mcp.writeAndRenderCode),
     },
   }, async ({ filePath, code }) => {
     try {
@@ -92,7 +91,7 @@ export function registerTools(server: McpServer, targetDir: string) {
         content: [
           {
             type: "text" as const,
-            text: `저장됨. 렌더링 에러: ${result.error.message}`,
+            text: CLI_MESSAGES.mcp.savedButRenderFailed(result.error.message),
           },
         ],
         isError: true as const,

@@ -13,7 +13,6 @@ import { LazyMarkdownRenderer } from '@/components/markdown/LazyMarkdownRenderer
 import { emitSizeWarning } from '@/utils/sizeWarnings';
 import { resolveTypography } from '@/utils/sizeResolver';
 import {
-  hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 
@@ -64,11 +63,11 @@ class StickerNodeBoundary extends React.Component<StickerNodeBoundaryProps, Stic
     if (this.state.hasError) {
       return (
         <BaseNode
-          className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2"
+          className="rounded-xl bg-danger/10 px-3 py-2 shadow-[inset_0_0_0_1px_rgb(var(--color-danger)/0.18)]"
           startHandle
           endHandle
         >
-          <span className="text-xs font-medium text-amber-800">Sticker render error</span>
+          <span className="text-xs font-medium text-danger">Sticker render error</span>
         </BaseNode>
       );
     }
@@ -410,16 +409,13 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
   const currentFile = useGraphStore((state) => state.currentFile);
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
-  const normalized = useMemo(() => normalizeStickerData(data as Record<string, any>), [data]);
+  const normalized = useMemo(() => normalizeStickerData(data as Record<string, unknown>), [data]);
   const children = useMemo(() => resolveRenderableChildren(data.children), [data.children]);
-  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
-  const resolvedFontFamily = shouldApplyHierarchy
-    ? resolveFontFamilyCssValue({
-      nodeFontFamily: data.fontFamily,
-      canvasFontFamily,
-      globalFontFamily,
-    })
-    : undefined;
+  const resolvedFontFamily = resolveFontFamilyCssValue({
+    nodeFontFamily: data.fontFamily,
+    canvasFontFamily,
+    globalFontFamily,
+  });
   useEffect(() => {
     const sizeInput = (data as { size?: unknown }).size;
     if (sizeInput === undefined) return;
@@ -708,7 +704,7 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
                       width: data.width || child.width || 150,
                       height: data.height || child.height || 100,
                     }}
-                    className="flex items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-500"
+                    className="flex items-center justify-center rounded-lg bg-muted text-xs text-foreground/52 shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)]"
                   >
                     image not found
                   </div>

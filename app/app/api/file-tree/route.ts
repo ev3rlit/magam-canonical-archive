@@ -1,31 +1,35 @@
-import { NextResponse } from 'next/server';
+import path from 'node:path';
+import { API_SHARED_MESSAGES } from '../_shared/messages';
+import { proxyCompatibilityRequest } from '@/features/host/rpc';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const fetchCache = 'force-no-store';
 export const revalidate = 0;
 
-export async function GET() {
-    const httpPort = process.env.MAGAM_HTTP_PORT || '3002';
+function pickRootPath(searchParams: URLSearchParams): string | null {
+  return searchParams.get('rootPath') || searchParams.get('root');
+}
 
-    try {
-        const res = await fetch(`http://localhost:${httpPort}/file-tree`, {
-            cache: 'no-store',
-            next: { revalidate: 0 },
-            headers: {
-                'x-magam-proxy': 'file-tree',
-            },
-        });
-        const data = await res.json();
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const rootPath = pickRootPath(searchParams);
+  if (rootPath && !path.isAbsolute(rootPath.trim())) {
+    return Response.json(
+      { error: API_SHARED_MESSAGES.fileTreeRootAbsolute },
+      { status: 400 },
+    );
+  }
 
-        return NextResponse.json(data, { status: res.status });
-    } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        console.error('[API Proxy] FileTree Error:', message);
+  const pathname = rootPath
+    ? `/file-tree?rootPath=${encodeURIComponent(path.resolve(rootPath.trim()))}`
+    : '/file-tree';
 
-        return NextResponse.json(
-            { error: `Failed to connect to render server: ${message}` },
-            { status: 502 }
-        );
-    }
+  return proxyCompatibilityRequest({
+    headers: {
+      'x-magam-proxy': 'file-tree',
+    },
+    method: 'GET',
+    pathname,
+  });
 }

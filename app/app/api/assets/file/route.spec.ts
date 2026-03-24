@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import { GET } from './route';
@@ -54,7 +55,8 @@ describe('assets/file GET', () => {
   });
 
   it('returns file stream with correct content type', async () => {
-    mockStat.mockResolvedValue({ isFile: () => true } as any);
+    const existingFileStat = { isFile: () => true } satisfies Pick<Stats, 'isFile'>;
+    mockStat.mockResolvedValue(existingFileStat as Stats);
     const content = Buffer.from('89504e470d0a1a0a0000000000000000', 'hex');
     mockReadFile.mockResolvedValue(content);
 

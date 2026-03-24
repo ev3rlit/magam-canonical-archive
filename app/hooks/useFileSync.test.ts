@@ -6,6 +6,7 @@ import {
   MAX_VERSION_CONFLICT_RETRY,
   RpcClientError,
   buildWatchedFilesSignature,
+  normalizeCompatibilityWatchedFiles,
   normalizeWatchedFiles,
   resolveFileSyncWsUrl,
   shouldReloadAfterHistoryReplay,
@@ -49,6 +50,16 @@ describe('useFileSync watched files normalization', () => {
     ])).toEqual([
       'examples/a.tsx',
       'examples/b.tsx',
+    ]);
+  });
+
+  it('compatibility alias도 동일한 watched file normalization을 유지한다', () => {
+    expect(normalizeCompatibilityWatchedFiles('documents/doc-1.graph.tsx', [
+      'documents/doc-1.graph.tsx',
+      'components/auth.tsx',
+    ])).toEqual([
+      'components/auth.tsx',
+      'documents/doc-1.graph.tsx',
     ]);
   });
 
@@ -287,38 +298,6 @@ describe('useFileSync version conflict retry', () => {
     expect(commandIds[0]).not.toBe(commandIds[1]);
   });
 
-  it('VERSION_BASE_REQUIRED 는 재시도하지 않고 즉시 실패한다', async () => {
-    let sendCallCount = 0;
-    const sendRequest = mock(async () => {
-      sendCallCount += 1;
-      throw new RpcClientError(40904, 'VERSION_BASE_REQUIRED', {
-        path: 'baseRevision',
-      });
-    });
-
-    const executor = createPerFileMutationExecutor({
-      sendRequest,
-      buildCommonParams: (params) => ({
-        ...params,
-        baseVersion: 'rev:doc-1:1:rev-1',
-        originId: 'client-1',
-        commandId: 'cmd-base-required',
-      }),
-      applyResultVersion: (result) => result as { success: boolean; newVersion: string },
-    });
-
-    await expect(executor.enqueueMutation({
-      method: 'node.update',
-      filePath: 'a.tsx',
-      buildParams: () => ({ filePath: 'a.tsx', nodeId: 'n1', props: { id: 'n2' } }),
-    })).rejects.toMatchObject({
-      code: 40904,
-      message: 'VERSION_BASE_REQUIRED',
-    });
-
-    expect(sendCallCount).toBe(1);
-  });
-
   it('40901이 2회 연속이면 실패를 전파한다', async () => {
     let sendCallCount = 0;
     const sendRequest = mock(async () => {
@@ -530,6 +509,82 @@ describe('history replay helpers', () => {
     ]);
   });
 
+  it('delete undo/redo는 recreate snapshot과 delete mutation을 교차 replay한다', async () => {
+    const calls: string[] = [];
+    const mutators = {
+      moveNode: async () => undefined,
+      updateNode: async () => undefined,
+      createNode: async (node: Record<string, unknown>) => {
+        calls.push(`create:${String(node.id)}`);
+        return undefined;
+      },
+      deleteNode: async (nodeId: string) => {
+        calls.push(`delete:${nodeId}`);
+        return undefined;
+      },
+      reparentNode: async () => undefined,
+    };
+    const event = {
+      eventId: 'delete-1',
+      type: 'NODE_DELETED' as const,
+      nodeId: 'shape-1',
+      filePath: 'examples/a.tsx',
+      commandId: 'cmd-delete-1',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: {
+        create: {
+          id: 'shape-1',
+          type: 'shape',
+          props: { x: 10, y: 20 },
+          placement: { mode: 'canvas-absolute', x: 10, y: 20 },
+        },
+      },
+      after: { deleted: true },
+      committedAt: Date.now(),
+    };
+
+    await applyEditCompletionSnapshot(event, 'before', mutators);
+    await applyEditCompletionSnapshot(event, 'after', mutators);
+
+    expect(calls).toEqual(['create:shape-1', 'delete:shape-1']);
+  });
+
+  it('lock toggle replay uses generic node.update snapshots', async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const mutators = {
+      moveNode: async () => undefined,
+      updateNode: async (nodeId: string, props: Record<string, unknown>, filePath?: string | null) => {
+        calls.push({ nodeId, props, filePath });
+        return undefined;
+      },
+      createNode: async () => undefined,
+      deleteNode: async () => undefined,
+      reparentNode: async () => undefined,
+    };
+    const event = {
+      eventId: 'lock-1',
+      type: 'NODE_LOCK_TOGGLED' as const,
+      nodeId: 'shape-1',
+      filePath: 'examples/a.tsx',
+      commandId: 'cmd-lock-1',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: { locked: false },
+      after: { locked: true },
+      committedAt: Date.now(),
+    };
+
+    await applyEditCompletionSnapshot(event, 'before', mutators);
+    await applyEditCompletionSnapshot(event, 'after', mutators);
+
+    expect(calls).toEqual([
+      { nodeId: 'shape-1', props: { locked: false }, filePath: 'examples/a.tsx' },
+      { nodeId: 'shape-1', props: { locked: true }, filePath: 'examples/a.tsx' },
+    ]);
+    expect(shouldReloadAfterHistoryReplay(event)).toBe(true);
+  });
+
   it('style update replay uses node.style.update without forcing reload semantics', async () => {
     const calls: Array<Record<string, unknown>> = [];
     const mutators = {
@@ -575,7 +630,7 @@ describe('history replay helpers', () => {
     expect(shouldReloadAfterHistoryReplay(event)).toBe(false);
   });
 
-  it('rename/create/reparent 이벤트만 graph reload를 요구한다', () => {
+  it('rename/create/delete/lock/reparent 이벤트만 graph reload를 요구한다', () => {
     expect(shouldReloadAfterHistoryReplay({
       eventId: 'style-1',
       type: 'STYLE_UPDATED',
@@ -599,6 +654,19 @@ describe('history replay helpers', () => {
       nextVersion: 'sha256:next',
       before: { created: false },
       after: { create: { id: 'n1' } },
+      committedAt: 1,
+    })).toBe(true);
+
+    expect(shouldReloadAfterHistoryReplay({
+      eventId: 'delete-1',
+      type: 'NODE_DELETED',
+      nodeId: 'n1',
+      filePath: 'examples/a.tsx',
+      commandId: 'cmd-delete',
+      baseVersion: 'sha256:base',
+      nextVersion: 'sha256:next',
+      before: { create: { id: 'n1' } },
+      after: { deleted: true },
       committedAt: 1,
     })).toBe(true);
   });

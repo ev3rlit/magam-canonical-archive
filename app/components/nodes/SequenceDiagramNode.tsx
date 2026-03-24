@@ -4,7 +4,6 @@ import { BaseNode } from './BaseNode';
 import { useGraphStore } from '@/store/graph';
 import type { FontFamilyPreset } from '@magam/core';
 import {
-  hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import { emitSizeWarning } from '@/utils/sizeWarnings';
@@ -41,14 +40,11 @@ const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>)
   const { participants, messages, participantSpacing, messageSpacing } = data;
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
-  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
-  const resolvedFontFamily = shouldApplyHierarchy
-    ? resolveFontFamilyCssValue({
-      nodeFontFamily: data.fontFamily,
-      canvasFontFamily,
-      globalFontFamily,
-    })
-    : undefined;
+  const resolvedFontFamily = resolveFontFamilyCssValue({
+    nodeFontFamily: data.fontFamily,
+    canvasFontFamily,
+    globalFontFamily,
+  });
   useEffect(() => {
     const sizeInput = (data as { size?: unknown }).size;
     if (sizeInput === undefined) return;
@@ -75,7 +71,6 @@ const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>)
 
   return (
     <BaseNode
-      className={data.className || ''}
       selected={selected}
       startHandle={false}
       endHandle={false}
@@ -91,7 +86,7 @@ const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>)
           <React.Fragment key={p.id}>
             {/* Top box */}
             <div
-              className={`flex items-center justify-center border-2 border-slate-300 bg-white rounded-md shadow-sm ${p.className || ''}`}
+              className="flex items-center justify-center rounded-md bg-card shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.18)]"
               style={{
                 position: 'absolute',
                 left: x,
@@ -101,7 +96,7 @@ const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>)
               }}
             >
               <span
-                className="text-sm font-semibold text-slate-700 select-none"
+                className="select-none text-sm font-semibold text-foreground/82"
                 style={{ fontFamily: resolvedFontFamily }}
               >
                 {p.label}
@@ -116,13 +111,13 @@ const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>)
                 top: PARTICIPANT_HEIGHT,
                 width: 0,
                 height: lifelineHeight,
-                borderLeft: '2px dashed #94a3b8',
+                borderLeft: '2px dashed rgb(var(--color-border) / 0.6)',
               }}
             />
 
             {/* Bottom box */}
             <div
-              className={`flex items-center justify-center border-2 border-slate-300 bg-white rounded-md shadow-sm ${p.className || ''}`}
+              className="flex items-center justify-center rounded-md bg-card shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.18)]"
               style={{
                 position: 'absolute',
                 left: x,
@@ -132,7 +127,7 @@ const SequenceDiagramNode = ({ data, selected }: NodeProps<SequenceDiagramData>)
               }}
             >
               <span
-                className="text-sm font-semibold text-slate-700 select-none"
+                className="select-none text-sm font-semibold text-foreground/82"
                 style={{ fontFamily: resolvedFontFamily }}
               >
                 {p.label}
@@ -220,7 +215,7 @@ function MessageArrow({
           y1={arrowY}
           x2={isLeftToRight ? width - ARROW_SIZE : ARROW_SIZE}
           y2={arrowY}
-          stroke="#334155"
+          stroke="rgb(var(--color-foreground) / 0.72)"
           strokeWidth={1.5}
           strokeDasharray={isDashed ? '6 4' : undefined}
         />
@@ -233,7 +228,7 @@ function MessageArrow({
                 ? `${width},${arrowY} ${width - ARROW_SIZE},${arrowY - ARROW_SIZE / 2} ${width - ARROW_SIZE},${arrowY + ARROW_SIZE / 2}`
                 : `0,${arrowY} ${ARROW_SIZE},${arrowY - ARROW_SIZE / 2} ${ARROW_SIZE},${arrowY + ARROW_SIZE / 2}`
             }
-            fill="#334155"
+            fill="rgb(var(--color-foreground) / 0.72)"
           />
         ) : (
           <polyline
@@ -243,7 +238,7 @@ function MessageArrow({
                 : `${ARROW_SIZE},${arrowY - ARROW_SIZE / 2} 0,${arrowY} ${ARROW_SIZE},${arrowY + ARROW_SIZE / 2}`
             }
             fill="none"
-            stroke="#334155"
+            stroke="rgb(var(--color-foreground) / 0.72)"
             strokeWidth={1.5}
           />
         )}
@@ -254,7 +249,7 @@ function MessageArrow({
             x={width / 2}
             y={arrowY - 8}
             textAnchor="middle"
-            fill="#334155"
+            fill="rgb(var(--color-foreground) / 0.72)"
             fontSize={12}
             fontFamily={fontFamily}
           >
@@ -296,7 +291,7 @@ function SelfMessageArrow({
         <path
           d={`M 0,10 H ${SELF_LOOP_WIDTH + 10} V ${SELF_LOOP_HEIGHT + 10} H ${ARROW_SIZE}`}
           fill="none"
-          stroke="#334155"
+          stroke="rgb(var(--color-foreground) / 0.72)"
           strokeWidth={1.5}
           strokeDasharray={isDashed ? '6 4' : undefined}
         />
@@ -304,7 +299,7 @@ function SelfMessageArrow({
         {/* Arrowhead pointing left at bottom */}
         <polygon
           points={`0,${SELF_LOOP_HEIGHT + 10} ${ARROW_SIZE},${SELF_LOOP_HEIGHT + 10 - ARROW_SIZE / 2} ${ARROW_SIZE},${SELF_LOOP_HEIGHT + 10 + ARROW_SIZE / 2}`}
-          fill="#334155"
+          fill="rgb(var(--color-foreground) / 0.72)"
         />
 
         {/* Label */}
@@ -313,7 +308,7 @@ function SelfMessageArrow({
             x={SELF_LOOP_WIDTH / 2 + 12}
             y={6}
             textAnchor="middle"
-            fill="#334155"
+            fill="rgb(var(--color-foreground) / 0.72)"
             fontSize={12}
             fontFamily={fontFamily}
           >

@@ -1,5 +1,6 @@
 import { mkdir, writeFile, access } from 'fs/promises';
 import { join } from 'path';
+import { CLI_MESSAGES } from '../messages';
 
 export async function initProject(cwd: string) {
   const magamDir = join(cwd, '.magam', 'node_modules', 'magam');
@@ -25,7 +26,7 @@ export declare const Node: any;
   try {
     await access(tsconfigPath);
     console.warn(
-      'tsconfig.json already exists. Skipping creation to avoid overwriting.',
+      CLI_MESSAGES.init.existingTsconfig,
     );
   } catch {
     const tsconfigContent = {
@@ -37,8 +38,8 @@ export declare const Node: any;
       },
     };
     await writeFile(tsconfigPath, JSON.stringify(tsconfigContent, null, 2));
-    console.log('Created tsconfig.json');
+    console.log(CLI_MESSAGES.init.createdTsconfig);
   }
 
-  console.log('Initialized magam project in .magam');
+  console.log(CLI_MESSAGES.init.initializedProject);
 }

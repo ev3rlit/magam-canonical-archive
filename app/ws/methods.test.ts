@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test';
-import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { basename, dirname, join } from 'path';
 import { tmpdir } from 'os';
 import { createHash } from 'crypto';
-import { __setCanonicalServicesFactoryForTests, methods } from './methods';
+import { createPaneCreateIntentEnvelope, createRenameIntentEnvelope } from '@/features/editing/actionRoutingBridge/__fixtures__/intentEnvelopes';
+import { routeIntent } from '@/features/editing/actionRoutingBridge/routeIntent';
+import { makeActionRoutingContext, makeCanonicalNode } from '@/features/editing/actionRoutingBridge/testUtils';
+import type { MutationDispatchDescriptor } from '@/features/editing/actionRoutingBridge/types';
+import { methods } from './methods';
 
 const tempDirs: string[] = [];
 const originalMagamTargetDir = process.env.MAGAM_TARGET_DIR;
@@ -11,7 +15,6 @@ const originalMagamTargetDir = process.env.MAGAM_TARGET_DIR;
 afterEach(async () => {
   await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
   tempDirs.length = 0;
-  __setCanonicalServicesFactoryForTests(null);
   if (originalMagamTargetDir === undefined) {
     delete process.env.MAGAM_TARGET_DIR;
   } else {
@@ -32,128 +35,6 @@ function sha(content: string): string {
 }
 
 describe('RPC editing methods', () => {
-  it('canonical.query: transport-neutral query envelope를 반환한다', async () => {
-    __setCanonicalServicesFactoryForTests(async () => ({
-      queryService: {
-        execute: async () => ({
-          ok: true,
-          data: {
-            objects: [],
-          },
-          page: { cursor: 'next-1' },
-        }),
-      },
-      mutationExecutor: {
-        execute: async () => ({
-          ok: false,
-          code: 'INVALID_MUTATION_OPERATION',
-          message: 'not used',
-        }),
-      },
-    }));
-
-    const result = await methods['canonical.query']({
-      request: {
-        workspaceId: 'ws-1',
-        include: ['objects'],
-      },
-    }, { ws: {}, subscriptions: new Set() });
-
-    expect(result).toEqual({
-      ok: true,
-      data: {
-        objects: [],
-      },
-      page: { cursor: 'next-1' },
-    });
-  });
-
-  it('canonical.mutate: missing base revision validation failure를 envelope로 반환한다', async () => {
-    __setCanonicalServicesFactoryForTests(async () => ({
-      queryService: {
-        execute: async () => ({
-          ok: false,
-          code: 'INVALID_QUERY_INCLUDE',
-          message: 'not used',
-        }),
-      },
-      mutationExecutor: {
-        execute: async () => ({
-          ok: false,
-          code: 'VERSION_BASE_REQUIRED',
-          message: 'baseRevision is required.',
-          path: 'baseRevision',
-        }),
-      },
-    }));
-
-    const result = await methods['canonical.mutate']({
-      envelope: {
-        workspaceId: 'ws-1',
-        documentId: 'doc-1',
-        actor: { kind: 'user', id: 'u-1' },
-        operations: [],
-      },
-    }, { ws: {}, subscriptions: new Set() });
-
-    expect(result).toEqual({
-      ok: false,
-      code: 'VERSION_BASE_REQUIRED',
-      message: 'baseRevision is required.',
-      path: 'baseRevision',
-    });
-  });
-
-  it('node.reparent: revision-token path는 canonical executor를 타고 commandId/newVersion envelope를 유지한다', async () => {
-    const execute = mock(async () => ({
-      ok: true as const,
-      appliedOperations: [],
-      changedSet: { objectIds: [], relationIds: [], canvasNodeIds: ['node-1'] },
-      revision: {
-        before: 'rev:doc-1:1:rev-1',
-        after: 'rev:doc-1:2:rev-2',
-      },
-    }));
-
-    __setCanonicalServicesFactoryForTests(async () => ({
-      queryService: {
-        execute: async () => ({
-          ok: true,
-          data: {},
-        }),
-      },
-      mutationExecutor: {
-        execute,
-      },
-    }));
-
-    const notify = mock(() => { });
-    const result = await methods['node.reparent']({
-      filePath: 'doc.tsx',
-      nodeId: 'node-1',
-      newParentId: 'parent-1',
-      workspaceId: 'ws-1',
-      documentId: 'doc-1',
-      baseVersion: 'rev:doc-1:1:rev-1',
-      originId: 'client-1',
-      commandId: 'cmd-reparent-1',
-    }, { ws: {}, subscriptions: new Set(), notifyFileChanged: notify }) as {
-      success: boolean;
-      newVersion: string;
-      commandId: string;
-      filePath: string;
-    };
-
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({
-      success: true,
-      newVersion: 'rev:doc-1:2:rev-2',
-      commandId: 'cmd-reparent-1',
-      filePath: 'doc.tsx',
-    });
-    expect(notify).toHaveBeenCalledTimes(1);
-  });
-
   it('node.move: 성공 시 저장 + notify + newVersion 반환', async () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Node id="n1" x={1} y={2} />; }`);
     const original = await readFile(filePath, 'utf-8');
@@ -252,6 +133,78 @@ describe('RPC editing methods', () => {
     expect(result.success).toBe(true);
     const patched = await readFile(filePath, 'utf-8');
     expect(patched.includes('id={"child"}')).toBe(true);
+  });
+
+  it('node.create: freshly materialized blank graph document works through the normal relative file contract', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'magam-methods-blank-'));
+    tempDirs.push(dir);
+    const filePath = join(dir, 'untitled-1.graph.tsx');
+    await writeFile(filePath, [
+      "import { Canvas } from '@magam/core';",
+      '',
+      'export default function UntitledDocument() {',
+      '  return <Canvas></Canvas>;',
+      '}',
+      '',
+    ].join('\n'), 'utf-8');
+    const original = await readFile(filePath, 'utf-8');
+    process.env.MAGAM_TARGET_DIR = dir;
+
+    const result = await methods['node.create']({
+      filePath: 'untitled-1.graph.tsx',
+      node: {
+        id: 'shape-1',
+        type: 'rectangle',
+        props: { size: { width: 180, height: 120 } },
+        placement: { mode: 'canvas-absolute', x: 120, y: 160 },
+      },
+      baseVersion: sha(original),
+      originId: 'client-1',
+      commandId: 'cmd-new-doc-first-create',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id={"shape-1"}')).toBe(true);
+    expect(patched.includes('x={120}')).toBe(true);
+    expect(patched.includes('y={160}')).toBe(true);
+  });
+
+  it('node.create: compatibility documents directory paths still mutate through the relative contract', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'magam-methods-compat-'));
+    tempDirs.push(dir);
+    const documentsDir = join(dir, 'documents');
+    await mkdir(documentsDir, { recursive: true });
+    const filePath = join(documentsDir, 'doc-1.graph.tsx');
+    await writeFile(filePath, [
+      "import { Canvas } from '@magam/core';",
+      '',
+      'export default function UntitledDocument() {',
+      '  return <Canvas></Canvas>;',
+      '}',
+      '',
+    ].join('\n'), 'utf-8');
+    const original = await readFile(filePath, 'utf-8');
+    process.env.MAGAM_TARGET_DIR = dir;
+
+    const result = await methods['node.create']({
+      filePath: 'documents/doc-1.graph.tsx',
+      node: {
+        id: 'shape-compat-1',
+        type: 'rectangle',
+        props: { size: { width: 160, height: 100 } },
+        placement: { mode: 'canvas-absolute', x: 48, y: 96 },
+      },
+      baseVersion: sha(original),
+      originId: 'client-1',
+      commandId: 'cmd-compat-doc-create',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('shape-compat-1')).toBe(true);
+    expect(patched.includes('x={48}')).toBe(true);
+    expect(patched.includes('y={96}')).toBe(true);
   });
 
   it('node.create: canvas-absolute placement를 그대로 저장한다', async () => {
@@ -357,24 +310,41 @@ describe('RPC editing methods', () => {
     expect(patched.includes('y={2}')).toBe(true);
   });
 
-  it('node.update: commandType=style.update 에서 비허용 필드는 EDIT_NOT_ALLOWED 로 거부한다', async () => {
+  it('node.update: commandType=style.update 에서 비허용 필드는 PATCH_SURFACE_VIOLATION + rollback diagnostics로 거부한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample(){ return <Canvas><Sticker id="st-1" outlineColor={"#fff"}>Hi</Sticker></Canvas>; }
     `);
     const original = await readFile(filePath, 'utf-8');
 
-    await expect(methods['node.update']({
-      filePath,
-      nodeId: 'st-1',
-      props: { anchor: 'other' },
-      commandType: 'node.style.update',
-      baseVersion: sha(original),
-      originId: 'client-1',
-      commandId: 'cmd-update-style-invalid',
-    }, { ws: {}, subscriptions: new Set() })).rejects.toMatchObject({
-      code: 42201,
-      message: 'EDIT_NOT_ALLOWED',
-    });
+    let error: unknown;
+    try {
+      await methods['node.update']({
+        filePath,
+        nodeId: 'st-1',
+        props: { anchor: 'other' },
+        commandType: 'node.style.update',
+        baseVersion: sha(original),
+        originId: 'client-1',
+        commandId: 'cmd-update-style-invalid',
+      }, { ws: {}, subscriptions: new Set() });
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toBeDefined();
+    const rejection = error as { code?: number; message?: string; data?: unknown };
+    expect(rejection.code).toBe(42211);
+    expect(rejection.message).toBe('PATCH_SURFACE_VIOLATION');
+    if (rejection.data && typeof rejection.data === 'object') {
+      const data = rejection.data as {
+        rejectedKeys?: string[];
+        rollback?: { failedAction?: string; rollbackPolicy?: string; stage?: string };
+      };
+      expect(data.rejectedKeys).toEqual(['anchor']);
+      expect(data.rollback?.failedAction).toBe('node.style.update');
+      expect(data.rollback?.rollbackPolicy).toBe('intent-scoped');
+      expect(data.rollback?.stage).toBe('ws.node.update');
+    }
   });
 
   it('node.create: sticker 타입을 허용하고 Sticker로 생성한다', async () => {
@@ -565,8 +535,15 @@ describe('RPC editing methods', () => {
     expect(rejection.code).toBe(42208);
     expect(rejection.message).toBe('CONTENT_CONTRACT_VIOLATION');
     if (rejection.data && typeof rejection.data === 'object') {
-      const data = rejection.data as { path?: string; diagnostics?: { path?: string } };
+      const data = rejection.data as {
+        path?: string;
+        diagnostics?: { path?: string };
+        rollback?: { failedAction?: string; rollbackPolicy?: string; stage?: string };
+      };
       expect(data.path ?? data.diagnostics?.path).toBe('capabilities.content');
+      expect(data.rollback?.failedAction).toBe('node.content.update');
+      expect(data.rollback?.rollbackPolicy).toBe('intent-scoped');
+      expect(data.rollback?.stage).toBe('ws.node.update');
     }
   });
 
@@ -644,8 +621,136 @@ describe('RPC editing methods', () => {
     expect(rejection.code).toBe(42208);
     expect(rejection.message).toBe('CONTENT_CONTRACT_VIOLATION');
     if (rejection.data && typeof rejection.data === 'object') {
-      const data = rejection.data as { path?: string; diagnostics?: { path?: string } };
+      const data = rejection.data as {
+        path?: string;
+        diagnostics?: { path?: string };
+        rollback?: { failedAction?: string; rollbackPolicy?: string; stage?: string };
+      };
       expect(data.path ?? data.diagnostics?.path).toBe('capabilities.content');
+      expect(data.rollback?.failedAction).toBe('node.style.update');
+      expect(data.rollback?.rollbackPolicy).toBe('intent-scoped');
+      expect(data.rollback?.stage).toBe('ws.node.update');
     }
+  });
+
+  it('node.create: missing mindmap parent exposes intent-scoped rollback diagnostics for composite entrypoint failure', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample(){
+        return <Canvas><MindMap id="map"><Node id="root">Root</Node></MindMap></Canvas>;
+      }
+    `);
+    const original = await readFile(filePath, 'utf-8');
+
+    let error: unknown;
+    try {
+      await methods['node.create']({
+        filePath,
+        node: {
+          id: 'child-missing-parent',
+          type: 'shape',
+          props: { content: 'Child' },
+          placement: { mode: 'mindmap-child', parentId: 'missing-parent' },
+        },
+        baseVersion: sha(original),
+        originId: 'client-1',
+        commandId: 'cmd-create-missing-parent',
+      }, { ws: {}, subscriptions: new Set() });
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toBeDefined();
+    const rejection = error as { code?: number; message?: string; data?: unknown };
+    expect(rejection.code).toBe(40401);
+    expect(rejection.message).toBe('NODE_NOT_FOUND');
+    if (rejection.data && typeof rejection.data === 'object') {
+      const data = rejection.data as {
+        nodeId?: string;
+        rollback?: { failedAction?: string; rollbackPolicy?: string; stage?: string };
+      };
+      expect(data.nodeId).toBe('child-missing-parent');
+      expect(data.rollback?.failedAction).toBe('node.create');
+      expect(data.rollback?.rollbackPolicy).toBe('intent-scoped');
+      expect(data.rollback?.stage).toBe('ws.node.create');
+    }
+  });
+
+  it('bridge planned rename descriptor는 node.update RPC shape로 그대로 실행된다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample(){ return <Canvas><Node id="n1" label={"Before"} /></Canvas>; }
+    `);
+    const original = await readFile(filePath, 'utf-8');
+
+    const routed = routeIntent({
+      envelope: createRenameIntentEnvelope({
+        selectionRef: {
+          currentFile: filePath,
+          selectedNodeIds: ['n1'],
+        },
+        targetRef: {
+          renderedNodeId: 'n1',
+        },
+      }),
+      context: makeActionRoutingContext({
+        nodes: [
+          makeCanonicalNode({
+            id: 'n1',
+            type: 'shape',
+            filePath,
+            data: { label: 'Before' },
+          }),
+        ],
+        currentFile: filePath,
+        sourceVersions: { [filePath]: sha(original) },
+      }),
+    });
+
+    expect(routed.ok).toBe(true);
+    if (!routed.ok) return;
+    const step = routed.value.steps[0] as MutationDispatchDescriptor<'node.update'>;
+    const result = await methods[step.actionId]({
+      ...step.payload,
+      baseVersion: sha(original),
+      originId: 'client-bridge',
+      commandId: 'cmd-bridge-rename',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id={"shape-1-renamed"}')).toBe(true);
+  });
+
+  it('bridge planned create descriptor는 node.create RPC shape로 그대로 실행된다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }
+    `);
+    const original = await readFile(filePath, 'utf-8');
+
+    const routed = routeIntent({
+      envelope: createPaneCreateIntentEnvelope({
+        selectionRef: {
+          currentFile: filePath,
+          selectedNodeIds: [],
+        },
+      }),
+      context: makeActionRoutingContext({
+        currentFile: filePath,
+        sourceVersions: { [filePath]: sha(original) },
+      }),
+    });
+
+    expect(routed.ok).toBe(true);
+    if (!routed.ok) return;
+    const step = routed.value.steps[0] as MutationDispatchDescriptor<'node.create'>;
+    const result = await methods[step.actionId]({
+      ...step.payload,
+      baseVersion: sha(original),
+      originId: 'client-bridge',
+      commandId: 'cmd-bridge-create',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('<Shape')).toBe(true);
   });
 });

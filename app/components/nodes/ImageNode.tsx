@@ -3,7 +3,6 @@ import { NodeProps } from 'reactflow';
 import { BaseNode } from './BaseNode';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import { useGraphStore } from '@/store/graph';
-import { twMerge } from 'tailwind-merge';
 
 interface ImageNodeData {
   src?: string;
@@ -40,15 +39,15 @@ const ImageNode = ({ data, selected }: NodeProps<ImageNodeData>) => {
 
   if (!src) {
     return (
-      <BaseNode className="bg-white border border-red-300 rounded-lg px-3 py-2" selected={selected}>
-        <div className="text-xs text-red-600">이미지 경로가 없습니다.</div>
+      <BaseNode className="rounded-lg bg-card px-3 py-2 shadow-[inset_0_0_0_1px_rgb(var(--color-danger)/0.18)]" selected={selected}>
+        <div className="text-xs text-danger">이미지 경로가 없습니다.</div>
       </BaseNode>
     );
   }
 
   return (
     <BaseNode
-      className={twMerge("bg-white border-2 border-node-border shadow-node rounded-xl p-2", data.className)}
+      className="rounded-xl bg-card p-2 shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.14)]"
       selected={selected}
       startHandle={false}
       endHandle={false}
@@ -65,7 +64,7 @@ const ImageNode = ({ data, selected }: NodeProps<ImageNodeData>) => {
           onError={() => setLoadError(true)}
         />
       ) : (
-        <div className="flex h-24 w-48 items-center justify-center rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-500">
+        <div className="flex h-24 w-48 items-center justify-center rounded-lg bg-muted text-xs text-foreground/52 shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)]">
           이미지 로드 실패
         </div>
       )}

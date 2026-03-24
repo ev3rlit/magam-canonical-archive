@@ -5,6 +5,82 @@
 /* Font preset variables (--font-preset-*) are injected in layout.tsx
    using local system/KR fallback stacks. */
 
+:root {
+    --font-family-display: "Manrope", var(--font-preset-sans-inter);
+    --font-family-ui: "Inter", var(--font-preset-sans-inter);
+
+    --color-background: 245 246 247;
+    --color-foreground: 44 47 48;
+    --color-muted: 239 241 242;
+    --color-card: 255 255 255;
+    --color-border: 171 173 174;
+    --color-primary: 69 59 237;
+    --color-primary-foreground: 255 255 255;
+    --color-danger: 173 57 78;
+    --color-danger-foreground: 255 249 250;
+    --color-success: 43 122 87;
+    --color-success-foreground: 247 255 250;
+    --color-ring: 150 149 255;
+    --color-selection-glow: 150 149 255;
+    --shadow-color: 44 47 48;
+    --overlay-scrim: 44 47 48;
+    --grid-line: 199 203 208;
+}
+
+[data-theme='dark'] {
+    --color-background: 18 20 23;
+    --color-foreground: 239 242 245;
+    --color-muted: 34 37 43;
+    --color-card: 27 29 34;
+    --color-border: 112 118 129;
+    --color-primary: 150 149 255;
+    --color-primary-foreground: 21 20 36;
+    --color-danger: 255 137 153;
+    --color-danger-foreground: 38 11 17;
+    --color-success: 104 208 161;
+    --color-success-foreground: 10 27 20;
+    --color-ring: 181 180 255;
+    --color-selection-glow: 181 180 255;
+    --shadow-color: 8 12 18;
+    --overlay-scrim: 5 8 12;
+    --grid-line: 60 67 78;
+}
+
+@layer base {
+    html {
+        font-family: var(--font-family-ui);
+        background-color: rgb(var(--color-background));
+        color: rgb(var(--color-foreground));
+    }
+
+    body {
+        min-height: 100vh;
+        font-family: var(--font-family-ui);
+        background:
+            radial-gradient(circle at top, rgb(var(--color-card) / 0.75), transparent 42%),
+            linear-gradient(180deg, rgb(var(--color-background)) 0%, rgb(var(--color-background)) 100%);
+        color: rgb(var(--color-foreground));
+    }
+
+    * {
+        border-color: rgb(var(--color-border) / 0.16);
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-family: var(--font-family-display);
+    }
+
+    ::selection {
+        background: rgb(var(--color-primary) / 0.18);
+        color: rgb(var(--color-foreground));
+    }
+}
+
 /* ========================================
    Semantic Zoom: Bubble Label (Opt-in)
    Shown as floating overlay when:
@@ -13,9 +89,12 @@
    ======================================== */
 
 .bubble-label {
-    /* High contrast bubble style */
-    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
-    color: white;
+    background: linear-gradient(
+        135deg,
+        rgb(var(--color-foreground)) 0%,
+        rgb(var(--overlay-scrim) / 0.92) 100%
+    );
+    color: rgb(var(--color-card));
     padding: 8px 16px;
     border-radius: 10px;
 
@@ -27,8 +106,8 @@
 
     /* Visual polish */
     box-shadow:
-        0 4px 16px rgba(0, 0, 0, 0.25),
-        inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        0 12px 32px rgb(var(--shadow-color) / 0.24),
+        inset 0 1px 0 rgb(var(--color-card) / 0.12);
 
     /* Center positioning (used with transform: translate in BaseNode) */
     transform-origin: center center;
@@ -65,9 +144,9 @@
 }
 
 .search-result-highlight {
-    outline: 3px solid #d97706;
+    outline: 3px solid rgb(var(--color-primary) / 0.82);
     outline-offset: -2px;
-    box-shadow: 0 0 0 3px rgb(254 215 170 / 0.55);
+    box-shadow: 0 0 0 3px rgb(var(--color-selection-glow) / 0.24);
 }
 
 .perf-lazy-markdown {
@@ -81,7 +160,12 @@
     height: 10px;
     width: 100%;
     border-radius: 999px;
-    background: linear-gradient(90deg, #e2e8f0 0%, #f8fafc 45%, #e2e8f0 100%);
+    background: linear-gradient(
+        90deg,
+        rgb(var(--color-muted)) 0%,
+        rgb(var(--color-card)) 45%,
+        rgb(var(--color-muted)) 100%
+    );
     background-size: 200% 100%;
     animation: perf-lazy-shimmer 1.3s ease-in-out infinite;
 }
@@ -91,7 +175,11 @@
 }
 
 .perf-lazy-code {
-    background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.95));
+    background: linear-gradient(
+        135deg,
+        rgb(var(--overlay-scrim) / 0.88),
+        rgb(var(--shadow-color) / 0.94)
+    );
 }
 
 @keyframes perf-lazy-shimmer {

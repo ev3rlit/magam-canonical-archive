@@ -1,20 +1,24 @@
-import { NextResponse } from 'next/server';
+import { proxyCompatibilityRequest } from '@/features/host/rpc';
+
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const fetchCache = 'force-no-store';
+export const revalidate = 0;
 
 export async function GET() {
-  const httpPort = process.env.MAGAM_HTTP_PORT || '3002';
+  return proxyCompatibilityRequest({
+    method: 'GET',
+    pathname: '/files',
+  });
+}
 
-  try {
-    const res = await fetch(`http://localhost:${httpPort}/files`);
-    const data = await res.json();
-
-    return NextResponse.json(data, { status: res.status });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[API Proxy] Error:', message);
-
-    return NextResponse.json(
-      { error: `Failed to connect to render server: ${message}` },
-      { status: 502 }
-    );
-  }
+export async function POST(request: Request) {
+  return proxyCompatibilityRequest({
+    body: await request.text(),
+    headers: {
+      'Content-Type': request.headers.get('content-type') || 'application/json',
+    },
+    method: 'POST',
+    pathname: '/files',
+  });
 }

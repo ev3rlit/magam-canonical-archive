@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "skills": {
+    "distill": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "computedHash": "fb6257d06d3fe491dde3528493d30bc9a12329b6f61da8ef6429e9a579a61af9"
+    },
+    "enhance-prompt": {
+      "source": "google-labs-code/stitch-skills",
+      "sourceType": "github",
+      "computedHash": "71cc23e9ec5fc6361e12453495fa8c683f6cf26f3efaf9b230b0f43e0a32cc96"
+    },
+    "harden": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "computedHash": "c7bd8bf067e761f4a8f4c17b907bacce7d8915391491b7c9b29ff70166bc6628"
+    },
+    "normalize": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "computedHash": "209464da656b28060b4c0e10c3770fdd1985fe2a4755b30c04b4a924808a4f8f"
+    },
+    "shadcn": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "computedHash": "507f011a70e8b3ae242bdc0bb5b39fd91a1d4049a0f3c281991ccf84973d591c"
+    },
+    "shadcn-ui": {
+      "source": "google-labs-code/stitch-skills",
+      "sourceType": "github",
+      "computedHash": "dadbca54d35a33fe73e40018611af2179689305bf6da812ab2643987fefd9da3"
+    },
+    "teach-impeccable": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "computedHash": "b3b5541bb9b0a260af793c7d79c2db4a436c2cd9384be34a4024c7f28af72e62"
+    }
+  }
+}

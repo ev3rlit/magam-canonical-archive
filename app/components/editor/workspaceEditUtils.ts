@@ -1,6 +1,13 @@
 import type { Node } from 'reactflow';
-import type { WorkspaceStyleInput } from '@/features/workspace-styling';
+import type { CanonicalObject } from '@/features/render/canonicalObject';
+import type { ActionRoutingResolvedContext } from '@/features/editing/actionRoutingBridge.types';
 import {
+  buildContentDraftPatch,
+  type CreatePayload,
+} from '@/features/editing/commands';
+import { isImmediateEditCreateNodeType } from '@/features/editing/createDefaults';
+import {
+  EDIT_COMMAND_TYPES,
   getNodeEditMeta,
   isCommandAllowed,
   pickStylePatch,
@@ -17,8 +24,16 @@ type RpcLikeError = {
 type NodeSourceMeta = {
   sourceId?: unknown;
   filePath?: unknown;
+  absoluteFilePath?: unknown;
+  kind?: unknown;
   frameScope?: unknown;
 };
+
+export function resolveImmediateCreateEditMode(
+  nodeType: CreatePayload['nodeType'],
+): 'text' | 'markdown-wysiwyg' | null {
+  return isImmediateEditCreateNodeType(nodeType) ? 'markdown-wysiwyg' : null;
+}
 
 export interface ResolvedNodeEditContext {
   target: {
@@ -27,6 +42,37 @@ export interface ResolvedNodeEditContext {
   };
   editMeta?: EditMeta;
   readOnlyReason?: string;
+}
+
+function getPrimaryContentKind(canonicalObject: CanonicalObject | undefined): string | undefined {
+  const content = canonicalObject?.capabilities?.content;
+  return content && typeof content.kind === 'string' ? content.kind : undefined;
+}
+
+function getCapabilityKeys(canonicalObject: CanonicalObject | undefined): string[] {
+  if (!canonicalObject?.capabilities || typeof canonicalObject.capabilities !== 'object') {
+    return [];
+  }
+  return Object.keys(canonicalObject.capabilities);
+}
+
+function getSourceKind(
+  sourceMeta: {
+    kind?: unknown;
+  },
+  canonicalObject: CanonicalObject | undefined,
+): 'canvas' | 'mindmap' | undefined {
+  const candidate = sourceMeta.kind ?? canonicalObject?.core?.sourceMeta?.kind;
+  return candidate === 'canvas' || candidate === 'mindmap'
+    ? candidate
+    : undefined;
+}
+
+function getParentSourceId(canonicalObject: CanonicalObject | undefined): string | undefined {
+  const parentSourceId = canonicalObject?.core?.relations?.from;
+  return typeof parentSourceId === 'string' && parentSourceId.length > 0
+    ? parentSourceId
+    : undefined;
 }
 
 function deriveLocalSourceId(nodeId: string, frameScope: unknown): string {
@@ -46,8 +92,10 @@ export function resolveNodeEditTarget(
   const sourceId = typeof sourceMeta?.sourceId === 'string' && sourceMeta.sourceId.length > 0
     ? sourceMeta.sourceId
     : deriveLocalSourceId(node.id, sourceMeta?.frameScope);
-  const filePath = typeof sourceMeta?.filePath === 'string' && sourceMeta.filePath.length > 0
-    ? sourceMeta.filePath
+  const filePath = typeof sourceMeta?.absoluteFilePath === 'string' && sourceMeta.absoluteFilePath.length > 0
+    ? sourceMeta.absoluteFilePath
+    : typeof sourceMeta?.filePath === 'string' && sourceMeta.filePath.length > 0
+      ? sourceMeta.filePath
     : currentFile;
 
   return {
@@ -66,6 +114,117 @@ export function resolveNodeEditContext(
     target,
     editMeta,
     readOnlyReason: editMeta?.readOnlyReason,
+  };
+}
+
+export function resolveNodeActionRoutingContext(
+  node: Pick<Node, 'id' | 'data' | 'type'>,
+  currentCanvasIdOrCurrentFile: string | null,
+  currentFileOrSelectedNodeIds: string | null | string[],
+  maybeSelectedNodeIds?: string[],
+): ActionRoutingResolvedContext {
+  const selectedNodeIds = Array.isArray(currentFileOrSelectedNodeIds)
+    ? currentFileOrSelectedNodeIds
+    : (maybeSelectedNodeIds ?? []);
+  const currentCanvasId = Array.isArray(currentFileOrSelectedNodeIds)
+    ? null
+    : currentCanvasIdOrCurrentFile;
+  const currentFile = Array.isArray(currentFileOrSelectedNodeIds)
+    ? currentCanvasIdOrCurrentFile
+    : currentFileOrSelectedNodeIds;
+  const target = resolveNodeEditTarget(node, currentFile);
+  const editMeta = getNodeEditMeta(node);
+  const data = (node.data || {}) as Record<string, unknown>;
+  const sourceMeta = (data.sourceMeta || {}) as {
+    scopeId?: unknown;
+    frameScope?: unknown;
+    kind?: unknown;
+  };
+  const canonicalObject = (data.canonicalObject || undefined) as CanonicalObject | undefined;
+  const sourceKind = getSourceKind(sourceMeta, canonicalObject);
+  const parentSourceId = getParentSourceId(canonicalObject);
+  const groupId = typeof data.groupId === 'string' && data.groupId.length > 0
+    ? data.groupId
+    : undefined;
+  const frameScope = typeof sourceMeta.frameScope === 'string' && sourceMeta.frameScope.length > 0
+    ? sourceMeta.frameScope
+    : undefined;
+
+  return {
+    surfaceId: currentFile ?? undefined,
+    selection: {
+      nodeIds: selectedNodeIds,
+      homogeneous: selectedNodeIds.length <= 1 || selectedNodeIds.every((nodeId) => nodeId === node.id),
+    },
+    target: {
+      renderedNodeId: node.id,
+      sourceId: target.nodeId,
+      canvasId: currentCanvasId,
+      compatibilityFilePath: target.filePath,
+      nodeType: node.type,
+      ...(typeof sourceMeta.scopeId === 'string' ? { scopeId: sourceMeta.scopeId } : {}),
+      ...(typeof sourceMeta.frameScope === 'string' ? { frameScope: sourceMeta.frameScope } : {}),
+    },
+    metadata: {
+      semanticRole: canonicalObject?.semanticRole,
+      primaryContentKind: getPrimaryContentKind(canonicalObject),
+      capabilities: getCapabilityKeys(canonicalObject),
+    },
+    relations: {
+      ...(sourceKind ? { sourceKind } : {}),
+      ...(parentSourceId ? { parentSourceId } : {}),
+      ...(groupId ? { groupId } : {}),
+      ...(frameScope ? { frameScope } : {}),
+      hasParentRelation: Boolean(parentSourceId),
+      isGroupMember: Boolean(groupId),
+      isMindmapMember: sourceKind === 'mindmap',
+      isFrameScoped: Boolean(frameScope),
+    },
+    editability: {
+      canMutate: !editMeta?.readOnlyReason,
+      allowedCommands: EDIT_COMMAND_TYPES.filter((commandType) => isCommandAllowed(editMeta, commandType)),
+      styleEditableKeys: editMeta?.styleEditableKeys ?? [],
+      reason: editMeta?.readOnlyReason,
+      editMeta,
+    },
+  };
+}
+
+export function createPaneActionRoutingContext(input: {
+  currentCanvasId: string | null;
+  currentFile: string | null;
+  selectedNodeIds: string[];
+}): ActionRoutingResolvedContext {
+  const hasFile = typeof input.currentFile === 'string' && input.currentFile.length > 0;
+  return {
+    surfaceId: input.currentFile ?? undefined,
+    selection: {
+      nodeIds: input.selectedNodeIds,
+      homogeneous: input.selectedNodeIds.length <= 1,
+    },
+    metadata: {
+      capabilities: [],
+    },
+    ...(input.currentCanvasId
+      ? {
+          target: {
+            canvasId: input.currentCanvasId,
+            compatibilityFilePath: input.currentFile,
+          },
+        }
+      : {}),
+    relations: {
+      hasParentRelation: false,
+      isGroupMember: false,
+      isMindmapMember: false,
+      isFrameScoped: false,
+    },
+    editability: {
+      canMutate: hasFile,
+      allowedCommands: hasFile ? ['node.create'] : [],
+      styleEditableKeys: [],
+      ...(hasFile ? {} : { reason: 'SOURCE_VERSION_NOT_READY' }),
+    },
   };
 }
 
@@ -123,6 +282,9 @@ export function mapEditRpcErrorToToast(error: unknown): string | null {
   }
   if (rpc.code === 42201 || rpc.message === 'EDIT_NOT_ALLOWED') {
     const reason = (rpc.data as { reason?: unknown } | undefined)?.reason;
+    if (reason === 'LOCKED') {
+      return '잠금된 오브젝트라서 변경할 수 없습니다.';
+    }
     if (reason === 'NO_VALID_PARENT') {
       return 'MindMap 노드는 다른 MindMap 노드 위에 놓아 부모를 바꿔야 합니다.';
     }
@@ -133,6 +295,48 @@ export function mapEditRpcErrorToToast(error: unknown): string | null {
   }
   if (rpc.code === 42211 || rpc.message === 'PATCH_SURFACE_VIOLATION') {
     return '허용되지 않은 편집 surface라서 변경을 적용할 수 없습니다.';
+  }
+  if (rpc.message === 'INVALID_INTENT') {
+    return '이 UI 진입점에서는 지원되지 않는 액션입니다.';
+  }
+  if (rpc.message === 'INTENT_NOT_REGISTERED') {
+    return '등록되지 않은 UI intent라서 실행할 수 없습니다.';
+  }
+  if (rpc.code === 42212) {
+    return '이 UI 진입점에서는 지원되지 않는 액션입니다.';
+  }
+  if (rpc.message === 'NORMALIZATION_FAILED') {
+    return '편집 대상을 canonical 기준으로 해석하지 못했습니다. 최신 상태를 확인해주세요.';
+  }
+  if (rpc.message === 'INTENT_SURFACE_NOT_ALLOWED') {
+    return '이 surface에서는 해당 intent를 실행할 수 없습니다.';
+  }
+  if (rpc.message === 'INTENT_GATING_DENIED') {
+    return '현재 선택 상태에서는 이 intent를 실행할 수 없습니다.';
+  }
+  if (rpc.message === 'GATE_BLOCKED') {
+    return '현재 selection/context에서는 이 액션을 실행할 수 없습니다.';
+  }
+  if (rpc.code === 42213) {
+    return '편집 대상을 canonical 기준으로 해석하지 못했습니다. 최신 상태를 확인해주세요.';
+  }
+  if (rpc.message === 'INTENT_PAYLOAD_INVALID') {
+    return 'UI payload가 bridge 계약과 맞지 않아 실행할 수 없습니다.';
+  }
+  if (rpc.code === 42214) {
+    return '현재 선택 상태에서는 이 intent를 실행할 수 없습니다.';
+  }
+  if (rpc.message === 'DISPATCH_PLAN_INVALID') {
+    return 'bridge dispatch plan이 유효하지 않아 실행할 수 없습니다.';
+  }
+  if (rpc.code === 40904 || rpc.message === 'OPTIMISTIC_CONFLICT') {
+    return 'optimistic 편집 상태가 충돌해서 요청을 다시 시도해야 합니다.';
+  }
+  if (rpc.code === 50002 || rpc.message === 'EXECUTION_FAILED') {
+    return '공통 action bridge 실행에 실패했습니다. 잠시 후 다시 시도해주세요.';
+  }
+  if (rpc.code === 50003 || rpc.message === 'ADOPTION_VIOLATION') {
+    return '허용되지 않은 편집 경로가 감지되었습니다.';
   }
   if (rpc.code === 50001 || rpc.message === 'PATCH_FAILED') {
     return '편집 반영에 실패했습니다. 잠시 후 다시 시도해주세요.';
@@ -152,54 +356,5 @@ export function canCommitTextEdit(input: {
 }
 
 export function buildTextDraftPatch(nodeType: string | undefined, draft: string): Record<string, unknown> {
-  if (nodeType === 'markdown') {
-    return {
-      label: draft,
-      children: [{ type: 'graph-markdown', content: draft }],
-    };
-  }
-  return {
-    label: draft,
-    children: [{ type: 'text', text: draft }],
-  };
-}
-
-export function extractWorkspaceStyleInput(
-  node: Pick<Node, 'id' | 'data'>,
-  input: {
-    currentFile: string | null;
-    sourceVersions: Record<string, string>;
-    fallbackRevision?: string;
-    timestamp?: number;
-  },
-): WorkspaceStyleInput | null {
-  const data = (node.data || {}) as Record<string, unknown>;
-  if (typeof data.className !== 'string') {
-    return null;
-  }
-
-  const sourceMeta = (data.sourceMeta || {}) as { filePath?: unknown };
-  const filePath = typeof sourceMeta.filePath === 'string' && sourceMeta.filePath.length > 0
-    ? sourceMeta.filePath
-    : input.currentFile;
-  const sourceRevision = filePath
-    ? (input.sourceVersions[filePath] ?? input.fallbackRevision ?? 'workspace-style:pending')
-    : (input.fallbackRevision ?? 'workspace-style:pending');
-
-  return {
-    objectId: node.id,
-    className: data.className,
-    sourceRevision,
-    timestamp: input.timestamp ?? Date.now(),
-  };
-}
-
-export function flattenWorkspaceStyleDiagnostics(
-  diagnosticsByNodeId: Record<string, Array<{ objectId: string; message: string }>>,
-  limit = 4,
-): string[] {
-  return Object.values(diagnosticsByNodeId)
-    .flat()
-    .slice(0, limit)
-    .map((diagnostic) => `[${diagnostic.objectId}] ${diagnostic.message}`);
+  return buildContentDraftPatch(nodeType, draft);
 }

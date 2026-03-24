@@ -3,44 +3,21 @@ import type {
   CanonicalObjectRecord as SharedCanonicalObjectRecord,
   CanonicalValidationCode,
 } from '../canonical-object-contract';
+import type {
+  PluginCapabilitySet,
+  PluginComponentKind,
+  PluginManifest,
+  PluginOwnerKind,
+  PluginPermissionValue,
+  PluginSchema,
+  PluginVersionStatus,
+} from '../plugin-runtime-contract';
 
 type CanonicalObjectRecord = SharedCanonicalObjectRecord;
 
 export type ObjectRelationType = string;
 export type CanvasNodeKind = 'native' | 'plugin' | 'binding-proxy';
 export type CanvasBindingKind = 'object' | 'query' | 'relation-set' | 'field-map';
-export type CanonicalQueryInclude =
-  | 'objects'
-  | 'relations'
-  | 'canvasNodes'
-  | 'bindings'
-  | 'documentRevision';
-
-export interface CanonicalQueryFilters {
-  semanticRole?: string[];
-  primaryContentKind?: Array<string | null>;
-  hasCapability?: string[];
-  alias?: string[];
-}
-
-export interface CanonicalQueryBounds {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-}
-
-export interface FilteredObjectQueryInput {
-  workspaceId: string;
-  filters?: CanonicalQueryFilters;
-  limit?: number;
-  cursor?: string;
-}
-
-export interface FilteredObjectQueryResult {
-  objects: CanonicalObjectRecord[];
-  cursor?: string;
-}
 
 export interface ObjectRelationRecord {
   id: string;
@@ -55,7 +32,7 @@ export interface ObjectRelationRecord {
 
 export interface CanvasNodeRecord {
   id: string;
-  documentId: string;
+  canvasId: string;
   surfaceId: string;
   nodeKind: CanvasNodeKind;
   nodeType?: string | null;
@@ -73,7 +50,7 @@ export interface CanvasNodeRecord {
 
 export interface CanvasBindingRecord {
   id: string;
-  documentId: string;
+  canvasId: string;
   nodeId: string;
   bindingKind: CanvasBindingKind;
   sourceRef: Record<string, unknown>;
@@ -82,9 +59,9 @@ export interface CanvasBindingRecord {
   updatedAt?: Date;
 }
 
-export interface DocumentRevisionRecord {
+export interface CanvasRevisionRecord {
   id: string;
-  documentId: string;
+  canvasId: string;
   revisionNo: number;
   authorKind: 'user' | 'agent' | 'system';
   authorId: string;
@@ -93,29 +70,59 @@ export interface DocumentRevisionRecord {
   createdAt?: Date;
 }
 
-export interface DocumentHeadRevisionRecord {
-  documentId: string;
-  revisionNo: number;
-  revisionId: string;
-  headRevision: string;
+export interface PluginPackageRecord {
+  id: string;
+  workspaceId?: string | null;
+  packageName: string;
+  displayName: string;
+  ownerKind: PluginOwnerKind;
+  ownerId: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface PluginVersionRecord {
+  id: string;
+  pluginPackageId: string;
+  version: string;
+  manifest: PluginManifest;
+  bundleRef: string;
+  integrityHash: string;
+  status: PluginVersionStatus;
   createdAt?: Date;
 }
 
-export interface SurfaceLoadInput {
-  workspaceId: string;
-  documentId: string;
-  surfaceId: string;
-  bounds?: CanonicalQueryBounds;
-  limit?: number;
-  cursor?: string;
+export interface PluginExportRecord {
+  id: string;
+  pluginVersionId: string;
+  exportName: string;
+  componentKind: PluginComponentKind;
+  propSchema: PluginSchema;
+  bindingSchema: PluginSchema;
+  capabilities: PluginCapabilitySet;
+  createdAt?: Date;
 }
 
-export interface SurfaceLoadResult {
-  canvasNodes: CanvasNodeRecord[];
-  bindings: CanvasBindingRecord[];
-  objects: CanonicalObjectRecord[];
-  documentRevision: DocumentHeadRevisionRecord;
-  cursor?: string;
+export interface PluginPermissionRecord {
+  id: string;
+  pluginVersionId: string;
+  permissionKey: string;
+  permissionValue: PluginPermissionValue;
+  createdAt?: Date;
+}
+
+export interface PluginInstanceRecord {
+  id: string;
+  canvasId: string;
+  surfaceId: string;
+  pluginExportId: string;
+  pluginVersionId: string;
+  displayName: string;
+  props?: Record<string, unknown> | null;
+  bindingConfig?: Record<string, unknown> | null;
+  persistedState?: Record<string, unknown> | null;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export type CanonicalPersistenceFailureCode =
@@ -130,15 +137,13 @@ export type CanonicalPersistenceFailureCode =
   | 'EDITABLE_CANONICAL_SHARE_REQUIRES_CLONE'
   | 'CANONICAL_RECORD_NOT_FOUND'
   | 'CANONICAL_RECORD_TOMBSTONED'
-  | 'INVALID_QUERY_INCLUDE'
-  | 'INVALID_QUERY_FILTER'
-  | 'INVALID_QUERY_CURSOR'
-  | 'INVALID_QUERY_BOUNDS'
-  | 'QUERY_SCOPE_NOT_FOUND'
-  | 'VERSION_BASE_REQUIRED'
-  | 'VERSION_CONFLICT'
-  | 'INVALID_REVISION_TOKEN'
-  | 'REVISION_APPEND_FAILED';
+  | 'PLUGIN_CONTRACT_VIOLATION'
+  | 'PLUGIN_REFERENCE_CONFLICT'
+  | 'PLUGIN_PACKAGE_NOT_FOUND'
+  | 'PLUGIN_VERSION_NOT_FOUND'
+  | 'PLUGIN_VERSION_DISABLED'
+  | 'PLUGIN_EXPORT_NOT_FOUND'
+  | 'PLUGIN_INSTANCE_NOT_FOUND';
 
 export interface PersistenceSuccess<T> {
   ok: true;

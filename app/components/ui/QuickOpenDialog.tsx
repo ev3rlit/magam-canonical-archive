@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { clsx } from 'clsx';
+import { getUiCopy } from '@/components/ui/copy';
+import { getInputClassName } from './Input';
 
 export interface QuickOpenCommand {
   id: string;
@@ -82,6 +84,7 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
   onRunCommand,
   onClose,
 }) => {
+  const copy = getUiCopy().quickOpen;
   const [query, setQuery] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(0);
 
@@ -160,27 +163,27 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
   return (
     <div
       role="presentation"
-      className="fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center px-4 py-6"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[rgb(var(--overlay-scrim)/0.45)] px-4 py-6 backdrop-blur-sm"
       onKeyDown={handleKeyDown}
     >
       <div
-        className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl"
+        className="w-full max-w-2xl rounded-lg bg-card/92 shadow-floating shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)] backdrop-blur-glass"
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <div className="p-3 border-b border-slate-200 dark:border-slate-700">
+        <div className="p-3 shadow-[inset_0_-1px_0_rgb(var(--color-border)/0.08)]">
           <input
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="파일/명령 검색... (명령은 > 로 시작)"
+            placeholder={copy.placeholder}
             autoFocus
-            className="w-full rounded-md border border-slate-300 dark:border-slate-600 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={getInputClassName({ className: 'w-full' })}
           />
         </div>
 
         <div className="max-h-96 overflow-y-auto">
           {filteredEntries.length === 0 ? (
-            <div className="p-3 text-sm text-slate-500">검색 결과가 없습니다.</div>
+            <div className="p-3 text-sm text-foreground/52">{copy.noResults}</div>
           ) : (
             filteredEntries.map((entry, index) => (
               <button
@@ -194,8 +197,8 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
                     ? 'opacity-50 cursor-not-allowed'
                     : '',
                   index === focusedIndex
-                    ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                    : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 text-slate-700 dark:text-slate-200',
+                    ? 'bg-primary/12 text-primary'
+                    : 'hover:bg-card text-foreground/82',
                 )}
               >
                 {entry.kind === 'file' ? (
@@ -203,8 +206,8 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
                 ) : (
                   <>
                     <span className="truncate">{entry.command.label}</span>
-                    <span className="text-xs text-slate-500 shrink-0">
-                      {entry.command.hint || 'command'}
+                    <span className="shrink-0 text-xs text-foreground/48">
+                      {entry.command.hint || copy.commandHint}
                     </span>
                   </>
                 )}
@@ -213,14 +216,14 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
           )}
         </div>
 
-        <div className="px-3 py-2 border-t border-slate-200 dark:border-slate-700 text-xs text-slate-500 flex items-center justify-between">
-          <span>Enter: open/run</span>
+        <div className="flex items-center justify-between px-3 py-2 text-xs text-foreground/48 shadow-[inset_0_1px_0_rgb(var(--color-border)/0.08)]">
+          <span>{copy.footer.enter}</span>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="rounded-md px-2 py-1 transition-colors duration-fast hover:bg-card hover:text-foreground"
           >
-            Esc
+            {copy.footer.esc}
           </button>
         </div>
       </div>

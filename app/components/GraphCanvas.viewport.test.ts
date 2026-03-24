@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { resolveToolbarAnchor } from '@/features/overlay-host/slots';
+import { resolveOverlayPosition } from '@/features/overlay-host/positioning';
 import {
   resolveViewportToRestore,
   toTabViewportState,
@@ -21,6 +23,8 @@ describe('GraphCanvas viewport helpers', () => {
     expect(
       resolveViewportToRestore({
         hasRenderedGraph: true,
+        previousCanvasId: 'doc-a',
+        currentCanvasId: 'doc-b',
         previousFile: 'examples/a.tsx',
         currentFile: 'examples/b.tsx',
         currentViewport: { x: 120, y: -80, zoom: 1.25 },
@@ -41,11 +45,50 @@ describe('GraphCanvas viewport helpers', () => {
     ).toBeNull();
   });
 
+  it('restores the current viewport snapshot when the same file re-renders without a saved tab snapshot', () => {
+    expect(
+      resolveViewportToRestore({
+        hasRenderedGraph: true,
+        previousCanvasId: 'doc-a',
+        currentCanvasId: 'doc-a',
+        previousFile: 'examples/a.tsx',
+        currentFile: 'examples/a.tsx',
+        currentViewport: { x: -64, y: 96, zoom: 1.4 },
+        savedViewport: null,
+      }),
+    ).toEqual({ x: -64, y: 96, zoom: 1.4 });
+  });
+
+  it('keeps the current viewport when the canonical document id matches across compatibility path changes', () => {
+    expect(
+      resolveViewportToRestore({
+        hasRenderedGraph: true,
+        previousCanvasId: 'doc-1',
+        currentCanvasId: 'doc-1',
+        previousFile: 'docs/alpha.graph.tsx',
+        currentFile: 'documents/doc-1.graph.tsx',
+        currentViewport: { x: 44, y: -12, zoom: 1.1 },
+        savedViewport: { x: 0, y: 0, zoom: 0.6 },
+      }),
+    ).toEqual({ x: 44, y: -12, zoom: 1.1 });
+  });
+
   it('normalizes a flow viewport into tab snapshot shape', () => {
     expect(toTabViewportState({ x: 10, y: 20, zoom: 0.75 })).toEqual({
       x: 10,
       y: 20,
       zoom: 0.75,
     });
+  });
+
+  it('keeps toolbar anchors and viewport-fixed overlays inside the viewport budget', () => {
+    const anchor = resolveToolbarAnchor({ width: 320, height: 200 });
+
+    expect(resolveOverlayPosition({
+      anchor,
+      overlaySize: { width: 180, height: 48 },
+      placement: 'bottom-center',
+      viewport: { width: 320, height: 200 },
+    })).toEqual({ x: 70, y: 120 });
   });
 });

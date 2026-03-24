@@ -20,7 +20,17 @@ import {
   text,
   timestamp,
   integer,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import type {
+  PluginCapabilitySet,
+  PluginComponentKind,
+  PluginManifest,
+  PluginOwnerKind,
+  PluginPermissionValue,
+  PluginSchema,
+  PluginVersionStatus,
+} from '../plugin-runtime-contract';
 
 export const canonicalObjects = pgTable(
   'objects',
@@ -72,7 +82,7 @@ export const canvasNodes = pgTable(
   'canvas_nodes',
   {
     id: text('id').primaryKey(),
-    documentId: text('document_id').notNull(),
+    canvasId: text('document_id').notNull(),
     surfaceId: text('surface_id').notNull(),
     nodeKind: text('node_kind').$type<CanvasNodeKind>().notNull(),
     nodeType: text('node_type'),
@@ -89,7 +99,7 @@ export const canvasNodes = pgTable(
   },
   (table) => ({
     documentSurfaceZIndexIdx: index('idx_canvas_nodes_document_surface_z').on(
-      table.documentId,
+      table.canvasId,
       table.surfaceId,
       table.zIndex,
     ),
@@ -100,7 +110,7 @@ export const canvasBindings = pgTable(
   'canvas_bindings',
   {
     id: text('id').primaryKey(),
-    documentId: text('document_id').notNull(),
+    canvasId: text('document_id').notNull(),
     nodeId: text('node_id').notNull(),
     bindingKind: text('binding_kind').$type<CanvasBindingKind>().notNull(),
     sourceRef: jsonb('source_ref').$type<Record<string, unknown>>().notNull(),
@@ -109,15 +119,15 @@ export const canvasBindings = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({
-    documentNodeIdx: index('idx_canvas_bindings_document_node').on(table.documentId, table.nodeId),
+    documentNodeIdx: index('idx_canvas_bindings_document_node').on(table.canvasId, table.nodeId),
   }),
 );
 
-export const documentRevisions = pgTable(
+export const canvasRevisions = pgTable(
   'document_revisions',
   {
     id: text('id').primaryKey(),
-    documentId: text('document_id').notNull(),
+    canvasId: text('document_id').notNull(),
     revisionNo: integer('revision_no').notNull(),
     authorKind: text('author_kind').$type<'user' | 'agent' | 'system'>().notNull(),
     authorId: text('author_id').notNull(),
@@ -126,6 +136,96 @@ export const documentRevisions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({
-    documentRevisionIdx: index('idx_document_revisions_document_revision').on(table.documentId, table.revisionNo),
+    canvasRevisionIdx: index('idx_document_revisions_document_revision').on(table.canvasId, table.revisionNo),
+  }),
+);
+
+export const pluginPackages = pgTable(
+  'plugin_packages',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id'),
+    packageName: text('package_name').notNull(),
+    displayName: text('display_name').notNull(),
+    ownerKind: text('owner_kind').$type<PluginOwnerKind>().notNull(),
+    ownerId: text('owner_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    workspaceNameIdx: index('idx_plugin_packages_workspace_name').on(table.workspaceId, table.packageName),
+    ownerIdx: index('idx_plugin_packages_owner').on(table.ownerKind, table.ownerId),
+  }),
+);
+
+export const pluginVersions = pgTable(
+  'plugin_versions',
+  {
+    id: text('id').primaryKey(),
+    pluginPackageId: text('plugin_package_id').notNull(),
+    version: text('version').notNull(),
+    manifest: jsonb('manifest').$type<PluginManifest>().notNull(),
+    bundleRef: text('bundle_ref').notNull(),
+    integrityHash: text('integrity_hash').notNull(),
+    status: text('status').$type<PluginVersionStatus>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    packageVersionUnique: uniqueIndex('idx_plugin_versions_package_version').on(table.pluginPackageId, table.version),
+    packageStatusIdx: index('idx_plugin_versions_package_status').on(table.pluginPackageId, table.status),
+  }),
+);
+
+export const pluginExports = pgTable(
+  'plugin_exports',
+  {
+    id: text('id').primaryKey(),
+    pluginVersionId: text('plugin_version_id').notNull(),
+    exportName: text('export_name').notNull(),
+    componentKind: text('component_kind').$type<PluginComponentKind>().notNull(),
+    propSchema: jsonb('prop_schema').$type<PluginSchema>().notNull(),
+    bindingSchema: jsonb('binding_schema').$type<PluginSchema>().notNull(),
+    capabilities: jsonb('capabilities').$type<PluginCapabilitySet>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    versionExportUnique: uniqueIndex('idx_plugin_exports_version_export').on(table.pluginVersionId, table.exportName),
+    versionComponentIdx: index('idx_plugin_exports_version_component').on(table.pluginVersionId, table.componentKind),
+  }),
+);
+
+export const pluginPermissions = pgTable(
+  'plugin_permissions',
+  {
+    id: text('id').primaryKey(),
+    pluginVersionId: text('plugin_version_id').notNull(),
+    permissionKey: text('permission_key').notNull(),
+    permissionValue: jsonb('permission_value').$type<PluginPermissionValue>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    versionPermissionUnique: uniqueIndex('idx_plugin_permissions_version_key').on(table.pluginVersionId, table.permissionKey),
+  }),
+);
+
+export const pluginInstances = pgTable(
+  'plugin_instances',
+  {
+    id: text('id').primaryKey(),
+    canvasId: text('document_id').notNull(),
+    surfaceId: text('surface_id').notNull(),
+    pluginExportId: text('plugin_export_id').notNull(),
+    pluginVersionId: text('plugin_version_id').notNull(),
+    displayName: text('display_name').notNull(),
+    props: jsonb('props').$type<Record<string, unknown>>(),
+    bindingConfig: jsonb('binding_config').$type<Record<string, unknown>>(),
+    persistedState: jsonb('persisted_state').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    documentSurfaceIdx: index('idx_plugin_instances_document_surface').on(table.canvasId, table.surfaceId),
+    versionIdx: index('idx_plugin_instances_version').on(table.pluginVersionId),
+    exportIdx: index('idx_plugin_instances_export').on(table.pluginExportId),
   }),
 );

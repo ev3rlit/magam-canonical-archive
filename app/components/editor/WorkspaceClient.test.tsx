@@ -1,17 +1,22 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
+import { resolveRestoreFocusTarget, restoreFocusForOverlay } from '@/features/overlay-host';
+import { installTestDom } from '@/features/overlay-host/testDom';
+import { createCanvasActionDispatchBinding } from '@/processes/canvas-runtime/bindings/actionDispatch';
 import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
+import { createWorkspaceCanvas } from './WorkspaceClient';
 import {
   canCommitTextEdit,
   canRunNodeCommand,
+  createPaneActionRoutingContext,
   getAllowedNodeStylePatch,
-  extractWorkspaceStyleInput,
-  flattenWorkspaceStyleDiagnostics,
   mapEditRpcErrorToToast,
+  resolveNodeActionRoutingContext,
   resolveNodeEditContext,
   resolveNodeEditTarget,
+  resolveImmediateCreateEditMode,
 } from './workspaceEditUtils';
 
 function makeNode(input: Partial<Node> & { id: string; type: string; data?: Record<string, unknown> }): Node {
@@ -85,6 +90,68 @@ const canonicalProfileShape: CanonicalObject = {
   alias: 'Shape',
 };
 
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+describe('WorkspaceClient document entry convergence', () => {
+  it.todo('resumes the last active document before showing an idle shell');
+  it.todo('creates a new document into an empty canvas without a blocking naming modal');
+  it.todo('switches documents through Quick Open without duplicating the active tab');
+});
+
+describe('WorkspaceClient document materialization', () => {
+  it('creates untitled documents through the server contract with a real sourceVersion', async () => {
+    const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(input).toBe('/api/canvases');
+      expect(init?.method).toBe('POST');
+      expect(init?.body).toBe(JSON.stringify({ rootPath: '/tmp/workspace' }));
+
+      return new Response(JSON.stringify({
+        canvasId: 'doc-1',
+        workspaceId: 'ws-1',
+        filePath: 'docs/untitled-2.graph.tsx',
+        sourceVersion: 'sha256:created-document',
+        latestRevision: 1,
+      }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await expect(
+      createWorkspaceCanvas({ rootPath: '/tmp/workspace' }),
+    ).resolves.toEqual({
+      canvasId: 'doc-1',
+      workspaceId: 'ws-1',
+      filePath: 'docs/untitled-2.graph.tsx',
+      sourceVersion: 'sha256:created-document',
+      latestRevision: 1,
+    });
+  });
+
+  it('rejects create-document responses that still expose a draft placeholder version', async () => {
+    const fetchMock = mock(async () => new Response(JSON.stringify({
+      canvasId: 'doc-1',
+      workspaceId: 'ws-1',
+      filePath: 'docs/untitled-2.graph.tsx',
+      sourceVersion: 'draft:empty-canvas',
+      latestRevision: 1,
+    }), {
+      status: 201,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    await expect(
+      createWorkspaceCanvas({ rootPath: '/tmp/workspace' }),
+    ).rejects.toThrow('새 문서 생성 응답이 올바르지 않습니다.');
+  });
+});
+
 describe('WorkspaceClient text edit isolation', () => {
   it('선택된 activeTextEditNodeId만 커밋 가능하다', () => {
     expect(canCommitTextEdit({
@@ -104,6 +171,13 @@ describe('WorkspaceClient text edit isolation', () => {
       requestNodeId: 'md-1',
       selectedNodeIds: ['md-2'],
     })).toBe(false);
+  });
+
+  it('markdown first shell/body entry는 text markdown sticky 생성 직후 같은 body session mode를 사용한다', () => {
+    expect(resolveImmediateCreateEditMode('text')).toBe('markdown-wysiwyg');
+    expect(resolveImmediateCreateEditMode('markdown')).toBe('markdown-wysiwyg');
+    expect(resolveImmediateCreateEditMode('sticky')).toBe('markdown-wysiwyg');
+    expect(resolveImmediateCreateEditMode('rectangle')).toBeNull();
   });
 
   it('외부 파일 sourceMeta가 있으면 해당 파일과 sourceId를 편집 대상으로 선택한다', () => {
@@ -199,6 +273,16 @@ describe('WorkspaceClient attach rejection guidance', () => {
     ).toContain('웹 편집 범위');
   });
 
+  it('LOCKED reason은 잠금 안내 메시지로 매핑된다', () => {
+    expect(
+      mapEditRpcErrorToToast({
+        code: 42201,
+        message: 'EDIT_NOT_ALLOWED',
+        data: { reason: 'LOCKED' },
+      }),
+    ).toContain('잠금된');
+  });
+
   it('MindMap reparent 후보가 없으면 구조 편집 안내 메시지를 반환한다', () => {
     expect(
       mapEditRpcErrorToToast({
@@ -207,6 +291,29 @@ describe('WorkspaceClient attach rejection guidance', () => {
         data: { reason: 'NO_VALID_PARENT' },
       }),
     ).toContain('부모를 바꿔야');
+  });
+
+  it('bridge intent 오류는 surface/registry 안내 메시지로 매핑된다', () => {
+    expect(
+      mapEditRpcErrorToToast({
+        code: 42212,
+        message: 'INTENT_NOT_REGISTERED',
+      }),
+    ).toContain('등록되지 않은 UI intent');
+
+    expect(
+      mapEditRpcErrorToToast({
+        code: 42214,
+        message: 'INTENT_GATING_DENIED',
+      }),
+    ).toContain('현재 선택 상태');
+
+    expect(
+      mapEditRpcErrorToToast({
+        code: 40904,
+        message: 'OPTIMISTIC_CONFLICT',
+      }),
+    ).toContain('optimistic');
   });
 });
 
@@ -239,6 +346,59 @@ describe('WorkspaceClient editability helpers', () => {
     });
   });
 
+  it('resolveNodeActionRoutingContext exposes metadata and allowed commands for the bridge', () => {
+    expect(resolveNodeActionRoutingContext(
+      makeCapabilityProfileNodeFromCanonical({
+        id: 'profile-node-1',
+        type: 'shape',
+        canonical: canonicalProfileNode,
+      }),
+      'examples/fallback.tsx',
+      ['profile-node-1'],
+    )).toEqual(expect.objectContaining({
+      surfaceId: 'examples/fallback.tsx',
+      selection: {
+        nodeIds: ['profile-node-1'],
+        homogeneous: true,
+      },
+      target: {
+        renderedNodeId: 'profile-node-1',
+        sourceId: 'profile-node-1',
+        filePath: 'examples/fallback.tsx',
+        nodeType: 'shape',
+      },
+      metadata: {
+        semanticRole: 'topic',
+        primaryContentKind: 'text',
+        capabilities: ['frame', 'content'],
+      },
+      relations: {
+        hasParentRelation: false,
+        isGroupMember: false,
+        isMindmapMember: false,
+        isFrameScoped: false,
+      },
+      editability: expect.objectContaining({
+        canMutate: true,
+        allowedCommands: expect.arrayContaining([
+          'node.move.absolute',
+          'node.content.update',
+          'node.style.update',
+          'node.rename',
+          'node.create',
+        ]),
+        styleEditableKeys: expect.arrayContaining(['fontFamily']),
+        reason: undefined,
+        editMeta: expect.objectContaining({
+          family: 'rich-content',
+          contentCarrier: 'text-child',
+          createMode: 'canvas',
+          styleEditableKeys: expect.arrayContaining(['fontFamily']),
+        }),
+      }),
+    }));
+  });
+
   it('canRunNodeCommand respects editMeta gating', () => {
     expect(canRunNodeCommand(editableNode, 'node.style.update')).toBe(true);
     expect(canRunNodeCommand(editableNode, 'node.reparent')).toBe(false);
@@ -258,67 +418,61 @@ describe('WorkspaceClient editability helpers', () => {
     });
   });
 
-  it('extractWorkspaceStyleInput derives className input + revision from sourceMeta/current file', () => {
-    expect(extractWorkspaceStyleInput(makeNode({
-      id: 'shape-2',
-      type: 'shape',
-      data: {
-        className: 'w-32 shadow-md',
-        sourceMeta: {
-          filePath: 'examples/feature.tsx',
-        },
-      },
-    }), {
+  it('createPaneActionRoutingContext exposes node.create permission only when file is ready', () => {
+    expect(createPaneActionRoutingContext({
       currentFile: 'examples/fallback.tsx',
-      sourceVersions: {
-        'examples/feature.tsx': 'rev-feature',
-      },
-      timestamp: 123,
-    })).toEqual({
-      objectId: 'shape-2',
-      className: 'w-32 shadow-md',
-      sourceRevision: 'rev-feature',
-      timestamp: 123,
-    });
+      selectedNodeIds: [],
+    }).editability.allowedCommands).toEqual(['node.create']);
+
+    expect(createPaneActionRoutingContext({
+      currentFile: null,
+      selectedNodeIds: [],
+    }).editability.canMutate).toBe(false);
   });
 
-  it('extracts stable workspace style input across rerender-like repeated reads', () => {
-    const node = makeNode({
-      id: 'sticky-runtime',
-      type: 'sticky',
-      data: {
-        className: 'w-32 bg-amber-100 shadow-lg',
-        sourceMeta: {
-          filePath: 'examples/sticky.tsx',
-        },
-      },
-    });
-
-    const first = extractWorkspaceStyleInput(node, {
-      currentFile: 'examples/fallback.tsx',
-      sourceVersions: {
-        'examples/sticky.tsx': 'rev-1',
-      },
-      timestamp: 100,
-    });
-    const second = extractWorkspaceStyleInput(node, {
-      currentFile: 'examples/fallback.tsx',
-      sourceVersions: {
-        'examples/sticky.tsx': 'rev-1',
-      },
-      timestamp: 100,
-    });
-
-    expect(first).toEqual(second);
+  it('bridge-specific error codes are mapped to actionable toast messages', () => {
+    expect(mapEditRpcErrorToToast({
+      code: 42212,
+      message: 'INVALID_INTENT',
+    })).toContain('지원되지 않는');
+    expect(mapEditRpcErrorToToast({
+      code: 42213,
+      message: 'NORMALIZATION_FAILED',
+    })).toContain('canonical');
+    expect(mapEditRpcErrorToToast({
+      code: 42214,
+      message: 'GATE_BLOCKED',
+    })).toContain('selection/context');
   });
+});
 
-  it('flattens diagnostics for overlay rendering and clears when empty', () => {
-    expect(flattenWorkspaceStyleDiagnostics({
-      a: [{ objectId: 'sticky-1', code: 'UNSUPPORTED_TOKEN', message: 'bad token' }],
-      b: [{ objectId: 'sticker-1', code: 'OUT_OF_SCOPE_OBJECT', message: 'out of scope' }],
-    }, 1)).toEqual(['[sticky-1] bad token']);
+describe('WorkspaceClient overlay boundary helpers', () => {
+  it('focus restore keeps using the trigger element for canvas-host dismissals', () => {
+    const cleanupDom = installTestDom();
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    document.body.appendChild(trigger);
 
-    expect(flattenWorkspaceStyleDiagnostics({})).toEqual([]);
+    expect(resolveRestoreFocusTarget({
+      focusPolicy: {
+        openTarget: 'none',
+        restoreTarget: 'trigger',
+      },
+      triggerElement: trigger,
+      selectionOwnerElement: null,
+    })).toBe(trigger);
+
+    expect(restoreFocusForOverlay({
+      focusPolicy: {
+        openTarget: 'none',
+        restoreTarget: 'trigger',
+      },
+      triggerElement: trigger,
+      selectionOwnerElement: null,
+    })).toEqual({ restored: true });
+
+    trigger.remove();
+    cleanupDom();
   });
 });
 
@@ -413,5 +567,219 @@ describe('WorkspaceClient capability-profile editability parity', () => {
     });
     expect(canRunNodeCommand(linkedCanvasNode, 'node.move.absolute')).toBe(true);
     expect(canRunNodeCommand(linkedCanvasNode, 'node.reparent')).toBe(false);
+  });
+});
+
+describe('WorkspaceClient document entry convergence', () => {
+  it('keeps the quick-open entry seam inside WorkspaceClient', async () => {
+    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+
+    expect(source).toContain('LazyQuickOpenDialog');
+    expect(source).toContain('openTabByPath');
+    expect(source).toContain('runQuickOpenCommand');
+  });
+
+  it('routes document switching through the shared tab primitives', async () => {
+    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+
+    expect(source).toContain('openTab(');
+    expect(source).toContain('activateTab');
+    expect(source).toContain('replaceLeastRecentlyUsedTab');
+  });
+
+  it.todo('resumes the last active document before leaving the workspace idle');
+  it.todo('creates a new document inline without a blocking naming modal');
+  it.todo('switches documents from Quick Open without leaving the canvas shell');
+});
+
+describe('WorkspaceClient action-dispatch binding', () => {
+  it('maps compat requests into action-routing envelopes with surface and target fallbacks', async () => {
+    let capturedEnvelope: unknown = null;
+
+    const binding = createCanvasActionDispatchBinding({
+      getRuntime: () => ({
+        nodes: [],
+        edges: [],
+        currentFile: 'examples/current.tsx',
+        sourceVersions: {},
+        selectedNodeIds: ['node-1'],
+      }),
+      applyRuntimeAction: () => undefined,
+      executeMutationDescriptor: async () => ({}),
+      commitHistoryEffect: () => undefined,
+      registerPendingActionRouting: () => undefined,
+      clearPendingActionRouting: () => undefined,
+      routeIntentImpl: ({ envelope }) => {
+        capturedEnvelope = envelope;
+        return {
+          ok: true,
+          value: {
+            intentId: envelope.intentId,
+            steps: [],
+            rollbackSteps: [],
+          },
+        };
+      },
+    });
+
+    await binding.dispatchActionRoutingIntentOrThrow({
+      surface: 'canvas-toolbar',
+      intent: 'content-update',
+      resolvedContext: {
+        selection: {
+          nodeIds: ['node-1'],
+          homogeneous: true,
+        },
+        target: {
+          renderedNodeId: 'node-1',
+        },
+        metadata: {
+          capabilities: [],
+        },
+        editability: {
+          canMutate: true,
+          allowedCommands: [],
+          styleEditableKeys: [],
+        },
+      },
+      uiPayload: {
+        content: 'Updated label',
+        filePath: 'examples/override.tsx',
+        scopeId: 'scope-1',
+        frameScope: 'frame-1',
+      },
+      trigger: { source: 'inspector' },
+    });
+
+    expect(capturedEnvelope).toEqual({
+      surfaceId: 'toolbar',
+      intentId: 'selection.content.update',
+      selectionRef: {
+        selectedNodeIds: ['node-1'],
+        currentFile: 'examples/current.tsx',
+      },
+      targetRef: {
+        renderedNodeId: 'node-1',
+        filePath: 'examples/override.tsx',
+        scopeId: 'scope-1',
+        frameScope: 'frame-1',
+      },
+      rawPayload: {
+        content: 'Updated label',
+        filePath: 'examples/override.tsx',
+        scopeId: 'scope-1',
+        frameScope: 'frame-1',
+      },
+      optimistic: true,
+    });
+  });
+
+  it('replays runtime rollback steps and clears optimistic registrations when a mutation fails', async () => {
+    const appliedRuntimeActions: string[] = [];
+    const registeredPendingKeys: string[] = [];
+    const clearedPendingKeys: string[] = [];
+    let committedHistory = false;
+
+    const binding = createCanvasActionDispatchBinding({
+      getRuntime: () => ({
+        nodes: [],
+        edges: [],
+        currentFile: 'examples/current.tsx',
+        sourceVersions: {},
+        selectedNodeIds: [],
+      }),
+      applyRuntimeAction: (descriptor) => {
+        appliedRuntimeActions.push(descriptor.actionId);
+      },
+      executeMutationDescriptor: async () => {
+        throw new Error('mutation failed');
+      },
+      commitHistoryEffect: () => {
+        committedHistory = true;
+      },
+      registerPendingActionRouting: (record) => {
+        registeredPendingKeys.push(record.pendingKey);
+      },
+      clearPendingActionRouting: (pendingKey) => {
+        clearedPendingKeys.push(pendingKey);
+      },
+      routeIntentImpl: () => ({
+        ok: true,
+        value: {
+          intentId: 'node.create',
+          steps: [
+            {
+              kind: 'canonical-mutation',
+              actionId: 'node.create',
+              payload: {
+                filePath: 'examples/current.tsx',
+                node: {
+                  id: 'node-2',
+                  type: 'shape',
+                  props: {},
+                  placement: { mode: 'canvas-absolute', x: 10, y: 20 },
+                },
+              },
+              optimisticMeta: {
+                pendingKey: 'pending-1',
+                baseVersion: 'rev-1',
+                intentId: 'node.create',
+                surfaceId: 'toolbar',
+                filePath: 'examples/current.tsx',
+                rollbackSteps: [],
+                startedAt: 1,
+              },
+            },
+          ],
+          rollbackSteps: [
+            {
+              kind: 'runtime-only-action',
+              actionId: 'restore-node-data',
+              payload: {
+                nodeId: 'node-2',
+                previousData: {},
+              },
+            },
+          ],
+        },
+      }),
+    });
+
+    await expect(binding.executeBridgeIntent({
+      surfaceId: 'toolbar',
+      intentId: 'node.create',
+      selectionRef: {
+        selectedNodeIds: [],
+        currentFile: 'examples/current.tsx',
+      },
+      rawPayload: {},
+      optimistic: false,
+    })).rejects.toThrow('mutation failed');
+
+    expect(registeredPendingKeys).toEqual(['pending-1']);
+    expect(clearedPendingKeys).toEqual(['pending-1']);
+    expect(appliedRuntimeActions).toEqual(['restore-node-data']);
+    expect(committedHistory).toBe(false);
+  });
+});
+
+describe('WorkspaceClient bridge integration', () => {
+  it('consumes the action-dispatch binding instead of owning bridge orchestration inline', async () => {
+    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+
+    expect(source).toContain("createCanvasActionDispatchBinding({");
+    expect(source).toContain("resolveLegacyEntrypointSurface({");
+    expect(source).toContain("dispatchActionRoutingIntentOrThrow({");
+    expect(source).toContain("intent: 'style-update'");
+    expect(source).toContain("intent: 'rename-node'");
+    expect(source).toContain("'create-node'");
+    expect(source).toContain("'create-mindmap-child'");
+    expect(source).toContain("'create-mindmap-sibling'");
+    expect(source).not.toContain('const executeBridgeIntent = useCallback');
+    expect(source).not.toContain('const dispatchActionRoutingIntentOrThrow = useCallback');
+    expect(source).not.toContain('routeIntent({');
+    expect(source).not.toContain('buildCreateCommand(');
+    expect(source).not.toContain('buildRenameCommand(');
+    expect(source).not.toContain('buildStyleUpdateCommand(');
   });
 });

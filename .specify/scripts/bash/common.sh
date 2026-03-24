@@ -90,6 +90,13 @@ find_feature_dir_by_prefix() {
     local branch_name="$2"
     local specs_dir="$repo_root/specs"
 
+    # Prefer an exact branch-name match when it exists.
+    # This keeps feature-specific automation stable even when multiple specs share the same numeric prefix.
+    if [[ -d "$specs_dir/$branch_name" ]]; then
+        echo "$specs_dir/$branch_name"
+        return
+    fi
+
     # Extract numeric prefix from branch (e.g., "004" from "004-whatever")
     if [[ ! "$branch_name" =~ ^([0-9]{3})- ]]; then
         # If branch doesn't have numeric prefix, fall back to exact match
@@ -153,4 +160,3 @@ EOF
 
 check_file() { [[ -f "$1" ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
 check_dir() { [[ -d "$1" && -n $(ls -A "$1" 2>/dev/null) ]] && echo "  ✓ $2" || echo "  ✗ $2"; }
-

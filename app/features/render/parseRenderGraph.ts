@@ -52,6 +52,7 @@ export interface RenderNode {
     color?: string;
     bg?: string;
     className?: string;
+    locked?: boolean;
     fontSize?: SizeValue | string;
     labelColor?: string;
     labelFontSize?: number;
@@ -60,12 +61,14 @@ export interface RenderNode {
     fill?: string;
     stroke?: string;
     strokeWidth?: number;
+    lineDirection?: 'up' | 'down';
     labelTextColor?: string;
     labelBgColor?: string;
     edgeLabel?: string;
     edgeClassName?: string;
     content?: string | Record<string, unknown>;
     variant?: string;
+    groupId?: string;
     src?: string;
     imageSrc?: string;
     alt?: string;
@@ -88,6 +91,7 @@ export interface RenderNode {
     size?: unknown;
     width?: number;
     height?: number;
+    zIndex?: number;
     layout?:
       | 'tree'
       | 'bidirectional'
@@ -120,6 +124,19 @@ export interface RenderNode {
     };
     __mindmapEmbedScope?: string;
     __magamScope?: string;
+    pluginInstanceId?: string;
+    pluginPackage?: string;
+    packageName?: string;
+    pluginVersion?: string;
+    pluginVersionId?: string;
+    version?: string;
+    pluginExport?: string;
+    exportName?: string;
+    pluginDisplayName?: string;
+    pluginProps?: Record<string, unknown>;
+    pluginBindingConfig?: Record<string, unknown>;
+    pluginPersistedState?: Record<string, unknown>;
+    pluginCapabilities?: string[];
     children?: any;
   };
   children?: RenderNode[];
@@ -216,9 +233,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
       ...(Array.isArray(enrichedData.children)
         ? { children: enrichedData.children }
         : {}),
-      ...(typeof enrichedData.className === 'string'
-        ? { className: enrichedData.className }
-        : {}),
       sourceMeta,
     };
 
@@ -259,9 +273,105 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
     typeof value === 'boolean' ? value : undefined
   );
 
+  const resolveParsedGroupId = (input: {
+    explicitGroupId?: unknown;
+    mindmapId?: string | null;
+  }): string | undefined => {
+    if (typeof input.explicitGroupId === 'string' && input.explicitGroupId.length > 0) {
+      return input.explicitGroupId;
+    }
+    return input.mindmapId ?? undefined;
+  };
+
+  const resolveParsedZIndex = (value: unknown): number | undefined => (
+    typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  );
+
   const isRecord = (value: unknown): value is Record<string, unknown> => (
     typeof value === 'object' && value !== null && !Array.isArray(value)
   );
+
+  const readRecordProp = (value: unknown): Record<string, unknown> => (
+    isRecord(value) ? value : {}
+  );
+
+  const readStringArrayProp = (value: unknown): string[] => (
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  );
+
+  const normalizePluginCapabilities = (value: unknown): string[] => {
+    const allowedCapabilities = new Set([
+      'query:objects',
+      'object:get',
+      'selection:read',
+      'instance:update-props',
+      'action:emit',
+      'resize:request',
+    ]);
+    return readStringArrayProp(value).filter((capability) => allowedCapabilities.has(capability));
+  };
+
+  const toPluginNodeData = (input: {
+    child: RenderNode;
+    nodeId: string;
+    mindmapId?: string;
+    groupId?: string;
+    zIndex?: number;
+  }): Record<string, unknown> => {
+    const instanceId = readStringProp(input.child.props.pluginInstanceId) || `${input.nodeId}.instance`;
+    const packageName = (
+      readStringProp(input.child.props.pluginPackage)
+      || readStringProp(input.child.props.packageName)
+      || 'local'
+    );
+    const version = (
+      readStringProp(input.child.props.pluginVersionId)
+      || readStringProp(input.child.props.pluginVersion)
+      || readStringProp(input.child.props.version)
+      || '0.0.0'
+    );
+    const exportName = (
+      readStringProp(input.child.props.pluginExport)
+      || readStringProp(input.child.props.exportName)
+      || 'widget.default'
+    );
+    const displayName = (
+      readStringProp(input.child.props.pluginDisplayName)
+      || readStringProp(input.child.props.label)
+      || exportName
+    );
+
+    const pluginProps = readRecordProp(input.child.props.pluginProps ?? input.child.props.content);
+    const pluginBindingConfig = readRecordProp(input.child.props.pluginBindingConfig);
+    const pluginPersistedState = readRecordProp(input.child.props.pluginPersistedState);
+    const pluginCapabilities = normalizePluginCapabilities(input.child.props.pluginCapabilities);
+
+    return {
+      label: displayName,
+      groupId: input.groupId ?? input.mindmapId,
+      zIndex: input.zIndex,
+      sourceMeta: input.child.props.sourceMeta || {
+        sourceId: input.nodeId,
+        kind: input.mindmapId ? 'mindmap' : 'canvas',
+        scopeId: input.mindmapId,
+      },
+      plugin: {
+        instanceId,
+        packageName,
+        version,
+        exportName,
+        displayName,
+        props: pluginProps,
+        bindingConfig: pluginBindingConfig,
+        persistedState: pluginPersistedState,
+        capabilities: pluginCapabilities,
+      },
+      pluginRuntime: {
+        status: 'loading',
+        updatedAt: Date.now(),
+      },
+    };
+  };
 
   const readMarkdownSourceFromChildren = (children?: unknown[]): string | undefined => {
     for (const child of children || []) {
@@ -732,6 +842,35 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
         if (child.children && child.children.length > 0) {
           processChildren(child.children, mmId);
         }
+      } else if (child.type === 'graph-plugin' || child.type === 'graph-widget') {
+        const rawPluginId = child.props.id || `plugin-${nodeIdCounter++}`;
+        const pluginNodeId = resolveNodeId(
+          rawPluginId,
+          mindmapId,
+          child.props.__mindmapEmbedScope,
+        );
+        const parsedGroupId = resolveParsedGroupId({
+          explicitGroupId: child.props.groupId,
+          mindmapId,
+        });
+        const parsedZIndex = resolveParsedZIndex(child.props.zIndex);
+        nodes.push({
+          id: pluginNodeId,
+          type: 'plugin',
+          position: { x: child.props.x || 0, y: child.props.y || 0 },
+          zIndex: parsedZIndex,
+          data: withEditMeta('plugin', pluginNodeId, toPluginNodeData({
+            child,
+            nodeId: pluginNodeId,
+            mindmapId,
+            groupId: parsedGroupId,
+            zIndex: parsedZIndex,
+          })),
+        });
+
+        if (mindmapId) {
+          createMindMapEdge(child, { nodeId: pluginNodeId, mindmapId });
+        }
       } else if (child.type === 'graph-sequence') {
         if (child.props.size !== undefined) {
           warnUnsupportedLegacySizeApi('SequenceDiagramNode', 'size');
@@ -761,7 +900,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             participants.push({
               id: seqChild.props.id || '',
               label: seqChild.props.label || seqChild.props.id || '',
-              className: seqChild.props.className,
             });
           } else if (seqChild.type === 'graph-message') {
             const msgFrom = fromToEndpointValue(seqChild.props.from) || '';
@@ -779,18 +917,25 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
         });
 
         const sequenceRendererChildren = child.children || [];
+        const parsedGroupId = resolveParsedGroupId({
+          explicitGroupId: child.props.groupId,
+          mindmapId,
+        });
+        const parsedZIndex = resolveParsedZIndex(child.props.zIndex);
         nodes.push({
           id: seqId,
           type: 'sequence-diagram',
           position: { x: child.props.x || 0, y: child.props.y || 0 },
+          zIndex: parsedZIndex,
           data: withEditMeta('sequence-diagram', seqId, {
             participants,
             messages,
             participantSpacing: child.props.participantSpacing ?? 200,
             messageSpacing: child.props.messageSpacing ?? 60,
-            className: child.props.className,
+            locked: child.props.locked,
             fontFamily: sequenceFontFamily,
-            groupId: mindmapId,
+            groupId: parsedGroupId,
+            zIndex: parsedZIndex,
             anchor: child.props.anchor,
             position: child.props.position,
             gap: child.props.gap,
@@ -867,17 +1012,24 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
 
         const nodeBubble = child.props.bubble || childBubble;
         const nodeFontFamily = normalizeFontFamily(child.props.fontFamily);
+        const parsedGroupId = resolveParsedGroupId({
+          explicitGroupId: child.props.groupId,
+          mindmapId,
+        });
+        const parsedZIndex = resolveParsedZIndex(child.props.zIndex);
 
         nodes.push({
           id: nodeId,
           type: hasMarkdown ? 'markdown' : 'shape',
           position: { x: child.props.x || 0, y: child.props.y || 0 },
+          zIndex: parsedZIndex,
           data: withEditMeta(hasMarkdown ? 'markdown' : 'shape', nodeId, {
             label: safeLabel,
             type: child.props.type || 'rectangle',
             color: child.props.color || child.props.bg,
-            className: child.props.className,
-            groupId: mindmapId,
+            locked: child.props.locked,
+            groupId: parsedGroupId,
+            zIndex: parsedZIndex,
             sourceMeta: child.props.sourceMeta || {
               sourceId: nodeId,
               kind: mindmapId ? 'mindmap' : 'canvas',
@@ -914,18 +1066,25 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           mindmapId,
           child.props.__mindmapEmbedScope,
         );
+        const parsedGroupId = resolveParsedGroupId({
+          explicitGroupId: child.props.groupId,
+          mindmapId,
+        });
+        const parsedZIndex = resolveParsedZIndex(child.props.zIndex);
         nodes.push({
           id: imageId,
           type: 'image',
           position: { x: child.props.x || 0, y: child.props.y || 0 },
+          zIndex: parsedZIndex,
           data: withEditMeta('image', imageId, {
             src: child.props.src || '',
             alt: child.props.alt,
             width: child.props.width,
             height: child.props.height,
             fit: child.props.fit,
-            className: child.props.className,
-            groupId: mindmapId,
+            locked: child.props.locked,
+            groupId: parsedGroupId,
+            zIndex: parsedZIndex,
             sourceMeta: child.props.sourceMeta || {
               sourceId: imageId,
               kind: mindmapId ? 'mindmap' : 'canvas',
@@ -959,6 +1118,11 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           { textJoiner: ' ' },
         );
         const normalized = normalizeStickerData(child.props);
+        const parsedGroupId = resolveParsedGroupId({
+          explicitGroupId: child.props.groupId,
+          mindmapId,
+        });
+        const parsedZIndex = resolveParsedZIndex(child.props.zIndex);
 
         stickerDebugLog('parser', {
           stickerId,
@@ -977,13 +1141,16 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           id: stickerId,
           type: 'sticker',
           position: { x: child.props.x || 0, y: child.props.y || 0 },
+          zIndex: parsedZIndex,
           data: withEditMeta('sticker', stickerId, {
             label: stickerLabel || child.props.label || '',
             width: child.props.width,
             height: child.props.height,
             rotation: child.props.rotation,
             fontFamily: stickerFontFamily,
-            groupId: mindmapId,
+            locked: child.props.locked,
+            groupId: parsedGroupId,
+            zIndex: parsedZIndex,
             children: stickerChildren,
             outlineWidth: normalized.outlineWidth,
             outlineColor: normalized.outlineColor,
@@ -1035,6 +1202,11 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           },
         });
         const defaultPosition = getWashiNodePosition(resolvedGeometry);
+        const parsedGroupId = resolveParsedGroupId({
+          explicitGroupId: child.props.groupId,
+          mindmapId,
+        });
+        const parsedZIndex = resolveParsedZIndex(child.props.zIndex);
 
         nodes.push({
           id: washiId,
@@ -1049,9 +1221,10 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
                 ? child.props.y
                 : defaultPosition.y,
           },
+          zIndex: parsedZIndex,
           data: withEditMeta('washi-tape', washiId, {
             label: washiLabel || child.props.label || '',
-            className: child.props.className,
+            locked: child.props.locked,
             pattern: child.props.pattern ?? normalizedWashi.pattern,
             edge: child.props.edge,
             texture: child.props.texture,
@@ -1060,7 +1233,8 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             resolvedGeometry,
             seed: normalizedWashi.seed,
             opacity: normalizedWashi.opacity,
-            groupId: mindmapId,
+            groupId: parsedGroupId,
+            zIndex: parsedZIndex,
             children: washiChildren,
             sourceMeta: child.props.sourceMeta || {
               sourceId: washiId,
@@ -1080,6 +1254,41 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
           mindmapId,
           child.props.__mindmapEmbedScope,
         );
+        const parsedGroupId = resolveParsedGroupId({
+          explicitGroupId: child.props.groupId,
+          mindmapId,
+        });
+        const parsedZIndex = resolveParsedZIndex(child.props.zIndex);
+        const hasPluginReference = (
+          child.props.pluginInstanceId !== undefined
+          || child.props.pluginPackage !== undefined
+          || child.props.packageName !== undefined
+          || child.props.pluginExport !== undefined
+          || child.props.exportName !== undefined
+        );
+        if (hasPluginReference) {
+          nodes.push({
+            id: nodeId,
+            type: 'plugin',
+            position: {
+              x: typeof child.props.x === 'number' ? child.props.x : 0,
+              y: typeof child.props.y === 'number' ? child.props.y : 0,
+            },
+            zIndex: parsedZIndex,
+            data: withEditMeta('plugin', nodeId, toPluginNodeData({
+              child,
+              nodeId,
+              mindmapId,
+              groupId: parsedGroupId,
+              zIndex: parsedZIndex,
+            })),
+          });
+
+          if (mindmapId) {
+            createMindMapEdge(child, { nodeId, mindmapId });
+          }
+          return;
+        }
         const nodeFontFamily = normalizeFontFamily(child.props.fontFamily);
 
         const nestedEdges: RenderNode[] = [];
@@ -1208,15 +1417,17 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             x: typeof child.props.x === 'number' ? child.props.x : 0,
             y: typeof child.props.y === 'number' ? child.props.y : 0,
           },
+          zIndex: parsedZIndex,
           data: withEditMeta(nodeType, nodeId, {
             label: safeLabel,
             type: readStringProp(renderFrame?.shape) || child.props.type || 'rectangle',
+            locked: child.props.locked,
             shape: nodeType === 'sticky'
               ? normalizedSticky?.shape ?? readStringProp(renderFrame?.shape)
               : undefined,
             color: child.props.color || child.props.bg,
-            className: child.props.className,
-            groupId: mindmapId,
+            groupId: parsedGroupId,
+            zIndex: parsedZIndex,
             pattern:
               nodeType === 'sticky'
                 ? renderPattern ?? normalizedSticky?.pattern
@@ -1236,6 +1447,12 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
             fill: readStringProp(renderFrame?.fill) || child.props.fill,
             stroke: readStringProp(renderFrame?.stroke) || child.props.stroke,
             strokeWidth: readNumberProp(renderFrame?.strokeWidth) ?? child.props.strokeWidth,
+            lineDirection:
+              child.props.lineDirection === 'up'
+                ? 'up'
+                : child.props.lineDirection === 'down'
+                  ? 'down'
+                  : undefined,
             fontFamily: nodeFontFamily,
             children: parsedChildren,
             size: objectSizeInput,
@@ -1272,32 +1489,39 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
   processChildren(children);
 
   const finalizedNodes = nodes.map((node) => {
-    if (node.type !== 'washi-tape') {
-      return node;
+    const baseNode = ((node.data || {}) as Record<string, unknown>).locked === true
+      ? {
+          ...node,
+          draggable: false,
+        }
+      : node;
+
+    if (baseNode.type !== 'washi-tape') {
+      return baseNode;
     }
 
-    const data = (node.data || {}) as Record<string, unknown>;
+    const data = (baseNode.data || {}) as Record<string, unknown>;
     const normalizedWashi = normalizeWashiDefaults({
       ...data,
-      id: node.id,
-      x: node.position.x,
-      y: node.position.y,
+      id: baseNode.id,
+      x: baseNode.position.x,
+      y: baseNode.position.y,
     });
     const atInput = (data.at as Record<string, unknown> | undefined) ?? normalizedWashi.at;
     const resolvedGeometry = resolveWashiGeometry({
       at: atInput as any,
       nodes,
       seed: (data.seed as string | number | undefined) ?? normalizedWashi.seed,
-      fallbackPosition: node.position,
+      fallbackPosition: baseNode.position,
     });
     const isAttach = (atInput as { type?: unknown }).type === 'attach';
     const attachedPosition = getWashiNodePosition(resolvedGeometry);
 
     return {
-      ...node,
-      position: isAttach ? attachedPosition : node.position,
+      ...baseNode,
+      position: isAttach ? attachedPosition : baseNode.position,
       data: {
-        ...(node.data || {}),
+        ...(baseNode.data || {}),
         at: atInput,
         resolvedGeometry,
       },

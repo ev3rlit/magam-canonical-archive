@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { stat, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
+import { API_SHARED_MESSAGES } from '../../_shared/messages';
 
 const WORKSPACE_ROOT = path.resolve(process.env.MAGAM_TARGET_DIR || process.cwd());
 
@@ -58,19 +59,19 @@ export async function GET(request: Request) {
     const rawPath = searchParams.get('path');
 
     if (!rawPath) {
-      return createFileError(400, 'IMG_400_INVALID_SOURCE', 'path is required');
+      return createFileError(400, 'IMG_400_INVALID_SOURCE', API_SHARED_MESSAGES.pathRequired);
     }
 
     const absPath = resolveAssetPath(rawPath);
     const extension = path.extname(absPath).slice(1).toLowerCase();
 
     if (!ALLOWED_EXTENSIONS.has(extension)) {
-      return createFileError(422, 'IMG_400_INVALID_SOURCE', 'unsupported asset extension');
+      return createFileError(422, 'IMG_400_INVALID_SOURCE', API_SHARED_MESSAGES.unsupportedAssetExtension);
     }
 
     const info = await stat(absPath);
     if (!info.isFile()) {
-      return createFileError(404, 'IMG_404_NOT_FOUND', 'asset not found');
+      return createFileError(404, 'IMG_404_NOT_FOUND', API_SHARED_MESSAGES.assetNotFound);
     }
 
     const buffer = await readFile(absPath);
@@ -87,16 +88,16 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
+    const message = error instanceof Error ? error.message : API_SHARED_MESSAGES.unknownError;
     if (message === 'IMG_400_INVALID_SOURCE') {
-      return createFileError(400, message, 'Invalid asset path');
+      return createFileError(400, message, API_SHARED_MESSAGES.invalidAssetPath);
     }
 
     if (message.startsWith('ENOENT') || message.includes('no such file')) {
-      return createFileError(404, 'IMG_404_NOT_FOUND', 'Asset file not found');
+      return createFileError(404, 'IMG_404_NOT_FOUND', API_SHARED_MESSAGES.assetFileNotFound);
     }
 
-    console.error('[assets/file] error:', message);
+    console.error(API_SHARED_MESSAGES.routeLog.assetsFile, message);
     return createFileError(500, 'IMG_500_ASSET_READ_FAILED', message);
   }
 }

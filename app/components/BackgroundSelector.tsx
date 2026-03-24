@@ -4,15 +4,17 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Grid3x3, StretchHorizontal, Square } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { useGraphStore } from '@/store/graph';
+import { getUiCopy } from '@/components/ui/copy';
 
 type PresetValue = 'dots' | 'lines' | 'solid';
-const options: { value: PresetValue; label: string; icon: React.ReactNode }[] = [
-  { value: 'dots', label: 'Dots', icon: <Grid3x3 className="w-4 h-4" /> },
-  { value: 'lines', label: 'Lines', icon: <StretchHorizontal className="w-4 h-4" /> },
-  { value: 'solid', label: 'Solid', icon: <Square className="w-4 h-4" /> },
-];
 
 export const BackgroundSelector: React.FC = () => {
+  const copy = getUiCopy().backgroundSelector;
+  const options: { value: PresetValue; label: string; icon: React.ReactNode }[] = [
+    { value: 'dots', label: copy.options.dots, icon: <Grid3x3 className="w-4 h-4" /> },
+    { value: 'lines', label: copy.options.lines, icon: <StretchHorizontal className="w-4 h-4" /> },
+    { value: 'solid', label: copy.options.solid, icon: <Square className="w-4 h-4" /> },
+  ];
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const canvasBackground = useGraphStore((s) => s.canvasBackground);
@@ -48,7 +50,7 @@ export const BackgroundSelector: React.FC = () => {
       <button
         type="button"
         onClick={() => setIsOpen((prev) => !prev)}
-        title="Background Style"
+        title={copy.title}
         className={cn(
           'p-2 rounded-md transition-all duration-200',
           'hover:bg-slate-100 dark:hover:bg-slate-800',

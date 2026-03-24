@@ -1,35 +1,47 @@
 'use client';
 
-import dynamic from 'next/dynamic';
+import {
+  createElement,
+  type ComponentType,
+  useEffect,
+  useState,
+} from 'react';
 
-export const LazyChatPanel = dynamic(
-  () => import('@/components/chat/ChatPanel').then((module) => module.ChatPanel),
-  {
-    ssr: false,
-    loading: () => null,
-  },
-);
+function createLazyClientComponent<Props extends object>(
+  loader: () => Promise<ComponentType<Props>>,
+): (props: Props) => React.ReactElement | null {
+  return function LazyClientComponent(props: Props) {
+    const [Component, setComponent] = useState<ComponentType<Props> | null>(null);
 
-export const LazySearchOverlay = dynamic(
+    useEffect(() => {
+      let active = true;
+      void loader().then((nextComponent) => {
+        if (active) {
+          setComponent(() => nextComponent);
+        }
+      });
+
+      return () => {
+        active = false;
+      };
+    }, []);
+
+    if (!Component) {
+      return null;
+    }
+
+    return createElement(Component as ComponentType<any>, props);
+  };
+}
+
+export const LazySearchOverlay = createLazyClientComponent(
   () => import('@/components/ui/SearchOverlay').then((module) => module.SearchOverlay),
-  {
-    ssr: false,
-    loading: () => null,
-  },
 );
 
-export const LazyStickerInspector = dynamic(
+export const LazyStickerInspector = createLazyClientComponent(
   () => import('@/components/ui/StickerInspector').then((module) => module.StickerInspector),
-  {
-    ssr: false,
-    loading: () => null,
-  },
 );
 
-export const LazyQuickOpenDialog = dynamic(
+export const LazyQuickOpenDialog = createLazyClientComponent(
   () => import('@/components/ui/QuickOpenDialog').then((module) => module.QuickOpenDialog),
-  {
-    ssr: false,
-    loading: () => null,
-  },
 );

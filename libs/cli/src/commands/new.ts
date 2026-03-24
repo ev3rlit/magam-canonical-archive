@@ -1,10 +1,28 @@
 import { writeFile, access } from "fs/promises";
 import * as path from "path";
 import { initProject } from "./init";
+import { CLI_MESSAGES } from "../messages";
+
+const COMPATIBILITY_TSX_EXTENSION = ".tsx";
+
+function createCompatibilityCanvasTemplate(componentName: string, baseName: string): string {
+  return `import { Canvas, MindMap, Node } from "@magam/core";
+
+export default function ${componentName}() {
+  return (
+    <Canvas>
+      <MindMap>
+        <Node id="root" label="${baseName}" />
+      </MindMap>
+    </Canvas>
+  );
+}
+`;
+}
 
 export async function newCommand(fileName: string) {
-  if (!fileName.endsWith(".tsx")) {
-    fileName = fileName + ".tsx";
+  if (!fileName.endsWith(COMPATIBILITY_TSX_EXTENSION)) {
+    fileName = fileName + COMPATIBILITY_TSX_EXTENSION;
   }
 
   const fullPath = path.resolve(fileName);
@@ -19,30 +37,17 @@ export async function newCommand(fileName: string) {
 
   try {
     await access(fullPath);
-    console.error(`✗ File already exists: ${fileName}`);
+    console.error(CLI_MESSAGES.new.fileExists(fileName));
     process.exit(1);
   } catch {
     // File doesn't exist — proceed
   }
 
-  const baseName = path.basename(fileName, ".tsx");
+  const baseName = path.basename(fileName, COMPATIBILITY_TSX_EXTENSION);
   const funcName = baseName
     .replace(/[_-]+(.)/g, (_, c) => c.toUpperCase())
     .replace(/^(.)/, (_, c) => c.toUpperCase());
 
-  const template = `import { Canvas, MindMap, Node } from "@magam/core";
-
-export default function ${funcName}() {
-  return (
-    <Canvas>
-      <MindMap>
-        <Node id="root" label="${baseName}" />
-      </MindMap>
-    </Canvas>
-  );
-}
-`;
-
-  await writeFile(fullPath, template);
-  console.log(`✓ Created ${fileName}`);
+  await writeFile(fullPath, createCompatibilityCanvasTemplate(funcName, baseName));
+  console.log(CLI_MESSAGES.new.fileCreated(fileName));
 }

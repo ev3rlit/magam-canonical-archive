@@ -51,6 +51,20 @@ describe('filePatcher', () => {
     expect(patched.includes('label={"Updated"}')).toBe(true);
   });
 
+  it('update: groupId와 zIndex structural patch를 JSX prop으로 반영한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas><Shape id="shape-1" x={10} y={20} /></Canvas>;
+      }
+    `);
+
+    await patchFile(filePath, 'shape-1', { groupId: 'group-1', zIndex: 12 });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('groupId={"group-1"}')).toBe(true);
+    expect(patched.includes('zIndex={12}')).toBe(true);
+  });
+
   it('update: id 변경 시 from/to/anchor 참조를 함께 갱신한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {
@@ -128,6 +142,33 @@ describe('filePatcher', () => {
     expect(patched.includes('y={80}')).toBe(true);
   });
 
+  it('update: text와 sticky와 shape label carrier는 markdown-first body child로 승격할 수 있다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas>
+          <Text id="text-1" label={"Old text"} />
+          <Sticky id="sticky-1" label={"Old sticky"} />
+          <Shape id="shape-1" label={"Old shape"} />
+        </Canvas>;
+      }
+    `);
+
+    await patchNodeContent(filePath, 'text-1', '# New text');
+    await patchNodeContent(filePath, 'sticky-1', '## New sticky');
+    await patchNodeContent(filePath, 'shape-1', '### New shape');
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(/id=\{?"text-1"\}?/.test(patched)).toBe(true);
+    expect(patched.includes('label={"# New text"}')).toBe(true);
+    expect(patched.includes('<Markdown>{`# New text`}</Markdown>')).toBe(true);
+    expect(/id=\{?"sticky-1"\}?/.test(patched)).toBe(true);
+    expect(patched.includes('label={"## New sticky"}')).toBe(true);
+    expect(patched.includes('<Markdown>{`## New sticky`}</Markdown>')).toBe(true);
+    expect(/id=\{?"shape-1"\}?/.test(patched)).toBe(true);
+    expect(patched.includes('label={"### New shape"}')).toBe(true);
+    expect(patched.includes('<Markdown>{`### New shape`}</Markdown>')).toBe(true);
+  });
+
   it('move: patchNodePosition은 x/y만 갱신한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {
@@ -158,6 +199,33 @@ describe('filePatcher', () => {
     expect(patched.includes('hello')).toBe(true);
   });
 
+  it('create: text와 sticky는 markdown child body를 기본으로 생성한다', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas></Canvas>;
+      }
+    `);
+
+    await patchNodeCreate(filePath, {
+      id: 'text-body',
+      type: 'text',
+      props: { content: '# hello' },
+      placement: { mode: 'canvas-absolute', x: 40, y: 60 },
+    });
+    await patchNodeCreate(filePath, {
+      id: 'sticky-body',
+      type: 'sticky',
+      props: { content: '## sticky' },
+      placement: { mode: 'canvas-absolute', x: 120, y: 140 },
+    });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id={"text-body"}')).toBe(true);
+    expect(patched.includes('<Markdown>{`# hello`}</Markdown>')).toBe(true);
+    expect(patched.includes('id={"sticky-body"}')).toBe(true);
+    expect(patched.includes('<Markdown>{`## sticky`}</Markdown>')).toBe(true);
+  });
+
   it('create: canvas-absolute placement는 Shape에 x/y를 직접 기록한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample() {
@@ -177,6 +245,52 @@ describe('filePatcher', () => {
     expect(patched.includes('id={"shape-new"}')).toBe(true);
     expect(patched.includes('x={80}')).toBe(true);
     expect(patched.includes('y={120}')).toBe(true);
+    expect(patched.includes('<Markdown>{`Card`}</Markdown>')).toBe(true);
+  });
+
+  it('create: minimal shape variants stay on the Shape JSX path with explicit type props', async () => {
+    const filePath = await makeTempTsx(`
+      export default function Sample() {
+        return <Canvas></Canvas>;
+      }
+    `);
+
+    await patchNodeCreate(filePath, {
+      id: 'ellipse-new',
+      type: 'ellipse',
+      props: {
+        size: { width: 220, height: 140 },
+      },
+      placement: { mode: 'canvas-absolute', x: 40, y: 60 },
+    });
+    await patchNodeCreate(filePath, {
+      id: 'diamond-new',
+      type: 'diamond',
+      props: {
+        size: { width: 160, height: 160 },
+      },
+      placement: { mode: 'canvas-absolute', x: 240, y: 80 },
+    });
+    await patchNodeCreate(filePath, {
+      id: 'line-new',
+      type: 'line',
+      props: {
+        size: { width: 180, height: 48 },
+        lineDirection: 'up',
+      },
+      placement: { mode: 'canvas-absolute', x: 120, y: 240 },
+    });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('<Shape')).toBe(true);
+    expect(patched.includes('id={"ellipse-new"}')).toBe(true);
+    expect(patched.includes('type={"ellipse"}')).toBe(true);
+    expect(patched.includes('width: 220')).toBe(true);
+    expect(patched.includes('id={"diamond-new"}')).toBe(true);
+    expect(patched.includes('type={"diamond"}')).toBe(true);
+    expect(patched.includes('id={"line-new"}')).toBe(true);
+    expect(patched.includes('type={"line"}')).toBe(true);
+    expect(patched.includes('lineDirection={"up"}')).toBe(true);
   });
 
   it('create: mindmap-child placement는 같은 MindMap container 안에 from을 붙여 삽입한다', async () => {
@@ -356,9 +470,28 @@ describe('filePatcher', () => {
       }
     `);
 
-    await expect(patchNodeStyle(filePath, 'sticker-1', {
-      anchor: 'shape-1',
-    })).rejects.toThrow('EDIT_NOT_ALLOWED');
+    let error: unknown;
+    try {
+      await patchNodeStyle(filePath, 'sticker-1', {
+        anchor: 'shape-1',
+      });
+    } catch (cause) {
+      error = cause;
+    }
+
+    expect(error).toBeDefined();
+    const rejection = error as { code?: number; message?: string; data?: unknown };
+    expect(rejection.code).toBe(42211);
+    expect(rejection.message).toBe('PATCH_SURFACE_VIOLATION');
+    if (rejection.data && typeof rejection.data === 'object') {
+      const data = rejection.data as {
+        rejectedKeys?: string[];
+        rollback?: { failedAction?: string; rollbackPolicy?: string };
+      };
+      expect(data.rejectedKeys).toEqual(['anchor']);
+      expect(data.rollback?.failedAction).toBe('node.style.update');
+      expect(data.rollback?.rollbackPolicy).toBe('intent-scoped');
+    }
   });
 
   it('reparent: 부모 변경 성공', async () => {

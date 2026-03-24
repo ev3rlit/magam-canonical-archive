@@ -5,15 +5,7 @@
 import { readFile } from 'fs/promises';
 import { createHash } from 'crypto';
 import { isAbsolute, resolve } from 'path';
-import { CanonicalPersistenceRepository } from '../../libs/shared/src/lib/canonical-persistence/repository';
-import type {
-    CanonicalMutationEnvelope,
-    CanonicalMutationResultEnvelope,
-    CanonicalQueryRequest,
-    CanonicalQueryResultEnvelope,
-} from '../../libs/shared/src/lib/canonical-mutation-query/contracts';
-import { CanonicalMutationExecutor } from '../../libs/shared/src/lib/canonical-mutation-query/mutation-executor';
-import { CanonicalQueryService } from '../../libs/shared/src/lib/canonical-mutation-query/query-service';
+import { resolveCanonicalCanvasCompatibilityFilePath } from '../../libs/shared/src/lib/canonical-canvas-shell';
 import {
     patchFile,
     patchNodeCreate,
@@ -34,10 +26,13 @@ export interface RpcContext {
     ws: unknown;
     subscriptions: Set<string>;
     notifyFileChanged?: (payload: {
+        canvasId?: string;
         filePath: string;
+        resolvedFilePath: string;
         version: string;
         originId: string;
         commandId: string;
+        rootPath?: string;
     }) => void;
 }
 
@@ -46,26 +41,54 @@ type UpdateCommandType =
     | 'node.move.relative'
     | 'node.content.update'
     | 'node.style.update'
-    | 'node.rename';
+    | 'node.rename'
+    | 'node.group.update'
+    | 'node.z-order.update';
 const fileMutationLocks = new Map<string, Promise<void>>();
+const pluginInstancesByFile = new Map<string, Map<string, PluginInstanceRuntimeRecord>>();
 
-type CanonicalServices = {
-    queryService: {
-        execute: (request: CanonicalQueryRequest) => Promise<CanonicalQueryResultEnvelope>;
+interface PluginInstanceRuntimeRecord {
+    id: string;
+    pluginExportId: string;
+    pluginVersionId: string;
+    displayName: string;
+    props: Record<string, unknown>;
+    bindingConfig: Record<string, unknown>;
+    persistedState: Record<string, unknown>;
+    createdAt: string;
+    updatedAt: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function createIntentScopedDiagnostics(input: {
+    failedAction: string;
+    stage: string;
+    details?: Record<string, unknown>;
+}): Record<string, unknown> {
+    return {
+        failedAction: input.failedAction,
+        rollbackPolicy: 'intent-scoped',
+        stage: input.stage,
+        ...(input.details ?? {}),
     };
-    mutationExecutor: {
-        execute: (envelope: CanonicalMutationEnvelope) => Promise<CanonicalMutationResultEnvelope>;
+}
+
+function withDiagnostics(
+    data: unknown,
+    diagnostics: Record<string, unknown>,
+): Record<string, unknown> {
+    const base = isRecord(data) ? data : {};
+    const existingRollback = isRecord(base.rollback) ? base.rollback : {};
+    return {
+        ...base,
+        rollback: {
+            ...existingRollback,
+            ...diagnostics,
+        },
     };
-};
-
-let canonicalServicesPromise: Promise<CanonicalServices> | null = null;
-let canonicalServicesFactoryForTests: (() => Promise<CanonicalServices>) | null = null;
-
-export function __setCanonicalServicesFactoryForTests(
-    factory: (() => Promise<CanonicalServices>) | null,
-): void {
-    canonicalServicesFactoryForTests = factory;
-    canonicalServicesPromise = null;
 }
 
 function ensureString(value: unknown, fieldName: string): string {
@@ -83,6 +106,23 @@ function ensureOptionalString(value: unknown, fieldName: string): string | undef
     return value;
 }
 
+function ensureOptionalRootPath(value: unknown, fieldName: string): string | undefined {
+    const rootPath = ensureOptionalString(value, fieldName);
+    if (rootPath === undefined) {
+        return undefined;
+    }
+
+    const trimmed = rootPath.trim();
+    if (!trimmed) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} must not be empty` };
+    }
+    if (!isAbsolute(trimmed)) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} must be an absolute path` };
+    }
+
+    return resolve(trimmed);
+}
+
 function ensureOptionalUpdateCommandType(value: unknown): UpdateCommandType | undefined {
     if (value === undefined) {
         return undefined;
@@ -92,6 +132,8 @@ function ensureOptionalUpdateCommandType(value: unknown): UpdateCommandType | un
         || value === 'node.content.update'
         || value === 'node.style.update'
         || value === 'node.rename'
+        || value === 'node.group.update'
+        || value === 'node.z-order.update'
     ) {
         return value;
     }
@@ -118,6 +160,12 @@ function inferUpdateCommandType(props: NodeProps, explicitType?: UpdateCommandTy
     if (keys.length === 1 && typeof props.content === 'string') {
         return 'node.content.update';
     }
+    if (keys.length === 1 && ('groupId' in props)) {
+        return 'node.group.update';
+    }
+    if (keys.length === 1 && typeof props.zIndex === 'number') {
+        return 'node.z-order.update';
+    }
     if (keys.length === 1 && typeof props.gap === 'number') {
         return 'node.move.relative';
     }
@@ -135,39 +183,86 @@ function ensureNumber(value: unknown, fieldName: string): number {
 }
 
 function ensureRecord(value: unknown, fieldName: string): Record<string, unknown> {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    if (!isRecord(value)) {
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} must be an object` };
     }
-    return value as Record<string, unknown>;
+    return value;
 }
 
-function isRevisionToken(value: string): boolean {
-    return value.startsWith('rev:');
+function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
+    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }
 
-function ensureCanonicalScope(params: Record<string, unknown>): {
-    workspaceId: string;
-    documentId: string;
-} {
+function getPluginBucket(resolvedFilePath: string): Map<string, PluginInstanceRuntimeRecord> {
+    let bucket = pluginInstancesByFile.get(resolvedFilePath);
+    if (!bucket) {
+        bucket = new Map<string, PluginInstanceRuntimeRecord>();
+        pluginInstancesByFile.set(resolvedFilePath, bucket);
+    }
+    return bucket;
+}
+
+function toPluginInstanceSnapshot(record: PluginInstanceRuntimeRecord): PluginInstanceRuntimeRecord {
     return {
-        workspaceId: ensureString(params.workspaceId, 'workspaceId'),
-        documentId: ensureString(params.documentId, 'documentId'),
+        ...record,
+        props: cloneRecord(record.props),
+        bindingConfig: cloneRecord(record.bindingConfig),
+        persistedState: cloneRecord(record.persistedState),
     };
 }
 
-function toRpcLikeErrorFromCanonicalFailure(
-    failure: CanonicalMutationResultEnvelope & { ok: false },
-): never {
-    const rpcTemplate = RPC_ERRORS[failure.code as keyof typeof RPC_ERRORS]
-        ?? RPC_ERRORS.INTERNAL_ERROR;
-    throw {
-        ...rpcTemplate,
-        data: {
-            ...(failure.path ? { path: failure.path } : {}),
-            ...(failure.details ? { details: failure.details } : {}),
-            message: failure.message,
-        },
+function ensurePluginInstanceInput(value: unknown): {
+    id: string;
+    pluginExportId: string;
+    pluginVersionId: string;
+    displayName?: string;
+    props?: Record<string, unknown>;
+    bindingConfig?: Record<string, unknown>;
+    persistedState?: Record<string, unknown>;
+} {
+    const input = ensureRecord(value, 'instance');
+    const id = ensureString(input.id, 'instance.id');
+    const pluginExportId = ensureString(input.pluginExportId, 'instance.pluginExportId');
+    const pluginVersionId = ensureString(input.pluginVersionId, 'instance.pluginVersionId');
+    const displayName = ensureOptionalString(input.displayName, 'instance.displayName');
+    const props = input.props === undefined ? undefined : ensureRecord(input.props, 'instance.props');
+    const bindingConfig = input.bindingConfig === undefined
+        ? undefined
+        : ensureRecord(input.bindingConfig, 'instance.bindingConfig');
+    const persistedState = input.persistedState === undefined
+        ? undefined
+        : ensureRecord(input.persistedState, 'instance.persistedState');
+
+    return {
+        id,
+        pluginExportId,
+        pluginVersionId,
+        ...(displayName ? { displayName } : {}),
+        ...(props ? { props } : {}),
+        ...(bindingConfig ? { bindingConfig } : {}),
+        ...(persistedState ? { persistedState } : {}),
     };
+}
+
+async function mutatePluginRuntimeWithContract<T>(
+    common: { canvasId?: string; filePath: string; resolvedFilePath: string; rootPath?: string; baseVersion: string; originId: string; commandId: string },
+    mutator: (bucket: Map<string, PluginInstanceRuntimeRecord>) => T,
+): Promise<{ success: boolean; newVersion: string; commandId: string; canvasId?: string; filePath: string; resolvedFilePath: string; data: T }> {
+    return runWithOptionalFileMutex(common.resolvedFilePath, async () => {
+        await ensureBaseVersion(common.resolvedFilePath, common.baseVersion);
+        const bucket = getPluginBucket(common.resolvedFilePath);
+        const data = mutator(bucket);
+        const newVersion = await getFileVersion(common.resolvedFilePath);
+        return {
+            success: true,
+            newVersion,
+            commandId: common.commandId,
+            canvasId: common.canvasId,
+            filePath: common.filePath,
+            resolvedFilePath: common.resolvedFilePath,
+            data,
+        };
+    });
 }
 
 function ensureCreatePlacement(value: unknown): CreateNodeInput['placement'] | undefined {
@@ -229,44 +324,43 @@ export function runWithOptionalFileMutex<T>(filePath: string, task: () => Promis
     return run;
 }
 
-function resolveWorkspaceFilePath(filePath: string): string {
+function resolveWorkspaceFilePath(filePath: string, rootPath?: string): string {
     if (isAbsolute(filePath)) {
         return filePath;
     }
-    const workspaceRoot = resolve(process.env.MAGAM_TARGET_DIR || process.cwd());
+    const workspaceRoot = resolve(rootPath || process.env.MAGAM_TARGET_DIR || process.cwd());
     return resolve(workspaceRoot, filePath);
 }
 
-async function createDefaultCanonicalServices(): Promise<CanonicalServices> {
-    const workspaceRoot = resolve(process.env.MAGAM_TARGET_DIR || process.cwd());
-    const [{ createCanonicalPgliteDb }, { createCanonicalMutationRepositoryAdapter, createCanonicalQueryRepositoryAdapter }] = await Promise.all([
-        import('../../libs/shared/src/lib/canonical-persistence/pglite-db'),
-        import('../../libs/shared/src/lib/canonical-mutation-query/runtime-adapters'),
-    ]);
-
-    const handle = await createCanonicalPgliteDb(workspaceRoot);
-    const repository = new CanonicalPersistenceRepository(handle.db);
-
+async function resolveCanvasCompatibilityPath(canvasId: string, rootPath?: string): Promise<{ filePath: string; resolvedFilePath: string }> {
+    const targetDir = resolve(rootPath || process.env.MAGAM_TARGET_DIR || process.cwd());
+    const filePath = await resolveCanonicalCanvasCompatibilityFilePath({
+        targetDir,
+        canvasId,
+    });
+    if (!filePath) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: `canvasId ${canvasId} has no compatibility path` };
+    }
     return {
-        queryService: new CanonicalQueryService(createCanonicalQueryRepositoryAdapter(repository)),
-        mutationExecutor: new CanonicalMutationExecutor(createCanonicalMutationRepositoryAdapter(repository)),
+        filePath,
+        resolvedFilePath: resolveWorkspaceFilePath(filePath, targetDir),
     };
 }
 
-async function getCanonicalServices(): Promise<CanonicalServices> {
-    if (!canonicalServicesPromise) {
-        canonicalServicesPromise = (canonicalServicesFactoryForTests ?? createDefaultCanonicalServices)();
+async function ensureCommonParams(params: Record<string, unknown>) {
+    const canvasId = ensureOptionalString(params.canvasId, 'canvasId');
+    const inputFilePath = ensureOptionalString(params.filePath, 'filePath');
+    if (!canvasId && !inputFilePath) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
     }
-    return canonicalServicesPromise;
-}
-
-function ensureCommonParams(params: Record<string, unknown>) {
-    const filePath = ensureString(params.filePath, 'filePath');
     const baseVersion = ensureString(params.baseVersion, 'baseVersion');
     const originId = ensureString(params.originId, 'originId');
     const commandId = ensureString(params.commandId, 'commandId');
-    const resolvedFilePath = resolveWorkspaceFilePath(filePath);
-    return { filePath, resolvedFilePath, baseVersion, originId, commandId };
+    const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
+    const resolved = inputFilePath
+        ? { filePath: inputFilePath, resolvedFilePath: resolveWorkspaceFilePath(inputFilePath, rootPath) }
+        : await resolveCanvasCompatibilityPath(canvasId as string, rootPath);
+    return { canvasId: canvasId ?? undefined, filePath: resolved.filePath, resolvedFilePath: resolved.resolvedFilePath, rootPath, baseVersion, originId, commandId };
 }
 
 async function getFileVersion(filePath: string): Promise<string> {
@@ -287,63 +381,62 @@ async function ensureBaseVersion(filePath: string, baseVersion: string): Promise
 
 async function mutateWithContract(
     ctx: RpcContext,
-    common: { filePath: string; resolvedFilePath: string; baseVersion: string; originId: string; commandId: string },
+    common: { canvasId?: string; filePath: string; resolvedFilePath: string; rootPath?: string; baseVersion: string; originId: string; commandId: string },
     mutator: () => Promise<void>,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; canvasId?: string; filePath: string; resolvedFilePath: string }> {
     return runWithOptionalFileMutex(common.resolvedFilePath, async () => {
         await ensureBaseVersion(common.resolvedFilePath, common.baseVersion);
         await mutator();
         const newVersion = await getFileVersion(common.resolvedFilePath);
         ctx.notifyFileChanged?.({
+            canvasId: common.canvasId,
             filePath: common.filePath,
+            resolvedFilePath: common.resolvedFilePath,
             version: newVersion,
             originId: common.originId,
             commandId: common.commandId,
+            ...(common.rootPath ? { rootPath: common.rootPath } : {}),
         });
         return {
             success: true,
             newVersion,
             commandId: common.commandId,
+            canvasId: common.canvasId,
             filePath: common.filePath,
+            resolvedFilePath: common.resolvedFilePath,
         };
     });
 }
 
-async function mutateWithCanonicalContract(
-    ctx: RpcContext,
-    common: { filePath: string; baseVersion: string; originId: string; commandId: string },
-    envelope: CanonicalMutationEnvelope,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const services = await getCanonicalServices();
-    const result = await services.mutationExecutor.execute(envelope);
-    if (!result.ok) {
-        return toRpcLikeErrorFromCanonicalFailure(result);
-    }
-
-    ctx.notifyFileChanged?.({
-        filePath: common.filePath,
-        version: result.revision.after,
-        originId: common.originId,
-        commandId: common.commandId,
-    });
-
-    return {
-        success: true,
-        newVersion: result.revision.after,
-        commandId: common.commandId,
-        filePath: common.filePath,
-    };
-}
-
 async function handleFileSubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
-    const filePath = ensureString(params.filePath, 'filePath');
-    ctx.subscriptions.add(filePath);
+    const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
+    const canvasId = ensureOptionalString(params.canvasId, 'canvasId');
+    const filePath = ensureOptionalString(params.filePath, 'filePath');
+    if (!canvasId && !filePath) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
+    }
+    if (filePath) {
+        ctx.subscriptions.add(resolveWorkspaceFilePath(filePath, rootPath));
+        return { success: true };
+    }
+    const resolved = await resolveCanvasCompatibilityPath(canvasId as string, rootPath);
+    ctx.subscriptions.add(resolved.resolvedFilePath);
     return { success: true };
 }
 
 async function handleFileUnsubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
-    const filePath = ensureString(params.filePath, 'filePath');
-    ctx.subscriptions.delete(filePath);
+    const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
+    const canvasId = ensureOptionalString(params.canvasId, 'canvasId');
+    const filePath = ensureOptionalString(params.filePath, 'filePath');
+    if (!canvasId && !filePath) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
+    }
+    if (filePath) {
+        ctx.subscriptions.delete(resolveWorkspaceFilePath(filePath, rootPath));
+        return { success: true };
+    }
+    const resolved = await resolveCanvasCompatibilityPath(canvasId as string, rootPath);
+    ctx.subscriptions.delete(resolved.resolvedFilePath);
     return { success: true };
 }
 
@@ -351,7 +444,7 @@ async function handleNodeUpdate(
     params: Record<string, unknown>,
     ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const props = params.props as NodeProps | undefined;
     const explicitCommandType = ensureOptionalUpdateCommandType(params.commandType);
@@ -361,41 +454,6 @@ async function handleNodeUpdate(
     }
 
     const commandType = inferUpdateCommandType(props, explicitCommandType);
-
-    if (isRevisionToken(common.baseVersion)) {
-        const { workspaceId, documentId } = ensureCanonicalScope(params);
-        const canonicalObjectId = ensureOptionalString(params.canonicalObjectId, 'canonicalObjectId');
-
-        if (commandType === 'node.content.update') {
-            if (typeof props.content !== 'string') {
-                throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'content must be a string' };
-            }
-            if (!canonicalObjectId) {
-                throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canonicalObjectId is required for revision-token content updates' };
-            }
-
-            const contentKind = ensureOptionalString(params.contentKind, 'contentKind');
-            const content = contentKind === 'markdown'
-                ? { kind: 'markdown' as const, source: props.content }
-                : { kind: 'text' as const, value: props.content };
-
-            return mutateWithCanonicalContract(ctx, common, {
-                workspaceId,
-                documentId,
-                baseRevision: common.baseVersion,
-                actor: {
-                    kind: 'user',
-                    id: common.originId,
-                },
-                requestId: common.commandId,
-                operations: [{
-                    op: 'object.update-content',
-                    objectId: canonicalObjectId,
-                    content,
-                }],
-            });
-        }
-    }
 
     try {
         return await mutateWithContract(ctx, common, async () => {
@@ -431,21 +489,34 @@ async function handleNodeUpdate(
         });
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
-        if (typeof (e as any).code === 'number') throw e;
+        const failedAction = commandType ?? 'node.update';
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction,
+            stage: 'ws.node.update',
+            details: { nodeId },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
         const message = (e as Error).message;
-        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId } };
-        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: { nodeId, commandType } };
+        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId }, diagnostics) };
+        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: withDiagnostics({ nodeId, commandType }, diagnostics) };
         if (message === 'ID_COLLISION') {
             const collisionId = typeof props.id === 'string' ? props.id : nodeId;
-            throw { ...RPC_ERRORS.ID_COLLISION, data: { collisionIds: [collisionId] } };
+            throw { ...RPC_ERRORS.ID_COLLISION, data: withDiagnostics({ collisionIds: [collisionId] }, diagnostics) };
         }
         if (message === 'CONTENT_CONTRACT_VIOLATION') {
             throw {
                 ...RPC_ERRORS.CONTENT_CONTRACT_VIOLATION,
-                data: { nodeId, path: 'capabilities.content' },
+                data: withDiagnostics({ nodeId, path: 'capabilities.content' }, diagnostics),
             };
         }
-        throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
     }
 }
 
@@ -453,7 +524,7 @@ async function handleNodeMove(
     params: Record<string, unknown>,
     ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const x = ensureNumber(params.x, 'x');
     const y = ensureNumber(params.y, 'y');
@@ -468,10 +539,22 @@ async function handleNodeMove(
         });
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
-        if (typeof (e as any).code === 'number') throw e;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'node.move',
+            stage: 'ws.node.move',
+            details: { nodeId },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
         const message = (e as Error).message;
-        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId } };
-        throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
+        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId }, diagnostics) };
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
     }
 }
 
@@ -479,7 +562,7 @@ async function handleNodeCreate(
     params: Record<string, unknown>,
     ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const node = params.node as CreateNodeInput | undefined;
 
     if (!node || typeof node !== 'object') {
@@ -490,45 +573,27 @@ async function handleNodeCreate(
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.id is required' };
     }
 
-    if (!node.type || !['shape', 'text', 'markdown', 'mindmap', 'sticky', 'sticker', 'washi-tape', 'image'].includes(node.type)) {
+    if (
+        !node.type
+        || ![
+            'shape',
+            'rectangle',
+            'ellipse',
+            'diamond',
+            'line',
+            'text',
+            'markdown',
+            'mindmap',
+            'sticky',
+            'sticker',
+            'washi-tape',
+            'image',
+        ].includes(node.type)
+    ) {
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.type is invalid' };
     }
 
     node.placement = ensureCreatePlacement(node.placement);
-
-    if (isRevisionToken(common.baseVersion)) {
-        const { workspaceId, documentId } = ensureCanonicalScope(params);
-        const canonicalObjectId = ensureString((node as Record<string, unknown>).canonicalObjectId, 'node.canonicalObjectId');
-        const surfaceId = ensureOptionalString(params.surfaceId, 'surfaceId') ?? 'surface-1';
-
-        const layout = node.placement?.mode === 'canvas-absolute'
-            ? { x: node.placement.x, y: node.placement.y }
-            : {};
-
-        return mutateWithCanonicalContract(ctx, common, {
-            workspaceId,
-            documentId,
-            baseRevision: common.baseVersion,
-            actor: {
-                kind: 'user',
-                id: common.originId,
-            },
-            requestId: common.commandId,
-            operations: [{
-                op: 'canvas-node.create',
-                node: {
-                    id: node.id,
-                    documentId,
-                    surfaceId,
-                    nodeKind: 'native',
-                    nodeType: node.type,
-                    canonicalObjectId,
-                    layout,
-                    zIndex: ensureNumber((params.zIndex ?? 1), 'zIndex'),
-                },
-            }],
-        });
-    }
 
     try {
         return await mutateWithContract(ctx, common, async () => {
@@ -540,11 +605,23 @@ async function handleNodeCreate(
         });
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
-        if (typeof (e as any).code === 'number') throw e;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'node.create',
+            stage: 'ws.node.create',
+            details: { nodeId: node.id },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
         const message = (e as Error).message;
-        if (message === 'ID_COLLISION') throw { ...RPC_ERRORS.ID_COLLISION, data: { collisionIds: [node.id] } };
-        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId: node.id } };
-        throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
+        if (message === 'ID_COLLISION') throw { ...RPC_ERRORS.ID_COLLISION, data: withDiagnostics({ collisionIds: [node.id] }, diagnostics) };
+        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId: node.id }, diagnostics) };
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
     }
 }
 
@@ -552,27 +629,8 @@ async function handleNodeDelete(
     params: Record<string, unknown>,
     ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
-
-    if (isRevisionToken(common.baseVersion)) {
-        const { workspaceId, documentId } = ensureCanonicalScope(params);
-        return mutateWithCanonicalContract(ctx, common, {
-            workspaceId,
-            documentId,
-            baseRevision: common.baseVersion,
-            actor: {
-                kind: 'user',
-                id: common.originId,
-            },
-            requestId: common.commandId,
-            operations: [{
-                op: 'canvas-node.remove',
-                documentId,
-                nodeId,
-            }],
-        });
-    }
 
     try {
         return await mutateWithContract(ctx, common, async () => {
@@ -580,11 +638,23 @@ async function handleNodeDelete(
         });
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
-        if (typeof (e as any).code === 'number') throw e;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'node.delete',
+            stage: 'ws.node.delete',
+            details: { nodeId },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
         const message = (e as Error).message;
-        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId } };
-        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: { nodeId } };
-        throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
+        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId }, diagnostics) };
+        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: withDiagnostics({ nodeId }, diagnostics) };
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
     }
 }
 
@@ -592,29 +662,9 @@ async function handleNodeReparent(
     params: Record<string, unknown>,
     ctx: RpcContext,
 ): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const common = ensureCommonParams(params);
+    const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const newParentId = ensureOptionalString(params.newParentId, 'newParentId');
-
-    if (isRevisionToken(common.baseVersion)) {
-        const { workspaceId, documentId } = ensureCanonicalScope(params);
-        return mutateWithCanonicalContract(ctx, common, {
-            workspaceId,
-            documentId,
-            baseRevision: common.baseVersion,
-            actor: {
-                kind: 'user',
-                id: common.originId,
-            },
-            requestId: common.commandId,
-            operations: [{
-                op: 'canvas-node.reparent',
-                documentId,
-                nodeId,
-                parentNodeId: newParentId ?? null,
-            }],
-        });
-    }
 
     try {
         return await mutateWithContract(ctx, common, async () => {
@@ -622,29 +672,263 @@ async function handleNodeReparent(
         });
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
-        if (typeof (e as any).code === 'number') throw e;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'node.reparent',
+            stage: 'ws.node.reparent',
+            details: { nodeId, newParentId: newParentId ?? null },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
         const message = (e as Error).message;
-        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId } };
-        if (message === 'MINDMAP_CYCLE') throw { ...RPC_ERRORS.MINDMAP_CYCLE, data: { nodeId, newParentId } };
-        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: { nodeId, newParentId } };
-        throw { ...RPC_ERRORS.PATCH_FAILED, data: message };
+        if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId }, diagnostics) };
+        if (message === 'MINDMAP_CYCLE') throw { ...RPC_ERRORS.MINDMAP_CYCLE, data: withDiagnostics({ nodeId, newParentId }, diagnostics) };
+        if (message === 'EDIT_NOT_ALLOWED') throw { ...RPC_ERRORS.EDIT_NOT_ALLOWED, data: withDiagnostics({ nodeId, newParentId }, diagnostics) };
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
     }
 }
 
-async function handleCanonicalQuery(
+async function handlePluginInstanceCreate(
     params: Record<string, unknown>,
-): Promise<CanonicalQueryResultEnvelope> {
-    const request = ensureRecord(params.request ?? params, 'request') as unknown as CanonicalQueryRequest;
-    const services = await getCanonicalServices();
-    return services.queryService.execute(request);
+    _ctx: RpcContext,
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; instance: PluginInstanceRuntimeRecord }> {
+    const common = await ensureCommonParams(params);
+    const input = ensurePluginInstanceInput(params.instance);
+
+    try {
+        const result = await mutatePluginRuntimeWithContract(common, (bucket) => {
+            if (bucket.has(input.id)) {
+                throw {
+                    ...RPC_ERRORS.PLUGIN_INSTANCE_ID_CONFLICT,
+                    data: { instanceId: input.id },
+                };
+            }
+
+            const now = new Date().toISOString();
+            const nextRecord: PluginInstanceRuntimeRecord = {
+                id: input.id,
+                pluginExportId: input.pluginExportId,
+                pluginVersionId: input.pluginVersionId,
+                displayName: input.displayName ?? input.pluginExportId,
+                props: cloneRecord(input.props ?? {}),
+                bindingConfig: cloneRecord(input.bindingConfig ?? {}),
+                persistedState: cloneRecord(input.persistedState ?? {}),
+                createdAt: now,
+                updatedAt: now,
+            };
+            bucket.set(nextRecord.id, nextRecord);
+            return toPluginInstanceSnapshot(nextRecord);
+        });
+
+        return {
+            success: result.success,
+            newVersion: result.newVersion,
+            commandId: result.commandId,
+            filePath: result.filePath,
+            instance: result.data,
+        };
+    } catch (error) {
+        const e = error as { code?: number; message?: string; data?: unknown } | Error;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'plugin-instance.create',
+            stage: 'ws.plugin-instance.create',
+            details: { instanceId: input.id },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
+        throw {
+            ...RPC_ERRORS.PLUGIN_RUNTIME_UNAVAILABLE,
+            data: withDiagnostics({ reason: (e as Error).message }, diagnostics),
+        };
+    }
 }
 
-async function handleCanonicalMutation(
+async function handlePluginInstanceUpdateProps(
     params: Record<string, unknown>,
-): Promise<CanonicalMutationResultEnvelope> {
-    const envelope = ensureRecord(params.envelope ?? params, 'envelope') as unknown as CanonicalMutationEnvelope;
-    const services = await getCanonicalServices();
-    return services.mutationExecutor.execute(envelope);
+    _ctx: RpcContext,
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; instance: PluginInstanceRuntimeRecord }> {
+    const common = await ensureCommonParams(params);
+    const instanceId = ensureString(params.instanceId, 'instanceId');
+    const patch = ensureRecord(params.patch, 'patch');
+
+    try {
+        const result = await mutatePluginRuntimeWithContract(common, (bucket) => {
+            const existing = bucket.get(instanceId);
+            if (!existing) {
+                throw {
+                    ...RPC_ERRORS.PLUGIN_INSTANCE_NOT_FOUND,
+                    data: { instanceId },
+                };
+            }
+            const next: PluginInstanceRuntimeRecord = {
+                ...existing,
+                props: {
+                    ...existing.props,
+                    ...cloneRecord(patch),
+                },
+                updatedAt: new Date().toISOString(),
+            };
+            bucket.set(instanceId, next);
+            return toPluginInstanceSnapshot(next);
+        });
+
+        return {
+            success: result.success,
+            newVersion: result.newVersion,
+            commandId: result.commandId,
+            filePath: result.filePath,
+            instance: result.data,
+        };
+    } catch (error) {
+        const e = error as { code?: number; message?: string; data?: unknown } | Error;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'plugin-instance.update-props',
+            stage: 'ws.plugin-instance.update-props',
+            details: { instanceId },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
+        throw {
+            ...RPC_ERRORS.PLUGIN_RUNTIME_UNAVAILABLE,
+            data: withDiagnostics({ reason: (e as Error).message }, diagnostics),
+        };
+    }
+}
+
+async function handlePluginInstanceUpdateBinding(
+    params: Record<string, unknown>,
+    _ctx: RpcContext,
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; instance: PluginInstanceRuntimeRecord }> {
+    const common = await ensureCommonParams(params);
+    const instanceId = ensureString(params.instanceId, 'instanceId');
+    const bindingConfig = ensureRecord(params.bindingConfig, 'bindingConfig');
+
+    try {
+        const result = await mutatePluginRuntimeWithContract(common, (bucket) => {
+            const existing = bucket.get(instanceId);
+            if (!existing) {
+                throw {
+                    ...RPC_ERRORS.PLUGIN_INSTANCE_NOT_FOUND,
+                    data: { instanceId },
+                };
+            }
+            const next: PluginInstanceRuntimeRecord = {
+                ...existing,
+                bindingConfig: cloneRecord(bindingConfig),
+                updatedAt: new Date().toISOString(),
+            };
+            bucket.set(instanceId, next);
+            return toPluginInstanceSnapshot(next);
+        });
+
+        return {
+            success: result.success,
+            newVersion: result.newVersion,
+            commandId: result.commandId,
+            filePath: result.filePath,
+            instance: result.data,
+        };
+    } catch (error) {
+        const e = error as { code?: number; message?: string; data?: unknown } | Error;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'plugin-instance.update-binding',
+            stage: 'ws.plugin-instance.update-binding',
+            details: { instanceId },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
+        throw {
+            ...RPC_ERRORS.PLUGIN_RUNTIME_UNAVAILABLE,
+            data: withDiagnostics({ reason: (e as Error).message }, diagnostics),
+        };
+    }
+}
+
+async function handlePluginInstanceRemove(
+    params: Record<string, unknown>,
+    _ctx: RpcContext,
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; removedInstanceId: string }> {
+    const common = await ensureCommonParams(params);
+    const instanceId = ensureString(params.instanceId, 'instanceId');
+
+    try {
+        const result = await mutatePluginRuntimeWithContract(common, (bucket) => {
+            const deleted = bucket.delete(instanceId);
+            if (!deleted) {
+                throw {
+                    ...RPC_ERRORS.PLUGIN_INSTANCE_NOT_FOUND,
+                    data: { instanceId },
+                };
+            }
+            return { removedInstanceId: instanceId };
+        });
+
+        return {
+            success: result.success,
+            newVersion: result.newVersion,
+            commandId: result.commandId,
+            filePath: result.filePath,
+            removedInstanceId: result.data.removedInstanceId,
+        };
+    } catch (error) {
+        const e = error as { code?: number; message?: string; data?: unknown } | Error;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'plugin-instance.remove',
+            stage: 'ws.plugin-instance.remove',
+            details: { instanceId },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
+        throw {
+            ...RPC_ERRORS.PLUGIN_RUNTIME_UNAVAILABLE,
+            data: withDiagnostics({ reason: (e as Error).message }, diagnostics),
+        };
+    }
+}
+
+async function handlePluginInstanceList(
+    params: Record<string, unknown>,
+    _ctx: RpcContext,
+): Promise<{ success: boolean; filePath: string; instances: PluginInstanceRuntimeRecord[] }> {
+    const filePath = ensureString(params.filePath, 'filePath');
+    const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
+    const resolvedFilePath = resolveWorkspaceFilePath(filePath, rootPath);
+    const bucket = getPluginBucket(resolvedFilePath);
+    const instances = Array.from(bucket.values()).map(toPluginInstanceSnapshot);
+    return {
+        success: true,
+        filePath,
+        instances,
+    };
 }
 
 export const methods: Record<string, RpcHandler> = {
@@ -655,6 +939,9 @@ export const methods: Record<string, RpcHandler> = {
     'node.create': handleNodeCreate,
     'node.delete': handleNodeDelete,
     'node.reparent': handleNodeReparent,
-    'canonical.query': handleCanonicalQuery,
-    'canonical.mutate': handleCanonicalMutation,
+    'plugin-instance.create': handlePluginInstanceCreate,
+    'plugin-instance.update-props': handlePluginInstanceUpdateProps,
+    'plugin-instance.update-binding': handlePluginInstanceUpdateBinding,
+    'plugin-instance.remove': handlePluginInstanceRemove,
+    'plugin-instance.list': handlePluginInstanceList,
 };

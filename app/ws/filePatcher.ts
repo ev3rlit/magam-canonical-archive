@@ -9,9 +9,11 @@ import generate from '@babel/generator';
 import * as t from '@babel/types';
 import { getJsxTagStyleEditableKeys } from '@/features/editing/editability';
 import { RPC_ERRORS } from './rpc';
+import { WS_PATCHER_MESSAGES } from './messages';
 
 export interface NodeProps {
     id?: string;
+    groupId?: string | null;
     from?: string | { node: string; edge?: Record<string, unknown> };
     to?: string;
     anchor?: string;
@@ -20,6 +22,7 @@ export interface NodeProps {
     content?: string;
     x?: number;
     y?: number;
+    zIndex?: number | null;
     width?: number;
     height?: number;
     pattern?: Record<string, unknown>;
@@ -30,7 +33,19 @@ export interface NodeProps {
 
 export interface CreateNodeInput {
     id: string;
-    type: 'shape' | 'text' | 'markdown' | 'mindmap' | 'sticky' | 'sticker' | 'washi-tape' | 'image';
+    type:
+        | 'shape'
+        | 'rectangle'
+        | 'ellipse'
+        | 'diamond'
+        | 'line'
+        | 'text'
+        | 'markdown'
+        | 'mindmap'
+        | 'sticky'
+        | 'sticker'
+        | 'washi-tape'
+        | 'image';
     props?: Record<string, unknown>;
     placement?: (
         | { mode: 'canvas-absolute'; x: number; y: number }
@@ -51,36 +66,127 @@ function buildRpcLikeError(
     return error;
 }
 
-function throwContentContractViolation(detail: string): never {
+function createIntentScopedDiagnostics(input: {
+    failedAction: string;
+    stage: string;
+    details?: Record<string, unknown>;
+}): Record<string, unknown> {
+    return {
+        failedAction: input.failedAction,
+        rollbackPolicy: 'intent-scoped',
+        stage: input.stage,
+        ...(input.details ?? {}),
+    };
+}
+
+function throwContentContractViolation(input: {
+    detail: string;
+    failedAction: string;
+}): never {
     throw buildRpcLikeError(RPC_ERRORS.CONTENT_CONTRACT_VIOLATION, {
         path: 'capabilities.content',
         diagnostics: {
             path: 'capabilities.content',
-            message: detail,
+            message: input.detail,
         },
+        rollback: createIntentScopedDiagnostics({
+            failedAction: input.failedAction,
+            stage: 'file-patcher',
+            details: {
+                reason: 'CONTENT_CONTRACT_VIOLATION',
+            },
+        }),
     });
 }
 
 function assertContentContractPatchAllowed(
     tagName: string | null,
     patch: Record<string, unknown>,
+    failedAction: string,
 ): void {
     if ((tagName === 'Image' || tagName === 'Sequence') && 'content' in patch) {
-        throwContentContractViolation(
-            `${tagName} nodes do not accept string content patches; use their declared content contract.`,
-        );
+        throwContentContractViolation({
+            detail: `${tagName} nodes do not accept string content patches; use their declared content contract.`,
+            failedAction,
+        });
     }
 
     if (tagName !== 'Image' && ('src' in patch || 'alt' in patch || 'fit' in patch)) {
-        throwContentContractViolation('media content fields are only valid for Image nodes.');
+        throwContentContractViolation({
+            detail: WS_PATCHER_MESSAGES.imageContentPatchOnly,
+            failedAction,
+        });
     }
 
     if (tagName !== 'Markdown' && 'source' in patch) {
-        throwContentContractViolation('markdown source fields are only valid for Markdown nodes.');
+        throwContentContractViolation({
+            detail: WS_PATCHER_MESSAGES.markdownSourcePatchOnly,
+            failedAction,
+        });
     }
 
     if (tagName !== 'Sequence' && ('participants' in patch || 'messages' in patch)) {
-        throwContentContractViolation('sequence content fields are only valid for Sequence nodes.');
+        throwContentContractViolation({
+            detail: WS_PATCHER_MESSAGES.sequenceContentPatchOnly,
+            failedAction,
+        });
+    }
+}
+
+function throwPatchSurfaceViolation(input: {
+    rejectedKeys: string[];
+    editableKeys: string[];
+}): never {
+    throw buildRpcLikeError(RPC_ERRORS.PATCH_SURFACE_VIOLATION, {
+        rejectedKeys: input.rejectedKeys,
+        editableKeys: input.editableKeys,
+        rollback: createIntentScopedDiagnostics({
+            failedAction: 'node.style.update',
+            stage: 'file-patcher',
+            details: {
+                reason: 'PATCH_SURFACE_VIOLATION',
+            },
+        }),
+    });
+}
+
+const PLUGIN_RUNTIME_ONLY_PATCH_KEYS = new Set([
+    'pluginInstanceId',
+    'pluginExportId',
+    'pluginVersionId',
+    'pluginProps',
+    'pluginState',
+    'persistedState',
+    'bindingConfig',
+    'binding',
+]);
+
+function throwPluginRuntimePatchViolation(input: {
+    rejectedKeys: string[];
+    failedAction: string;
+}): never {
+    throw buildRpcLikeError(RPC_ERRORS.PLUGIN_STATE_PATCH_REQUIRES_RUNTIME, {
+        rejectedKeys: input.rejectedKeys,
+        rollback: createIntentScopedDiagnostics({
+            failedAction: input.failedAction,
+            stage: 'file-patcher',
+            details: {
+                reason: 'PLUGIN_STATE_PATCH_REQUIRES_RUNTIME',
+            },
+        }),
+    });
+}
+
+function assertNoPluginRuntimeOnlyPatchKeys(
+    patch: Record<string, unknown>,
+    failedAction: string,
+): void {
+    const rejectedKeys = Object.keys(patch).filter((key) => PLUGIN_RUNTIME_ONLY_PATCH_KEYS.has(key));
+    if (rejectedKeys.length > 0) {
+        throwPluginRuntimePatchViolation({
+            rejectedKeys,
+            failedAction,
+        });
     }
 }
 
@@ -254,8 +360,26 @@ function setMarkdownChildContent(parentEl: NodePath<t.JSXElement>, content: stri
     return true;
 }
 
-function setTextChildContent(parentEl: NodePath<t.JSXElement>, content: string): void {
-    const hasComplexChildren = parentEl.node.children.some((child) => {
+function createMarkdownChildElement(content: string): t.JSXElement {
+    return t.jsxElement(
+        t.jsxOpeningElement(t.jsxIdentifier('Markdown'), [], false),
+        t.jsxClosingElement(t.jsxIdentifier('Markdown')),
+        [t.jsxExpressionContainer(t.templateLiteral([t.templateElement({ raw: content, cooked: content }, true)], []))],
+        false,
+    );
+}
+
+function ensureElementCanHostChildren(parentEl: NodePath<t.JSXElement>): void {
+    if (!parentEl.node.openingElement.selfClosing) {
+        return;
+    }
+
+    parentEl.node.openingElement.selfClosing = false;
+    parentEl.node.closingElement = t.jsxClosingElement(t.cloneNode(parentEl.node.openingElement.name));
+}
+
+function hasComplexTextChildren(parentEl: NodePath<t.JSXElement>): boolean {
+    return parentEl.node.children.some((child) => {
         if (t.isJSXText(child)) {
             return false;
         }
@@ -267,11 +391,30 @@ function setTextChildContent(parentEl: NodePath<t.JSXElement>, content: string):
         }
         return false;
     });
+}
+
+function upsertMarkdownChildContent(parentEl: NodePath<t.JSXElement>, content: string): boolean {
+    if (setMarkdownChildContent(parentEl, content)) {
+        return true;
+    }
+
+    if (hasComplexTextChildren(parentEl)) {
+        return false;
+    }
+
+    ensureElementCanHostChildren(parentEl);
+    parentEl.node.children = [createMarkdownChildElement(content)];
+    return true;
+}
+
+function setTextChildContent(parentEl: NodePath<t.JSXElement>, content: string): void {
+    const hasComplexChildren = hasComplexTextChildren(parentEl);
 
     if (hasComplexChildren) {
         throw new Error('EDIT_NOT_ALLOWED');
     }
 
+    ensureElementCanHostChildren(parentEl);
     parentEl.node.children = [t.jsxText(content)];
 }
 
@@ -416,18 +559,28 @@ function upsertJsxAttribute(path: NodePath<t.JSXOpeningElement>, propName: strin
     }
 }
 
+function shouldPreferMarkdownSourceBodyTag(tagName: string | null | undefined): boolean {
+    return tagName === 'Text' || tagName === 'Sticky' || tagName === 'Shape';
+}
+
+function shouldPreferMarkdownSourceBodyType(type: CreateNodeInput['type']): boolean {
+    return (
+        type === 'markdown'
+        || type === 'text'
+        || type === 'sticky'
+        || type === 'shape'
+        || type === 'rectangle'
+        || type === 'ellipse'
+        || type === 'diamond'
+        || type === 'line'
+    );
+}
+
 function toJsxChildren(type: CreateNodeInput['type'], props: Record<string, unknown>): t.JSXElement['children'] {
     const content = props.content;
-    if (type === 'markdown') {
+    if (shouldPreferMarkdownSourceBodyType(type)) {
         if (typeof content === 'string') {
-            return [
-                t.jsxElement(
-                    t.jsxOpeningElement(t.jsxIdentifier('Markdown'), [], false),
-                    t.jsxClosingElement(t.jsxIdentifier('Markdown')),
-                    [t.jsxExpressionContainer(t.templateLiteral([t.templateElement({ raw: content, cooked: content }, true)], []))],
-                    false,
-                ),
-            ];
+            return [createMarkdownChildElement(content)];
         }
         return [];
     }
@@ -455,6 +608,10 @@ function buildNodeElement(input: CreateNodeInput): t.JSXElement {
         : input.type === 'mindmap'
         ? 'MindMap'
         : input.type === 'shape'
+            || input.type === 'rectangle'
+            || input.type === 'ellipse'
+            || input.type === 'diamond'
+            || input.type === 'line'
             ? 'Shape'
             : input.type === 'text'
                 ? 'Text'
@@ -467,7 +624,22 @@ function buildNodeElement(input: CreateNodeInput): t.JSXElement {
             : input.type === 'washi-tape'
                 ? 'WashiTape'
             : 'Node';
-    const props = { ...(input.props || {}), ...placementProps, id: input.id };
+    const shapeType =
+        input.type === 'rectangle'
+            ? 'rectangle'
+            : input.type === 'ellipse'
+                ? 'ellipse'
+                : input.type === 'diamond'
+                    ? 'diamond'
+                    : input.type === 'line'
+                        ? 'line'
+                        : undefined;
+    const props = {
+        ...(input.props || {}),
+        ...(shapeType ? { type: shapeType } : {}),
+        ...placementProps,
+        id: input.id,
+    };
     const attrs = Object.entries(props)
         .filter(([key, value]) => key !== 'content' && value !== undefined && value !== null)
         .map(([key, value]) =>
@@ -557,7 +729,8 @@ export async function patchFile(filePath: string, nodeId: string, props: NodePro
             throw new Error('ID_COLLISION');
         }
         const patchProps: Record<string, unknown> = { ...props };
-        assertContentContractPatchAllowed(tagName, patchProps);
+        assertNoPluginRuntimeOnlyPatchKeys(patchProps, 'node.update');
+        assertContentContractPatchAllowed(tagName, patchProps, 'node.update');
         delete patchProps.content;
 
         Object.entries(patchProps).forEach(([propName, propValue]) => {
@@ -659,20 +832,28 @@ export async function patchNodeContent(filePath: string, nodeId: string, content
 
         ensureNoSpreadAttributes(node.node);
         const tagName = getJsxTagName(node.node);
-        assertContentContractPatchAllowed(tagName, { content });
+        assertContentContractPatchAllowed(tagName, { content }, 'node.content.update');
+        const shouldPreferMarkdownSourceBody = shouldPreferMarkdownSourceBodyTag(tagName);
         const labelAttr = getAttrByName(node.node, 'label');
+        const parentEl = node.parentPath;
         if (labelAttr) {
             const currentLabel = getAttributeValue(labelAttr);
             if (currentLabel === undefined) {
                 throw new Error('EDIT_NOT_ALLOWED');
             }
             upsertJsxAttribute(node, 'label', content);
+            if (shouldPreferMarkdownSourceBody && parentEl && parentEl.isJSXElement()) {
+                upsertMarkdownChildContent(parentEl, content);
+            }
             return true;
         }
 
-        const parentEl = node.parentPath;
         if (!parentEl || !parentEl.isJSXElement()) {
             throw new Error('EDIT_NOT_ALLOWED');
+        }
+
+        if (shouldPreferMarkdownSourceBody && upsertMarkdownChildContent(parentEl, content)) {
+            return true;
         }
 
         if (setMarkdownChildContent(parentEl, content)) {
@@ -691,21 +872,31 @@ export async function patchNodeStyle(filePath: string, nodeId: string, patch: Re
 
         ensureNoSpreadAttributes(node.node);
         const tagName = getJsxTagName(node.node);
-        assertContentContractPatchAllowed(tagName, patch);
+        assertNoPluginRuntimeOnlyPatchKeys(patch, 'node.style.update');
+        assertContentContractPatchAllowed(tagName, patch, 'node.style.update');
         const editableKeys = getJsxTagStyleEditableKeys(tagName || undefined);
         if (editableKeys.length === 0) {
-            throw new Error('EDIT_NOT_ALLOWED');
+            throwPatchSurfaceViolation({
+                rejectedKeys: Object.keys(patch),
+                editableKeys,
+            });
         }
 
         const allowedKeySet = new Set(editableKeys);
         const patchEntries = Object.entries(patch);
         if (patchEntries.length === 0) {
-            throw new Error('EDIT_NOT_ALLOWED');
+            throwPatchSurfaceViolation({
+                rejectedKeys: [],
+                editableKeys,
+            });
         }
 
         for (const [key, value] of patchEntries) {
             if (!allowedKeySet.has(key)) {
-                throw new Error('EDIT_NOT_ALLOWED');
+                throwPatchSurfaceViolation({
+                    rejectedKeys: [key],
+                    editableKeys,
+                });
             }
             upsertJsxAttribute(node, key, value);
         }
@@ -732,6 +923,7 @@ export async function patchNodeRename(filePath: string, nodeId: string, nextId: 
 
 export async function patchNodeCreate(filePath: string, input: CreateNodeInput): Promise<void> {
     await patchWithMutator(filePath, (ast) => {
+        assertNoPluginRuntimeOnlyPatchKeys(input.props || {}, 'node.create');
         if (hasConflictingNodeId(ast, input.id, '')) {
             throw new Error('ID_COLLISION');
         }

@@ -1,16 +1,12 @@
 import type { CreatePayload } from './commands';
 import { DEFAULT_WASHI_PRESET_ID } from '@/utils/washiTapeDefaults';
 import { getDefaultStickerCreateProps } from '@/utils/stickerDefaults';
-
-const DEFAULT_NODE_LABEL_BY_TYPE: Record<CreatePayload['nodeType'], string> = {
-  shape: 'New shape',
-  text: 'New text',
-  markdown: '# New note',
-  sticky: 'New sticky',
-  sticker: 'New sticker',
-  'washi-tape': 'New tape',
-  image: 'https://placehold.co/640x360',
-};
+import {
+  getDefaultImageSource,
+  getDefaultNodeContent,
+  getDefaultNodeIdSeed,
+  getDefaultPluginInstanceDisplayName,
+} from './defaultContent';
 
 function slugify(input: string): string {
   return input
@@ -21,7 +17,7 @@ function slugify(input: string): string {
 }
 
 export function createSuggestedNodeId(nodeType: CreatePayload['nodeType'], seed?: string): string {
-  const base = slugify(seed || DEFAULT_NODE_LABEL_BY_TYPE[nodeType]) || nodeType;
+  const base = slugify(seed || getDefaultNodeIdSeed(nodeType)) || nodeType;
   return `${nodeType}-${base}`;
 }
 
@@ -49,19 +45,74 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
 } {
   const stickerDefaults = getDefaultStickerCreateProps();
   switch (nodeType) {
+    case 'shape':
+      return {
+        initialContent: getDefaultNodeContent('shape'),
+        initialProps: {
+          type: 'rectangle',
+          size: {
+            token: 'm',
+            ratio: 'landscape',
+          },
+        },
+      };
+    case 'rectangle':
+      return {
+        initialProps: {
+          type: 'rectangle',
+          size: {
+            token: 'm',
+            ratio: 'landscape',
+          },
+        },
+      };
+    case 'ellipse':
+      return {
+        initialProps: {
+          type: 'ellipse',
+          size: {
+            token: 'm',
+            ratio: 'landscape',
+          },
+        },
+      };
+    case 'diamond':
+      return {
+        initialProps: {
+          type: 'diamond',
+          size: {
+            token: 'm',
+            ratio: 'square',
+          },
+        },
+      };
+    case 'line':
+      return {
+        initialProps: {
+          type: 'line',
+          lineDirection: 'down',
+          size: {
+            width: 180,
+            height: 48,
+          },
+          fill: 'transparent',
+          stroke: '#475569',
+          strokeWidth: 3,
+        },
+      };
     case 'text':
       return {
-        initialContent: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
+        initialContent: getDefaultNodeContent(nodeType),
         initialProps: {},
       };
     case 'markdown':
       return {
-        initialContent: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
+        initialContent: getDefaultNodeContent(nodeType),
         initialProps: {},
       };
     case 'sticker':
       return {
-        initialContent: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
+        initialContent: getDefaultNodeContent(nodeType),
         initialProps: {
           outlineColor: stickerDefaults.outlineColor,
           outlineWidth: stickerDefaults.outlineWidth,
@@ -79,14 +130,60 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
     case 'image':
       return {
         initialProps: {
-          src: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
+          src: getDefaultImageSource(),
           fit: 'cover',
         },
       };
     default:
       return {
-        initialContent: DEFAULT_NODE_LABEL_BY_TYPE[nodeType],
+        initialContent: getDefaultNodeContent(nodeType),
         initialProps: {},
       };
   }
+}
+
+export function isImmediateEditCreateNodeType(
+  nodeType: CreatePayload['nodeType'],
+): boolean {
+  return nodeType === 'text' || nodeType === 'markdown' || nodeType === 'sticky';
+}
+
+export function isDragCreateNodeType(
+  nodeType: CreatePayload['nodeType'],
+): boolean {
+  return nodeType === 'rectangle'
+    || nodeType === 'ellipse'
+    || nodeType === 'diamond'
+    || nodeType === 'line'
+    || nodeType === 'sticky';
+}
+
+export function isDragRequiredCreateNodeType(
+  nodeType: CreatePayload['nodeType'],
+): boolean {
+  return nodeType === 'line';
+}
+
+export function createSuggestedPluginInstanceId(pluginExportId: string, seed?: string): string {
+  const base = slugify(seed || pluginExportId) || 'plugin-widget';
+  return `plugin-${base}`;
+}
+
+export function getPluginInstanceCreateDefaults(input: {
+  pluginExportId: string;
+  displayName?: string;
+}): {
+  id: string;
+  displayName: string;
+  initialProps: Record<string, unknown>;
+  initialBindingConfig: Record<string, unknown>;
+  initialPersistedState: Record<string, unknown>;
+} {
+  return {
+    id: createSuggestedPluginInstanceId(input.pluginExportId, input.displayName),
+    displayName: input.displayName?.trim() || getDefaultPluginInstanceDisplayName(),
+    initialProps: {},
+    initialBindingConfig: {},
+    initialPersistedState: {},
+  };
 }

@@ -1,139 +1,117 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import React from 'react';
+import { createSlotContribution } from '@/features/overlay-host';
+import type { OverlayDismissReason } from '@/features/overlay-host';
 import { cn } from '@/utils/cn';
 import type { ContextMenuItem, ContextMenuContext } from '@/types/contextMenu';
+import { Menu, MenuItem, MenuSeparator } from './ui/Menu';
 
 interface ContextMenuProps {
-    isOpen: boolean;
-    position: { x: number; y: number };
-    items: ContextMenuItem[];
-    context: ContextMenuContext;
-    onClose: () => void;
+  items: ContextMenuItem[];
+  context: ContextMenuContext;
+  onClose: (reason?: OverlayDismissReason) => void;
 }
 
-export function ContextMenu({ isOpen, position, items, context, onClose }: ContextMenuProps) {
-    const menuRef = useRef<HTMLDivElement>(null);
-    const [anchoredPosition, setAnchoredPosition] = useState(position);
+export function clampContextMenuPosition(input: {
+  position: { x: number; y: number };
+  menuSize: { width: number; height: number };
+  viewport: { width: number; height: number };
+}): { x: number; y: number } {
+  return {
+    x: Math.min(
+      Math.max(8, input.position.x),
+      Math.max(8, input.viewport.width - input.menuSize.width - 8),
+    ),
+    y: Math.min(
+      Math.max(8, input.position.y),
+      Math.max(8, input.viewport.height - input.menuSize.height - 8),
+    ),
+  };
+}
 
-    useEffect(() => {
-        setAnchoredPosition(position);
-    }, [position]);
-
-    useEffect(() => {
-        if (!isOpen) {
-            return;
+export function ContextMenu({ items, context, onClose }: ContextMenuProps) {
+  return (
+    <Menu
+      role="menu"
+      data-context-menu-root
+      className={cn(
+        'animate-in fade-in zoom-in-95 duration-100',
+      )}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      {items.map((item, idx) => {
+        if (item.type === 'separator') {
+          return (
+            <MenuSeparator key={`sep-${idx}`} className="bg-transparent" />
+          );
         }
 
-        const handlePointer = (event: Event) => {
-            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-                onClose();
-            }
-        };
+        if (item.type === 'action') {
+          const disabled = typeof item.disabled === 'function'
+            ? item.disabled(context)
+            : Boolean(item.disabled);
+          const disabledReason = typeof item.disabledReason === 'function'
+            ? item.disabledReason(context)
+            : item.disabledReason;
 
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                onClose();
-            }
-        };
-
-        document.addEventListener('mousedown', handlePointer);
-        document.addEventListener('touchstart', handlePointer);
-        document.addEventListener('keydown', handleKeyDown);
-
-        return () => {
-            document.removeEventListener('mousedown', handlePointer);
-            document.removeEventListener('touchstart', handlePointer);
-            document.removeEventListener('keydown', handleKeyDown);
-        };
-    }, [isOpen, onClose]);
-
-    useEffect(() => {
-        if (!isOpen || !menuRef.current) {
-            return;
-        }
-        const rect = menuRef.current.getBoundingClientRect();
-        const safeX = Math.min(
-            Math.max(8, position.x),
-            Math.max(8, window.innerWidth - rect.width - 8),
-        );
-        const safeY = Math.min(
-            Math.max(8, position.y),
-            Math.max(8, window.innerHeight - rect.height - 8),
-        );
-
-        if (safeX !== anchoredPosition.x || safeY !== anchoredPosition.y) {
-            setAnchoredPosition({ x: safeX, y: safeY });
-        }
-    }, [isOpen, position, anchoredPosition]);
-
-    useEffect(() => {
-        if (!isOpen || !menuRef.current) {
-            return;
+          return (
+            <MenuItem
+              key={item.id}
+              role="menuitem"
+              data-overlay-actionable={disabled ? undefined : 'true'}
+              data-context-menu-action={disabled ? undefined : 'true'}
+              disabled={disabled}
+              aria-disabled={disabled}
+              title={disabled ? disabledReason ?? item.label : undefined}
+              onClick={async () => {
+                if (disabled) {
+                  return;
+                }
+                await item.handler(context);
+                onClose('programmatic-close');
+              }}
+            >
+              {item.icon ? <item.icon className="w-4 h-4 text-foreground/40" /> : null}
+              <span className="flex-1">{item.label}</span>
+              {item.shortcut ? (
+                <span className="ml-4 text-xs text-foreground/40">{item.shortcut}</span>
+              ) : null}
+            </MenuItem>
+          );
         }
 
-        const firstAction = menuRef.current.querySelector<HTMLButtonElement>('[data-context-menu-action]');
-        firstAction?.focus();
-    }, [isOpen, items]);
-
-    if (!isOpen) {
         return null;
-    }
+      })}
+    </Menu>
+  );
+}
 
-    return createPortal(
-        <div
-            ref={menuRef}
-            role="menu"
-            className={cn(
-                'fixed z-[200] min-w-[200px] py-1',
-                'bg-white dark:bg-slate-900',
-                'border border-slate-200 dark:border-slate-700',
-                'rounded-lg shadow-xl',
-                'animate-in fade-in zoom-in-95 duration-100',
-            )}
-            style={{ top: anchoredPosition.y, left: anchoredPosition.x }}
-            onContextMenu={(event) => event.preventDefault()}
-        >
-            {items.map((item, idx) => {
-                if (item.type === 'separator') {
-                    return (
-                        <div
-                            key={`sep-${idx}`}
-                            className="h-px mx-2 my-1 bg-slate-200 dark:bg-slate-700"
-                        />
-                    );
-                }
-
-                if (item.type === 'action') {
-                    return (
-                        <button
-                            key={item.id}
-                            type="button"
-                            role="menuitem"
-                            data-context-menu-action
-                            className={cn(
-                                'w-full px-3 py-2 text-left text-sm flex items-center gap-2',
-                                'hover:bg-slate-100 dark:hover:bg-slate-800',
-                                'text-slate-700 dark:text-slate-300',
-                                'focus-visible:outline-none focus-visible:bg-slate-100 dark:focus-visible:bg-slate-800',
-                            )}
-                            onClick={async () => {
-                                await item.handler(context);
-                                onClose();
-                            }}
-                        >
-                            {item.icon ? <item.icon className="w-4 h-4 text-slate-400" /> : null}
-                            <span className="flex-1">{item.label}</span>
-                            {item.shortcut ? (
-                                <span className="text-xs text-slate-400 ml-4">{item.shortcut}</span>
-                            ) : null}
-                        </button>
-                    );
-                }
-
-                // submenu support can be added in a follow-up step
-                return null;
-            })}
-        </div>,
-        document.body,
-    );
+export function createContextMenuOverlayContribution(input: {
+  slot: 'pane-context-menu' | 'node-context-menu';
+  items: ContextMenuItem[];
+  context: ContextMenuContext;
+  triggerElement?: HTMLElement | null;
+  selectionOwnerElement?: HTMLElement | null;
+  onDismiss?: (reason: OverlayDismissReason) => void;
+}) {
+  return createSlotContribution(input.slot, {
+    anchor: {
+      type: 'pointer',
+      x: input.context.position.x,
+      y: input.context.position.y,
+    },
+    focusPolicy: {
+      openTarget: 'first-actionable',
+      restoreTarget: 'trigger',
+    },
+    triggerElement: input.triggerElement ?? null,
+    selectionOwnerElement: input.selectionOwnerElement ?? null,
+    onDismiss: input.onDismiss,
+    render: ({ close }) => (
+      <ContextMenu
+        items={input.items}
+        context={input.context}
+        onClose={close}
+      />
+    ),
+  });
 }

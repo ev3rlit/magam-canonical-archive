@@ -10,7 +10,7 @@ import {
     applyEditCompletionSnapshot,
     buildWatchedFilesSignature,
     createPerFileMutationExecutor,
-    normalizeWatchedFiles,
+    normalizeCompatibilityWatchedFiles,
     pruneExpiredOwnCommands,
     rememberOwnCommand,
     resolveFileSyncWsUrl,
@@ -48,6 +48,7 @@ type PendingRequestEntry = {
     meta: {
         method: string;
         startedAt: number;
+        canvasId?: string;
         filePath?: string;
         nodeId?: string;
         commandType?: string;
@@ -65,15 +66,26 @@ declare global {
 
 let requestIdCounter = 0;
 
+function isClientOnlyDraftSourceVersion(version: string | null | undefined): boolean {
+    return typeof version === 'string' && version.startsWith('draft:');
+}
+
+function looksLikeCompatibilityPath(value: string | null | undefined): boolean {
+    return typeof value === 'string' && (value.includes('/') || value.endsWith('.tsx'));
+}
+
 export function useFileSync(
-    filePath: string | null,
+    canvasId: string | null,
+    compatibilityFilePath: string | null,
+    workspaceRootPath: string | null,
     onFileChange: () => void,
     onFilesChange?: () => void,
     dependencyFiles: string[] = [],
 ) {
     const wsRef = useRef<WebSocket | null>(null);
     const pendingRequestsRef = useRef<Map<number, PendingRequestEntry>>(new Map());
-    const currentFileRef = useRef<string | null>(null);
+    const currentCanvasIdRef = useRef<string | null>(null);
+    const currentCompatibilityFilePathRef = useRef<string | null>(null);
     const watchedFilesRef = useRef<Set<string>>(new Set());
     const wsUrlRef = useRef<string>(resolveFileSyncWsUrl());
     const recentOwnCommandsRef = useRef<Map<string, number>>(new Map());
@@ -82,8 +94,8 @@ export function useFileSync(
         [dependencyFiles],
     );
     const watchedFiles = useMemo(
-        () => normalizeWatchedFiles(filePath, dependencyFiles),
-        [dependencyFilesSignature, filePath],
+        () => normalizeCompatibilityWatchedFiles(compatibilityFilePath, dependencyFiles),
+        [compatibilityFilePath, dependencyFilesSignature],
     );
     const watchedFilesSignature = useMemo(
         () => buildWatchedFilesSignature(watchedFiles),
@@ -99,6 +111,7 @@ export function useFileSync(
         pendingRequestsRef.current.forEach((pending) => {
             editDebugLog('rpc-request-aborted', error, {
                 method: pending.meta.method,
+                canvasId: pending.meta.canvasId ?? null,
                 filePath: pending.meta.filePath ?? null,
                 nodeId: pending.meta.nodeId ?? null,
                 commandType: pending.meta.commandType ?? null,
@@ -126,6 +139,7 @@ export function useFileSync(
                 meta: {
                     method,
                     startedAt: Date.now(),
+                    canvasId: typeof params.canvasId === 'string' ? params.canvasId : undefined,
                     filePath: typeof params.filePath === 'string' ? params.filePath : undefined,
                     nodeId: typeof params.nodeId === 'string' ? params.nodeId : undefined,
                     commandType: typeof params.commandType === 'string' ? params.commandType : undefined,
@@ -139,6 +153,7 @@ export function useFileSync(
                     const timeoutError = new Error(`Request timeout: ${method}`);
                     editDebugLog('rpc-request-timeout', timeoutError, {
                         method: pending.meta.method,
+                        canvasId: pending.meta.canvasId ?? null,
                         filePath: pending.meta.filePath ?? null,
                         nodeId: pending.meta.nodeId ?? null,
                         commandType: pending.meta.commandType ?? null,
@@ -177,21 +192,34 @@ export function useFileSync(
         }
 
         if (data.method === 'file.changed') {
-            const changedFile = data.params?.filePath as string;
+            const changedFile = (
+                typeof data.params?.resolvedFilePath === 'string'
+                    ? data.params.resolvedFilePath
+                    : data.params?.filePath
+            ) as string;
+            if (typeof changedFile !== 'string' || changedFile.length === 0) {
+                return;
+            }
             if (watchedFilesRef.current.has(changedFile)) {
                 const incomingVersion = data.params?.version;
                 const incomingOriginId = data.params?.originId;
                 const incomingCommandId = data.params?.commandId;
-                const { clientId, lastAppliedCommandId, setSourceVersionForFile } = useGraphStore.getState();
+                const incomingCanvasId = typeof data.params?.canvasId === 'string' ? data.params.canvasId : undefined;
+                const { clientId, lastAppliedCommandId, setSourceVersionForFile, setCanvasVersion } = useGraphStore.getState();
                 pruneExpiredOwnCommands(recentOwnCommandsRef.current, Date.now());
 
                 if (typeof incomingVersion === 'string') {
                     setSourceVersionForFile(changedFile, incomingVersion);
+                    if (incomingCanvasId) {
+                        setCanvasVersion(incomingCanvasId, incomingVersion);
+                    }
                 }
 
                 const shouldReload = shouldReloadForFileChange({
                     changedFile,
-                    currentFile: currentFileRef.current,
+                    currentFile: currentCompatibilityFilePathRef.current,
+                    changedCanvasId: incomingCanvasId,
+                    currentCanvasId: currentCanvasIdRef.current,
                     watchedFiles: watchedFilesRef.current,
                     incomingOriginId,
                     incomingCommandId,
@@ -217,7 +245,8 @@ export function useFileSync(
     useEffect(() => {
         if (watchedFiles.length === 0) return;
 
-        currentFileRef.current = filePath;
+        currentCanvasIdRef.current = canvasId;
+        currentCompatibilityFilePathRef.current = compatibilityFilePath;
         watchedFilesRef.current = new Set(watchedFiles);
         const wsUrl = resolveFileSyncWsUrl({
             location: typeof window !== 'undefined'
@@ -232,8 +261,20 @@ export function useFileSync(
         wsRef.current = ws;
 
         ws.onopen = () => {
+            if (canvasId) {
+                sendRequest('file.subscribe', {
+                    canvasId,
+                    ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
+                }).catch((err) => console.error('[FileSync] Subscribe failed:', err));
+            }
             watchedFiles.forEach((watchedFilePath) => {
-                sendRequest('file.subscribe', { filePath: watchedFilePath }).catch((err) => console.error('[FileSync] Subscribe failed:', err));
+                if (watchedFilePath === compatibilityFilePath && canvasId) {
+                    return;
+                }
+                sendRequest('file.subscribe', {
+                    filePath: watchedFilePath,
+                    ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
+                }).catch((err) => console.error('[FileSync] Subscribe failed:', err));
             });
         };
 
@@ -252,18 +293,19 @@ export function useFileSync(
             }
             watchedFilesRef.current = new Set();
         };
-    }, [filePath, handleMessage, rejectPendingRequests, sendRequest, watchedFiles, watchedFilesSignature]);
+    }, [canvasId, compatibilityFilePath, handleMessage, rejectPendingRequests, sendRequest, watchedFiles, watchedFilesSignature, workspaceRootPath]);
 
     const withCommon = useCallback((params: Record<string, unknown>) => {
-        const targetFilePath = typeof params.filePath === 'string' ? params.filePath : filePath;
-        if (!targetFilePath) {
-            throw new Error('FILE_PATH_NOT_READY');
+        const targetCanvasId = typeof params.canvasId === 'string' ? params.canvasId : canvasId;
+        if (!targetCanvasId) {
+            throw new Error('CANVAS_ID_NOT_READY');
         }
 
-        const { sourceVersion, sourceVersions, clientId } = useGraphStore.getState();
-        const baseVersion = sourceVersions[targetFilePath]
-            ?? (targetFilePath === filePath ? sourceVersion : null);
-        if (!baseVersion) {
+        const { sourceVersion, canvasVersions, clientId } = useGraphStore.getState();
+        const baseVersion = canvasVersions[targetCanvasId]
+            ?? (targetCanvasId === canvasId ? sourceVersion : null);
+        // Client-only draft placeholders must be materialized before mutations run.
+        if (!baseVersion || isClientOnlyDraftSourceVersion(baseVersion)) {
             throw new Error('SOURCE_VERSION_NOT_READY');
         }
         const commandId = crypto.randomUUID();
@@ -273,29 +315,56 @@ export function useFileSync(
         return {
             ...params,
             baseVersion,
+            canvasId: targetCanvasId,
             originId: clientId,
             commandId,
+            ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
         };
-    }, [filePath]);
+    }, [canvasId, workspaceRootPath]);
 
     const applyResultVersion = useCallback((result: unknown): RpcMutationResult => {
         const typed = result as RpcMutationResult;
-        const resolvedVersion = typed?.newVersion ?? typed?.revision?.after;
-        if (resolvedVersion) {
-            if (typed.filePath) {
-                useGraphStore.getState().setSourceVersionForFile(typed.filePath, resolvedVersion);
+        if (typed?.newVersion) {
+            if (typed.canvasId) {
+                useGraphStore.getState().setCanvasVersion(typed.canvasId, typed.newVersion);
+            }
+            const versionFilePath = typed.resolvedFilePath ?? typed.filePath;
+            if (versionFilePath) {
+                useGraphStore.getState().setSourceVersionForFile(versionFilePath, typed.newVersion);
             } else {
-                useGraphStore.getState().setSourceVersion(resolvedVersion);
+                useGraphStore.getState().setSourceVersion(typed.newVersion);
             }
         }
         if (typed?.commandId) {
             rememberOwnCommand(recentOwnCommandsRef.current, typed.commandId, Date.now());
             useGraphStore.getState().setLastAppliedCommandId(typed.commandId);
         }
-        return resolvedVersion && !typed.newVersion
-            ? { ...typed, newVersion: resolvedVersion }
-            : typed;
+        return typed;
     }, []);
+
+    const resolveMutationTarget = useCallback((
+        targetCompatibilityFilePath?: string | null,
+        targetCanvasId?: string | null,
+    ): { canvasId: string | null; compatibilityFilePath: string | null } => {
+        if (targetCanvasId) {
+            return {
+                canvasId: targetCanvasId,
+                compatibilityFilePath: targetCompatibilityFilePath ?? compatibilityFilePath,
+            };
+        }
+
+        if (looksLikeCompatibilityPath(targetCompatibilityFilePath)) {
+            return {
+                canvasId,
+                compatibilityFilePath: targetCompatibilityFilePath ?? compatibilityFilePath,
+            };
+        }
+
+        return {
+            canvasId: targetCompatibilityFilePath ?? canvasId,
+            compatibilityFilePath,
+        };
+    }, [canvasId, compatibilityFilePath]);
 
     const mutationExecutor = useMemo(() => createPerFileMutationExecutor({
         sendRequest: (method, params) => sendRequest(method, params),
@@ -307,7 +376,7 @@ export function useFileSync(
         onConflictRetry: (event) => {
             editDebugLog('mutation-version-conflict-retry', event.error, {
                 method: event.method,
-                filePath: event.filePath,
+                canvasId: event.canvasId,
                 attempt: event.attempt,
                 maxRetry: event.maxRetry,
                 expected: event.expected,
@@ -342,78 +411,89 @@ export function useFileSync(
     const updateNode = useCallback(async (
         nodeId: string,
         props: Record<string, unknown>,
-        targetFilePath: string | null = filePath,
+        targetCompatibilityFilePath: string | null = compatibilityFilePath,
         options?: UpdateNodeMutationOptions,
+        targetCanvasId?: string | null,
     ): Promise<RpcMutationResult> => {
-        if (!targetFilePath) return {};
+        const target = resolveMutationTarget(targetCompatibilityFilePath, targetCanvasId);
+        const resolvedCanvasId = target.canvasId;
+        if (!resolvedCanvasId) return {};
         return mutationExecutor.enqueueMutation({
             method: 'node.update',
-            filePath: targetFilePath,
+            canvasId: resolvedCanvasId as string,
             buildParams: () => ({
-                filePath: targetFilePath,
+                canvasId: resolvedCanvasId,
                 nodeId,
                 props,
                 ...(options?.commandType ? { commandType: options.commandType } : {}),
             }),
         });
-    }, [filePath, mutationExecutor]);
+    }, [compatibilityFilePath, mutationExecutor, resolveMutationTarget]);
 
     const moveNode = useCallback(async (
         nodeId: string,
         x: number,
         y: number,
-        targetFilePath: string | null = filePath,
+        targetCompatibilityFilePath: string | null = compatibilityFilePath,
+        targetCanvasId?: string | null,
     ): Promise<RpcMutationResult> => {
-        if (!targetFilePath) return {};
+        const target = resolveMutationTarget(targetCompatibilityFilePath, targetCanvasId);
+        if (!target.canvasId) return {};
         return mutationExecutor.enqueueMutation({
             method: 'node.move',
-            filePath: targetFilePath,
-            buildParams: () => ({ filePath: targetFilePath, nodeId, x, y }),
+            canvasId: target.canvasId,
+            buildParams: () => ({ canvasId: target.canvasId, nodeId, x, y }),
         });
-    }, [filePath, mutationExecutor]);
+    }, [compatibilityFilePath, mutationExecutor, resolveMutationTarget]);
 
     const createNode = useCallback(async (
         node: Record<string, unknown>,
-        targetFilePath: string | null = filePath,
+        targetCompatibilityFilePath: string | null = compatibilityFilePath,
+        targetCanvasId?: string | null,
     ): Promise<RpcMutationResult> => {
-        if (!targetFilePath) {
+        const target = resolveMutationTarget(targetCompatibilityFilePath, targetCanvasId);
+        if (!target.canvasId) {
             throw new Error('SOURCE_VERSION_NOT_READY');
         }
         return mutationExecutor.enqueueMutation({
             method: 'node.create',
-            filePath: targetFilePath,
-            buildParams: () => ({ filePath: targetFilePath, node }),
+            canvasId: target.canvasId,
+            buildParams: () => ({ canvasId: target.canvasId, node }),
         });
-    }, [filePath, mutationExecutor]);
+    }, [compatibilityFilePath, mutationExecutor, resolveMutationTarget]);
 
     const deleteNode = useCallback(async (
         nodeId: string,
-        targetFilePath: string | null = filePath,
+        targetCompatibilityFilePath: string | null = compatibilityFilePath,
+        targetCanvasId?: string | null,
     ): Promise<RpcMutationResult> => {
-        if (!targetFilePath) return {};
+        const target = resolveMutationTarget(targetCompatibilityFilePath, targetCanvasId);
+        if (!target.canvasId) return {};
         return mutationExecutor.enqueueMutation({
             method: 'node.delete',
-            filePath: targetFilePath,
-            buildParams: () => ({ filePath: targetFilePath, nodeId }),
+            canvasId: target.canvasId,
+            buildParams: () => ({ canvasId: target.canvasId, nodeId }),
         });
-    }, [filePath, mutationExecutor]);
+    }, [compatibilityFilePath, mutationExecutor, resolveMutationTarget]);
 
     const reparentNode = useCallback(async (
         nodeId: string,
         newParentId?: string | null,
-        targetFilePath: string | null = filePath,
+        targetCompatibilityFilePath: string | null = compatibilityFilePath,
+        targetCanvasId?: string | null,
     ): Promise<RpcMutationResult> => {
-        if (!targetFilePath) return {};
+        const target = resolveMutationTarget(targetCompatibilityFilePath, targetCanvasId);
+        if (!target.canvasId) return {};
         return mutationExecutor.enqueueMutation({
             method: 'node.reparent',
-            filePath: targetFilePath,
+            canvasId: target.canvasId,
             buildParams: () => ({
-                filePath: targetFilePath,
+                canvasId: target.canvasId,
                 nodeId,
                 ...(newParentId ? { newParentId } : {}),
             }),
         });
-    }, [filePath, mutationExecutor]);
+    }, [compatibilityFilePath, mutationExecutor, resolveMutationTarget]);
 
     const applyEventSnapshot = useCallback(async (
         event: EditCompletionEvent,

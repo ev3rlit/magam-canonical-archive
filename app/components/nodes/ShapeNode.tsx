@@ -1,17 +1,24 @@
-import React, { memo, useMemo } from 'react';
-import { NodeProps, Handle, Position } from 'reactflow';
+import React, { memo, useCallback, useMemo } from 'react';
+import { NodeProps, Handle, Position, useNodeId } from 'reactflow';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import {
   BaseNode,
   NoiseOverlay,
+  NODE_EDIT_BUTTON_CLASS,
+  NODE_INLINE_LABEL_CLASS,
   resolvePaperSurface,
   resolveStickyLikeShapeStyle,
 } from './BaseNode';
+import { getInputClassName } from '@/components/ui/Input';
 import { useGraphStore } from '@/store/graph';
 import { toAssetApiUrl } from '@/utils/imageSource';
 import type { RenderableChild } from '@/utils/childComposition';
-import { renderNodeContent } from './renderableContent';
+import {
+  renderNodeContent,
+  resolveBodyEditSession,
+  useExplicitBodyEntryAffordance,
+} from './renderableContent';
 import type {
   FontFamilyPreset,
   ObjectSizeInput,
@@ -19,7 +26,6 @@ import type {
   PaperTextureParams,
 } from '@magam/core';
 import {
-  hasExplicitFontFamilyClass,
   resolveFontFamilyCssValue,
 } from '@/utils/fontHierarchy';
 import { useZoom } from '@/contexts/ZoomContext';
@@ -39,7 +45,7 @@ interface PortData {
 }
 
 interface ShapeNodeData {
-  type: 'rectangle' | 'circle' | 'triangle' | 'heart' | 'cloud' | 'speech';
+  type: 'rectangle' | 'circle' | 'ellipse' | 'triangle' | 'diamond' | 'line' | 'heart' | 'cloud' | 'speech';
   label?: string;
   /** Enable bubble overlay when zoomed out */
   bubble?: boolean;
@@ -49,6 +55,7 @@ interface ShapeNodeData {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  lineDirection?: 'up' | 'down';
   pattern?: PaperMaterial;
   texture?: PaperTextureParams | Record<string, unknown>;
   // Rich text styling
@@ -112,18 +119,23 @@ const getHandleConfig = (pos: string = 'top') => {
 };
 
 const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
+  const nodeId = useNodeId();
   const { isZoomBold } = useZoom();
   const currentFile = useGraphStore((state) => state.currentFile);
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
-  const shouldApplyHierarchy = !hasExplicitFontFamilyClass(data.className);
-  const resolvedFontFamily = shouldApplyHierarchy
-    ? resolveFontFamilyCssValue({
-      nodeFontFamily: data.fontFamily,
-      canvasFontFamily,
-      globalFontFamily,
-    })
-    : undefined;
+  const activeTextEditNodeId = useGraphStore((state) => state.activeTextEditNodeId);
+  const textEditDraft = useGraphStore((state) => state.textEditDraft);
+  const startTextEditSession = useGraphStore((state) => state.startTextEditSession);
+  const updateTextEditDraft = useGraphStore((state) => state.updateTextEditDraft);
+  const requestTextEditCommit = useGraphStore((state) => state.requestTextEditCommit);
+  const requestTextEditCancel = useGraphStore((state) => state.requestTextEditCancel);
+  const explicitBodyEntryEnabled = useExplicitBodyEntryAffordance();
+  const resolvedFontFamily = resolveFontFamilyCssValue({
+    nodeFontFamily: data.fontFamily,
+    canvasFontFamily,
+    globalFontFamily,
+  });
   const resolvedObjectSize = useMemo(() => {
     const defaultRatio = resolveShapeDefaultRatio(data.type);
     const normalized = normalizeObjectSizeInput(data.size, {
@@ -183,26 +195,27 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     'relative flex items-center justify-center overflow-hidden transition-all duration-200',
     {
       'rounded-md': data.type === 'rectangle',
-      'rounded-full': data.type === 'circle',
+      'rounded-full': data.type === 'circle' || data.type === 'ellipse',
       'clip-triangle': data.type === 'triangle',
     },
   );
+  const shapeStyle: React.CSSProperties | undefined = data.type === 'diamond'
+    ? {
+        clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)',
+      }
+    : undefined;
 
   const containerClasses = twMerge(
     clsx(
       resolvedObjectSize
         ? 'w-auto h-auto flex items-center justify-center p-4'
         : 'w-auto h-auto flex items-center justify-center px-3 py-2',
-      'border-2 border-node-border text-node-text transition-all duration-300',
-      'shadow-node rounded-lg',
-      // Only apply hover effects if NOT selected
-      !selected && 'hover:shadow-node-hover hover:-translate-y-1 hover:border-brand-100',
+      'rounded-lg text-foreground shadow-raised shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.14)] transition-all duration-base',
+      !selected && 'hover:-translate-y-1 hover:shadow-floating',
       {
-        'border-brand-500 shadow-node-selected scale-105': selected,
+        'scale-105 shadow-[0_0_0_1px_rgb(var(--color-primary)/0.24),0_0_0_12px_rgb(var(--color-primary)/0.08),0_18px_56px_-28px_rgb(var(--shadow-color)/0.42)]': selected,
       },
-      data.color, // Assuming this is a class string for background
       shapeClasses,
-      data.className, // Apply custom className (can override defaults)
     ),
   );
 
@@ -212,6 +225,78 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     fontWeight: (isZoomBold || data.labelBold) ? 'bold' : 'normal',
     fontFamily: resolvedFontFamily,
   };
+  const isActiveEditor = Boolean(nodeId && selected && activeTextEditNodeId === nodeId);
+  const bodyEditSession = nodeId ? resolveBodyEditSession({
+    id: nodeId,
+    type: 'shape',
+    data,
+  }) : null;
+  const shouldRenderExplicitBodyEntry = (
+    selected
+    && !isActiveEditor
+    && explicitBodyEntryEnabled
+    && Boolean(bodyEditSession)
+  );
+
+  const beginEditing = useCallback(() => {
+    if (!selected || !bodyEditSession) return;
+    startTextEditSession(bodyEditSession);
+  }, [bodyEditSession, selected, startTextEditSession]);
+
+  const commitEditing = useCallback(() => {
+    if (!nodeId) return;
+    requestTextEditCommit(nodeId);
+  }, [nodeId, requestTextEditCommit]);
+
+  const cancelEditing = useCallback(() => {
+    if (!nodeId) return;
+    requestTextEditCancel(nodeId);
+  }, [nodeId, requestTextEditCancel]);
+
+  const editButton = shouldRenderExplicitBodyEntry ? (
+    <button
+      type="button"
+      aria-label="Edit content"
+      className={NODE_EDIT_BUTTON_CLASS}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        beginEditing();
+      }}
+    >
+      Edit
+    </button>
+  ) : null;
+
+  const bodyEditor = isActiveEditor ? (
+    <textarea
+      autoFocus
+      value={textEditDraft}
+      onChange={(event) => updateTextEditDraft(event.currentTarget.value)}
+      onBlur={commitEditing}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          cancelEditing();
+          return;
+        }
+        const isCommitShortcut = (event.metaKey || event.ctrlKey) && event.key === 'Enter';
+        if (isCommitShortcut) {
+          event.preventDefault();
+          commitEditing();
+        }
+      }}
+      placeholder="Write markdown..."
+      className={getInputClassName({
+        className: 'pointer-events-auto relative z-10 w-full min-h-[72px]',
+        multiline: true,
+      })}
+    />
+  ) : null;
 
   // Render ports
   const renderPorts = () => {
@@ -226,7 +311,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
           id={port.id}
           type="source" // In ReactFlow, handles are often source/target agnostic if connectionMode is loose, but let's default to source
           position={position}
-          className={clsx('w-3 h-3 bg-slate-400 border-2 border-white', port.className)}
+          className="w-3 h-3 border-2 border-card bg-foreground/35"
           style={{ ...posStyle, ...port.style }}
         />
       );
@@ -235,6 +320,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
 
   const imageUrl = data.imageSrc ? toAssetApiUrl(currentFile, data.imageSrc) : '';
   const hasImage = !!imageUrl && data.type !== 'triangle';
+  const hasLineShape = data.type === 'line';
   const imageStyle = hasImage ? {
     backgroundImage: `url(${imageUrl})`,
     backgroundRepeat: 'no-repeat',
@@ -254,6 +340,57 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     ? resolveStickyLikeShapeStyle(data.type)
     : undefined;
 
+  if (hasLineShape) {
+    const width = resolvedObjectSize?.widthPx ?? 180;
+    const height = Math.max(resolvedObjectSize?.heightPx ?? 48, 24);
+    const lineDirection = data.lineDirection === 'up' ? 'up' : 'down';
+
+    return (
+      <BaseNode
+        className="flex items-center justify-center px-2 py-1"
+        bubble={data.bubble}
+        label={data.label}
+        style={{
+          width,
+          height,
+          minWidth: width,
+          minHeight: height,
+        }}
+      >
+        {editButton}
+        <svg
+          className="absolute inset-0 h-full w-full overflow-visible"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+        >
+          <line
+            x1="6"
+            y1={lineDirection === 'up' ? '92%' : '8%'}
+            x2="94"
+            y2={lineDirection === 'up' ? '8%' : '92%'}
+            stroke={data.stroke ?? 'rgb(var(--color-foreground) / 0.68)'}
+            strokeWidth={data.strokeWidth ?? 3}
+            strokeLinecap="round"
+          />
+        </svg>
+        {bodyEditor ?? (data.label ? (
+          <div
+            className={NODE_INLINE_LABEL_CLASS}
+            style={{ fontFamily: resolvedFontFamily }}
+          >
+            {renderNodeContent({
+              children: data.children,
+              fallbackLabel: data.label,
+              iconClassName: 'w-4 h-4 text-foreground/42 shrink-0',
+              textClassName: 'whitespace-pre-wrap leading-tight',
+              textStyle: labelStyle,
+            })}
+          </div>
+        ) : null)}
+      </BaseNode>
+    );
+  }
+
   if (data.type === 'triangle' && !isContentDrivenAuto) {
     return (
       <BaseNode
@@ -262,6 +399,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
         label={data.label}
         style={frameStyle ?? { width: 128, height: 128, minWidth: 128, minHeight: 128 }}
       >
+        {editButton}
         <div
           className={twMerge(
             clsx(
@@ -276,19 +414,19 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
           <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
             <polygon
               points="50,0 100,100 0,100"
-              fill={data.fill ?? '#ffffff'}
-              stroke={data.stroke ?? '#e2e8f0'}
+              fill={data.fill ?? 'rgb(var(--color-card))'}
+              stroke={data.stroke ?? 'rgb(var(--color-border) / 0.32)'}
               strokeWidth={data.strokeWidth ?? 2}
             />
           </svg>
-          <div className="absolute inset-0 flex items-center justify-center pt-8 pointer-events-none select-none">
-            <div className="flex items-center gap-2 px-4">
-              {renderNodeContent({
+          <div className="absolute inset-0 flex items-center justify-center pt-8 px-4">
+            <div className={isActiveEditor ? 'w-full max-w-[280px]' : 'pointer-events-none flex items-center gap-2 px-4 select-none'}>
+              {bodyEditor ?? renderNodeContent({
                 children: data.children,
                 fallbackLabel: data.label,
-                iconClassName: 'w-4 h-4 text-slate-500 shrink-0',
+                iconClassName: 'w-4 h-4 text-foreground/42 shrink-0',
                 textClassName:
-                  'text-sm font-medium leading-tight text-center text-slate-700 whitespace-pre-wrap',
+                  'text-sm font-medium leading-tight text-center text-foreground/78 whitespace-pre-wrap',
                 textStyle: labelStyle,
               })}
             </div>
@@ -304,11 +442,16 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
       className={containerClasses}
       bubble={data.bubble}
       label={data.label}
-      style={frameStyle}
+      style={{
+        ...(frameStyle ?? {}),
+        ...(shapeStyle ?? {}),
+      }}
     >
+      {editButton}
       <div
         className={clsx(
-          'relative w-full flex justify-center text-left break-words pointer-events-none select-none',
+          'relative w-full flex justify-center text-left break-words',
+          isActiveEditor ? 'pointer-events-auto' : 'pointer-events-none select-none',
           isContentDrivenAuto ? 'items-center px-2 py-1.5' : 'items-start p-4',
         )}
         style={{
@@ -317,15 +460,15 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
         }}
       >
         <NoiseOverlay opacity={materialSurface.noiseOpacity} />
-        <div className="flex items-center gap-2">
-          {renderNodeContent({
+        <div className={isActiveEditor ? 'w-full' : 'flex items-center gap-2'}>
+          {bodyEditor ?? renderNodeContent({
             children: data.children,
             fallbackLabel: data.label,
-            iconClassName: 'w-4 h-4 text-slate-500 shrink-0',
+            iconClassName: 'w-4 h-4 text-foreground/42 shrink-0',
             textClassName:
               isContentDrivenAuto
-                ? 'text-sm font-medium leading-normal text-slate-700 whitespace-pre-wrap'
-                : 'text-sm font-medium leading-relaxed text-slate-700 whitespace-pre-wrap',
+                ? 'text-sm font-medium leading-normal text-foreground/78 whitespace-pre-wrap'
+                : 'text-sm font-medium leading-relaxed text-foreground/78 whitespace-pre-wrap',
             textStyle: labelStyle,
           })}
         </div>

@@ -2,12 +2,13 @@ import * as path from "path";
 import * as fs from "fs";
 import { transpile } from "../core/transpiler";
 import { execute } from "../core/executor";
+import { CLI_MESSAGES } from "../messages";
 
 export async function validateCommand(filePath: string) {
   const fullPath = path.resolve(filePath);
 
   if (!fs.existsSync(fullPath)) {
-    console.error(`✗ File not found: ${filePath}`);
+    console.error(CLI_MESSAGES.validate.fileNotFound(filePath));
     process.exit(1);
   }
 
@@ -16,13 +17,13 @@ export async function validateCommand(filePath: string) {
     const result = await execute(transpiled);
 
     if (result.isOk()) {
-      console.log("✓ Validation passed");
+      console.log(CLI_MESSAGES.validate.validationPassed);
     } else {
-      console.error(`✗ Execution error: ${result.error.message}`);
+      console.error(CLI_MESSAGES.validate.executionError(result.error.message));
       process.exit(1);
     }
   } catch (error: any) {
-    console.error(`✗ Transpile error: ${error.message}`);
+    console.error(CLI_MESSAGES.validate.transpileError(error.message));
     process.exit(1);
   }
 }

@@ -4,10 +4,13 @@ import type {
   EditMeta,
   EditRelativeCarrier,
 } from './editability';
+import { createPendingUiRequestId } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 
 export interface EditTarget {
   sourceId: string;
+  canvasId?: string;
   filePath: string;
+  compatibilityFilePath?: string | null;
   renderedId?: string;
   scopeId?: string;
   frameScope?: string;
@@ -42,6 +45,11 @@ export interface StyleUpdatePayload {
   patch: Record<string, unknown>;
 }
 
+export interface GroupMembershipUpdatePayload {
+  previous: { groupId: string | null };
+  next: { groupId: string | null };
+}
+
 export interface RenamePayload {
   previous: { id: string };
   next: { id: string };
@@ -49,7 +57,18 @@ export interface RenamePayload {
 }
 
 export interface CreatePayload {
-  nodeType: 'shape' | 'text' | 'markdown' | 'sticky' | 'sticker' | 'washi-tape' | 'image';
+  nodeType:
+    | 'shape'
+    | 'rectangle'
+    | 'ellipse'
+    | 'diamond'
+    | 'line'
+    | 'text'
+    | 'markdown'
+    | 'sticky'
+    | 'sticker'
+    | 'washi-tape'
+    | 'image';
   id: string;
   initialProps?: Record<string, unknown>;
   initialContent?: string;
@@ -64,13 +83,65 @@ export interface ReparentPayload {
   next: { parentId: string | null };
 }
 
+export interface ZOrderUpdatePayload {
+  previous: { zIndex: number | null };
+  next: { zIndex: number | null };
+}
+
+export type PluginInstanceCommandType =
+  | 'plugin-instance.create'
+  | 'plugin-instance.update-props'
+  | 'plugin-instance.update-binding'
+  | 'plugin-instance.remove';
+
+export interface PluginInstanceRef {
+  instanceId: string;
+  pluginExportId?: string;
+  pluginVersionId?: string;
+}
+
+export interface PluginInstanceCreatePayload {
+  instance: {
+    id: string;
+    pluginExportId: string;
+    pluginVersionId: string;
+    displayName?: string;
+    props?: Record<string, unknown>;
+    bindingConfig?: Record<string, unknown>;
+    persistedState?: Record<string, unknown>;
+  };
+}
+
+export interface PluginInstanceUpdatePropsPayload {
+  instanceId: string;
+  patch: Record<string, unknown>;
+}
+
+export interface PluginInstanceUpdateBindingPayload {
+  instanceId: string;
+  bindingConfig: Record<string, unknown>;
+}
+
+export interface PluginInstanceRemovePayload {
+  instanceId: string;
+}
+
+export interface PluginCommandEnvelope<TType extends PluginInstanceCommandType, TPayload> {
+  type: TType;
+  target: EditTarget;
+  plugin: PluginInstanceRef;
+  payload: TPayload;
+}
+
 export type AbsoluteMoveCommand = EditCommandEnvelope<'node.move.absolute', AbsoluteMovePayload>;
 export type RelativeMoveCommand = EditCommandEnvelope<'node.move.relative', RelativeMovePayload>;
 export type ContentUpdateCommand = EditCommandEnvelope<'node.content.update', ContentUpdatePayload>;
 export type StyleUpdateCommand = EditCommandEnvelope<'node.style.update', StyleUpdatePayload>;
+export type GroupMembershipUpdateCommand = EditCommandEnvelope<'node.group.update', GroupMembershipUpdatePayload>;
 export type RenameCommand = EditCommandEnvelope<'node.rename', RenamePayload>;
 export type CreateCommand = EditCommandEnvelope<'node.create' | 'mindmap.child.create' | 'mindmap.sibling.create', CreatePayload>;
 export type ReparentCommand = EditCommandEnvelope<'node.reparent', ReparentPayload>;
+export type ZOrderUpdateCommand = EditCommandEnvelope<'node.z-order.update', ZOrderUpdatePayload>;
 
 export type UpdateCommand =
   | RelativeMoveCommand
@@ -83,9 +154,36 @@ export type AnyEditCommand =
   | RelativeMoveCommand
   | ContentUpdateCommand
   | StyleUpdateCommand
+  | GroupMembershipUpdateCommand
   | RenameCommand
   | CreateCommand
-  | ReparentCommand;
+  | ReparentCommand
+  | ZOrderUpdateCommand;
+
+export type AnyPluginCommand =
+  | PluginCommandEnvelope<'plugin-instance.create', PluginInstanceCreatePayload>
+  | PluginCommandEnvelope<'plugin-instance.update-props', PluginInstanceUpdatePropsPayload>
+  | PluginCommandEnvelope<'plugin-instance.update-binding', PluginInstanceUpdateBindingPayload>
+  | PluginCommandEnvelope<'plugin-instance.remove', PluginInstanceRemovePayload>;
+
+export function getPendingActionTypeForCommand(commandType: EditCommandType): string {
+  return commandType;
+}
+
+export function createPendingRequestIdForCommand(commandType: EditCommandType, ownerId?: string): string {
+  return createPendingUiRequestId(getPendingActionTypeForCommand(commandType), ownerId);
+}
+
+export function getPendingActionTypeForPluginCommand(commandType: PluginInstanceCommandType): string {
+  return commandType;
+}
+
+export function createPendingRequestIdForPluginCommand(
+  commandType: PluginInstanceCommandType,
+  ownerId?: string,
+): string {
+  return createPendingUiRequestId(getPendingActionTypeForPluginCommand(commandType), ownerId);
+}
 
 export function buildAbsoluteMoveCommand(input: {
   target: EditTarget;
@@ -147,6 +245,21 @@ export function buildStyleUpdateCommand(input: {
     payload: {
       previous: input.previous,
       patch: input.patch,
+    },
+  };
+}
+
+export function buildGroupMembershipUpdateCommand(input: {
+  target: EditTarget;
+  previousGroupId: string | null;
+  nextGroupId: string | null;
+}): GroupMembershipUpdateCommand {
+  return {
+    type: 'node.group.update',
+    target: input.target,
+    payload: {
+      previous: { groupId: input.previousGroupId },
+      next: { groupId: input.nextGroupId },
     },
   };
 }
@@ -226,6 +339,73 @@ export function buildReparentCommand(input: {
   };
 }
 
+export function buildZOrderUpdateCommand(input: {
+  target: EditTarget;
+  previousZIndex: number | null;
+  nextZIndex: number | null;
+}): ZOrderUpdateCommand {
+  return {
+    type: 'node.z-order.update',
+    target: input.target,
+    payload: {
+      previous: { zIndex: input.previousZIndex },
+      next: { zIndex: input.nextZIndex },
+    },
+  };
+}
+
+export function buildPluginInstanceCreateCommand(input: {
+  target: EditTarget;
+  plugin: PluginInstanceRef & { pluginExportId: string; pluginVersionId: string };
+  payload: PluginInstanceCreatePayload;
+}): PluginCommandEnvelope<'plugin-instance.create', PluginInstanceCreatePayload> {
+  return {
+    type: 'plugin-instance.create',
+    target: input.target,
+    plugin: input.plugin,
+    payload: input.payload,
+  };
+}
+
+export function buildPluginInstanceUpdatePropsCommand(input: {
+  target: EditTarget;
+  plugin: PluginInstanceRef;
+  payload: PluginInstanceUpdatePropsPayload;
+}): PluginCommandEnvelope<'plugin-instance.update-props', PluginInstanceUpdatePropsPayload> {
+  return {
+    type: 'plugin-instance.update-props',
+    target: input.target,
+    plugin: input.plugin,
+    payload: input.payload,
+  };
+}
+
+export function buildPluginInstanceUpdateBindingCommand(input: {
+  target: EditTarget;
+  plugin: PluginInstanceRef;
+  payload: PluginInstanceUpdateBindingPayload;
+}): PluginCommandEnvelope<'plugin-instance.update-binding', PluginInstanceUpdateBindingPayload> {
+  return {
+    type: 'plugin-instance.update-binding',
+    target: input.target,
+    plugin: input.plugin,
+    payload: input.payload,
+  };
+}
+
+export function buildPluginInstanceRemoveCommand(input: {
+  target: EditTarget;
+  plugin: PluginInstanceRef;
+  payload: PluginInstanceRemovePayload;
+}): PluginCommandEnvelope<'plugin-instance.remove', PluginInstanceRemovePayload> {
+  return {
+    type: 'plugin-instance.remove',
+    target: input.target,
+    plugin: input.plugin,
+    payload: input.payload,
+  };
+}
+
 export function toUpdateNodeProps(command: UpdateCommand): Record<string, unknown> {
   switch (command.type) {
     case 'node.move.relative':
@@ -278,4 +458,20 @@ export function getUpdateCommandAfterSnapshot(command: UpdateCommand): Record<st
     default:
       return {};
   }
+}
+
+export function buildContentDraftPatch(
+  nodeType: string | undefined,
+  draft: string,
+): Record<string, unknown> {
+  if (nodeType === 'markdown' || nodeType === 'text' || nodeType === 'sticky') {
+    return {
+      label: draft,
+      children: [{ type: 'graph-markdown', content: draft }],
+    };
+  }
+  return {
+    label: draft,
+    children: [{ type: 'text', text: draft }],
+  };
 }

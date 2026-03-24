@@ -8,8 +8,7 @@ export interface SearchIndexElementItem {
   type: 'element';
   elementId: string;
   elementType: string;
-  filePath: string;
-  pageId?: string;
+  canvasId: string | null;
   labelPlain: string;
   searchableText: string;
 }
@@ -29,7 +28,7 @@ export interface SearchResult {
   title: string;
   subtitle?: string;
   filePath?: string;
-  pageId?: string;
+  canvasId?: string;
   score: number;
   matchKind: MatchKind;
 }
@@ -37,7 +36,7 @@ export interface SearchResult {
 interface BuildSearchResultsParams {
   nodes: Node[];
   files: string[];
-  currentFile: string | null;
+  currentCanvasId: string | null;
   query: string;
   mode: SearchMode;
   maxResults?: number;
@@ -94,10 +93,13 @@ export const getMatchKind = (text: string, query: string): MatchKind | undefined
   return undefined;
 };
 
-export const buildSearchIndex = (nodes: Node[], currentFile: string | null): SearchIndexElementItem[] => {
+export const buildSearchIndex = (nodes: Node[], currentCanvasId: string | null): SearchIndexElementItem[] => {
   const nodeItems: SearchIndexElementItem[] = nodes.map((node) => {
     const data = (node as Node<Record<string, unknown>>).data || {};
-    const filePath = toText((data as { filePath?: string }).filePath) || currentFile || 'untitled';
+    const sourceMeta = (data as { sourceMeta?: { canvasId?: unknown } }).sourceMeta;
+    const canvasId = typeof sourceMeta?.canvasId === 'string'
+      ? sourceMeta.canvasId
+      : currentCanvasId;
     const label = [
       toText(data.label),
       toText(data.title),
@@ -112,8 +114,7 @@ export const buildSearchIndex = (nodes: Node[], currentFile: string | null): Sea
       type: 'element',
       elementId: node.id,
       elementType: toText((data as { type?: string }).type || node.type),
-      filePath,
-      pageId: node.type === 'markdown' ? 'markdown-page' : filePath === 'untitled' ? undefined : filePath,
+      canvasId,
       labelPlain: label || node.id,
       searchableText: [
         node.id,
@@ -132,7 +133,7 @@ const getFileName = (path: string): string => {
   return chunks[chunks.length - 1] || path;
 };
 
-const sortSearchResults = (results: SearchResult[], currentFile: string | null): SearchResult[] => {
+const sortSearchResults = (results: SearchResult[], currentCanvasId: string | null): SearchResult[] => {
   return results.sort((a, b) => {
     if (a.score !== b.score) {
       return b.score - a.score;
@@ -142,8 +143,8 @@ const sortSearchResults = (results: SearchResult[], currentFile: string | null):
       return a.type === 'element' ? -1 : 1;
     }
 
-    const aCurrent = a.filePath === currentFile ? 1 : 0;
-    const bCurrent = b.filePath === currentFile ? 1 : 0;
+    const aCurrent = a.canvasId === currentCanvasId ? 1 : 0;
+    const bCurrent = b.canvasId === currentCanvasId ? 1 : 0;
     if (aCurrent !== bCurrent) {
       return bCurrent - aCurrent;
     }
@@ -156,7 +157,7 @@ const sortSearchResults = (results: SearchResult[], currentFile: string | null):
   });
 };
 
-const buildElementResult = (item: SearchIndexElementItem, query: string, currentFile: string | null): SearchResult | null => {
+const buildElementResult = (item: SearchIndexElementItem, query: string): SearchResult | null => {
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) {
     return null;
@@ -166,7 +167,7 @@ const buildElementResult = (item: SearchIndexElementItem, query: string, current
     item.elementId,
     item.labelPlain,
     item.elementType,
-    item.filePath,
+    item.canvasId ?? '',
     item.searchableText,
   ];
 
@@ -195,9 +196,8 @@ const buildElementResult = (item: SearchIndexElementItem, query: string, current
     type: 'element',
     key: item.elementId,
     title: item.labelPlain,
-    subtitle: `${item.elementType}${item.filePath ? ` · ${item.filePath}` : ''}`,
-    filePath: item.filePath,
-    pageId: item.pageId,
+    subtitle: `${item.elementType}${item.canvasId ? ` · ${item.canvasId}` : ''}`,
+    canvasId: item.canvasId ?? undefined,
     score: matchScore + idBonus,
     matchKind: bestMatch,
   };
@@ -231,7 +231,7 @@ const buildFileResult = (path: string, query: string): SearchResult | null => {
 export const buildSearchResults = ({
   nodes,
   files,
-  currentFile,
+  currentCanvasId,
   query,
   mode,
   maxResults = 30,
@@ -246,8 +246,8 @@ export const buildSearchResults = ({
     .map((filePath) => buildFileResult(filePath, normalizedQuery))
     .filter((item): item is SearchResult => item !== null);
 
-  const elementItems = buildSearchIndex(nodes, currentFile)
-    .map((item) => buildElementResult(item, normalizedQuery, currentFile))
+  const elementItems = buildSearchIndex(nodes, currentCanvasId)
+    .map((item) => buildElementResult(item, normalizedQuery))
     .filter((item): item is SearchResult => item !== null);
 
   const mergedItems = [
@@ -255,5 +255,5 @@ export const buildSearchResults = ({
     ...(mode === 'global' ? fileItems : []),
   ];
 
-  return sortSearchResults(mergedItems, currentFile).slice(0, maxResults);
+  return sortSearchResults(mergedItems, currentCanvasId).slice(0, maxResults);
 };

@@ -26,37 +26,39 @@
 
 ## Feature Slices
 
-### 1. Canonical Object Persistence
+아래 체크박스는 각 slice의 완료 상태를 나타낸다. 현재는 6개 slice가 모두 완료된 상태다.
+
+### [x] 1. Canonical Object Persistence
 
 - 폴더: `./canonical-object-persistence/`
 - 문서: `./canonical-object-persistence/README.md`
 - 목표: canonical object를 DB에 저장하는 최소 persistence contract와 Drizzle/PGlite baseline 고정
 
-### 2. Canonical Mutation Query Core
+### [x] 2. Canonical Mutation Query Core
 
 - 폴더: `./canonical-mutation-query-core/`
 - 문서: `./canonical-mutation-query-core/README.md`
 - 목표: canonical object/canvas mutation과 query service contract 고정
 
-### 3. Canvas UI Entrypoints
+### [x] 3. Canvas UI Entrypoints
 
 - 폴더: `./canvas-ui-entrypoints/`
 - 문서: `./canvas-ui-entrypoints/README.md`
 - 목표: database-first runtime에서 `canvas-toolbar`, `selection-floating-menu`, `pane-context-menu`, `node-context-menu`를 병렬 가능한 entrypoint slice로 고정
 
-### 4. AI CLI Headless Surface
+### [x] 4. AI CLI Headless Surface
 
 - 폴더: `./ai-cli-headless-surface/`
 - 문서: `./ai-cli-headless-surface/README.md`
 - 목표: 앱 비실행 상태에서도 동작하는 headless AI CLI surface 구현
 
-### 5. App Attached Session Extension
+### [x] 5. App Attached Session Extension
 
 - 폴더: `./app-attached-session-extension/`
 - 문서: `./app-attached-session-extension/README.md`
 - 목표: 앱 실행 중 selection/session/runtime context를 CLI에 확장
 
-### 6. Plugin Runtime v1
+### [x] 6. Plugin Runtime v1
 
 - 폴더: `./plugin-runtime-v1/`
 - 문서: `./plugin-runtime-v1/README.md`

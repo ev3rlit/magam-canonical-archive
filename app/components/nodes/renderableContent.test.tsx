@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { renderNodeContent } from './renderableContent';
+import { renderNodeContent, resolveBodyEditSession } from './renderableContent';
+import type { RenderableChild } from '@/utils/childComposition';
 
 describe('renderNodeContent', () => {
   it('renders lucide + text children in order', () => {
@@ -43,7 +44,7 @@ describe('renderNodeContent', () => {
       <>
         {renderNodeContent({
           children: [
-            { type: 'lucide-icon', name: 'not-registered-icon' as any },
+            { type: 'lucide-icon', name: 'not-registered-icon' },
             { type: 'text', text: 'Fallback text' },
           ],
           fallbackLabel: 'Ignored',
@@ -58,12 +59,13 @@ describe('renderNodeContent', () => {
   });
 
   it('keeps sticker text rendering content-driven even with irrelevant size metadata', () => {
+    const children: Array<Extract<RenderableChild, { type: 'text' }> & { size: string }> = [
+      { type: 'text', text: 'Sticker body', size: 'xl' },
+    ];
     const html = renderToStaticMarkup(
       <>
         {renderNodeContent({
-          children: [
-            { type: 'text', text: 'Sticker body', size: 'xl' } as any,
-          ],
+          children,
           fallbackLabel: 'Ignored',
           iconClassName: 'icon-class',
           textClassName: 'text-class',
@@ -110,5 +112,40 @@ describe('renderNodeContent', () => {
 
     expect(html).toBe('');
     expect(html).not.toContain('Fallback text');
+  });
+
+  it('resolves markdown-first body sessions for phase-1 content nodes including shapes', () => {
+    expect(resolveBodyEditSession({
+      id: 'text-1',
+      type: 'text',
+      data: { label: '# Title' },
+    })).toEqual({
+      nodeId: 'text-1',
+      initialDraft: '# Title',
+      mode: 'markdown-wysiwyg',
+    });
+
+    expect(resolveBodyEditSession({
+      id: 'shape-1',
+      type: 'shape',
+      data: {
+        label: 'Shape label',
+        children: [{ type: 'graph-markdown', content: '### Shape body' }],
+      },
+    })).toEqual({
+      nodeId: 'shape-1',
+      initialDraft: '### Shape body',
+      mode: 'markdown-wysiwyg',
+    });
+
+    expect(resolveBodyEditSession({
+      id: 'shape-2',
+      type: 'shape',
+      data: { label: 'Fallback shape label' },
+    })).toEqual({
+      nodeId: 'shape-2',
+      initialDraft: 'Fallback shape label',
+      mode: 'markdown-wysiwyg',
+    });
   });
 });

@@ -4,6 +4,9 @@ import { X, Copy, Download } from 'lucide-react';
 import { cn } from '@/utils/cn';
 import { useExportImage, type ExportOptions } from '@/hooks/useExportImage';
 import { useGraphStore } from '@/store/graph';
+import { getUiCopy } from '@/components/ui/copy';
+import { Button } from './ui/Button';
+import { Select } from './ui/Select';
 
 interface ExportDialogProps {
   isOpen: boolean;
@@ -27,9 +30,9 @@ interface SelectFieldProps<T extends string> {
 function SelectField<T extends string>({ label, value, options, onChange }: SelectFieldProps<T>) {
   return (
     <label className="flex flex-col gap-2">
-      <span className="text-sm text-slate-600 dark:text-slate-300">{label}</span>
-      <select
-        className="h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-700 dark:text-slate-200"
+      <span className="text-sm text-foreground/62">{label}</span>
+      <Select
+        className="h-10 rounded-lg px-3 py-2 text-sm"
         value={value}
         onChange={(event) => onChange(event.target.value as T)}
       >
@@ -38,20 +41,21 @@ function SelectField<T extends string>({ label, value, options, onChange }: Sele
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
     </label>
   );
 }
 
 interface FormatSelectorProps {
+  label: string;
   value: ExportOptions['format'];
   onChange: (format: ExportOptions['format']) => void;
 }
 
-function FormatSelector({ value, onChange }: FormatSelectorProps) {
+function FormatSelector({ label, value, onChange }: FormatSelectorProps) {
   return (
     <div className="space-y-2">
-      <p className="text-sm text-slate-600 dark:text-slate-300">파일 유형</p>
+      <p className="text-sm text-foreground/62">{label}</p>
       <div className="grid grid-cols-4 gap-2">
         {(['png', 'jpg', 'svg', 'pdf'] as const).map((format) => (
           <button
@@ -61,8 +65,8 @@ function FormatSelector({ value, onChange }: FormatSelectorProps) {
             className={cn(
               'h-10 rounded-lg border text-sm font-medium',
               value === format
-                ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-400'
-                : 'border-slate-200 bg-white text-slate-600 dark:bg-slate-900/60 dark:border-slate-700 dark:text-slate-300',
+                ? 'border-primary/40 bg-primary/12 text-primary'
+                : 'border-border/16 bg-card text-foreground/62',
             )}
           >
             {format.toUpperCase()}
@@ -79,6 +83,7 @@ export function ExportDialog({
   defaultArea,
   selectedNodeIds: selectedNodeIdsFromContext = [],
 }: ExportDialogProps) {
+  const copy = getUiCopy().exportDialog;
   const [format, setFormat] = useState<ExportOptions['format']>('png');
   const [background, setBackground] = useState<ExportOptions['background']>('grid');
   const [area, setArea] = useState<ExportOptions['area']>(defaultArea);
@@ -115,7 +120,7 @@ export function ExportDialog({
       await downloadImage({ format, background, area }, undefined, exportNodeIds);
       onClose();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '내보내기 중 오류가 발생했습니다.');
+      setErrorMessage(error instanceof Error ? error.message : copy.exportFailed);
     }
   };
 
@@ -136,101 +141,94 @@ export function ExportDialog({
       }
       onClose();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : '클립보드 복사 중 오류가 발생했습니다.');
+      setErrorMessage(error instanceof Error ? error.message : copy.copyFailed);
     }
   };
 
-  const previewText =
-    area === 'selection' ? '선택 항목' : '전체 캔버스';
+  const previewText = area === 'selection'
+    ? copy.scopeLabels.selection
+    : copy.scopeLabels.full;
+  const backgroundText = background === 'grid'
+    ? copy.backgroundOptions.grid
+    : background === 'transparent'
+      ? copy.backgroundOptions.transparent
+      : copy.backgroundOptions.solidWhite;
 
   return createPortal(
     <div className="fixed inset-0 z-[300] flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-[rgb(var(--overlay-scrim)/0.5)] backdrop-blur-sm" onClick={onClose} />
 
       <div
         className={cn(
-          'relative w-[440px] max-w-[calc(100vw-2rem)] bg-white dark:bg-slate-900',
-          'rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700',
+          'relative w-[440px] max-w-[calc(100vw-2rem)] bg-card/92',
+          'rounded-2xl shadow-floating shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.12)]',
           'animate-in fade-in zoom-in-95 duration-200',
         )}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Export Image</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800"
-          >
-            <X className="w-5 h-5 text-slate-400" />
-          </button>
+        <div className="flex items-center justify-between px-6 py-4 shadow-[inset_0_-1px_0_rgb(var(--color-border)/0.08)]">
+          <h2 className="text-lg font-semibold text-foreground">{copy.title}</h2>
+          <Button onClick={onClose} className="rounded-md" size="icon" variant="ghost">
+            <X className="w-5 h-5" />
+          </Button>
         </div>
 
         <div className="px-6 py-5 space-y-5">
-          <div className="w-full h-40 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center">
-            <span className="text-sm text-slate-400">미리보기: {previewText} ({format.toUpperCase()}/{background})</span>
+          <div className="flex h-40 w-full items-center justify-center rounded-lg bg-muted text-center shadow-[inset_0_0_0_1px_rgb(var(--color-border)/0.10)]">
+            <span className="text-sm text-foreground/46">
+              {copy.previewLabel}: {previewText} ({format.toUpperCase()}/{backgroundText})
+            </span>
           </div>
 
-          <FormatSelector value={format} onChange={setFormat} />
+          <FormatSelector label={copy.formatLabel} value={format} onChange={setFormat} />
 
           <SelectField
-            label="배경"
+            label={copy.backgroundLabel}
             value={background}
             onChange={setBackground}
             options={[
-              { value: 'grid', label: '그리드' },
-              { value: 'transparent', label: '투명' },
-              { value: 'solid', label: '단색 (흰색)' },
+              { value: 'grid', label: copy.backgroundOptions.grid },
+              { value: 'transparent', label: copy.backgroundOptions.transparent },
+              { value: 'solid', label: copy.backgroundOptions.solidWhite },
             ]}
           />
 
           <SelectField
-            label="내보내기 영역"
+            label={copy.areaLabel}
             value={area}
             onChange={setArea}
             options={[
-              { value: 'selection', label: '선택 항목만' },
-              { value: 'full', label: '전체 영역' },
+              { value: 'selection', label: copy.areaOptions.selection },
+              { value: 'full', label: copy.areaOptions.full },
             ]}
           />
         </div>
 
         {errorMessage && (
-          <div className="px-6 py-3 text-sm text-red-600 dark:text-red-300 bg-red-50 dark:bg-red-900/20 border-t border-red-200 dark:border-red-700">
+          <div className="bg-danger/12 px-6 py-3 text-sm text-danger shadow-[inset_0_1px_0_rgb(var(--color-danger)/0.16)]">
             {errorMessage}
           </div>
         )}
 
-        <div className="flex gap-3 px-6 py-4 border-t border-slate-200 dark:border-slate-700">
-          <button
-            type="button"
+        <div className="flex gap-3 px-6 py-4 shadow-[inset_0_1px_0_rgb(var(--color-border)/0.08)]">
+          <Button
             onClick={handleCopy}
             disabled={isExporting || !canCopy}
-            title={canCopy ? 'PNG로 복사' : '클립보드 복사를 지원하지 않는 브라우저입니다.'}
-            className={cn(
-              'flex-1 flex items-center justify-center gap-2 px-4 py-2.5',
-              'rounded-lg border border-slate-200 dark:border-slate-700',
-              'text-sm font-medium text-slate-700 dark:text-slate-300',
-              'hover:bg-slate-50 dark:hover:bg-slate-800',
-              'disabled:opacity-50',
-            )}
+            title={canCopy ? copy.copyButtonTitle : copy.copyUnsupportedTitle}
+            className="flex-1 justify-center rounded-lg"
+            variant="secondary"
           >
             <Copy className="w-4 h-4" />
-            클립보드 복사
-          </button>
-          <button
-            type="button"
+            {copy.copyButton}
+          </Button>
+          <Button
             onClick={handleDownload}
             disabled={isExporting}
-            className={cn(
-              'flex-1 flex items-center justify-center gap-2 px-4 py-2.5',
-              'rounded-lg bg-blue-600 text-white text-sm font-medium',
-              'hover:bg-blue-700',
-              'disabled:opacity-50',
-            )}
+            className="flex-1 justify-center rounded-lg"
+            variant="primary"
           >
             <Download className="w-4 h-4" />
-            다운로드
-          </button>
+            {copy.downloadButton}
+          </Button>
         </div>
       </div>
     </div>,
