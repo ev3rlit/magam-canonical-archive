@@ -3,6 +3,11 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
+import {
+  createCanonicalPgliteDb,
+  resolveCanonicalMigrationsFolder,
+} from '../../../shared/src/lib/canonical-persistence/pglite-db';
+import { CanonicalPersistenceRepository } from '../../../shared/src/lib/canonical-persistence/repository';
 
 type HttpSpecMocks = {
   actualFsRef: { current: null | typeof import('fs') };
@@ -118,6 +123,79 @@ describe('HTTP Render Server', () => {
     const response = await fetch(`${baseUrl}${pathname}`, init);
     const body = await response.json();
     return { response, body };
+  }
+
+  function resolveWorkspaceIdForTargetDir(rootDir: string): string {
+    const base = path.basename(rootDir).trim() || 'workspace';
+    const sanitized = base
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return sanitized || 'workspace';
+  }
+
+  async function seedCanonicalCanvasNode(input: {
+    canvasId: string;
+    objectId: string;
+    nodeType: string;
+    contentBlocks?: Array<Record<string, unknown>>;
+    canonicalText?: string;
+    sourceMeta?: Record<string, unknown>;
+    capabilities?: Record<string, unknown>;
+    parentNodeId?: string | null;
+    layout?: Record<string, unknown>;
+  }) {
+    const handle = await createCanonicalPgliteDb(targetDir, {
+      migrationsFolder: resolveCanonicalMigrationsFolder(process.cwd()),
+      runMigrations: true,
+    });
+    const repository = new CanonicalPersistenceRepository(handle.db);
+
+    const primaryContentKind = (
+      typeof input.capabilities?.content === 'object'
+      && input.capabilities?.content !== null
+      && typeof (input.capabilities.content as Record<string, unknown>).kind === 'string'
+    )
+      ? (input.capabilities.content as Record<string, unknown>).kind as 'text' | 'markdown' | 'media' | 'sequence'
+      : (
+        input.contentBlocks?.some((block) => block.blockType === 'markdown')
+          ? 'markdown'
+          : 'text'
+      );
+
+    const objectResult = await repository.createCanonicalObject({
+      record: {
+        id: input.objectId,
+        workspaceId: resolveWorkspaceIdForTargetDir(targetDir),
+        semanticRole: 'topic',
+        publicAlias: 'Node',
+        sourceMeta: {
+          sourceId: input.objectId,
+          kind: 'canvas',
+          ...input.sourceMeta,
+        },
+        capabilities: input.capabilities ?? {},
+        contentBlocks: input.contentBlocks ?? [],
+        primaryContentKind,
+        canonicalText: input.canonicalText ?? '',
+      },
+      operation: 'create',
+    });
+    expect(objectResult.ok).toBe(true);
+    const nodeResult = await repository.createCanvasNode({
+      id: input.objectId,
+      canvasId: input.canvasId,
+      surfaceId: 'main',
+      nodeKind: 'native',
+      nodeType: input.nodeType,
+      canonicalObjectId: input.objectId,
+      parentNodeId: input.parentNodeId ?? null,
+      layout: input.layout ?? { x: 40, y: 60, width: 180, height: 90 },
+      zIndex: 1,
+    });
+    expect(nodeResult.ok).toBe(true);
+
+    await handle.close();
   }
 
   describe('GET /health', () => {
@@ -417,17 +495,6 @@ describe('HTTP Render Server', () => {
         body: JSON.stringify({ rootPath: targetDir }),
       }).then((response) => response.json());
 
-      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
-        String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
-          ? true
-          : actualFsRef.current?.existsSync(candidatePath) ?? false
-      ));
-      mockTranspileWithMetadata.mockResolvedValue({
-        code: 'transpiled code',
-        inputs: [`${targetDir}/canvases/${created.canvasId}.graph.tsx`],
-      });
-      mockExecute.mockResolvedValue({ isOk: () => true, value: {} } as any);
-
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
         body: JSON.stringify({ canvasId: created.canvasId, rootPath: targetDir }),
@@ -435,36 +502,39 @@ describe('HTTP Render Server', () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body.graph).toEqual({});
+      expect(body.graph).toEqual({ children: [] });
       expect(body.canvasId).toBe(created.canvasId);
       expect(typeof body.sourceVersion).toBe('string');
       expect(body.sourceVersion.startsWith('sha256:')).toBe(true);
-      expect(body.sourceVersions).toEqual({
-        [`canvases/${created.canvasId}.graph.tsx`]: body.sourceVersion,
-      });
-      expect(mockTranspileWithMetadata).toHaveBeenCalledWith(
-        `${targetDir}/canvases/${created.canvasId}.graph.tsx`,
-      );
-      expect(mockExecute).toHaveBeenCalledWith('transpiled code');
+      expect(body).not.toHaveProperty('sourceVersions');
+      expect(body).not.toHaveProperty('compatibilityFilePath');
+      expect(mockTranspileWithMetadata).not.toHaveBeenCalled();
+      expect(mockExecute).not.toHaveBeenCalled();
     });
 
-    it('should render a canonical canvas by canvasId', async () => {
+    it('should render canonical markdown nodes by canvasId', async () => {
       const created = await fetch(`${baseUrl}/canvases`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rootPath: targetDir }),
       }).then((response) => response.json());
-
-      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
-        String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
-          ? true
-          : actualFsRef.current?.existsSync(candidatePath) ?? false
-      ));
-      mockTranspileWithMetadata.mockResolvedValue({
-        code: 'transpiled code',
-        inputs: [`${targetDir}/canvases/${created.canvasId}.graph.tsx`],
+      await seedCanonicalCanvasNode({
+        canvasId: created.canvasId,
+        objectId: 'node-1',
+        nodeType: 'markdown',
+        canonicalText: '# Hello',
+        contentBlocks: [
+          { id: 'body-1', blockType: 'markdown', source: '# Hello' },
+          {
+            id: 'body-2',
+            blockType: 'canvas.image',
+            payload: {
+              assetRef: { kind: 'external-url', value: 'https://example.com/card.png' },
+              alt: 'card',
+            },
+          },
+        ],
       });
-      mockExecute.mockResolvedValue({ isOk: () => true, value: {} } as any);
 
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
@@ -473,47 +543,68 @@ describe('HTTP Render Server', () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body.graph).toEqual({});
+      expect(body.graph.children).toEqual([
+        {
+          type: 'graph-node',
+          props: expect.objectContaining({
+            id: 'node-1',
+            sourceMeta: {
+              sourceId: 'node-1',
+              kind: 'canvas',
+              renderedId: 'node-1',
+            },
+          }),
+          children: [
+            {
+              type: 'graph-markdown',
+              props: { content: '# Hello' },
+            },
+            {
+              type: 'graph-image',
+              props: { src: 'https://example.com/card.png', alt: 'card' },
+            },
+          ],
+        },
+      ]);
       expect(body.canvasId).toBe(created.canvasId);
-      expect(mockTranspileWithMetadata).toHaveBeenCalledWith(
-        `${targetDir}/canvases/${created.canvasId}.graph.tsx`,
-      );
+      expect(mockTranspileWithMetadata).not.toHaveBeenCalled();
     });
 
-    it('should inject sourceMeta.filePath from JSX source info', async () => {
+    it('should group canonical mindmap nodes into a graph-mindmap container', async () => {
       const created = await fetch(`${baseUrl}/canvases`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rootPath: targetDir }),
       }).then((response) => response.json());
-
-      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
-        String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
-          ? true
-          : actualFsRef.current?.existsSync(candidatePath) ?? false
-      ));
-      mockTranspileWithMetadata.mockResolvedValue({
-        code: 'transpiled code',
-        inputs: [
-          `${targetDir}/canvases/${created.canvasId}.graph.tsx`,
-          `${targetDir}/components/auth.tsx`,
-        ],
-      });
-      mockExecute.mockResolvedValue({
-        isOk: () => true,
-        value: {
-          children: [
-            {
-              type: 'graph-node',
-              props: {
-                id: 'root',
-                __source: { fileName: `${targetDir}/components/auth.tsx` },
-              },
-              children: [],
-            },
-          ],
+      await seedCanonicalCanvasNode({
+        canvasId: created.canvasId,
+        objectId: 'root-node',
+        nodeType: 'shape',
+        canonicalText: 'Root',
+        sourceMeta: { kind: 'mindmap', scopeId: 'mindmap-1' },
+        capabilities: {
+          content: {
+            kind: 'text',
+            value: 'Root',
+          },
         },
-      } as any);
+        layout: { x: 120, y: 180, width: 160, height: 90 },
+      });
+      await seedCanonicalCanvasNode({
+        canvasId: created.canvasId,
+        objectId: 'child-node',
+        nodeType: 'text',
+        canonicalText: 'Child',
+        sourceMeta: { kind: 'mindmap', scopeId: 'mindmap-1' },
+        capabilities: {
+          content: {
+            kind: 'text',
+            value: 'Child',
+          },
+        },
+        parentNodeId: 'root-node',
+        layout: { x: 320, y: 180, width: 120, height: 40 },
+      });
 
       const response = await fetch(`${baseUrl}/render`, {
         method: 'POST',
@@ -522,94 +613,45 @@ describe('HTTP Render Server', () => {
       const body = await response.json();
 
       expect(response.status).toBe(200);
-      expect(body.graph.children[0].props.sourceMeta).toEqual({
-        sourceId: 'root',
-        renderedId: 'root',
-        filePath: 'components/auth.tsx',
-        kind: 'canvas',
-      });
-      expect(body.sourceVersions).toMatchObject({
-        [`canvases/${created.canvasId}.graph.tsx`]: expect.stringMatching(/^sha256:/),
-        'components/auth.tsx': expect.stringMatching(/^sha256:/),
-      });
-    });
-
-    it('should derive frame-local sourceId for scoped reusable nodes', async () => {
-      const created = await fetch(`${baseUrl}/canvases`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rootPath: targetDir }),
-      }).then((response) => response.json());
-
-      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
-        String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
-          ? true
-          : actualFsRef.current?.existsSync(candidatePath) ?? false
-      ));
-      mockTranspileWithMetadata.mockResolvedValue({
-        code: 'transpiled code',
-        inputs: [
-          `${targetDir}/canvases/${created.canvasId}.graph.tsx`,
-          `${targetDir}/components/service-frame.tsx`,
-        ],
-      });
-      mockExecute.mockResolvedValue({
-        isOk: () => true,
-        value: {
-          children: [
-            {
+      expect(body.graph.children).toEqual([
+        {
+          type: 'graph-mindmap',
+          props: {
+            id: 'mindmap-1',
+            x: 120,
+            y: 180,
+          },
+          children: expect.arrayContaining([
+            expect.objectContaining({
               type: 'graph-shape',
-              props: {
-                id: 'auth.cache.worker',
-                __magamScope: 'auth.cache',
-                __source: { fileName: `${targetDir}/components/service-frame.tsx` },
-              },
-              children: [],
-            },
-          ],
+              props: expect.objectContaining({
+                id: 'root-node',
+                label: 'Root',
+                sourceMeta: {
+                  sourceId: 'root-node',
+                  kind: 'mindmap',
+                  scopeId: 'mindmap-1',
+                  renderedId: 'root-node',
+                },
+              }),
+            }),
+            expect.objectContaining({
+              type: 'graph-text',
+              props: expect.objectContaining({
+                id: 'child-node',
+                text: 'Child',
+                from: 'root-node',
+                sourceMeta: {
+                  sourceId: 'child-node',
+                  kind: 'mindmap',
+                  scopeId: 'mindmap-1',
+                  renderedId: 'child-node',
+                },
+              }),
+            }),
+          ]),
         },
-      } as any);
-
-      const response = await fetch(`${baseUrl}/render`, {
-        method: 'POST',
-        body: JSON.stringify({ canvasId: created.canvasId, rootPath: targetDir }),
-      });
-      const body = await response.json();
-
-      expect(response.status).toBe(200);
-      expect(body.graph.children[0].props.sourceMeta).toEqual({
-        sourceId: 'worker',
-        renderedId: 'auth.cache.worker',
-        filePath: 'components/service-frame.tsx',
-        kind: 'canvas',
-        frameScope: 'auth.cache',
-        framePath: ['auth', 'cache'],
-      });
-      expect(body.graph.children[0].props.__magamScope).toBeUndefined();
-    });
-
-    it('should handle render errors', async () => {
-      const created = await fetch(`${baseUrl}/canvases`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rootPath: targetDir }),
-      }).then((response) => response.json());
-
-      mockExistsSync.mockImplementation((candidatePath: fs.PathLike) => (
-        String(candidatePath).endsWith(`${created.canvasId}.graph.tsx`)
-          ? true
-          : actualFsRef.current?.existsSync(candidatePath) ?? false
-      ));
-      mockTranspileWithMetadata.mockRejectedValue(new Error('Transpile error'));
-
-      const response = await fetch(`${baseUrl}/render`, {
-        method: 'POST',
-        body: JSON.stringify({ canvasId: created.canvasId, rootPath: targetDir }),
-      });
-      const body = await response.json();
-
-      expect(response.status).toBe(500);
-      expect(body.type).toBe('RENDER_ERROR');
+      ]);
     });
   });
 

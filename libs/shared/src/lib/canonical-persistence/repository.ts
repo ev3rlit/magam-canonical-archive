@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 import type { CanonicalObjectRecord } from '../canonical-object-contract';
 import { cloneContentBlocks, isSemanticRole, readContentBlocks } from '../canonical-object-contract';
 import type {
@@ -500,6 +500,134 @@ export class CanonicalPersistenceRepository {
     return okResult(record);
   }
 
+  async updateCanvasNode(record: CanvasNodeRecord): Promise<PersistenceResult<CanvasNodeRecord>> {
+    const validation = validateCanvasNodeRecord(record);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const updated = await this.db
+      .update(canvasNodes)
+      .set({
+        surfaceId: record.surfaceId,
+        nodeKind: record.nodeKind,
+        nodeType: record.nodeType ?? null,
+        parentNodeId: record.parentNodeId ?? null,
+        canonicalObjectId: record.canonicalObjectId ?? null,
+        pluginInstanceId: record.pluginInstanceId ?? null,
+        props: record.props ?? null,
+        layout: record.layout,
+        style: record.style ?? null,
+        persistedState: record.persistedState ?? null,
+        zIndex: record.zIndex,
+        updatedAt: record.updatedAt ?? new Date(),
+      })
+      .where(
+        and(
+          eq(canvasNodes.canvasId, record.canvasId),
+          eq(canvasNodes.id, record.id),
+        ),
+      )
+      .returning();
+
+    if (updated.length === 0) {
+      return errResult('CANONICAL_RECORD_NOT_FOUND', `Canvas node ${record.id} was not found.`, {
+        path: 'id',
+      });
+    }
+
+    return okResult(fromCanvasNodeRow(updated[0]));
+  }
+
+  async renameCanvasNode(input: {
+    canvasId: string;
+    nodeId: string;
+    nextNodeId: string;
+  }): Promise<PersistenceResult<void>> {
+    const current = await this.getCanvasNode(input.canvasId, input.nodeId);
+    if (!current.ok) {
+      return current as PersistenceResult<void>;
+    }
+
+    const existing = await this.getCanvasNode(input.canvasId, input.nextNodeId);
+    if (existing.ok) {
+      return errResult('CANVAS_NODE_ID_CONFLICT', `Canvas node ${input.nextNodeId} already exists.`, {
+        path: 'nextNodeId',
+      });
+    }
+
+    const renamed = await this.db
+      .update(canvasNodes)
+      .set({
+        id: input.nextNodeId,
+        canonicalObjectId: current.value.canonicalObjectId ? input.nextNodeId : null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(canvasNodes.canvasId, input.canvasId),
+          eq(canvasNodes.id, input.nodeId),
+        ),
+      )
+      .returning();
+
+    if (renamed.length === 0) {
+      return errResult('CANONICAL_RECORD_NOT_FOUND', `Canvas node ${input.nodeId} was not found.`, {
+        path: 'nodeId',
+      });
+    }
+
+    await this.db
+      .update(canvasNodes)
+      .set({
+        parentNodeId: input.nextNodeId,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(canvasNodes.canvasId, input.canvasId),
+          eq(canvasNodes.parentNodeId, input.nodeId),
+        ),
+      );
+
+    return okResult(undefined);
+  }
+
+  async deleteCanvasNode(canvasId: string, nodeId: string): Promise<PersistenceResult<void>> {
+    const deleted = await this.db
+      .delete(canvasNodes)
+      .where(
+        and(
+          eq(canvasNodes.canvasId, canvasId),
+          eq(canvasNodes.id, nodeId),
+        ),
+      )
+      .returning({
+        id: canvasNodes.id,
+      });
+
+    if (deleted.length === 0) {
+      return errResult('CANONICAL_RECORD_NOT_FOUND', `Canvas node ${nodeId} was not found.`, {
+        path: 'nodeId',
+      });
+    }
+
+    await this.db
+      .update(canvasNodes)
+      .set({
+        parentNodeId: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(canvasNodes.canvasId, canvasId),
+          eq(canvasNodes.parentNodeId, nodeId),
+        ),
+      );
+
+    return okResult(undefined);
+  }
+
   async getCanvasNode(canvasId: string, id: string): Promise<PersistenceResult<CanvasNodeRecord>> {
     const row = await this.db.query.canvasNodes.findFirst({
       where: and(
@@ -542,6 +670,110 @@ export class CanonicalPersistenceRepository {
     });
 
     return rows.reduce((max, row) => Math.max(max, row.zIndex), 0) + 1;
+  }
+
+  async renameCanonicalObject(input: {
+    workspaceId: string;
+    objectId: string;
+    nextObjectId: string;
+  }): Promise<PersistenceResult<CanonicalObjectRecord>> {
+    const existing = await this.getCanonicalObject(input.workspaceId, input.nextObjectId);
+    if (existing.ok) {
+      return errResult('CANONICAL_OBJECT_ID_CONFLICT', `Canonical object ${input.nextObjectId} already exists in workspace ${input.workspaceId}.`, {
+        path: 'nextObjectId',
+      });
+    }
+
+    const current = await this.getCanonicalObject(input.workspaceId, input.objectId);
+    if (!current.ok) {
+      return current;
+    }
+
+    const nextRecord: CanonicalObjectRecord = {
+      ...current.value,
+      id: input.nextObjectId,
+      sourceMeta: {
+        ...current.value.sourceMeta,
+        sourceId: input.nextObjectId,
+      },
+    };
+
+    const validation = validateCanonicalObjectRecord(nextRecord);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const updated = await this.db
+      .update(canonicalObjects)
+      .set({
+        id: input.nextObjectId,
+        sourceMeta: validation.value.sourceMeta,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(canonicalObjects.workspaceId, input.workspaceId),
+          eq(canonicalObjects.id, input.objectId),
+        ),
+      )
+      .returning();
+
+    if (updated.length === 0) {
+      return errResult('CANONICAL_RECORD_NOT_FOUND', `Canonical object ${input.objectId} was not found.`, {
+        path: 'objectId',
+      });
+    }
+
+    await this.db
+      .update(objectRelations)
+      .set({
+        fromObjectId: input.nextObjectId,
+      })
+      .where(
+        and(
+          eq(objectRelations.workspaceId, input.workspaceId),
+          eq(objectRelations.fromObjectId, input.objectId),
+        ),
+      );
+
+    await this.db
+      .update(objectRelations)
+      .set({
+        toObjectId: input.nextObjectId,
+      })
+      .where(
+        and(
+          eq(objectRelations.workspaceId, input.workspaceId),
+          eq(objectRelations.toObjectId, input.objectId),
+        ),
+      );
+
+    await this.db
+      .update(canvasNodes)
+      .set({
+        canonicalObjectId: input.nextObjectId,
+        updatedAt: new Date(),
+      })
+      .where(eq(canvasNodes.canonicalObjectId, input.objectId));
+
+    return okResult(fromCanonicalObjectRow(updated[0]));
+  }
+
+  async deleteObjectRelationsByObjectId(input: {
+    workspaceId: string;
+    objectId: string;
+  }): Promise<void> {
+    await this.db
+      .delete(objectRelations)
+      .where(
+        and(
+          eq(objectRelations.workspaceId, input.workspaceId),
+          or(
+            eq(objectRelations.fromObjectId, input.objectId),
+            eq(objectRelations.toObjectId, input.objectId),
+          ),
+        ),
+      );
   }
 
   async createNativeCanvasNodeComposition(input: {

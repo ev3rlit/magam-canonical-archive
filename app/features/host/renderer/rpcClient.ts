@@ -63,7 +63,6 @@ export interface RendererRenderResponse {
   canvasId?: string;
   title?: string | null;
   sourceVersion?: string;
-  sourceVersions?: Record<string, string>;
   error?: string;
   type?: string;
   details?: unknown;

@@ -36,7 +36,7 @@ export interface RpcContext {
         canvasId?: string;
         filePath: string;
         resolvedFilePath: string;
-        version: string;
+        newVersion: string;
         originId: string;
         commandId: string;
         rootPath?: string;
@@ -479,7 +479,7 @@ async function mutateWithContract(
             canvasId: common.canvasId,
             filePath: common.filePath,
             resolvedFilePath: common.resolvedFilePath,
-            version: newVersion,
+            newVersion,
             originId: common.originId,
             commandId: common.commandId,
             ...(common.rootPath ? { rootPath: common.rootPath } : {}),
@@ -511,6 +511,12 @@ async function handleFileSubscribe(params: Record<string, unknown>, ctx: RpcCont
     return { success: true };
 }
 
+async function handleCanvasSubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
+    const canvasId = ensureString(params.canvasId, 'canvasId');
+    ctx.subscriptions.add(`canvas:${canvasId}`);
+    return { success: true };
+}
+
 async function handleFileUnsubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
     const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
     const canvasId = ensureOptionalString(params.canvasId, 'canvasId');
@@ -524,6 +530,12 @@ async function handleFileUnsubscribe(params: Record<string, unknown>, ctx: RpcCo
     }
     const resolved = await resolveCanvasCompatibilityPath(canvasId as string, rootPath);
     ctx.subscriptions.delete(resolved.resolvedFilePath);
+    return { success: true };
+}
+
+async function handleCanvasUnsubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
+    const canvasId = ensureString(params.canvasId, 'canvasId');
+    ctx.subscriptions.delete(`canvas:${canvasId}`);
     return { success: true };
 }
 
@@ -1180,6 +1192,8 @@ async function handlePluginInstanceList(
 export const methods: Record<string, RpcHandler> = {
     'file.subscribe': handleFileSubscribe,
     'file.unsubscribe': handleFileUnsubscribe,
+    'canvas.subscribe': handleCanvasSubscribe,
+    'canvas.unsubscribe': handleCanvasUnsubscribe,
     'canvas.node.create': handleCanvasNodeCreate,
     'object.body.block.insert': handleObjectBodyBlockInsert,
     'node.update': handleNodeUpdate,

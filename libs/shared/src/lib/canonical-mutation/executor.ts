@@ -6,6 +6,8 @@ import { getCurrentCanvasRevision } from '../canonical-query/workspace-canvas';
 import {
   applyCanvasNodeMove,
   applyCanvasNodeReparent,
+  applyCanvasNodeUpdate,
+  applyCanvasNodeZOrderUpdate,
   getCanvasNode,
   persistCanvasNode,
 } from './canvas-node';
@@ -296,6 +298,127 @@ async function applyOperation(input: {
       const next = applyCanvasNodeReparent(current, operation.parentNodeId);
       if (apply) {
         await persistCanvasNode(context, next);
+      }
+      pushChangedId(changed.nodes, operation.nodeId);
+      return;
+    }
+
+    case 'canvas.node.update': {
+      const canvasId = batch.canvasRef;
+      if (!canvasId) {
+        throw cliError('INVALID_ARGUMENT', 'canvas.node.update requires canvasRef.', {
+          details: { op: operation.op },
+        });
+      }
+
+      const current = await getCanvasNode(context, canvasId, operation.nodeId);
+      const next = applyCanvasNodeUpdate(current, {
+        propsPatch: operation.propsPatch,
+        stylePatch: operation.stylePatch,
+      });
+      if (apply) {
+        const result = await context.repository.updateCanvasNode(next);
+        if (!result.ok) {
+          throw persistenceFailureToCliError(result);
+        }
+      }
+      pushChangedId(changed.nodes, operation.nodeId);
+      return;
+    }
+
+    case 'canvas.node.rename': {
+      const canvasId = batch.canvasRef;
+      if (!canvasId) {
+        throw cliError('INVALID_ARGUMENT', 'canvas.node.rename requires canvasRef.', {
+          details: { op: operation.op },
+        });
+      }
+
+      const current = await getCanvasNode(context, canvasId, operation.nodeId);
+      if (apply) {
+        const renameNodeResult = await context.repository.renameCanvasNode({
+          canvasId,
+          nodeId: operation.nodeId,
+          nextNodeId: operation.nextNodeId,
+        });
+        if (!renameNodeResult.ok) {
+          throw persistenceFailureToCliError(renameNodeResult);
+        }
+
+        if (current.nodeKind === 'native' && current.canonicalObjectId) {
+          const renameObjectResult = await context.repository.renameCanonicalObject({
+            workspaceId: context.defaultWorkspaceId,
+            objectId: current.canonicalObjectId,
+            nextObjectId: operation.nextNodeId,
+          });
+          if (!renameObjectResult.ok) {
+            throw persistenceFailureToCliError(renameObjectResult);
+          }
+        }
+      }
+      pushChangedId(changed.nodes, operation.nodeId);
+      pushChangedId(changed.nodes, operation.nextNodeId);
+      if (current.nodeKind === 'native' && current.canonicalObjectId) {
+        pushChangedId(changed.objects, current.canonicalObjectId);
+        pushChangedId(changed.objects, operation.nextNodeId);
+      }
+      return;
+    }
+
+    case 'canvas.node.delete': {
+      const canvasId = batch.canvasRef;
+      if (!canvasId) {
+        throw cliError('INVALID_ARGUMENT', 'canvas.node.delete requires canvasRef.', {
+          details: { op: operation.op },
+        });
+      }
+
+      const current = await getCanvasNode(context, canvasId, operation.nodeId);
+      const canonicalObjectId = current.nodeKind === 'native'
+        ? current.id
+        : current.canonicalObjectId;
+      if (apply) {
+        const deleteNodeResult = await context.repository.deleteCanvasNode(canvasId, operation.nodeId);
+        if (!deleteNodeResult.ok) {
+          throw persistenceFailureToCliError(deleteNodeResult);
+        }
+
+        if (canonicalObjectId) {
+          await context.repository.deleteObjectRelationsByObjectId({
+            workspaceId: context.defaultWorkspaceId,
+            objectId: canonicalObjectId,
+          });
+          const tombstoneResult = await context.repository.tombstoneCanonicalObject(
+            context.defaultWorkspaceId,
+            canonicalObjectId,
+          );
+          if (!tombstoneResult.ok) {
+            throw persistenceFailureToCliError(tombstoneResult);
+          }
+        }
+      }
+      pushChangedId(changed.nodes, operation.nodeId);
+      if (canonicalObjectId) {
+        pushChangedId(changed.objects, canonicalObjectId);
+      }
+      return;
+    }
+
+    case 'canvas.node.z-order.update': {
+      const canvasId = batch.canvasRef;
+      if (!canvasId) {
+        throw cliError('INVALID_ARGUMENT', 'canvas.node.z-order.update requires canvasRef.', {
+          details: { op: operation.op },
+        });
+      }
+
+      const current = await getCanvasNode(context, canvasId, operation.nodeId);
+      const next = applyCanvasNodeZOrderUpdate(current, operation.zIndex);
+      if (apply) {
+        const result = await context.repository.updateCanvasNode(next);
+        if (!result.ok) {
+          throw persistenceFailureToCliError(result);
+        }
       }
       pushChangedId(changed.nodes, operation.nodeId);
       return;

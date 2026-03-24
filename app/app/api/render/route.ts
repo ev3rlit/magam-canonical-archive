@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { API_SHARED_MESSAGES } from '../_shared/messages';
-import { proxyCompatibilityRequest } from '@/features/host/rpc';
+import { renderCanonicalCanvas } from '../../../../libs/shared/src/lib/canonical-query';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -34,27 +34,33 @@ export async function POST(request: Request) {
       );
     }
 
-    const payload = {
-      ...body,
+    const rootPath = rawRootPath ? path.resolve(rawRootPath.trim()) : process.cwd();
+    const rendered = await renderCanonicalCanvas({
+      targetDir: rootPath,
       canvasId: requestedCanvasId,
-      ...(rawRootPath ? { rootPath: path.resolve(rawRootPath.trim()) } : {}),
-    };
-
-    return proxyCompatibilityRequest({
-      body: JSON.stringify(payload),
-      headers: {
-        'Content-Type': request.headers.get('content-type') || 'application/json',
-      },
-      method: 'POST',
-      pathname: '/render',
     });
+
+    return Response.json(rendered);
   } catch (error) {
     const message = error instanceof Error ? error.message : API_SHARED_MESSAGES.unknownError;
+    const code = typeof (error as { code?: unknown })?.code === 'string'
+      ? (error as { code: string }).code
+      : null;
+    const status = code === 'INVALID_ARGUMENT'
+      ? 400
+      : code === 'DOCUMENT_NOT_FOUND' || code === 'WORKSPACE_NOT_FOUND'
+        ? 404
+        : 500;
     console.error(API_SHARED_MESSAGES.routeLog.renderProxy, message);
 
     return Response.json(
-      { error: API_SHARED_MESSAGES.renderServerConnectFailed(message) },
-      { status: 502 },
+      {
+        error: message,
+        type: status === 500 ? 'RENDER_ERROR' : 'VALIDATION_ERROR',
+        ...(code ? { code } : {}),
+        ...(error instanceof Error && error.stack ? { details: error.stack } : {}),
+      },
+      { status },
     );
   }
 }

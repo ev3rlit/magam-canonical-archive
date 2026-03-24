@@ -35,6 +35,21 @@ export function resolveImmediateCreateEditMode(
   return (isImmediateEditCreateNodeType(nodeType) || nodeType === 'shape') ? 'markdown-wysiwyg' : null;
 }
 
+export function resolveActionRoutingFilePath(
+  currentCompatibilityFilePath: string | null,
+  currentFile: string | null,
+): string | null {
+  if (typeof currentCompatibilityFilePath === 'string' && currentCompatibilityFilePath.length > 0) {
+    return currentCompatibilityFilePath;
+  }
+
+  if (typeof currentFile === 'string' && currentFile.length > 0) {
+    return currentFile;
+  }
+
+  return null;
+}
+
 export interface ResolvedNodeEditContext {
   target: {
     nodeId: string;

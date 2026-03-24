@@ -35,6 +35,21 @@ function sha(content: string): string {
 }
 
 describe('RPC editing methods', () => {
+  it('canvas.subscribe / canvas.unsubscribe: canvas subscription keys를 등록/해제한다', async () => {
+    const subscriptions = new Set<string>();
+    const ctx = { ws: {}, subscriptions };
+
+    await expect(methods['canvas.subscribe']({
+      canvasId: 'doc-live-1',
+    }, ctx)).resolves.toEqual({ success: true });
+    expect(subscriptions.has('canvas:doc-live-1')).toBe(true);
+
+    await expect(methods['canvas.unsubscribe']({
+      canvasId: 'doc-live-1',
+    }, ctx)).resolves.toEqual({ success: true });
+    expect(subscriptions.has('canvas:doc-live-1')).toBe(false);
+  });
+
   it('node.move: 성공 시 저장 + notify + newVersion 반환', async () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Node id="n1" x={1} y={2} />; }`);
     const original = await readFile(filePath, 'utf-8');

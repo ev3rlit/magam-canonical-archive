@@ -13,6 +13,7 @@ import {
   createPaneActionRoutingContext,
   getAllowedNodeStylePatch,
   mapEditRpcErrorToToast,
+  resolveActionRoutingFilePath,
   resolveNodeActionRoutingContext,
   resolveNodeEditContext,
   resolveNodeEditTarget,
@@ -174,6 +175,12 @@ describe('WorkspaceClient text edit isolation', () => {
     expect(resolveImmediateCreateEditMode('sticky')).toBe('markdown-wysiwyg');
     expect(resolveImmediateCreateEditMode('shape')).toBe('markdown-wysiwyg');
     expect(resolveImmediateCreateEditMode('rectangle')).toBeNull();
+  });
+
+  it('action routing file path는 compatibility path를 우선하고 비면 current file로 fallback 한다', () => {
+    expect(resolveActionRoutingFilePath('examples/compat.tsx', 'examples/current.tsx')).toBe('examples/compat.tsx');
+    expect(resolveActionRoutingFilePath(null, 'examples/current.tsx')).toBe('examples/current.tsx');
+    expect(resolveActionRoutingFilePath(null, null)).toBeNull();
   });
 
   it('외부 파일 sourceMeta가 있으면 해당 파일과 sourceId를 편집 대상으로 선택한다', () => {

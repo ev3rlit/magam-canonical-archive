@@ -28,9 +28,6 @@ export interface RpcMutationResult {
   newVersion?: string;
   commandId?: string;
   canvasId?: string;
-  filePath?: string;
-  compatibilityFilePath?: string;
-  resolvedFilePath?: string;
 }
 
 export interface UpdateNodeMutationOptions {
@@ -42,24 +39,20 @@ export interface EditEventMutators {
     nodeId: string,
     x: number,
     y: number,
-    targetCompatibilityFilePath?: string | null,
     targetCanvasId?: string | null,
   ) => Promise<unknown>;
   updateNode: (
     nodeId: string,
     props: Record<string, unknown>,
-    targetCompatibilityFilePath?: string | null,
     options?: UpdateNodeMutationOptions,
     targetCanvasId?: string | null,
   ) => Promise<unknown>;
   createNode: (
     node: Record<string, unknown>,
-    targetCompatibilityFilePath?: string | null,
     targetCanvasId?: string | null,
   ) => Promise<unknown>;
   createCanvasNode: (
     node: Record<string, unknown>,
-    targetCompatibilityFilePath?: string | null,
     targetCanvasId?: string | null,
   ) => Promise<unknown>;
   insertObjectBodyBlock: (
@@ -68,18 +61,15 @@ export interface EditEventMutators {
       block: Record<string, unknown>;
       afterBlockId?: string;
     },
-    targetCompatibilityFilePath?: string | null,
     targetCanvasId?: string | null,
   ) => Promise<unknown>;
   deleteNode: (
     nodeId: string,
-    targetCompatibilityFilePath?: string | null,
     targetCanvasId?: string | null,
   ) => Promise<unknown>;
   reparentNode: (
     nodeId: string,
     newParentId?: string | null,
-    targetCompatibilityFilePath?: string | null,
     targetCanvasId?: string | null,
   ) => Promise<unknown>;
 }
@@ -188,18 +178,6 @@ export function resolveFileSyncWsUrl(input?: {
   return `${protocol}://${hostname}:${port}`;
 }
 
-export function normalizeCompatibilityWatchedFiles(filePath: string | null, dependencyFiles: string[]): string[] {
-  return Array.from(new Set(
-    [filePath, ...dependencyFiles].filter((value): value is string => typeof value === 'string' && value.length > 0),
-  )).sort();
-}
-
-export const normalizeWatchedFiles = normalizeCompatibilityWatchedFiles;
-
-export function buildWatchedFilesSignature(files: string[]): string {
-  return files.join('\n');
-}
-
 export function pruneExpiredOwnCommands(commands: Map<string, number>, now: number): void {
   commands.forEach((issuedAt, commandId) => {
     if ((now - issuedAt) > OWN_COMMAND_TTL_MS) {
@@ -285,7 +263,7 @@ export function createVersionConflictMetricsTracker(input?: {
   };
 }
 
-export function createPerFileMutationExecutor(input: CreateMutationExecutorInput): {
+export function createPerCanvasMutationExecutor(input: CreateMutationExecutorInput): {
   enqueueMutation: (mutation: EnqueueMutationInput) => Promise<RpcMutationResult>;
   getMetricsSnapshot: () => VersionConflictMetricsSnapshot;
   resetMetrics: () => void;
@@ -352,6 +330,8 @@ export function createPerFileMutationExecutor(input: CreateMutationExecutorInput
   };
 }
 
+export const createPerFileMutationExecutor = createPerCanvasMutationExecutor;
+
 export function shouldReloadAfterHistoryReplay(event: EditCompletionEvent): boolean {
   return (
     event.type === 'NODE_RENAMED'
@@ -375,7 +355,7 @@ export async function applyEditCompletionSnapshot(
     if (typeof x !== 'number' || typeof y !== 'number') {
       throw new Error('INVALID_EVENT_SNAPSHOT');
     }
-    await mutators.moveNode(event.nodeId, x, y, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+    await mutators.moveNode(event.nodeId, x, y, event.canvasId);
     return;
   }
 
@@ -387,7 +367,6 @@ export async function applyEditCompletionSnapshot(
     await mutators.updateNode(
       event.nodeId,
       { content },
-      event.compatibilityFilePath ?? event.filePath,
       { commandType: 'node.content.update' },
       event.canvasId,
     );
@@ -398,7 +377,6 @@ export async function applyEditCompletionSnapshot(
     await mutators.updateNode(
       event.nodeId,
       snapshot,
-      event.compatibilityFilePath ?? event.filePath,
       { commandType: 'node.style.update' },
       event.canvasId,
     );
@@ -412,7 +390,6 @@ export async function applyEditCompletionSnapshot(
     await mutators.updateNode(
       event.nodeId,
       { groupId },
-      event.compatibilityFilePath ?? event.filePath,
       { commandType: 'node.group.update' },
       event.canvasId,
     );
@@ -430,7 +407,6 @@ export async function applyEditCompletionSnapshot(
     await mutators.updateNode(
       targetNodeId,
       { id: nextId },
-      event.compatibilityFilePath ?? event.filePath,
       { commandType: 'node.rename' },
       event.canvasId,
     );
@@ -448,14 +424,14 @@ export async function applyEditCompletionSnapshot(
       if (typeof createdId !== 'string') {
         throw new Error('INVALID_EVENT_SNAPSHOT');
       }
-      await mutators.deleteNode(createdId, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+      await mutators.deleteNode(createdId, event.canvasId);
       return;
     }
     if (actionId === 'canvas.node.create') {
-      await mutators.createCanvasNode(createInput as Record<string, unknown>, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+      await mutators.createCanvasNode(createInput as Record<string, unknown>, event.canvasId);
       return;
     }
-    await mutators.createNode(createInput as Record<string, unknown>, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+    await mutators.createNode(createInput as Record<string, unknown>, event.canvasId);
     return;
   }
 
@@ -467,13 +443,13 @@ export async function applyEditCompletionSnapshot(
     const actionId = typeof event.before.actionId === 'string' ? event.before.actionId : 'node.create';
     if (direction === 'before') {
       if (actionId === 'canvas.node.create') {
-        await mutators.createCanvasNode(recreateInput as Record<string, unknown>, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+        await mutators.createCanvasNode(recreateInput as Record<string, unknown>, event.canvasId);
       } else {
-        await mutators.createNode(recreateInput as Record<string, unknown>, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+        await mutators.createNode(recreateInput as Record<string, unknown>, event.canvasId);
       }
       return;
     }
-    await mutators.deleteNode(event.nodeId, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+    await mutators.deleteNode(event.nodeId, event.canvasId);
     return;
   }
 
@@ -482,7 +458,7 @@ export async function applyEditCompletionSnapshot(
     if (parentId !== null && parentId !== undefined && typeof parentId !== 'string') {
       throw new Error('INVALID_EVENT_SNAPSHOT');
     }
-    await mutators.reparentNode(event.nodeId, parentId ?? undefined, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+    await mutators.reparentNode(event.nodeId, parentId ?? undefined, event.canvasId);
     return;
   }
 
@@ -491,7 +467,7 @@ export async function applyEditCompletionSnapshot(
     if (typeof locked !== 'boolean') {
       throw new Error('INVALID_EVENT_SNAPSHOT');
     }
-    await mutators.updateNode(event.nodeId, { locked }, event.compatibilityFilePath ?? event.filePath, undefined, event.canvasId);
+    await mutators.updateNode(event.nodeId, { locked }, undefined, event.canvasId);
     return;
   }
 
@@ -502,7 +478,6 @@ export async function applyEditCompletionSnapshot(
     await mutators.updateNode(
       event.nodeId,
       { zIndex },
-      event.compatibilityFilePath ?? event.filePath,
       { commandType: 'node.z-order.update' },
       event.canvasId,
     );
@@ -522,25 +497,23 @@ export async function applyEditCompletionSnapshot(
   await mutators.updateNode(
     event.nodeId,
     patchProps,
-    event.compatibilityFilePath ?? event.filePath,
     { commandType: 'node.move.relative' },
     event.canvasId,
   );
 }
 
-export function shouldReloadForFileChange(input: {
-  changedFile: string;
-  currentFile: string | null;
+export function shouldReloadForCanvasChange(input: {
   changedCanvasId?: string | null;
   currentCanvasId?: string | null;
-  watchedFiles: Set<string>;
   incomingOriginId?: unknown;
   incomingCommandId?: unknown;
   clientId: string;
   recentOwnCommandIds?: Set<string>;
   lastAppliedCommandId?: string;
 }): boolean {
-  if (!input.watchedFiles.has(input.changedFile)) return false;
+  if (!input.changedCanvasId || input.changedCanvasId !== input.currentCanvasId) {
+    return false;
+  }
 
   const isSelfEvent =
     input.incomingOriginId === input.clientId &&
@@ -551,13 +524,11 @@ export function shouldReloadForFileChange(input: {
   }
 
   const isCurrentFileSelfEvent =
-    (
-      input.changedCanvasId
-        ? input.changedCanvasId === input.currentCanvasId
-        : input.changedFile === input.currentFile
-    ) &&
+    input.changedCanvasId === input.currentCanvasId &&
     isSelfEvent &&
     input.incomingCommandId === input.lastAppliedCommandId;
 
   return !isCurrentFileSelfEvent;
 }
+
+export const shouldReloadForFileChange = shouldReloadForCanvasChange;

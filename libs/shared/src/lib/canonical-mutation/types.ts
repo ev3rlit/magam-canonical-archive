@@ -73,6 +73,30 @@ export interface CanvasNodeReparentOperation {
   parentNodeId: string | null;
 }
 
+export interface CanvasNodeUpdateOperation {
+  op: 'canvas.node.update';
+  nodeId: string;
+  propsPatch?: Record<string, unknown>;
+  stylePatch?: Record<string, unknown>;
+}
+
+export interface CanvasNodeRenameOperation {
+  op: 'canvas.node.rename';
+  nodeId: string;
+  nextNodeId: string;
+}
+
+export interface CanvasNodeDeleteOperation {
+  op: 'canvas.node.delete';
+  nodeId: string;
+}
+
+export interface CanvasNodeZOrderUpdateOperation {
+  op: 'canvas.node.z-order.update';
+  nodeId: string;
+  zIndex: number;
+}
+
 export interface CanvasNodeCreateOperation {
   op: 'canvas.node.create';
   nodeId: string;
@@ -106,7 +130,11 @@ export type MutationOperation =
   | ObjectBodyBlockReorderOperation
   | CanvasNodeCreateOperation
   | CanvasNodeMoveOperation
-  | CanvasNodeReparentOperation;
+  | CanvasNodeReparentOperation
+  | CanvasNodeUpdateOperation
+  | CanvasNodeRenameOperation
+  | CanvasNodeDeleteOperation
+  | CanvasNodeZOrderUpdateOperation;
 
 export interface MutationBatch {
   workspaceRef: string;

@@ -14,6 +14,7 @@ export const WS_SERVER_MESSAGES = {
   runningAt: (port: number) => `[WS] Server running at ws://localhost:${port}`,
   watchingPath: (watchPath: string) => `[WS] Watching for file changes in: ${watchPath}`,
   broadcastCompatibilityFilesChanged: (event: 'add' | 'unlink', relativePath: string) => `[WS] Broadcasted compatibility files.changed: ${event} - ${relativePath}`,
+  broadcastCanvasChanged: (canvasId: string) => `[WS] Broadcasted canvas.changed: ${canvasId}`,
   broadcastFileChanged: (filePath: string) => `[WS] Broadcasted file.changed (command): ${filePath}`,
   fileChanged: (filePath: string) => `[WS] File changed: ${filePath}`,
   failedToHashChangedFile: '[WS] Failed to hash changed file:',
@@ -30,4 +31,3 @@ export const WS_PATCHER_MESSAGES = {
   markdownSourcePatchOnly: 'markdown source fields are only valid for Markdown nodes.',
   sequenceContentPatchOnly: 'sequence content fields are only valid for Sequence nodes.',
 } as const;
-

@@ -1,16 +1,13 @@
 import { describe, expect, it, mock } from 'bun:test';
 import {
   applyEditCompletionSnapshot,
-  createPerFileMutationExecutor,
+  createPerCanvasMutationExecutor,
   createVersionConflictMetricsTracker,
   MAX_VERSION_CONFLICT_RETRY,
   RpcClientError,
-  buildWatchedFilesSignature,
-  normalizeCompatibilityWatchedFiles,
-  normalizeWatchedFiles,
   resolveFileSyncWsUrl,
   shouldReloadAfterHistoryReplay,
-  shouldReloadForFileChange,
+  shouldReloadForCanvasChange,
   VERSION_CONFLICT_METRIC_WINDOW_MS,
   VERSION_CONFLICT_RATE_THRESHOLD,
 } from './useFileSync.shared';
@@ -41,45 +38,11 @@ describe('useFileSync ws url resolution', () => {
   });
 });
 
-describe('useFileSync watched files normalization', () => {
-  it('현재 파일과 의존 파일을 unique + stable sort로 정규화한다', () => {
-    expect(normalizeWatchedFiles('examples/a.tsx', [
-      'examples/b.tsx',
-      'examples/a.tsx',
-      'examples/b.tsx',
-    ])).toEqual([
-      'examples/a.tsx',
-      'examples/b.tsx',
-    ]);
-  });
-
-  it('compatibility alias도 동일한 watched file normalization을 유지한다', () => {
-    expect(normalizeCompatibilityWatchedFiles('documents/doc-1.graph.tsx', [
-      'documents/doc-1.graph.tsx',
-      'components/auth.tsx',
-    ])).toEqual([
-      'components/auth.tsx',
-      'documents/doc-1.graph.tsx',
-    ]);
-  });
-
-  it('watch signature는 같은 파일 집합이면 동일 문자열을 만든다', () => {
-    expect(buildWatchedFilesSignature([
-      'examples/a.tsx',
-      'examples/b.tsx',
-    ])).toBe(buildWatchedFilesSignature([
-      'examples/a.tsx',
-      'examples/b.tsx',
-    ]));
-  });
-});
-
-describe('useFileSync notification guard', () => {
+describe('useCanvasRuntime notification guard', () => {
   it('self-origin + same command 는 무시한다', () => {
-    const shouldReload = shouldReloadForFileChange({
-      changedFile: 'examples/a.tsx',
-      currentFile: 'examples/a.tsx',
-      watchedFiles: new Set(['examples/a.tsx']),
+    const shouldReload = shouldReloadForCanvasChange({
+      changedCanvasId: 'doc-1',
+      currentCanvasId: 'doc-1',
       incomingOriginId: 'client-1',
       incomingCommandId: 'cmd-1',
       clientId: 'client-1',
@@ -91,10 +54,9 @@ describe('useFileSync notification guard', () => {
   });
 
   it('다른 origin 이면 리렌더한다', () => {
-    const shouldReload = shouldReloadForFileChange({
-      changedFile: 'examples/a.tsx',
-      currentFile: 'examples/a.tsx',
-      watchedFiles: new Set(['examples/a.tsx']),
+    const shouldReload = shouldReloadForCanvasChange({
+      changedCanvasId: 'doc-1',
+      currentCanvasId: 'doc-1',
       incomingOriginId: 'external',
       incomingCommandId: 'cmd-x',
       clientId: 'client-1',
@@ -105,11 +67,10 @@ describe('useFileSync notification guard', () => {
     expect(shouldReload).toBe(true);
   });
 
-  it('watch 대상이 아닌 파일 변경은 무시한다', () => {
-    const shouldReload = shouldReloadForFileChange({
-      changedFile: 'examples/b.tsx',
-      currentFile: 'examples/a.tsx',
-      watchedFiles: new Set(['examples/a.tsx']),
+  it('현재 캔버스가 아니면 무시한다', () => {
+    const shouldReload = shouldReloadForCanvasChange({
+      changedCanvasId: 'doc-2',
+      currentCanvasId: 'doc-1',
       incomingOriginId: 'external',
       incomingCommandId: 'cmd-x',
       clientId: 'client-1',
@@ -120,26 +81,10 @@ describe('useFileSync notification guard', () => {
     expect(shouldReload).toBe(false);
   });
 
-  it('외부 의존 파일 변경은 현재 파일이 아니어도 리렌더한다', () => {
-    const shouldReload = shouldReloadForFileChange({
-      changedFile: 'components/auth.tsx',
-      currentFile: 'examples/a.tsx',
-      watchedFiles: new Set(['examples/a.tsx', 'components/auth.tsx']),
-      incomingOriginId: 'client-1',
-      incomingCommandId: 'cmd-1',
-      clientId: 'client-1',
-      recentOwnCommandIds: new Set(),
-      lastAppliedCommandId: 'cmd-1',
-    });
-
-    expect(shouldReload).toBe(true);
-  });
-
-  it('self-origin dependency file change도 own command면 리렌더하지 않는다', () => {
-    const shouldReload = shouldReloadForFileChange({
-      changedFile: 'components/auth.tsx',
-      currentFile: 'examples/a.tsx',
-      watchedFiles: new Set(['examples/a.tsx', 'components/auth.tsx']),
+  it('self-origin 같은 canvas 변경도 own command면 리렌더하지 않는다', () => {
+    const shouldReload = shouldReloadForCanvasChange({
+      changedCanvasId: 'doc-1',
+      currentCanvasId: 'doc-1',
       incomingOriginId: 'client-1',
       incomingCommandId: 'cmd-2',
       clientId: 'client-1',
@@ -151,8 +96,8 @@ describe('useFileSync notification guard', () => {
   });
 });
 
-describe('useFileSync mutation queue', () => {
-  it('같은 파일 mutation은 순차 실행된다', async () => {
+describe('useCanvasRuntime mutation queue', () => {
+  it('같은 canvas mutation은 순차 실행된다', async () => {
     const timeline: string[] = [];
     let releaseFirst: (value?: void | PromiseLike<void>) => void = () => { };
     const firstGate = new Promise<void>((resolve) => {
@@ -170,7 +115,7 @@ describe('useFileSync mutation queue', () => {
       return { success: true, newVersion: `v-${marker}` };
     });
 
-    const executor = createPerFileMutationExecutor({
+    const executor = createPerCanvasMutationExecutor({
       sendRequest,
       buildCommonParams: (params) => ({
         ...params,
@@ -183,12 +128,12 @@ describe('useFileSync mutation queue', () => {
 
     const first = executor.enqueueMutation({
       method: 'node.move',
-      filePath: 'same-file.tsx',
+      canvasId: 'doc-1',
       buildParams: () => ({ marker: 'first' }),
     });
     const second = executor.enqueueMutation({
       method: 'node.move',
-      filePath: 'same-file.tsx',
+      canvasId: 'doc-1',
       buildParams: () => ({ marker: 'second' }),
     });
 
@@ -218,7 +163,7 @@ describe('useFileSync mutation queue', () => {
       return { success: true, newVersion: 'sha256:ok' };
     });
 
-    const executor = createPerFileMutationExecutor({
+    const executor = createPerCanvasMutationExecutor({
       sendRequest,
       buildCommonParams: (params) => ({
         ...params,
@@ -231,12 +176,12 @@ describe('useFileSync mutation queue', () => {
 
     const first = executor.enqueueMutation({
       method: 'node.update',
-      filePath: 'same-file.tsx',
+      canvasId: 'doc-1',
       buildParams: () => ({ marker: 'first' }),
     });
     const second = executor.enqueueMutation({
       method: 'node.update',
-      filePath: 'same-file.tsx',
+      canvasId: 'doc-1',
       buildParams: () => ({ marker: 'second' }),
     });
 
@@ -246,7 +191,7 @@ describe('useFileSync mutation queue', () => {
   });
 });
 
-describe('useFileSync version conflict retry', () => {
+describe('useCanvasRuntime version conflict retry', () => {
   it('40901 충돌 시 1회 자동 재시도 후 성공한다', async () => {
     let sendCallCount = 0;
     let commonCallCount = 0;
@@ -268,7 +213,7 @@ describe('useFileSync version conflict retry', () => {
       return { success: true, newVersion: 'sha256:new', commandId: params.commandId };
     });
 
-    const executor = createPerFileMutationExecutor({
+    const executor = createPerCanvasMutationExecutor({
       sendRequest,
       buildCommonParams: (params) => ({
         ...params,
@@ -287,7 +232,7 @@ describe('useFileSync version conflict retry', () => {
 
     const result = await executor.enqueueMutation({
       method: 'node.reparent',
-      filePath: 'retry-file.tsx',
+      canvasId: 'doc-retry',
       buildParams: () => ({ nodeId: 'n1' }),
     });
 
@@ -308,7 +253,7 @@ describe('useFileSync version conflict retry', () => {
       });
     });
 
-    const executor = createPerFileMutationExecutor({
+    const executor = createPerCanvasMutationExecutor({
       sendRequest,
       buildCommonParams: (params) => ({
         ...params,
@@ -321,7 +266,7 @@ describe('useFileSync version conflict retry', () => {
 
     await expect(executor.enqueueMutation({
       method: 'node.move',
-      filePath: 'retry-file.tsx',
+      canvasId: 'doc-retry',
       buildParams: () => ({ nodeId: 'n1' }),
     })).rejects.toMatchObject({ code: 40901, message: 'VERSION_CONFLICT' });
     expect(sendCallCount).toBe(MAX_VERSION_CONFLICT_RETRY + 1);
@@ -334,7 +279,7 @@ describe('useFileSync version conflict retry', () => {
       throw new RpcClientError(50001, 'PATCH_FAILED', { reason: 'mock' });
     });
 
-    const executor = createPerFileMutationExecutor({
+    const executor = createPerCanvasMutationExecutor({
       sendRequest,
       buildCommonParams: (params) => ({
         ...params,
@@ -347,7 +292,7 @@ describe('useFileSync version conflict retry', () => {
 
     await expect(executor.enqueueMutation({
       method: 'node.create',
-      filePath: 'retry-file.tsx',
+      canvasId: 'doc-retry',
       buildParams: () => ({ nodeId: 'n1' }),
     })).rejects.toMatchObject({ code: 50001, message: 'PATCH_FAILED' });
     expect(sendCallCount).toBe(1);
@@ -394,18 +339,21 @@ describe('history replay helpers', () => {
     const calls: Array<Record<string, unknown>> = [];
     const mutators = {
       moveNode: async () => undefined,
-      updateNode: async (nodeId: string, props: Record<string, unknown>, filePath?: string | null, options?: { commandType?: string }) => {
-        calls.push({ nodeId, props, filePath, commandType: options?.commandType });
+      updateNode: async (nodeId: string, props: Record<string, unknown>, options?: { commandType?: string }, canvasId?: string | null) => {
+        calls.push({ nodeId, props, canvasId, commandType: options?.commandType });
         return undefined;
       },
       createNode: async () => undefined,
       deleteNode: async () => undefined,
       reparentNode: async () => undefined,
+      createCanvasNode: async () => undefined,
+      insertObjectBodyBlock: async () => undefined,
     };
     const event = {
       eventId: 'rename-1',
       type: 'NODE_RENAMED' as const,
       nodeId: 'old-id',
+      canvasId: 'doc-1',
       filePath: 'examples/a.tsx',
       commandId: 'cmd-rename-1',
       baseVersion: 'sha256:base',
@@ -422,13 +370,13 @@ describe('history replay helpers', () => {
       {
         nodeId: 'new-id',
         props: { id: 'old-id' },
-        filePath: 'examples/a.tsx',
+        canvasId: 'doc-1',
         commandType: 'node.rename',
       },
       {
         nodeId: 'old-id',
         props: { id: 'new-id' },
-        filePath: 'examples/a.tsx',
+        canvasId: 'doc-1',
         commandType: 'node.rename',
       },
     ]);
@@ -443,6 +391,8 @@ describe('history replay helpers', () => {
         calls.push(`create:${String(node.id)}`);
         return undefined;
       },
+      createCanvasNode: async () => undefined,
+      insertObjectBodyBlock: async () => undefined,
       deleteNode: async (nodeId: string) => {
         calls.push(`delete:${nodeId}`);
         return undefined;
@@ -453,6 +403,7 @@ describe('history replay helpers', () => {
       eventId: 'create-1',
       type: 'NODE_CREATED' as const,
       nodeId: 'shape-1',
+      canvasId: 'doc-1',
       filePath: 'examples/a.tsx',
       commandId: 'cmd-create-1',
       baseVersion: 'sha256:base',
@@ -482,6 +433,8 @@ describe('history replay helpers', () => {
       updateNode: async () => undefined,
       createNode: async () => undefined,
       deleteNode: async () => undefined,
+      createCanvasNode: async () => undefined,
+      insertObjectBodyBlock: async () => undefined,
       reparentNode: async (nodeId: string, newParentId?: string | null) => {
         calls.push({ nodeId, newParentId });
         return undefined;
@@ -491,6 +444,7 @@ describe('history replay helpers', () => {
       eventId: 'reparent-1',
       type: 'NODE_REPARENTED' as const,
       nodeId: 'child',
+      canvasId: 'doc-1',
       filePath: 'examples/map.tsx',
       commandId: 'cmd-reparent-1',
       baseVersion: 'sha256:base',
@@ -518,6 +472,8 @@ describe('history replay helpers', () => {
         calls.push(`create:${String(node.id)}`);
         return undefined;
       },
+      createCanvasNode: async () => undefined,
+      insertObjectBodyBlock: async () => undefined,
       deleteNode: async (nodeId: string) => {
         calls.push(`delete:${nodeId}`);
         return undefined;
@@ -528,6 +484,7 @@ describe('history replay helpers', () => {
       eventId: 'delete-1',
       type: 'NODE_DELETED' as const,
       nodeId: 'shape-1',
+      canvasId: 'doc-1',
       filePath: 'examples/a.tsx',
       commandId: 'cmd-delete-1',
       baseVersion: 'sha256:base',
@@ -554,18 +511,21 @@ describe('history replay helpers', () => {
     const calls: Array<Record<string, unknown>> = [];
     const mutators = {
       moveNode: async () => undefined,
-      updateNode: async (nodeId: string, props: Record<string, unknown>, filePath?: string | null) => {
-        calls.push({ nodeId, props, filePath });
+      updateNode: async (nodeId: string, props: Record<string, unknown>, _options?: { commandType?: string }, canvasId?: string | null) => {
+        calls.push({ nodeId, props, canvasId });
         return undefined;
       },
       createNode: async () => undefined,
       deleteNode: async () => undefined,
       reparentNode: async () => undefined,
+      createCanvasNode: async () => undefined,
+      insertObjectBodyBlock: async () => undefined,
     };
     const event = {
       eventId: 'lock-1',
       type: 'NODE_LOCK_TOGGLED' as const,
       nodeId: 'shape-1',
+      canvasId: 'doc-1',
       filePath: 'examples/a.tsx',
       commandId: 'cmd-lock-1',
       baseVersion: 'sha256:base',
@@ -579,8 +539,8 @@ describe('history replay helpers', () => {
     await applyEditCompletionSnapshot(event, 'after', mutators);
 
     expect(calls).toEqual([
-      { nodeId: 'shape-1', props: { locked: false }, filePath: 'examples/a.tsx' },
-      { nodeId: 'shape-1', props: { locked: true }, filePath: 'examples/a.tsx' },
+      { nodeId: 'shape-1', props: { locked: false }, canvasId: 'doc-1' },
+      { nodeId: 'shape-1', props: { locked: true }, canvasId: 'doc-1' },
     ]);
     expect(shouldReloadAfterHistoryReplay(event)).toBe(true);
   });
@@ -589,18 +549,21 @@ describe('history replay helpers', () => {
     const calls: Array<Record<string, unknown>> = [];
     const mutators = {
       moveNode: async () => undefined,
-      updateNode: async (nodeId: string, props: Record<string, unknown>, filePath?: string | null, options?: { commandType?: string }) => {
-        calls.push({ nodeId, props, filePath, commandType: options?.commandType });
+      updateNode: async (nodeId: string, props: Record<string, unknown>, options?: { commandType?: string }, canvasId?: string | null) => {
+        calls.push({ nodeId, props, canvasId, commandType: options?.commandType });
         return undefined;
       },
       createNode: async () => undefined,
       deleteNode: async () => undefined,
       reparentNode: async () => undefined,
+      createCanvasNode: async () => undefined,
+      insertObjectBodyBlock: async () => undefined,
     };
     const event = {
       eventId: 'style-1',
       type: 'STYLE_UPDATED' as const,
       nodeId: 'sticky-1',
+      canvasId: 'doc-1',
       filePath: 'examples/sticky.tsx',
       commandId: 'cmd-style-1',
       baseVersion: 'sha256:base',
@@ -617,13 +580,13 @@ describe('history replay helpers', () => {
       {
         nodeId: 'sticky-1',
         props: { className: 'shadow-sm' },
-        filePath: 'examples/sticky.tsx',
+        canvasId: 'doc-1',
         commandType: 'node.style.update',
       },
       {
         nodeId: 'sticky-1',
         props: { className: 'shadow-lg ring-2' },
-        filePath: 'examples/sticky.tsx',
+        canvasId: 'doc-1',
         commandType: 'node.style.update',
       },
     ]);
@@ -635,6 +598,7 @@ describe('history replay helpers', () => {
       eventId: 'style-1',
       type: 'STYLE_UPDATED',
       nodeId: 'n1',
+      canvasId: 'doc-1',
       filePath: 'examples/a.tsx',
       commandId: 'cmd-style',
       baseVersion: 'sha256:base',
@@ -648,6 +612,7 @@ describe('history replay helpers', () => {
       eventId: 'create-1',
       type: 'NODE_CREATED',
       nodeId: 'n1',
+      canvasId: 'doc-1',
       filePath: 'examples/a.tsx',
       commandId: 'cmd-create',
       baseVersion: 'sha256:base',
@@ -661,6 +626,7 @@ describe('history replay helpers', () => {
       eventId: 'delete-1',
       type: 'NODE_DELETED',
       nodeId: 'n1',
+      canvasId: 'doc-1',
       filePath: 'examples/a.tsx',
       commandId: 'cmd-delete',
       baseVersion: 'sha256:base',

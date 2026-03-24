@@ -173,7 +173,7 @@ function broadcastFileChanged(payload: {
     canvasId?: string;
     filePath: string;
     resolvedFilePath: string;
-    version: string;
+    newVersion: string;
     originId: string;
     commandId: string;
     rootPath?: string;
@@ -181,21 +181,45 @@ function broadcastFileChanged(payload: {
     const now = Date.now();
     recentCommandEvents.set(payload.resolvedFilePath, now);
 
-    const notification = createNotification('file.changed', {
+    const canvasNotification = createNotification('canvas.changed', {
         ...(payload.canvasId ? { canvasId: payload.canvasId } : {}),
-        filePath: payload.filePath,
-        resolvedFilePath: payload.resolvedFilePath,
-        version: payload.version,
+        newVersion: payload.newVersion,
         originId: payload.originId,
         commandId: payload.commandId,
         timestamp: now,
         ...(payload.rootPath ? { rootPath: payload.rootPath } : {}),
     });
-    const message = JSON.stringify(notification);
+    const canvasMessage = JSON.stringify(canvasNotification);
+
+    if (payload.canvasId) {
+        clients.forEach((subscriptions, ws) => {
+            if (!subscriptions.has(`canvas:${payload.canvasId}`)) {
+                return;
+            }
+
+            (ws as { send: (data: string) => void }).send(canvasMessage);
+        });
+        console.log(WS_SERVER_MESSAGES.broadcastCanvasChanged(payload.canvasId));
+    }
+
+    const fileNotification = createNotification('file.changed', {
+        ...(payload.canvasId ? { canvasId: payload.canvasId } : {}),
+        filePath: payload.filePath,
+        resolvedFilePath: payload.resolvedFilePath,
+        version: payload.newVersion,
+        originId: payload.originId,
+        commandId: payload.commandId,
+        timestamp: now,
+        ...(payload.rootPath ? { rootPath: payload.rootPath } : {}),
+    });
+    const fileMessage = JSON.stringify(fileNotification);
 
     clients.forEach((subscriptions, ws) => {
         let matched = false;
         for (const sub of subscriptions) {
+            if (sub.startsWith('canvas:')) {
+                continue;
+            }
             if (
                 payload.resolvedFilePath === sub ||
                 payload.resolvedFilePath.endsWith(sub) ||
@@ -207,7 +231,7 @@ function broadcastFileChanged(payload: {
         }
 
         if (matched) {
-            (ws as { send: (data: string) => void }).send(message);
+            (ws as { send: (data: string) => void }).send(fileMessage);
         }
     });
 

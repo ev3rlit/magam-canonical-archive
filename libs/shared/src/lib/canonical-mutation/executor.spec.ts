@@ -390,4 +390,170 @@ describe('headless mutation executor', () => {
 
     await handle.close();
   });
+
+  it('updates shell props and z-order through canvas node mutations', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const context = buildContext(handle);
+
+    await context.repository.createCanonicalObject({
+      record: buildSeedRecord(),
+      operation: 'create',
+    });
+    await context.repository.createCanvasNode({
+      id: 'node-update-1',
+      canvasId: 'doc-update-1',
+      surfaceId: 'main',
+      nodeKind: 'native',
+      canonicalObjectId: 'note-1',
+      props: { locked: false },
+      style: { fill: '#fff' },
+      layout: { x: 0, y: 0 },
+      zIndex: 1,
+    });
+
+    await executeMutationBatch({
+      context,
+      batch: {
+        workspaceRef: 'ws-1',
+        canvasRef: 'doc-update-1',
+        operations: [
+          {
+            op: 'canvas.node.update',
+            nodeId: 'node-update-1',
+            propsPatch: { groupId: 'group-1', locked: true },
+            stylePatch: { fill: '#0f172a', stroke: '#38bdf8' },
+          },
+          {
+            op: 'canvas.node.z-order.update',
+            nodeId: 'node-update-1',
+            zIndex: 9,
+          },
+        ],
+      },
+    });
+
+    const nodeRecord = await context.repository.getCanvasNode('doc-update-1', 'node-update-1');
+    expect(nodeRecord.ok).toBe(true);
+    if (nodeRecord.ok) {
+      expect(nodeRecord.value.props).toMatchObject({
+        groupId: 'group-1',
+        locked: true,
+      });
+      expect(nodeRecord.value.style).toMatchObject({
+        fill: '#0f172a',
+        stroke: '#38bdf8',
+      });
+      expect(nodeRecord.value.zIndex).toBe(9);
+    }
+
+    await handle.close();
+  });
+
+  it('renames native node/object ids and tombstones deleted native nodes through canonical mutations', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const context = buildContext(handle);
+
+    await context.repository.createCanonicalObject({
+      record: {
+        id: 'root-rename-1',
+        workspaceId: 'ws-1',
+        semanticRole: 'sticky-note',
+        publicAlias: 'Sticky',
+        sourceMeta: { sourceId: 'root-rename-1', kind: 'mindmap' },
+        capabilities: {},
+        contentBlocks: [{ id: 'body-1', blockType: 'markdown', source: 'root' }],
+        primaryContentKind: 'markdown',
+        canonicalText: 'root',
+      },
+      operation: 'create',
+    });
+    await context.repository.createCanvasNode({
+      id: 'root-rename-1',
+      canvasId: 'doc-rename-1',
+      surfaceId: 'main',
+      nodeKind: 'native',
+      nodeType: 'shape',
+      canonicalObjectId: 'root-rename-1',
+      layout: { x: 0, y: 0 },
+      zIndex: 1,
+    });
+    await context.repository.createCanonicalObject({
+      record: {
+        id: 'child-rename-1',
+        workspaceId: 'ws-1',
+        semanticRole: 'sticky-note',
+        publicAlias: 'Sticky',
+        sourceMeta: { sourceId: 'child-rename-1', kind: 'mindmap' },
+        capabilities: {},
+        contentBlocks: [{ id: 'body-1', blockType: 'markdown', source: 'child' }],
+        primaryContentKind: 'markdown',
+        canonicalText: 'child',
+      },
+      operation: 'create',
+    });
+    await context.repository.createCanvasNode({
+      id: 'child-rename-1',
+      canvasId: 'doc-rename-1',
+      surfaceId: 'main',
+      nodeKind: 'native',
+      nodeType: 'shape',
+      canonicalObjectId: 'child-rename-1',
+      parentNodeId: 'root-rename-1',
+      layout: { x: 220, y: 120 },
+      zIndex: 2,
+    });
+
+    await executeMutationBatch({
+      context,
+      batch: {
+        workspaceRef: 'ws-1',
+        canvasRef: 'doc-rename-1',
+        operations: [{
+          op: 'canvas.node.rename',
+          nodeId: 'root-rename-1',
+          nextNodeId: 'root-renamed',
+        }],
+      },
+    });
+
+    const renamedNode = await context.repository.getCanvasNode('doc-rename-1', 'root-renamed');
+    expect(renamedNode.ok).toBe(true);
+    const renamedObject = await context.repository.getCanonicalObject('ws-1', 'root-renamed');
+    expect(renamedObject.ok).toBe(true);
+    if (renamedObject.ok) {
+      expect(renamedObject.value.sourceMeta.sourceId).toBe('root-renamed');
+    }
+    const childNode = await context.repository.getCanvasNode('doc-rename-1', 'child-rename-1');
+    expect(childNode.ok).toBe(true);
+    if (childNode.ok) {
+      expect(childNode.value.parentNodeId).toBe('root-renamed');
+    }
+
+    await executeMutationBatch({
+      context,
+      batch: {
+        workspaceRef: 'ws-1',
+        canvasRef: 'doc-rename-1',
+        operations: [{
+          op: 'canvas.node.delete',
+          nodeId: 'root-renamed',
+        }],
+      },
+    });
+
+    const deletedNode = await context.repository.getCanvasNode('doc-rename-1', 'root-renamed');
+    expect(deletedNode.ok).toBe(false);
+    const tombstonedObject = await context.repository.getCanonicalObject('ws-1', 'root-renamed');
+    expect(tombstonedObject.ok).toBe(true);
+    if (tombstonedObject.ok) {
+      expect(tombstonedObject.value.deletedAt).not.toBeNull();
+    }
+    const orphanedChild = await context.repository.getCanvasNode('doc-rename-1', 'child-rename-1');
+    expect(orphanedChild.ok).toBe(true);
+    if (orphanedChild.ok) {
+      expect(orphanedChild.value.parentNodeId).toBeNull();
+    }
+
+    await handle.close();
+  });
 });

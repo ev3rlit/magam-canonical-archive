@@ -92,6 +92,62 @@ export function applyCanvasNodeReparent(
   return validation.value;
 }
 
+export function applyCanvasNodeUpdate(
+  node: CanvasNodeRecord,
+  input: {
+    propsPatch?: Record<string, unknown>;
+    stylePatch?: Record<string, unknown>;
+  },
+): CanvasNodeRecord {
+  const next: CanvasNodeRecord = {
+    ...node,
+    props: input.propsPatch
+      ? {
+          ...(node.props ?? {}),
+          ...input.propsPatch,
+        }
+      : node.props ?? null,
+    style: input.stylePatch
+      ? {
+          ...(node.style ?? {}),
+          ...input.stylePatch,
+        }
+      : node.style ?? null,
+    updatedAt: new Date(),
+  };
+  const validation = validateCanvasNodeRecord(next);
+  if (!validation.ok) {
+    throw cliError(validation.code, validation.message, {
+      details: {
+        ...(validation.path ? { path: validation.path } : {}),
+      },
+    });
+  }
+
+  return validation.value;
+}
+
+export function applyCanvasNodeZOrderUpdate(
+  node: CanvasNodeRecord,
+  zIndex: number,
+): CanvasNodeRecord {
+  const next: CanvasNodeRecord = {
+    ...node,
+    zIndex,
+    updatedAt: new Date(),
+  };
+  const validation = validateCanvasNodeRecord(next);
+  if (!validation.ok) {
+    throw cliError(validation.code, validation.message, {
+      details: {
+        ...(validation.path ? { path: validation.path } : {}),
+      },
+    });
+  }
+
+  return validation.value;
+}
+
 export async function persistCanvasNode(
   context: HeadlessServiceContext,
   node: CanvasNodeRecord,

@@ -8,7 +8,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { RpcClientError, useFileSync } from '@/hooks/useFileSync';
+import { RpcClientError } from '@/hooks/useFileSync';
+import { useCanvasRuntime } from '@/hooks/useCanvasRuntime';
 import { GraphCanvas, resolveCreateCompleteBodyEditSession } from '@/components/GraphCanvas';
 import type { GraphCanvasSelectionActionIntentInput } from '@/components/GraphCanvas';
 import { resolveBodySlashCommandSession } from '@/components/nodes/renderableContent';
@@ -56,6 +57,7 @@ import {
   canCommitTextEdit,
   canRunNodeCommand,
   mapEditRpcErrorToToast,
+  resolveActionRoutingFilePath,
   resolveImmediateCreateEditMode,
   resolveNodeEditContext,
   resolveNodeEditTarget,
@@ -130,7 +132,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     activeWorkspaceId,
     lastActiveCanvasesByWorkspaceId,
     workspaceCanvasesByWorkspaceId,
-    sourceVersions,
     canvasVersions,
     files,
     nodes,
@@ -209,6 +210,10 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
 
     return currentCompatibilityFilePathState ?? currentFile;
   }, [activeWorkspaceCanvas?.compatibilityFilePath, compatibilityFilePathByCanvasId, currentCanvasId, currentCompatibilityFilePathState, currentFile]);
+  const actionRoutingFilePath = useMemo(
+    () => resolveActionRoutingFilePath(currentCompatibilityFilePath, currentFile),
+    [currentCompatibilityFilePath, currentFile],
+  );
 
 
 
@@ -286,8 +291,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     }
   }, [hostRpc, hydrateWorkspaceRegistry, replaceRegisteredWorkspaces, setGraphError, upsertWorkspaceFromProbe]);
 
-  // File sync - triggers re-render when file changes externally
-  const handleFileChange = useCallback(() => {
+  const handleCanvasInvalidated = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
 
@@ -377,11 +381,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     }
   }, [hostRpc, setFileTree, setFiles, setGraphError, setWorkspaceCanvases, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
 
-  const dependencyFiles = useMemo(
-    () => Object.keys(sourceVersions).filter((filePath) => filePath !== currentCompatibilityFilePath),
-    [currentCompatibilityFilePath, sourceVersions],
-  );
-
   const handleWorkspaceFilesChange = useCallback(() => {
     if (!activeWorkspace) {
       return;
@@ -390,7 +389,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     void loadActiveWorkspaceCanvases(activeWorkspace);
   }, [activeWorkspace, loadActiveWorkspaceCanvases]);
 
-  // File sync with reload callback for file list changes
   const {
     updateNode,
     moveNode,
@@ -401,13 +399,11 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     reparentNode,
     undoLastEdit,
     redoLastEdit,
-  } = useFileSync(
+  } = useCanvasRuntime(
     currentCanvasId,
-    currentCompatibilityFilePath,
     activeWorkspace?.rootPath ?? workspaceRootPath,
-    handleFileChange,
+    handleCanvasInvalidated,
     handleWorkspaceFilesChange,
-    dependencyFiles,
   );
 
   useEffect(() => {
@@ -597,9 +593,9 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       }
     }
     if (effect.reloadGraphOnSuccess) {
-      handleFileChange();
+      handleCanvasInvalidated();
     }
-  }, [currentCanvasId, handleFileChange, pushEditCompletionEvent]);
+  }, [currentCanvasId, handleCanvasInvalidated, pushEditCompletionEvent]);
 
   const executeMutationDescriptor = useCallback(async (descriptor: MutationDispatchDescriptor) => {
     const targetCanvasId = descriptor.payload.canvasId ?? currentCanvasId;
@@ -662,7 +658,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         nodes: runtime.nodes,
         edges: runtime.edges,
         currentCanvasId: runtime.currentCanvasId,
-        currentCompatibilityFilePath,
+        currentCompatibilityFilePath: actionRoutingFilePath,
         canvasVersions: runtime.canvasVersions,
         selectedNodeIds: runtime.selectedNodeIds,
       };
@@ -678,7 +674,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     clearPendingActionRouting,
     commitHistoryEffect,
     currentCanvasId,
-    currentCompatibilityFilePath,
+    actionRoutingFilePath,
     executeMutationDescriptor,
     registerPendingActionRouting,
   ]);
@@ -1099,7 +1095,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     const resolvedContext = input.placement.mode === 'canvas-absolute' || input.placement.mode === 'mindmap-root'
       ? createPaneActionRoutingContext({
         currentCanvasId,
-        currentFile: currentCompatibilityFilePath,
+        currentFile: actionRoutingFilePath,
         selectedNodeIds: runtime.selectedNodeIds,
       })
       : (() => {
@@ -1113,7 +1109,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         return resolveNodeActionRoutingContext(
           targetNode,
           currentCanvasId,
-          currentCompatibilityFilePath,
+          actionRoutingFilePath,
           runtime.selectedNodeIds,
         );
       })();
@@ -1130,7 +1126,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
           nodeType: input.nodeType,
           placement: input.placement,
           ...(input.initialProps ? { initialProps: input.initialProps } : {}),
-          filePath: input.filePath,
+          filePath: input.filePath ?? actionRoutingFilePath,
           scopeId: input.scopeId,
           frameScope: input.frameScope,
         },
@@ -1147,7 +1143,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       });
       throw error;
     }
-  }, [dispatchActionRoutingIntentOrThrow, setGraphError]);
+  }, [actionRoutingFilePath, currentCanvasId, dispatchActionRoutingIntentOrThrow, setGraphError]);
 
   const handleMindMapReparentCommit = useCallback(async (input: {
     draggedNodeId: string;
@@ -1230,7 +1226,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         after: command.payload.next,
         committedAt: Date.now(),
       });
-      handleFileChange();
+      handleCanvasInvalidated();
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? 'MindMap 구조 변경에 실패했습니다.';
       setGraphError({
@@ -1240,7 +1236,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       });
       throw error;
     }
-  }, [handleFileChange, pushEditCompletionEvent, reparentNode, setGraphError]);
+  }, [handleCanvasInvalidated, pushEditCompletionEvent, reparentNode, setGraphError]);
 
   const handleNodeDragCommit = useCallback(async (payload: {
     nodeId: string;
@@ -1731,13 +1727,23 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
 
         const parsed = parseRenderGraph(data);
         if (parsed) {
-          if (typeof data.compatibilityFilePath === 'string' && data.compatibilityFilePath.length > 0) {
-            setCurrentCompatibilityFilePath(data.compatibilityFilePath);
-          }
           setCurrentCanvasId(typeof data.canvasId === 'string'
             ? data.canvasId
             : currentCanvasId);
-          setGraph(parsed);
+          const resolvedCanvasId = typeof data.canvasId === 'string'
+            ? data.canvasId
+            : currentCanvasId;
+          setGraph({
+            ...parsed,
+            canvasVersions: (
+              resolvedCanvasId && typeof data.sourceVersion === 'string'
+                ? {
+                    ...useGraphStore.getState().canvasVersions,
+                    [resolvedCanvasId]: data.sourceVersion,
+                  }
+                : undefined
+            ),
+          });
           if (pendingSelectionNodeIdRef.current) {
             const createdNodeId = pendingSelectionNodeIdRef.current;
             const createdNode = parsed.nodes.find((node) => node.id === createdNodeId);
@@ -1765,7 +1771,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     }
 
     renderCanvas();
-  }, [activeWorkspace?.rootPath, currentCanvasId, currentCompatibilityFilePath, draftCanvases, refreshKey, setCurrentCanvasId, setCurrentCompatibilityFilePath, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on file changes
+  }, [activeWorkspace?.rootPath, currentCanvasId, currentCompatibilityFilePath, draftCanvases, refreshKey, setCurrentCanvasId, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on canvas changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
