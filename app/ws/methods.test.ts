@@ -15,6 +15,7 @@ const originalMagamTargetDir = process.env.MAGAM_TARGET_DIR;
 afterEach(async () => {
   await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
   tempDirs.length = 0;
+  __setCanonicalServicesFactoryForTests(null);
   if (originalMagamTargetDir === undefined) {
     delete process.env.MAGAM_TARGET_DIR;
   } else {
@@ -35,6 +36,128 @@ function sha(content: string): string {
 }
 
 describe('RPC editing methods', () => {
+  it('canonical.query: transport-neutral query envelope를 반환한다', async () => {
+    __setCanonicalServicesFactoryForTests(async () => ({
+      queryService: {
+        execute: async () => ({
+          ok: true,
+          data: {
+            objects: [],
+          },
+          page: { cursor: 'next-1' },
+        }),
+      },
+      mutationExecutor: {
+        execute: async () => ({
+          ok: false,
+          code: 'INVALID_MUTATION_OPERATION',
+          message: 'not used',
+        }),
+      },
+    }));
+
+    const result = await methods['canonical.query']({
+      request: {
+        workspaceId: 'ws-1',
+        include: ['objects'],
+      },
+    }, { ws: {}, subscriptions: new Set() });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        objects: [],
+      },
+      page: { cursor: 'next-1' },
+    });
+  });
+
+  it('canonical.mutate: missing base revision validation failure를 envelope로 반환한다', async () => {
+    __setCanonicalServicesFactoryForTests(async () => ({
+      queryService: {
+        execute: async () => ({
+          ok: false,
+          code: 'INVALID_QUERY_INCLUDE',
+          message: 'not used',
+        }),
+      },
+      mutationExecutor: {
+        execute: async () => ({
+          ok: false,
+          code: 'VERSION_BASE_REQUIRED',
+          message: 'baseRevision is required.',
+          path: 'baseRevision',
+        }),
+      },
+    }));
+
+    const result = await methods['canonical.mutate']({
+      envelope: {
+        workspaceId: 'ws-1',
+        documentId: 'doc-1',
+        actor: { kind: 'user', id: 'u-1' },
+        operations: [],
+      },
+    }, { ws: {}, subscriptions: new Set() });
+
+    expect(result).toEqual({
+      ok: false,
+      code: 'VERSION_BASE_REQUIRED',
+      message: 'baseRevision is required.',
+      path: 'baseRevision',
+    });
+  });
+
+  it('node.reparent: revision-token path는 canonical executor를 타고 commandId/newVersion envelope를 유지한다', async () => {
+    const execute = mock(async () => ({
+      ok: true as const,
+      appliedOperations: [],
+      changedSet: { objectIds: [], relationIds: [], canvasNodeIds: ['node-1'] },
+      revision: {
+        before: 'rev:doc-1:1:rev-1',
+        after: 'rev:doc-1:2:rev-2',
+      },
+    }));
+
+    __setCanonicalServicesFactoryForTests(async () => ({
+      queryService: {
+        execute: async () => ({
+          ok: true,
+          data: {},
+        }),
+      },
+      mutationExecutor: {
+        execute,
+      },
+    }));
+
+    const notify = mock(() => { });
+    const result = await methods['node.reparent']({
+      filePath: 'doc.tsx',
+      nodeId: 'node-1',
+      newParentId: 'parent-1',
+      workspaceId: 'ws-1',
+      documentId: 'doc-1',
+      baseVersion: 'rev:doc-1:1:rev-1',
+      originId: 'client-1',
+      commandId: 'cmd-reparent-1',
+    }, { ws: {}, subscriptions: new Set(), notifyFileChanged: notify }) as {
+      success: boolean;
+      newVersion: string;
+      commandId: string;
+      filePath: string;
+    };
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      success: true,
+      newVersion: 'rev:doc-1:2:rev-2',
+      commandId: 'cmd-reparent-1',
+      filePath: 'doc.tsx',
+    });
+    expect(notify).toHaveBeenCalledTimes(1);
+  });
+
   it('node.move: 성공 시 저장 + notify + newVersion 반환', async () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Node id="n1" x={1} y={2} />; }`);
     const original = await readFile(filePath, 'utf-8');

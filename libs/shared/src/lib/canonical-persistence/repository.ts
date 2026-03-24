@@ -4,7 +4,9 @@ import { cloneContentBlocks, isSemanticRole, readContentBlocks } from '../canoni
 import type {
   CanvasBindingRecord,
   CanvasNodeRecord,
+  CanonicalQueryBounds,
   CloneEditableNoteInput,
+  DocumentHeadRevisionRecord,
   CreateCanonicalObjectInput,
   CanvasRevisionRecord,
   ObjectRelationRecord,
@@ -44,6 +46,8 @@ import {
 } from './validators';
 
 type CanonicalObjectRow = typeof canonicalObjects.$inferSelect;
+type ObjectRelationRow = typeof objectRelations.$inferSelect;
+type CanvasNodeRow = typeof canvasNodes.$inferSelect;
 type CanvasBindingRow = typeof canvasBindings.$inferSelect;
 type PluginPackageRow = typeof pluginPackages.$inferSelect;
 type PluginVersionRow = typeof pluginVersions.$inferSelect;
@@ -332,6 +336,155 @@ export class CanonicalPersistenceRepository {
     return rows.map(fromCanonicalObjectRow);
   }
 
+  async queryCanonicalObjects(input: {
+    workspaceId: string;
+    filters?: FilteredObjectQueryInput['filters'];
+    limit?: number;
+    cursor?: string;
+    bounds?: { x: number; y: number; width: number; height: number };
+  }): Promise<FilteredObjectQueryResult> {
+    void input.bounds;
+    const result = await this.listCanonicalObjectsByFilters({
+      workspaceId: input.workspaceId,
+      filters: input.filters,
+      limit: input.limit,
+      cursor: input.cursor,
+    });
+
+    if (!result.ok) {
+      throw new Error(result.message);
+    }
+
+    return result.value;
+  }
+
+  async listCanonicalObjectsByFilters(input: FilteredObjectQueryInput): Promise<PersistenceResult<FilteredObjectQueryResult>> {
+    if (typeof input.workspaceId !== 'string' || input.workspaceId.length === 0) {
+      return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'workspaceId is required.', {
+        path: 'workspaceId',
+      });
+    }
+    if (input.filters?.semanticRole && !Array.isArray(input.filters.semanticRole)) {
+      return errResult('INVALID_QUERY_FILTER', 'filters.semanticRole must be an array.', { path: 'filters.semanticRole' });
+    }
+    if (input.filters?.semanticRole?.some((value) => typeof value !== 'string' || value.length === 0)) {
+      return errResult('INVALID_QUERY_FILTER', 'filters.semanticRole must contain non-empty strings.', { path: 'filters.semanticRole' });
+    }
+    if (input.filters?.primaryContentKind && !Array.isArray(input.filters.primaryContentKind)) {
+      return errResult('INVALID_QUERY_FILTER', 'filters.primaryContentKind must be an array.', { path: 'filters.primaryContentKind' });
+    }
+    if (input.filters?.primaryContentKind?.some((value) => value !== null && (typeof value !== 'string' || value.length === 0))) {
+      return errResult('INVALID_QUERY_FILTER', 'filters.primaryContentKind must contain non-empty strings or null.', { path: 'filters.primaryContentKind' });
+    }
+    if (input.filters?.hasCapability && !Array.isArray(input.filters.hasCapability)) {
+      return errResult('INVALID_QUERY_FILTER', 'filters.hasCapability must be an array.', { path: 'filters.hasCapability' });
+    }
+    if (input.filters?.hasCapability?.some((value) => typeof value !== 'string' || value.length === 0)) {
+      return errResult('INVALID_QUERY_FILTER', 'filters.hasCapability must contain non-empty strings.', { path: 'filters.hasCapability' });
+    }
+    if (input.filters?.alias && !Array.isArray(input.filters.alias)) {
+      return errResult('INVALID_QUERY_FILTER', 'filters.alias must be an array.', { path: 'filters.alias' });
+    }
+    if (input.filters?.alias?.some((value) => typeof value !== 'string' || value.length === 0)) {
+      return errResult('INVALID_QUERY_FILTER', 'filters.alias must contain non-empty strings.', { path: 'filters.alias' });
+    }
+
+    const rows = await this.db.query.canonicalObjects.findMany({
+      where: eq(canonicalObjects.workspaceId, input.workspaceId),
+    });
+
+    const filtered = rows
+      .map(fromCanonicalObjectRow)
+      .filter((record: CanonicalObjectRecord) => {
+        if (input.filters?.semanticRole && input.filters.semanticRole.length > 0 && !input.filters.semanticRole.includes(record.semanticRole)) {
+          return false;
+        }
+        if (input.filters?.primaryContentKind && input.filters.primaryContentKind.length > 0) {
+          const kind = record.primaryContentKind ?? null;
+          if (!input.filters.primaryContentKind.includes(kind)) {
+            return false;
+          }
+        }
+        if (input.filters?.alias && input.filters.alias.length > 0) {
+          const alias = record.publicAlias ?? null;
+          if (!alias || !input.filters.alias.includes(alias)) {
+            return false;
+          }
+        }
+        if (input.filters?.hasCapability && input.filters.hasCapability.length > 0) {
+          const capabilityKeys = new Set(Object.keys(record.capabilities ?? {}));
+          const hasAll = input.filters.hasCapability.every((requiredKey) => capabilityKeys.has(requiredKey));
+          if (!hasAll) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .sort((a: CanonicalObjectRecord, b: CanonicalObjectRecord) => a.id.localeCompare(b.id));
+
+    const paged = applyCursorLimit({
+      rows: filtered,
+      cursor: input.cursor,
+      limit: input.limit,
+      getId: (row: CanonicalObjectRecord) => row.id,
+    });
+    if (!paged.ok) {
+      return paged;
+    }
+
+    return okResult({
+      objects: paged.value.rows,
+      ...(paged.value.cursor ? { cursor: paged.value.cursor } : {}),
+    });
+  }
+
+  async listObjectRelationsByWorkspace(workspaceId: string): Promise<PersistenceResult<ObjectRelationRecord[]>> {
+    if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+      return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'workspaceId is required.', {
+        path: 'workspaceId',
+      });
+    }
+
+    const rows = await this.db.query.objectRelations.findMany({
+      where: eq(objectRelations.workspaceId, workspaceId),
+    });
+
+    const relations = rows
+      .map(fromObjectRelationRow)
+      .sort((a: ObjectRelationRecord, b: ObjectRelationRecord) => {
+        const fromCompare = a.fromObjectId.localeCompare(b.fromObjectId);
+        if (fromCompare !== 0) {
+          return fromCompare;
+        }
+        const relationCompare = a.relationType.localeCompare(b.relationType);
+        if (relationCompare !== 0) {
+          return relationCompare;
+        }
+        return a.id.localeCompare(b.id);
+      });
+
+    return okResult(relations);
+  }
+
+  async listObjectRelations(input: {
+    workspaceId: string;
+    objectIds?: string[];
+  }): Promise<ObjectRelationRecord[]> {
+    const relations = await this.listObjectRelationsByWorkspace(input.workspaceId);
+    if (!relations.ok) {
+      throw new Error(relations.message);
+    }
+
+    if (!input.objectIds || input.objectIds.length === 0) {
+      return relations.value;
+    }
+
+    const objectIdSet = new Set(input.objectIds);
+    return relations.value.filter((relation) => (
+      objectIdSet.has(relation.fromObjectId) || objectIdSet.has(relation.toObjectId)
+    ));
+  }
+
   async resolveCanonicalObject(
     workspaceId: string,
     id: string,
@@ -444,6 +597,42 @@ export class CanonicalPersistenceRepository {
     return okResult(record);
   }
 
+  async removeObjectRelation(input: {
+    workspaceId: string;
+    relationId: string;
+  }): Promise<PersistenceResult<{ id: string }>> {
+    if (typeof input.workspaceId !== 'string' || input.workspaceId.length === 0) {
+      return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'workspaceId is required.', { path: 'workspaceId' });
+    }
+    if (typeof input.relationId !== 'string' || input.relationId.length === 0) {
+      return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'relationId is required.', { path: 'relationId' });
+    }
+
+    const existing = await this.db.query.objectRelations.findFirst({
+      where: and(
+        eq(objectRelations.workspaceId, input.workspaceId),
+        eq(objectRelations.id, input.relationId),
+      ),
+    });
+
+    if (!existing) {
+      return errResult('RELATION_ENDPOINT_MISSING', `Relation ${input.relationId} was not found.`, {
+        path: 'relationId',
+      });
+    }
+
+    await this.db
+      .delete(objectRelations)
+      .where(
+        and(
+          eq(objectRelations.workspaceId, input.workspaceId),
+          eq(objectRelations.id, input.relationId),
+        ),
+      );
+
+    return okResult({ id: input.relationId });
+  }
+
   async createCanvasNode(record: CanvasNodeRecord): Promise<PersistenceResult<CanvasNodeRecord>> {
     const validation = validateCanvasNodeRecord(record);
     if (!validation.ok) {
@@ -471,6 +660,87 @@ export class CanonicalPersistenceRepository {
     return okResult(record);
   }
 
+  async getCanvasNode(input: {
+    documentId: string;
+    nodeId: string;
+  }): Promise<PersistenceResult<CanvasNodeRecord>> {
+    const row = await this.db.query.canvasNodes.findFirst({
+      where: and(
+        eq(canvasNodes.documentId, input.documentId),
+        eq(canvasNodes.id, input.nodeId),
+      ),
+    });
+
+    if (!row) {
+      return errResult('CANONICAL_RECORD_NOT_FOUND', `Canvas node ${input.nodeId} was not found.`, {
+        path: 'nodeId',
+      });
+    }
+
+    return okResult(fromCanvasNodeRow(row));
+  }
+
+  async updateCanvasNode(record: CanvasNodeRecord): Promise<PersistenceResult<CanvasNodeRecord>> {
+    const validation = validateCanvasNodeRecord(record);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const existing = await this.getCanvasNode({
+      documentId: record.documentId,
+      nodeId: record.id,
+    });
+    if (!existing.ok) {
+      return existing;
+    }
+
+    await this.db
+      .update(canvasNodes)
+      .set({
+        surfaceId: record.surfaceId,
+        nodeKind: record.nodeKind,
+        nodeType: record.nodeType ?? null,
+        parentNodeId: record.parentNodeId ?? null,
+        canonicalObjectId: record.canonicalObjectId ?? null,
+        pluginInstanceId: record.pluginInstanceId ?? null,
+        props: record.props ?? null,
+        layout: record.layout,
+        style: record.style ?? null,
+        persistedState: record.persistedState ?? null,
+        zIndex: record.zIndex,
+        updatedAt: record.updatedAt ?? new Date(),
+      })
+      .where(
+        and(
+          eq(canvasNodes.documentId, record.documentId),
+          eq(canvasNodes.id, record.id),
+        ),
+      );
+
+    return okResult(record);
+  }
+
+  async removeCanvasNode(input: {
+    documentId: string;
+    nodeId: string;
+  }): Promise<PersistenceResult<{ id: string }>> {
+    const existing = await this.getCanvasNode(input);
+    if (!existing.ok) {
+      return existing;
+    }
+
+    await this.db
+      .delete(canvasNodes)
+      .where(
+        and(
+          eq(canvasNodes.documentId, input.documentId),
+          eq(canvasNodes.id, input.nodeId),
+        ),
+      );
+
+    return okResult({ id: input.nodeId });
+  }
+
   async createCanvasBinding(record: CanvasBindingRecord): Promise<PersistenceResult<CanvasBindingRecord>> {
     const validation = validateCanvasBindingRecord(record);
     if (!validation.ok) {
@@ -489,6 +759,54 @@ export class CanonicalPersistenceRepository {
     });
 
     return okResult(record);
+  }
+
+  async listCanvasNodes(input: {
+    documentId: string;
+    surfaceId?: string;
+    bounds?: { x: number; y: number; width: number; height: number };
+  }): Promise<CanvasNodeRecord[]> {
+    const bounds = input.bounds
+      ? {
+          minX: input.bounds.x,
+          minY: input.bounds.y,
+          maxX: input.bounds.x + input.bounds.width,
+          maxY: input.bounds.y + input.bounds.height,
+        }
+      : undefined;
+
+    const validatedBounds = validateBounds(bounds);
+    if (!validatedBounds.ok) {
+      throw new Error(validatedBounds.message);
+    }
+
+    const rows = await this.db.query.canvasNodes.findMany({
+      where: input.surfaceId
+        ? and(
+          eq(canvasNodes.documentId, input.documentId),
+          eq(canvasNodes.surfaceId, input.surfaceId),
+        )
+        : eq(canvasNodes.documentId, input.documentId),
+    });
+
+    return rows
+      .map(fromCanvasNodeRow)
+      .filter((node: CanvasNodeRecord) => isNodeWithinBounds(node, validatedBounds.value))
+      .sort((a: CanvasNodeRecord, b: CanvasNodeRecord) => a.zIndex - b.zIndex || a.id.localeCompare(b.id));
+  }
+
+  async listCanvasBindings(input: {
+    documentId: string;
+    nodeIds?: string[];
+  }): Promise<CanvasBindingRecord[]> {
+    const rows = await this.db.query.canvasBindings.findMany({
+      where: eq(canvasBindings.documentId, input.documentId),
+    });
+
+    const nodeIdSet = input.nodeIds ? new Set(input.nodeIds) : null;
+    return rows
+      .map(fromCanvasBindingRow)
+      .filter((binding: CanvasBindingRecord) => !nodeIdSet || nodeIdSet.has(binding.nodeId));
   }
 
   async resolveCanvasBinding(

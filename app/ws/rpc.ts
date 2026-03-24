@@ -41,6 +41,7 @@ export const RPC_ERRORS = {
     NODE_NOT_FOUND: { code: 40401, message: 'NODE_NOT_FOUND' },
     PLUGIN_INSTANCE_NOT_FOUND: { code: 40402, message: 'PLUGIN_INSTANCE_NOT_FOUND' },
     VERSION_CONFLICT: { code: 40901, message: 'VERSION_CONFLICT' },
+    VERSION_BASE_REQUIRED: { code: 40904, message: 'VERSION_BASE_REQUIRED' },
     MINDMAP_CYCLE: { code: 40902, message: 'MINDMAP_CYCLE' },
     ID_COLLISION: { code: 40903, message: 'ID_COLLISION' },
     PLUGIN_INSTANCE_ID_CONFLICT: { code: 40904, message: 'PLUGIN_INSTANCE_ID_CONFLICT' },
