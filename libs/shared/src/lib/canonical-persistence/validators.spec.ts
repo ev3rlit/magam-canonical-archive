@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CanonicalObjectRecord } from '../canonical-object-contract';
 import { deriveCanonicalText, derivePrimaryContentKind } from './mappers';
 import {
+  createDefaultMarkdownContentBlock,
   createEmptyTextBlock,
   seedEditableNoteContentBlocks,
   validateCanonicalObjectRecord,
@@ -181,6 +182,24 @@ describe('canonical-persistence validators', () => {
     }));
 
     expect(seeded.contentBlocks).toEqual([createEmptyTextBlock()]);
+  });
+
+  it('provides a markdown-first block seed helper for body-capable create flows', () => {
+    expect(createDefaultMarkdownContentBlock()).toEqual({
+      id: 'body-1',
+      blockType: 'markdown',
+      source: '',
+    });
+
+    const validation = validateCanonicalObjectRecord(buildBaseRecord({
+      semanticRole: 'topic',
+      publicAlias: 'Node',
+      contentBlocks: [createDefaultMarkdownContentBlock('body-1', '# seeded')],
+      primaryContentKind: 'markdown',
+      canonicalText: '# seeded',
+    }));
+
+    expect(validation.ok).toBe(true);
   });
 
   it('rejects duplicate content block ids to preserve ordered block invariants', () => {

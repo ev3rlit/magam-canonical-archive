@@ -188,7 +188,7 @@ describe('headless mutation executor', () => {
       layout: { x: 0, y: 0 },
       zIndex: 1,
     });
-    await context.repository.appendDocumentRevision({
+    await context.repository.appendCanvasRevision({
       id: 'docrev-0',
       canvasId: 'doc-1',
       revisionNo: 1,
@@ -221,6 +221,172 @@ describe('headless mutation executor', () => {
 
     expect(applied.canvasRevisionBefore).toBe(1);
     expect(applied.canvasRevisionAfter).toBe(2);
+
+    await handle.close();
+  });
+
+  it('creates a canonical canvas node with a markdown-first seed and appends a revision', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const context = buildContext(handle);
+
+    const applied = await executeMutationBatch({
+      context,
+      batch: {
+        workspaceRef: 'ws-1',
+        canvasRef: 'doc-create-1',
+        operations: [{
+          op: 'canvas.node.create',
+          nodeId: 'shape-root-1',
+          nodeType: 'shape',
+          props: {
+            type: 'rectangle',
+            content: '# New root',
+          },
+          placement: {
+            mode: 'canvas-absolute',
+            x: 120,
+            y: 180,
+          },
+        }],
+      },
+    });
+
+    expect(applied.canvasRevisionBefore).toBe(0);
+    expect(applied.canvasRevisionAfter).toBe(1);
+    expect(applied.changed).toEqual({
+      objects: ['shape-root-1'],
+      nodes: ['shape-root-1'],
+      edges: [],
+      bindings: [],
+      pluginInstances: [],
+    });
+
+    const objectRecord = await context.repository.getCanonicalObject('ws-1', 'shape-root-1');
+    expect(objectRecord.ok).toBe(true);
+    if (objectRecord.ok) {
+      expect(objectRecord.value.contentBlocks).toEqual([
+        {
+          id: 'body-1',
+          blockType: 'markdown',
+          source: '# New root',
+        },
+      ]);
+      expect(objectRecord.value.primaryContentKind).toBe('markdown');
+      expect(objectRecord.value.canonicalText).toBe('# New root');
+    }
+
+    const nodeRecord = await context.repository.getCanvasNode('doc-create-1', 'shape-root-1');
+    expect(nodeRecord.ok).toBe(true);
+    if (nodeRecord.ok) {
+      expect(nodeRecord.value.layout).toEqual({ x: 120, y: 180 });
+      expect(nodeRecord.value.canonicalObjectId).toBe('shape-root-1');
+    }
+
+    await handle.close();
+  });
+
+  it('normalizes mindmap sibling create and ordered block insert through canonical mutations', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const context = buildContext(handle);
+
+    await context.repository.createCanonicalObject({
+      record: {
+        id: 'root-1',
+        workspaceId: 'ws-1',
+        semanticRole: 'topic',
+        publicAlias: 'Node',
+        sourceMeta: { sourceId: 'root-1', kind: 'mindmap' },
+        capabilities: {},
+        contentBlocks: [{ id: 'body-1', blockType: 'markdown', source: '# Root' }],
+        primaryContentKind: 'markdown',
+        canonicalText: '# Root',
+      },
+      operation: 'create',
+    });
+    await context.repository.createCanvasNode({
+      id: 'root-1',
+      canvasId: 'doc-create-2',
+      surfaceId: 'main',
+      nodeKind: 'native',
+      nodeType: 'shape',
+      canonicalObjectId: 'root-1',
+      layout: { x: 0, y: 0 },
+      zIndex: 1,
+    });
+    await context.repository.createCanonicalObject({
+      record: {
+        id: 'child-1',
+        workspaceId: 'ws-1',
+        semanticRole: 'topic',
+        publicAlias: 'Node',
+        sourceMeta: { sourceId: 'child-1', kind: 'mindmap' },
+        capabilities: {},
+        contentBlocks: [{ id: 'body-1', blockType: 'markdown', source: 'child' }],
+        primaryContentKind: 'markdown',
+        canonicalText: 'child',
+      },
+      operation: 'create',
+    });
+    await context.repository.createCanvasNode({
+      id: 'child-1',
+      canvasId: 'doc-create-2',
+      surfaceId: 'main',
+      nodeKind: 'native',
+      nodeType: 'shape',
+      canonicalObjectId: 'child-1',
+      parentNodeId: 'root-1',
+      layout: { x: 220, y: 120 },
+      zIndex: 2,
+    });
+
+    await executeMutationBatch({
+      context,
+      batch: {
+        workspaceRef: 'ws-1',
+        canvasRef: 'doc-create-2',
+        operations: [
+          {
+            op: 'canvas.node.create',
+            nodeId: 'child-2',
+            nodeType: 'shape',
+            props: {
+              content: '',
+            },
+            placement: {
+              mode: 'mindmap-sibling',
+              siblingOf: 'child-1',
+              parentId: 'root-1',
+            },
+          },
+          {
+            op: 'object.body.block.insert',
+            objectId: 'child-1',
+            afterBlockId: 'body-1',
+            block: {
+              id: 'body-2',
+              blockType: 'markdown',
+              source: 'second',
+            },
+          },
+        ],
+      },
+    });
+
+    const siblingRecord = await context.repository.getCanvasNode('doc-create-2', 'child-2');
+    expect(siblingRecord.ok).toBe(true);
+    if (siblingRecord.ok) {
+      expect(siblingRecord.value.parentNodeId).toBe('root-1');
+      expect(siblingRecord.value.layout).toEqual({ x: 220, y: 240 });
+    }
+
+    const objectRecord = await context.repository.getCanonicalObject('ws-1', 'child-1');
+    expect(objectRecord.ok).toBe(true);
+    if (objectRecord.ok) {
+      expect(objectRecord.value.contentBlocks).toEqual([
+        { id: 'body-1', blockType: 'markdown', source: 'child' },
+        { id: 'body-2', blockType: 'markdown', source: 'second' },
+      ]);
+    }
 
     await handle.close();
   });

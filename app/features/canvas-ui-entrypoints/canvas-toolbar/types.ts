@@ -1,6 +1,5 @@
 import type {
   CanvasEntrypointCreateMode,
-  CanvasEntrypointCreateNodeType,
 } from '@/features/canvas-ui-entrypoints/contracts';
 import type { EntrypointInteractionMode } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
 
@@ -51,7 +50,7 @@ export type CanvasToolbarInteractionActionDefinition = CanvasToolbarActionDefini
 
 export type CanvasToolbarCreateActionDefinition = CanvasToolbarActionDefinitionBase<
   'create-node',
-  CanvasEntrypointCreateNodeType
+  Exclude<CanvasEntrypointCreateMode, null>
 >;
 
 export type CanvasToolbarViewportActionDefinition = CanvasToolbarActionDefinitionBase<

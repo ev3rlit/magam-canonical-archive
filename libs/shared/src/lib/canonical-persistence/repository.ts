@@ -44,6 +44,7 @@ import {
 } from './validators';
 
 type CanonicalObjectRow = typeof canonicalObjects.$inferSelect;
+type CanvasNodeRow = typeof canvasNodes.$inferSelect;
 type CanvasBindingRow = typeof canvasBindings.$inferSelect;
 type PluginPackageRow = typeof pluginPackages.$inferSelect;
 type PluginVersionRow = typeof pluginVersions.$inferSelect;
@@ -94,6 +95,26 @@ function fromCanonicalObjectRow(row: CanonicalObjectRow): CanonicalObjectRecord 
     ...(row.capabilitySources ? { capabilitySources: row.capabilitySources } : {}),
     ...(row.extensions ? { extensions: row.extensions } : {}),
     ...(row.deletedAt ? { deletedAt: row.deletedAt.toISOString() } : { deletedAt: null }),
+  };
+}
+
+function fromCanvasNodeRow(row: CanvasNodeRow): CanvasNodeRecord {
+  return {
+    id: row.id,
+    canvasId: row.canvasId,
+    surfaceId: row.surfaceId,
+    nodeKind: row.nodeKind,
+    nodeType: row.nodeType ?? null,
+    parentNodeId: row.parentNodeId ?? null,
+    canonicalObjectId: row.canonicalObjectId ?? null,
+    pluginInstanceId: row.pluginInstanceId ?? null,
+    props: row.props ?? null,
+    layout: row.layout,
+    style: row.style ?? null,
+    persistedState: row.persistedState ?? null,
+    zIndex: row.zIndex,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -251,6 +272,14 @@ export interface PluginInstanceResolution {
 
 export class CanonicalPersistenceRepository {
   constructor(private readonly db: CanonicalDb) {}
+
+  validateCanonicalObjectRecord(record: CanonicalObjectRecord): PersistenceResult<CanonicalObjectRecord> {
+    return validateCanonicalObjectRecord(record);
+  }
+
+  validateCanvasNodeRecord(record: CanvasNodeRecord): PersistenceResult<CanvasNodeRecord> {
+    return validateCanvasNodeRecord(record);
+  }
 
   async createCanonicalObject(input: CreateCanonicalObjectInput): Promise<PersistenceResult<CanonicalObjectRecord>> {
     const validation = validateCanonicalObjectRecord(input.record);
@@ -469,6 +498,82 @@ export class CanonicalPersistenceRepository {
     });
 
     return okResult(record);
+  }
+
+  async getCanvasNode(canvasId: string, id: string): Promise<PersistenceResult<CanvasNodeRecord>> {
+    const row = await this.db.query.canvasNodes.findFirst({
+      where: and(
+        eq(canvasNodes.canvasId, canvasId),
+        eq(canvasNodes.id, id),
+      ),
+    });
+
+    if (!row) {
+      return errResult('CANONICAL_RECORD_NOT_FOUND', `Canvas node ${id} was not found.`, {
+        path: 'id',
+      });
+    }
+
+    return okResult(fromCanvasNodeRow(row));
+  }
+
+  async listCanvasNodes(canvasId: string, surfaceId?: string): Promise<CanvasNodeRecord[]> {
+    const rows = await this.db.query.canvasNodes.findMany({
+      where: surfaceId
+        ? and(
+          eq(canvasNodes.canvasId, canvasId),
+          eq(canvasNodes.surfaceId, surfaceId),
+        )
+        : eq(canvasNodes.canvasId, canvasId),
+    });
+
+    return rows.map(fromCanvasNodeRow);
+  }
+
+  async getNextCanvasNodeZIndex(canvasId: string, surfaceId: string): Promise<number> {
+    const rows = await this.db.query.canvasNodes.findMany({
+      where: and(
+        eq(canvasNodes.canvasId, canvasId),
+        eq(canvasNodes.surfaceId, surfaceId),
+      ),
+      columns: {
+        zIndex: true,
+      },
+    });
+
+    return rows.reduce((max, row) => Math.max(max, row.zIndex), 0) + 1;
+  }
+
+  async createNativeCanvasNodeComposition(input: {
+    object: CanonicalObjectRecord;
+    node: CanvasNodeRecord;
+    relation?: ObjectRelationRecord;
+  }): Promise<PersistenceResult<{ object: CanonicalObjectRecord; node: CanvasNodeRecord; relation?: ObjectRelationRecord }>> {
+    const createdObject = await this.createCanonicalObject({
+      record: input.object,
+      operation: 'create',
+    });
+    if (!createdObject.ok) {
+      return createdObject;
+    }
+
+    const createdNode = await this.createCanvasNode(input.node);
+    if (!createdNode.ok) {
+      return createdNode;
+    }
+
+    if (input.relation) {
+      const createdRelation = await this.createObjectRelation(input.relation);
+      if (!createdRelation.ok) {
+        return createdRelation;
+      }
+    }
+
+    return okResult({
+      object: createdObject.value,
+      node: createdNode.value,
+      ...(input.relation ? { relation: input.relation } : {}),
+    });
   }
 
   async createCanvasBinding(record: CanvasBindingRecord): Promise<PersistenceResult<CanvasBindingRecord>> {

@@ -166,6 +166,7 @@ export const ko = {
         pan: '이동',
       },
       create: {
+        mindmap: '마인드맵',
         rectangle: '사각형',
         ellipse: '타원',
         diamond: '다이아몬드',
@@ -173,6 +174,9 @@ export const ko = {
         markdown: '마크다운',
         line: '선',
         sticky: '스티키',
+        image: '이미지',
+        sticker: '스티커',
+        'washi-tape': '와시 테이프',
       },
       viewport: {
         zoomIn: '확대',
@@ -193,6 +197,7 @@ export const ko = {
       activePresetLabel: (label: string) => `현재: ${label}`,
     },
     paneMenu: {
+      createMindmap: '마인드맵 생성',
       createRectangle: '사각형 생성',
       createEllipse: '타원 생성',
       createDiamond: '다이아몬드 생성',
@@ -200,6 +205,9 @@ export const ko = {
       createMarkdown: '마크다운 생성',
       createLine: '선 생성',
       createSticky: '스티키 생성',
+      createImage: '이미지 생성',
+      createSticker: '스티커 생성',
+      createWashiTape: '와시 테이프 생성',
       exportAll: '전체 내보내기',
       fitView: '화면에 맞추기',
     },
@@ -209,6 +217,7 @@ export const ko = {
       renameNode: 'ID 변경',
       addMindmapChild: '자식 추가',
       addMindmapSibling: '형제 추가',
+      mindmapTemplate: '마인드맵 템플릿',
       selectGroup: '그룹 선택',
       enterGroup: '그룹 안으로 들어가기',
       groupSelection: '그룹 만들기',

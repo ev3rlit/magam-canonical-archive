@@ -102,6 +102,140 @@ describe('action routing bridge registry', () => {
     });
   });
 
+  it('routes shape root create through the canonical canvas.node.create action', () => {
+    const normalized = registry['node.create']?.normalizePayload({
+      envelope: createPaneCreateIntentEnvelope(),
+      context: makeActionRoutingContext({
+        currentCanvasId: 'doc-1',
+        canvasVersions: { 'doc-1': 'rev-1' },
+      }),
+    });
+
+    expect(normalized?.ok).toBe(true);
+    if (!normalized || !normalized.ok) return;
+    const plan = registry['node.create']?.buildDispatch({
+      envelope: createPaneCreateIntentEnvelope(),
+      context: makeActionRoutingContext({
+        currentCanvasId: 'doc-1',
+        canvasVersions: { 'doc-1': 'rev-1' },
+      }),
+      normalized: normalized.value,
+    });
+
+    expect(plan?.ok).toBe(true);
+    if (!plan || !plan.ok) return;
+    expect(plan.value.steps[0]).toMatchObject({
+      kind: 'canonical-mutation',
+      actionId: 'canvas.node.create',
+      payload: {
+        canvasId: 'doc-1',
+      },
+    });
+  });
+
+  it('routes mindmap child create through the canonical canvas.node.create action', () => {
+    const node = makeCanonicalNode({
+      id: 'mind-1',
+      type: 'shape',
+      data: {
+        sourceMeta: {
+          sourceId: 'mind-1',
+          filePath: 'examples/bridge.tsx',
+          kind: 'mindmap',
+        },
+      },
+    });
+    const normalized = registry['node.create']?.normalizePayload({
+      envelope: createNodeChildIntentEnvelope(),
+      context: makeActionRoutingContext({
+        currentCanvasId: 'doc-1',
+        canvasVersions: { 'doc-1': 'rev-1' },
+        nodes: [node],
+      }),
+    });
+
+    expect(normalized?.ok).toBe(true);
+    if (!normalized || !normalized.ok) return;
+    const plan = registry['node.create']?.buildDispatch({
+      envelope: createNodeChildIntentEnvelope(),
+      context: makeActionRoutingContext({
+        currentCanvasId: 'doc-1',
+        canvasVersions: { 'doc-1': 'rev-1' },
+        nodes: [node],
+      }),
+      normalized: normalized.value,
+    });
+
+    expect(plan?.ok).toBe(true);
+    if (!plan || !plan.ok) return;
+    expect(plan.value.steps[0]).toMatchObject({
+      kind: 'canonical-mutation',
+      actionId: 'canvas.node.create',
+    });
+  });
+
+  it('routes mindmap root create through the canonical canvas.node.create action with a scoped rendered id', () => {
+    const normalized = registry['node.create']?.normalizePayload({
+      envelope: createPaneCreateIntentEnvelope({
+        rawPayload: {
+          nodeType: 'rectangle',
+          placement: {
+            mode: 'mindmap-root',
+            x: 64,
+            y: 96,
+          },
+        },
+      }),
+      context: makeActionRoutingContext({
+        currentCanvasId: 'doc-1',
+        canvasVersions: { 'doc-1': 'rev-1' },
+      }),
+    });
+
+    expect(normalized?.ok).toBe(true);
+    if (!normalized || !normalized.ok) return;
+    expect(normalized.value.placement).toMatchObject({
+      mode: 'mindmap-root',
+      x: 64,
+      y: 96,
+      mindmapId: expect.stringMatching(/^mindmap-/),
+    });
+    expect(normalized.value.renderedId).toMatch(/^mindmap-.*\.rectangle-/);
+
+    const plan = registry['node.create']?.buildDispatch({
+      envelope: createPaneCreateIntentEnvelope({
+        rawPayload: {
+          nodeType: 'rectangle',
+          placement: {
+            mode: 'mindmap-root',
+            x: 64,
+            y: 96,
+          },
+        },
+      }),
+      context: makeActionRoutingContext({
+        currentCanvasId: 'doc-1',
+        canvasVersions: { 'doc-1': 'rev-1' },
+      }),
+      normalized: normalized.value,
+    });
+
+    expect(plan?.ok).toBe(true);
+    if (!plan || !plan.ok) return;
+    expect(plan.value.steps[0]).toMatchObject({
+      kind: 'canonical-mutation',
+      actionId: 'canvas.node.create',
+      payload: {
+        canvasId: 'doc-1',
+        node: {
+          placement: {
+            mode: 'mindmap-root',
+          },
+        },
+      },
+    });
+  });
+
   it('normalizes content updates against canonical content carriers', () => {
     const node = makeCanonicalNode({
       id: 'text-1',

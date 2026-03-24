@@ -4,11 +4,13 @@ import type { ContextMenuContext } from '@/types/contextMenu';
 const iconStub = () => null;
 
 mock.module('lucide-react', () => ({
+  Bookmark: iconStub,
   Circle: iconStub,
   Copy: iconStub,
   Diamond: iconStub,
   Download: iconStub,
   FileText: iconStub,
+  Image: iconStub,
   Lock: iconStub,
   Maximize: iconStub,
   Minus: iconStub,
@@ -17,8 +19,10 @@ mock.module('lucide-react', () => ({
   Plus: iconStub,
   Square: iconStub,
   StickyNote: iconStub,
+  Ticket: iconStub,
   Trash2: iconStub,
   Type: iconStub,
+  Workflow: iconStub,
 }));
 
 const {
@@ -33,6 +37,7 @@ const paneContext: ContextMenuContext = {
   selectedNodeIds: [],
   actions: {
     createCanvasNode: () => undefined,
+    createMindMapRoot: () => undefined,
     openExportDialog: () => undefined,
     fitView: () => undefined,
   },
@@ -69,6 +74,8 @@ describe('contextMenu binding', () => {
       dismissOnViewportChange: true,
     });
     expect(resolved.items.map((item) => item.type === 'action' ? item.id : item.type)).toEqual([
+      'submenu',
+      'separator',
       'create-rectangle',
       'create-ellipse',
       'create-diamond',
@@ -76,6 +83,9 @@ describe('contextMenu binding', () => {
       'create-markdown',
       'create-line',
       'create-sticky',
+      'create-image',
+      'create-sticker',
+      'create-washi-tape',
       'export-all',
       'fit-view',
     ]);
@@ -139,9 +149,9 @@ describe('contextMenu binding', () => {
       'copy-as-png',
       'export-selection',
       'rename-node',
-      'mindmap-add-child',
-      'mindmap-add-sibling',
       'select-group',
+      'bring-to-front',
+      'send-to-back',
       'duplicate-node',
       'delete-node',
       'lock-node',

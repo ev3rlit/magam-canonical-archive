@@ -260,6 +260,169 @@ describe('RPC editing methods', () => {
     expect(patched.includes('from={"root"}')).toBe(true);
   });
 
+  it('canvas.node.create: canonical create also projects a markdown-first compatibility node', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'magam-methods-canonical-create-'));
+    tempDirs.push(dir);
+    const filePath = join(dir, 'canvases', 'doc-canonical-1.graph.tsx');
+    await mkdir(join(dir, 'canvases'), { recursive: true });
+    await writeFile(filePath, [
+      "import { Canvas } from '@magam/core';",
+      '',
+      'export default function UntitledDocument() {',
+      '  return <Canvas></Canvas>;',
+      '}',
+      '',
+    ].join('\n'), 'utf-8');
+    const original = await readFile(filePath, 'utf-8');
+    process.env.MAGAM_TARGET_DIR = dir;
+
+    const result = await methods['canvas.node.create']({
+      canvasId: 'doc-canonical-1',
+      filePath: 'canvases/doc-canonical-1.graph.tsx',
+      node: {
+        id: 'shape-root-1',
+        type: 'shape',
+        props: {
+          type: 'rectangle',
+          content: '# Seeded root',
+        },
+        placement: { mode: 'canvas-absolute', x: 88, y: 132 },
+      },
+      baseVersion: sha(original),
+      originId: 'client-1',
+      commandId: 'cmd-canonical-create',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('id={"shape-root-1"}')).toBe(true);
+    expect(patched.includes('<Markdown>')).toBe(true);
+    expect(patched.includes('# Seeded root')).toBe(true);
+  });
+
+  it('canvas.node.create: mindmap-root placement materializes a MindMap container and root node shell', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'magam-methods-mindmap-root-'));
+    tempDirs.push(dir);
+    const filePath = join(dir, 'canvases', 'doc-mindmap-root.graph.tsx');
+    await mkdir(join(dir, 'canvases'), { recursive: true });
+    await writeFile(filePath, [
+      "import { Canvas } from '@magam/core';",
+      '',
+      'export default function UntitledDocument() {',
+      '  return <Canvas></Canvas>;',
+      '}',
+      '',
+    ].join('\n'), 'utf-8');
+    const original = await readFile(filePath, 'utf-8');
+    process.env.MAGAM_TARGET_DIR = dir;
+
+    const result = await methods['canvas.node.create']({
+      canvasId: 'doc-mindmap-root',
+      filePath: 'canvases/doc-mindmap-root.graph.tsx',
+      node: {
+        id: 'sticky-root-1',
+        type: 'sticky',
+        props: {
+          content: 'Mindmap root',
+        },
+        placement: {
+          mode: 'mindmap-root',
+          x: 144,
+          y: 216,
+          mindmapId: 'mindmap-root-1',
+        },
+      },
+      baseVersion: sha(original),
+      originId: 'client-1',
+      commandId: 'cmd-mindmap-root',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('<MindMap')).toBe(true);
+    expect(patched.includes('mindmap-root-1')).toBe(true);
+    expect(patched.includes('id={"sticky-root-1"}')).toBe(true);
+    expect(patched.includes('Mindmap root')).toBe(true);
+  });
+
+  it('object.body.block.insert: appends markdown and image blocks into the compatibility node body', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'magam-methods-body-insert-'));
+    tempDirs.push(dir);
+    const filePath = join(dir, 'canvases', 'doc-canonical-2.graph.tsx');
+    await mkdir(join(dir, 'canvases'), { recursive: true });
+    await writeFile(filePath, [
+      "import { Canvas } from '@magam/core';",
+      '',
+      'export default function Sample() {',
+      '  return <Canvas></Canvas>;',
+      '}',
+      '',
+    ].join('\n'), 'utf-8');
+    const original = await readFile(filePath, 'utf-8');
+    process.env.MAGAM_TARGET_DIR = dir;
+
+    await methods['canvas.node.create']({
+      canvasId: 'doc-canonical-2',
+      filePath: 'canvases/doc-canonical-2.graph.tsx',
+      node: {
+        id: 'shape-1',
+        type: 'shape',
+        props: {
+          type: 'rectangle',
+          content: '# First',
+        },
+        placement: { mode: 'canvas-absolute', x: 32, y: 64 },
+      },
+      baseVersion: sha(original),
+      originId: 'client-1',
+      commandId: 'cmd-body-create',
+    }, { ws: {}, subscriptions: new Set() });
+
+    const versionAfterCreate = sha(await readFile(filePath, 'utf-8'));
+
+    await methods['object.body.block.insert']({
+      canvasId: 'doc-canonical-2',
+      filePath: 'canvases/doc-canonical-2.graph.tsx',
+      objectId: 'shape-1',
+      afterBlockId: 'body-1',
+      block: {
+        id: 'body-2',
+        blockType: 'markdown',
+        source: '## Second',
+      },
+      baseVersion: versionAfterCreate,
+      originId: 'client-1',
+      commandId: 'cmd-body-insert-md',
+    }, { ws: {}, subscriptions: new Set() });
+
+    const nextVersion = sha(await readFile(filePath, 'utf-8'));
+    await methods['object.body.block.insert']({
+      canvasId: 'doc-canonical-2',
+      filePath: 'canvases/doc-canonical-2.graph.tsx',
+      objectId: 'shape-1',
+      afterBlockId: 'body-2',
+      block: {
+        id: 'body-3',
+        blockType: 'canvas.image',
+        payload: {
+          assetRef: {
+            kind: 'external-url',
+            value: 'https://example.com/image.png',
+          },
+          alt: 'Example',
+        },
+      },
+      baseVersion: nextVersion,
+      originId: 'client-1',
+      commandId: 'cmd-body-insert-image',
+    }, { ws: {}, subscriptions: new Set() });
+
+    const patched = await readFile(filePath, 'utf-8');
+    expect(patched.includes('## Second')).toBe(true);
+    expect(patched.includes('<Image')).toBe(true);
+    expect(patched.includes('https://example.com/image.png')).toBe(true);
+  });
+
   it('node.update: from object payload를 그대로 저장한다', async () => {
     const filePath = await makeTempTsx(`
       export default function Sample(){ return <Canvas><Shape id="n1" /></Canvas>; }
@@ -725,6 +888,7 @@ describe('RPC editing methods', () => {
       export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }
     `);
     const original = await readFile(filePath, 'utf-8');
+    process.env.MAGAM_TARGET_DIR = dirname(filePath);
 
     const routed = routeIntent({
       envelope: createPaneCreateIntentEnvelope({
@@ -734,14 +898,16 @@ describe('RPC editing methods', () => {
         },
       }),
       context: makeActionRoutingContext({
+        currentCanvasId: 'doc-bridge-create',
         currentFile: filePath,
+        canvasVersions: { 'doc-bridge-create': sha(original) },
         sourceVersions: { [filePath]: sha(original) },
       }),
     });
 
     expect(routed.ok).toBe(true);
     if (!routed.ok) return;
-    const step = routed.value.steps[0] as MutationDispatchDescriptor<'node.create'>;
+    const step = routed.value.steps[0] as MutationDispatchDescriptor<'canvas.node.create'>;
     const result = await methods[step.actionId]({
       ...step.payload,
       baseVersion: sha(original),
@@ -752,5 +918,6 @@ describe('RPC editing methods', () => {
     expect(result.success).toBe(true);
     const patched = await readFile(filePath, 'utf-8');
     expect(patched.includes('<Shape')).toBe(true);
+    expect(patched.includes('<Markdown>')).toBe(true);
   });
 });

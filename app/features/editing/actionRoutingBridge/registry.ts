@@ -4,6 +4,7 @@ import {
   buildCreateCommand,
   buildGroupMembershipUpdateCommand,
   buildRenameCommand,
+  shouldUseCanonicalCanvasNodeCreate,
   buildStyleUpdateCommand,
   buildZOrderUpdateCommand,
   toCreateNodeInput,
@@ -71,6 +72,7 @@ type RenameNormalized = {
 };
 
 type CreateNormalized = {
+  canvasId?: string;
   targetFile: string;
   sourceId: string;
   scopeId?: string;
@@ -78,6 +80,7 @@ type CreateNormalized = {
   nodeType: CreatePayload['nodeType'];
   placement: CreatePayload['placement'];
   createInput: ReturnType<typeof toCreateNodeInput>;
+  useCanonicalCreate: boolean;
   baseVersion: string;
   renderedId: string;
 };
@@ -305,6 +308,19 @@ function requireCreatePlacement(rawPayload: Record<string, unknown>): ReturnType
         mode: 'canvas-absolute',
         x: casted.x,
         y: casted.y,
+      },
+    });
+  }
+
+  if (casted.mode === 'mindmap-root' && typeof casted.x === 'number' && typeof casted.y === 'number') {
+    return ok({
+      nodeType: validNodeType,
+      ...(initialProps ? { initialProps } : {}),
+      placement: {
+        mode: 'mindmap-root',
+        x: casted.x,
+        y: casted.y,
+        ...(typeof casted.mindmapId === 'string' ? { mindmapId: casted.mindmapId } : {}),
       },
     });
   }
@@ -754,13 +770,17 @@ function buildCreatePlan(input: {
   normalized: CreateNormalized;
   intentId: string;
 }): OrderedDispatchPlan {
+  const createActionId = input.normalized.useCanonicalCreate
+    ? 'canvas.node.create'
+    : 'node.create';
   return {
     intentId: input.intentId,
     steps: [
       {
         kind: 'canonical-mutation',
-        actionId: 'node.create',
+        actionId: createActionId,
         payload: {
+          ...(input.normalized.canvasId ? { canvasId: input.normalized.canvasId } : {}),
           filePath: input.normalized.targetFile,
           node: input.normalized.createInput,
         },
@@ -771,6 +791,7 @@ function buildCreatePlan(input: {
           baseVersion: input.normalized.baseVersion,
           before: { created: false },
           after: {
+            actionId: createActionId,
             create: input.normalized.createInput,
             renderedId: input.normalized.renderedId,
           },
@@ -1234,7 +1255,7 @@ const createEntry: ActionRoutingRegistryEntry<CreateNormalized> = {
       return createResult;
     }
     const { placement } = createResult.value;
-    if (placement.mode === 'canvas-absolute') {
+    if (placement.mode === 'canvas-absolute' || placement.mode === 'mindmap-root') {
       return ok(true);
     }
 
@@ -1275,8 +1296,17 @@ const createEntry: ActionRoutingRegistryEntry<CreateNormalized> = {
       getExistingSourceIds(context.nodes),
     );
     const defaults = getCreateDefaults(createResult.value.nodeType);
+    const mindmapScopeId = createResult.value.placement.mode === 'mindmap-root'
+      ? createResult.value.placement.mindmapId ?? `mindmap-${nextId}`
+      : undefined;
+    const normalizedPlacement = createResult.value.placement.mode === 'mindmap-root'
+      ? {
+          ...createResult.value.placement,
+          mindmapId: mindmapScopeId,
+        }
+      : createResult.value.placement;
     const command = buildCreateCommand({
-      type: createResult.value.placement.mode === 'canvas-absolute'
+      type: createResult.value.placement.mode === 'canvas-absolute' || createResult.value.placement.mode === 'mindmap-root'
         ? 'node.create'
         : createResult.value.placement.mode === 'mindmap-child'
           ? 'mindmap.child.create'
@@ -1295,22 +1325,25 @@ const createEntry: ActionRoutingRegistryEntry<CreateNormalized> = {
           ...(createResult.value.initialProps ?? {}),
         },
         initialContent: defaults.initialContent,
-        placement: createResult.value.placement,
+        placement: normalizedPlacement,
       },
     });
+    const useCanonicalCreate = shouldUseCanonicalCanvasNodeCreate(command);
     const renderedId = buildRenderedNodeId({
       sourceId: nextId,
-      scopeId: envelope.targetRef?.scopeId ?? target?.scopeId,
+      scopeId: mindmapScopeId ?? envelope.targetRef?.scopeId ?? target?.scopeId,
       frameScope: envelope.targetRef?.frameScope ?? target?.frameScope,
     });
     return ok({
+      canvasId: context.currentCanvasId ?? target?.canvasId,
       targetFile,
       sourceId: nextId,
-      scopeId: envelope.targetRef?.scopeId ?? target?.scopeId,
+      scopeId: mindmapScopeId ?? envelope.targetRef?.scopeId ?? target?.scopeId,
       frameScope: envelope.targetRef?.frameScope ?? target?.frameScope,
       nodeType: createResult.value.nodeType,
-      placement: createResult.value.placement,
+      placement: normalizedPlacement,
       createInput: toCreateNodeInput(command),
+      useCanonicalCreate,
       baseVersion: versionResult.value,
       renderedId,
     });

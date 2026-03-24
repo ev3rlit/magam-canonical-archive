@@ -43,6 +43,13 @@ export const canvasToolbarInteractionActions = [
 
 export const canvasToolbarCreateActions = [
   {
+    actionId: 'create.mindmap',
+    sectionId: 'create',
+    kind: 'create-node',
+    label: copy.create.mindmap,
+    value: 'mindmap',
+  },
+  {
     actionId: 'create.rectangle',
     sectionId: 'create',
     kind: 'create-node',
@@ -90,6 +97,27 @@ export const canvasToolbarCreateActions = [
     kind: 'create-node',
     label: copy.create.sticky,
     value: 'sticky',
+  },
+  {
+    actionId: 'create.image',
+    sectionId: 'create',
+    kind: 'create-node',
+    label: copy.create.image,
+    value: 'image',
+  },
+  {
+    actionId: 'create.sticker',
+    sectionId: 'create',
+    kind: 'create-node',
+    label: copy.create.sticker,
+    value: 'sticker',
+  },
+  {
+    actionId: 'create.washi-tape',
+    sectionId: 'create',
+    kind: 'create-node',
+    label: copy.create['washi-tape'],
+    value: 'washi-tape',
   },
 ] as const satisfies readonly CanvasToolbarCreateActionDefinition[];
 

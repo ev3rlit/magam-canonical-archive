@@ -2,12 +2,19 @@
  * JSON-RPC Method Handlers
  */
 
-import { readFile } from 'fs/promises';
+import { mkdir, readFile } from 'fs/promises';
 import { createHash } from 'crypto';
-import { isAbsolute, resolve } from 'path';
+import { basename, isAbsolute, resolve } from 'path';
 import { resolveCanonicalCanvasCompatibilityFilePath } from '../../libs/shared/src/lib/canonical-canvas-shell';
 import {
+    CanonicalPersistenceRepository,
+    createCanonicalPgliteDb,
+    executeMutationBatch,
+    type ContentBlock,
+} from '../../libs/shared/src';
+import {
     patchFile,
+    patchNodeBodyBlockInsert,
     patchNodeCreate,
     patchNodeContent,
     patchNodeDelete,
@@ -57,6 +64,15 @@ interface PluginInstanceRuntimeRecord {
     persistedState: Record<string, unknown>;
     createdAt: string;
     updatedAt: string;
+}
+
+function sanitizeWorkspaceId(targetDir: string): string {
+    const base = basename(targetDir).trim() || 'workspace';
+    const sanitized = base
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return sanitized || 'workspace';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -282,6 +298,14 @@ function ensureCreatePlacement(value: unknown): CreateNodeInput['placement'] | u
             y: ensureNumber(placement.y, 'node.placement.y'),
         };
     }
+    if (mode === 'mindmap-root') {
+        return {
+            mode,
+            x: ensureNumber(placement.x, 'node.placement.x'),
+            y: ensureNumber(placement.y, 'node.placement.y'),
+            mindmapId: ensureString(placement.mindmapId, 'node.placement.mindmapId'),
+        };
+    }
     if (mode === 'mindmap-child') {
         return {
             mode,
@@ -297,6 +321,40 @@ function ensureCreatePlacement(value: unknown): CreateNodeInput['placement'] | u
     }
 
     throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.placement.mode is invalid' };
+}
+
+function ensureContentBlock(value: unknown): ContentBlock {
+    const input = ensureRecord(value, 'block');
+    const id = ensureString(input.id, 'block.id');
+    const blockType = ensureString(input.blockType, 'block.blockType');
+
+    if (blockType === 'markdown') {
+        return {
+            id,
+            blockType: 'markdown',
+            source: typeof input.source === 'string' ? input.source : '',
+        };
+    }
+
+    if (blockType === 'text') {
+        return {
+            id,
+            blockType: 'text',
+            text: typeof input.text === 'string' ? input.text : '',
+        };
+    }
+
+    if (!/^[A-Za-z0-9_-]+(?:[.-][A-Za-z0-9_-]+)*\.[A-Za-z0-9_-]+(?:[.-][A-Za-z0-9_-]+)*$/.test(blockType)) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'block.blockType is invalid' };
+    }
+
+    return {
+        id,
+        blockType,
+        payload: input.payload && typeof input.payload === 'object' ? input.payload as Record<string, unknown> : {},
+        ...(typeof input.textualProjection === 'string' ? { textualProjection: input.textualProjection } : {}),
+        ...(input.metadata && typeof input.metadata === 'object' ? { metadata: input.metadata as Record<string, unknown> } : {}),
+    };
 }
 
 function isFileMutexEnabled(): boolean {
@@ -330,6 +388,35 @@ function resolveWorkspaceFilePath(filePath: string, rootPath?: string): string {
     }
     const workspaceRoot = resolve(rootPath || process.env.MAGAM_TARGET_DIR || process.cwd());
     return resolve(workspaceRoot, filePath);
+}
+
+async function withCanonicalContext<T>(rootPath: string | undefined, run: (context: {
+    db: Awaited<ReturnType<typeof createCanonicalPgliteDb>>['db'];
+    repository: CanonicalPersistenceRepository;
+    targetDir: string;
+    dataDir: string | null;
+    workspaceId: string;
+}) => Promise<T>): Promise<T> {
+    const targetDir = resolve(rootPath || process.env.MAGAM_TARGET_DIR || process.cwd());
+    const workspaceId = process.env.MAGAM_WORKSPACE_ID?.trim() || sanitizeWorkspaceId(targetDir);
+    await mkdir(resolve(targetDir, '.magam'), { recursive: true });
+    const handle = await createCanonicalPgliteDb(targetDir, {
+        migrationsFolder: resolve(process.cwd(), 'libs', 'shared', 'src', 'lib', 'canonical-persistence', 'drizzle'),
+        runMigrations: true,
+    });
+
+    try {
+        const repository = new CanonicalPersistenceRepository(handle.db);
+        return await run({
+            db: handle.db,
+            repository,
+            targetDir,
+            dataDir: handle.dataDir,
+            workspaceId,
+        });
+    } finally {
+        await handle.close();
+    }
 }
 
 async function resolveCanvasCompatibilityPath(canvasId: string, rootPath?: string): Promise<{ filePath: string; resolvedFilePath: string }> {
@@ -622,6 +709,165 @@ async function handleNodeCreate(
         if (message === 'ID_COLLISION') throw { ...RPC_ERRORS.ID_COLLISION, data: withDiagnostics({ collisionIds: [node.id] }, diagnostics) };
         if (message === 'NODE_NOT_FOUND') throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId: node.id }, diagnostics) };
         throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
+    }
+}
+
+async function handleCanvasNodeCreate(
+    params: Record<string, unknown>,
+    ctx: RpcContext,
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+    const common = await ensureCommonParams(params);
+    const node = params.node as CreateNodeInput | undefined;
+
+    if (!node || typeof node !== 'object') {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node is required' };
+    }
+
+    if (!common.canvasId) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
+    }
+
+    const nodeId = ensureString(node.id, 'node.id');
+    const nodeType = ensureString(node.type, 'node.type') as CreateNodeInput['type'];
+    const placement = ensureCreatePlacement(node.placement);
+
+    if (
+        ![
+            'shape',
+            'rectangle',
+            'ellipse',
+            'diamond',
+            'line',
+            'text',
+            'markdown',
+            'sticky',
+            'sticker',
+            'washi-tape',
+            'image',
+        ].includes(nodeType)
+    ) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.type is invalid' };
+    }
+
+    if (!placement) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.placement is required' };
+    }
+
+    try {
+        return await mutateWithContract(ctx, common, async () => {
+            await withCanonicalContext(common.rootPath, async ({ db, repository, targetDir, dataDir, workspaceId }) => {
+                await executeMutationBatch({
+                    context: {
+                        db,
+                        repository,
+                        targetDir,
+                        dataDir,
+                        defaultWorkspaceId: workspaceId,
+                    },
+                    batch: {
+                        workspaceRef: workspaceId,
+                        canvasRef: common.canvasId!,
+                        operations: [{
+                            op: 'canvas.node.create',
+                            nodeId,
+                            nodeType,
+                            props: ensureRecord(node.props ?? {}, 'node.props'),
+                            placement,
+                        }],
+                    },
+                });
+            });
+
+            await patchNodeCreate(common.resolvedFilePath, {
+                id: nodeId,
+                type: nodeType,
+                props: {
+                    ...ensureRecord(node.props ?? {}, 'node.props'),
+                    ...(typeof (node.props as Record<string, unknown> | undefined)?.content === 'string'
+                        ? { content: (node.props as Record<string, unknown>).content }
+                        : {}),
+                },
+                placement,
+            });
+        });
+    } catch (error) {
+        const e = error as { code?: number; message?: string; data?: unknown } | Error;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'canvas.node.create',
+            stage: 'ws.canvas.node.create',
+            details: { nodeId },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
+        const message = (e as Error).message;
+        if (message === 'NODE_NOT_FOUND') {
+            throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: withDiagnostics({ nodeId }, diagnostics) };
+        }
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: message }, diagnostics) };
+    }
+}
+
+async function handleObjectBodyBlockInsert(
+    params: Record<string, unknown>,
+    ctx: RpcContext,
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+    const common = await ensureCommonParams(params);
+    if (!common.canvasId) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
+    }
+
+    const objectId = ensureString(params.objectId, 'objectId');
+    const block = ensureContentBlock(params.block);
+    const afterBlockId = ensureOptionalString(params.afterBlockId, 'afterBlockId');
+
+    try {
+        return await mutateWithContract(ctx, common, async () => {
+            await withCanonicalContext(common.rootPath, async ({ db, repository, targetDir, dataDir, workspaceId }) => {
+                await executeMutationBatch({
+                    context: {
+                        db,
+                        repository,
+                        targetDir,
+                        dataDir,
+                        defaultWorkspaceId: workspaceId,
+                    },
+                    batch: {
+                        workspaceRef: workspaceId,
+                        canvasRef: common.canvasId!,
+                        operations: [{
+                            op: 'object.body.block.insert',
+                            objectId,
+                            block,
+                            ...(afterBlockId ? { afterBlockId } : {}),
+                        }],
+                    },
+                });
+            });
+
+            await patchNodeBodyBlockInsert(common.resolvedFilePath, objectId, block, afterBlockId);
+        });
+    } catch (error) {
+        const e = error as { code?: number; message?: string; data?: unknown } | Error;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'object.body.block.insert',
+            stage: 'ws.object.body.block.insert',
+            details: { objectId, blockId: block.id },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: (e as Error).message }, diagnostics) };
     }
 }
 
@@ -934,6 +1180,8 @@ async function handlePluginInstanceList(
 export const methods: Record<string, RpcHandler> = {
     'file.subscribe': handleFileSubscribe,
     'file.unsubscribe': handleFileUnsubscribe,
+    'canvas.node.create': handleCanvasNodeCreate,
+    'object.body.block.insert': handleObjectBodyBlockInsert,
     'node.update': handleNodeUpdate,
     'node.move': handleNodeMove,
     'node.create': handleNodeCreate,

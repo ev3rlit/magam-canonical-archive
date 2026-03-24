@@ -2,6 +2,7 @@ import React from 'react';
 import { getLucideIconByName } from '@/utils/lucideRegistry';
 import type { RenderableChild } from '@/utils/childComposition';
 import { LazyMarkdownRenderer } from '@/components/markdown/LazyMarkdownRenderer';
+import { resolveBodySlashCommand } from '@/features/editing/bodySlashCommands';
 import type { TextEditMode } from '@/store/graph';
 
 interface RenderNodeContentOptions {
@@ -88,6 +89,19 @@ export function resolveBodyEditSession(
     nodeId: node.id,
     initialDraft: resolveMarkdownChildContent(data) ?? (typeof data.label === 'string' ? data.label : ''),
     mode: 'markdown-wysiwyg',
+  };
+}
+
+export function resolveBodySlashCommandSession(rawDraft: string): {
+  command: '/' | '/markdown' | '/image';
+} | null {
+  const command = resolveBodySlashCommand(rawDraft);
+  if (!command) {
+    return null;
+  }
+
+  return {
+    command: command.command,
   };
 }
 

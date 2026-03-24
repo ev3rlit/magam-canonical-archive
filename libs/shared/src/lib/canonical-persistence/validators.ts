@@ -88,6 +88,13 @@ function isBoolean(value: unknown): value is boolean {
   return typeof value === 'boolean';
 }
 
+export function isBodyCapableNativeNodeType(value: unknown): value is 'shape' | 'text' | 'markdown' | 'sticky' {
+  return value === 'shape'
+    || value === 'text'
+    || value === 'markdown'
+    || value === 'sticky';
+}
+
 function toPersistenceResult<T>(validation: ValidationResult, value: T): PersistenceResult<T> {
   if (validation.ok) {
     return okResult(value);
@@ -193,6 +200,17 @@ export function createEmptyTextBlock(blockId = 'body-1'): Extract<ContentBlock, 
     id: blockId,
     blockType: 'text',
     text: '',
+  };
+}
+
+export function createDefaultMarkdownContentBlock(
+  blockId = 'body-1',
+  source = '',
+): Extract<ContentBlock, { blockType: 'markdown' }> {
+  return {
+    id: blockId,
+    blockType: 'markdown',
+    source,
   };
 }
 

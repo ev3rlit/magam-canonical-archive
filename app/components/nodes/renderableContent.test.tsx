@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { renderNodeContent, resolveBodyEditSession } from './renderableContent';
+import { renderNodeContent, resolveBodyEditSession, resolveBodySlashCommandSession } from './renderableContent';
 import type { RenderableChild } from '@/utils/childComposition';
 
 describe('renderNodeContent', () => {
@@ -147,5 +147,12 @@ describe('renderNodeContent', () => {
       initialDraft: 'Fallback shape label',
       mode: 'markdown-wysiwyg',
     });
+  });
+
+  it('resolves slash commands for markdown and image body block insertion', () => {
+    expect(resolveBodySlashCommandSession('/')).toEqual({ command: '/' });
+    expect(resolveBodySlashCommandSession('/markdown')).toEqual({ command: '/markdown' });
+    expect(resolveBodySlashCommandSession('/image')).toEqual({ command: '/image' });
+    expect(resolveBodySlashCommandSession('/unknown')).toBeNull();
   });
 });

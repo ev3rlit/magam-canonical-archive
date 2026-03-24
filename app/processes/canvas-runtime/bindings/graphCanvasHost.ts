@@ -38,6 +38,19 @@ import { resolveNodeActionRoutingContext } from '@/components/editor/workspaceEd
 import type { ToolbarPresenterWashiPresetOption } from './toolbarPresenter';
 import type { GraphCanvasHostBindingContract } from '../types';
 
+function resolveMindMapCreateNodeType(
+  createMode: GraphCanvasCreateMode,
+): CreatableNodeType {
+  if (
+    createMode
+    && createMode !== 'mindmap'
+  ) {
+    return createMode;
+  }
+
+  return 'rectangle';
+}
+
 export interface GraphCanvasHostContextMenuActionsInput {
   copyImageToClipboard: (nodeIds?: string[]) => Promise<void> | void;
   handleFitView: () => void;
@@ -197,7 +210,21 @@ export function createGraphCanvasContextMenuActions(
         placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
       }));
     },
-    createMindMapChild: (renderedNodeId: string) => {
+    createMindMapRoot: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => {
+      if (!input.onCreateNode) {
+        return;
+      }
+
+      const position = input.screenToFlowPosition(screenPosition);
+      return input.onCreateNode(input.buildCreateIntent({
+        surfaceId: 'pane-context-menu',
+        surface: 'pane-context-menu',
+        trigger: { source: 'menu' },
+        nodeType,
+        placement: { mode: 'mindmap-root', x: position.x, y: position.y },
+      }));
+    },
+    createMindMapChild: (renderedNodeId: string, requestedNodeType?: CreatableNodeType) => {
       if (!input.onCreateNode) {
         return;
       }
@@ -205,11 +232,12 @@ export function createGraphCanvasContextMenuActions(
       const targetNode = input.resolveNode(renderedNodeId);
       const sourceMeta = (targetNode?.data as { sourceMeta?: Record<string, unknown> } | undefined)?.sourceMeta;
       const parentId = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
+      const nodeType = requestedNodeType ?? resolveMindMapCreateNodeType(input.createMode);
       return input.onCreateNode(input.buildCreateIntent({
         surfaceId: 'node-context-menu',
         surface: 'node-context-menu',
         trigger: { source: 'menu' },
-        nodeType: 'shape',
+        nodeType,
         placement: { mode: 'mindmap-child', parentId },
         targetRenderedNodeId: renderedNodeId,
         filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
@@ -217,7 +245,7 @@ export function createGraphCanvasContextMenuActions(
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
       }));
     },
-    createMindMapSibling: (renderedNodeId: string) => {
+    createMindMapSibling: (renderedNodeId: string, requestedNodeType?: CreatableNodeType) => {
       if (!input.onCreateNode) {
         return;
       }
@@ -231,11 +259,12 @@ export function createGraphCanvasContextMenuActions(
         ? parentSourceMeta.sourceId
         : null;
       const siblingOf = typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : renderedNodeId;
+      const nodeType = requestedNodeType ?? resolveMindMapCreateNodeType(input.createMode);
       return input.onCreateNode(input.buildCreateIntent({
         surfaceId: 'node-context-menu',
         surface: 'node-context-menu',
         trigger: { source: 'menu' },
-        nodeType: 'shape',
+        nodeType,
         placement: { mode: 'mindmap-sibling', siblingOf, parentId },
         targetRenderedNodeId: renderedNodeId,
         filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,

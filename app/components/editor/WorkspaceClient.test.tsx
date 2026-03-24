@@ -6,7 +6,7 @@ import type { Node } from 'reactflow';
 import { mapDragToRelativeAttachmentUpdate } from '@/utils/relativeAttachmentMapping';
 import { deriveCapabilityProfile } from '@/features/editing/capabilityProfile';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
-import { createWorkspaceCanvas } from './WorkspaceClient';
+import { createWorkspaceCanvas } from '@/features/workspace/api';
 import {
   canCommitTextEdit,
   canRunNodeCommand,
@@ -18,6 +18,22 @@ import {
   resolveNodeEditTarget,
   resolveImmediateCreateEditMode,
 } from './workspaceEditUtils';
+
+const createWorkspaceCanvasRpcMock = mock(async (input: { rootPath: string; title?: string | null }) => ({
+  canvasId: 'doc-1',
+  workspaceId: 'ws-1',
+  title: input.title ?? null,
+  sourceVersion: 'sha256:created-document',
+  latestRevision: 1,
+}));
+
+mock.module('@/features/host/renderer/createHostRuntime', () => ({
+  getHostRuntime: () => ({
+    rpc: {
+      createWorkspaceCanvas: createWorkspaceCanvasRpcMock,
+    },
+  }),
+}));
 
 function makeNode(input: Partial<Node> & { id: string; type: string; data?: Record<string, unknown> }): Node {
   return {
@@ -91,6 +107,7 @@ const canonicalProfileShape: CanonicalObject = {
 };
 
 const originalFetch = globalThis.fetch;
+const CANVAS_EDITOR_PAGE_URL = new URL('../../features/editor/pages/CanvasEditorPage.tsx', import.meta.url);
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -103,52 +120,30 @@ describe('WorkspaceClient document entry convergence', () => {
 });
 
 describe('WorkspaceClient document materialization', () => {
-  it('creates untitled documents through the server contract with a real sourceVersion', async () => {
-    const fetchMock = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(input).toBe('/api/canvases');
-      expect(init?.method).toBe('POST');
-      expect(init?.body).toBe(JSON.stringify({ rootPath: '/tmp/workspace' }));
-
-      return new Response(JSON.stringify({
-        canvasId: 'doc-1',
-        workspaceId: 'ws-1',
-        filePath: 'docs/untitled-2.graph.tsx',
-        sourceVersion: 'sha256:created-document',
-        latestRevision: 1,
-      }), {
-        status: 201,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    });
-    globalThis.fetch = fetchMock as typeof fetch;
+  it('creates untitled documents through the host runtime contract', async () => {
+    createWorkspaceCanvasRpcMock.mockClear();
 
     await expect(
       createWorkspaceCanvas({ rootPath: '/tmp/workspace' }),
     ).resolves.toEqual({
       canvasId: 'doc-1',
       workspaceId: 'ws-1',
-      filePath: 'docs/untitled-2.graph.tsx',
+      title: null,
       sourceVersion: 'sha256:created-document',
       latestRevision: 1,
     });
+    expect(createWorkspaceCanvasRpcMock).toHaveBeenCalledWith({ rootPath: '/tmp/workspace' });
   });
 
-  it('rejects create-document responses that still expose a draft placeholder version', async () => {
-    const fetchMock = mock(async () => new Response(JSON.stringify({
-      canvasId: 'doc-1',
-      workspaceId: 'ws-1',
-      filePath: 'docs/untitled-2.graph.tsx',
-      sourceVersion: 'draft:empty-canvas',
-      latestRevision: 1,
-    }), {
-      status: 201,
-      headers: { 'Content-Type': 'application/json' },
-    }));
-    globalThis.fetch = fetchMock as typeof fetch;
+  it('passes optional titles through to the host runtime contract', async () => {
+    createWorkspaceCanvasRpcMock.mockClear();
 
-    await expect(
-      createWorkspaceCanvas({ rootPath: '/tmp/workspace' }),
-    ).rejects.toThrow('새 문서 생성 응답이 올바르지 않습니다.');
+    await createWorkspaceCanvas({ rootPath: '/tmp/workspace', title: 'Node Create' });
+
+    expect(createWorkspaceCanvasRpcMock).toHaveBeenCalledWith({
+      rootPath: '/tmp/workspace',
+      title: 'Node Create',
+    });
   });
 });
 
@@ -177,6 +172,7 @@ describe('WorkspaceClient text edit isolation', () => {
     expect(resolveImmediateCreateEditMode('text')).toBe('markdown-wysiwyg');
     expect(resolveImmediateCreateEditMode('markdown')).toBe('markdown-wysiwyg');
     expect(resolveImmediateCreateEditMode('sticky')).toBe('markdown-wysiwyg');
+    expect(resolveImmediateCreateEditMode('shape')).toBe('markdown-wysiwyg');
     expect(resolveImmediateCreateEditMode('rectangle')).toBeNull();
   });
 
@@ -364,7 +360,8 @@ describe('WorkspaceClient editability helpers', () => {
       target: {
         renderedNodeId: 'profile-node-1',
         sourceId: 'profile-node-1',
-        filePath: 'examples/fallback.tsx',
+        canvasId: null,
+        compatibilityFilePath: 'examples/fallback.tsx',
         nodeType: 'shape',
       },
       metadata: {
@@ -572,7 +569,7 @@ describe('WorkspaceClient capability-profile editability parity', () => {
 
 describe('WorkspaceClient document entry convergence', () => {
   it('keeps the quick-open entry seam inside WorkspaceClient', async () => {
-    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+    const source = await Bun.file(CANVAS_EDITOR_PAGE_URL).text();
 
     expect(source).toContain('LazyQuickOpenDialog');
     expect(source).toContain('openTabByPath');
@@ -580,11 +577,11 @@ describe('WorkspaceClient document entry convergence', () => {
   });
 
   it('routes document switching through the shared tab primitives', async () => {
-    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+    const source = await Bun.file(CANVAS_EDITOR_PAGE_URL).text();
 
-    expect(source).toContain('openTab(');
-    expect(source).toContain('activateTab');
-    expect(source).toContain('replaceLeastRecentlyUsedTab');
+    expect(source).toContain('openTabByPath');
+    expect(source).toContain('navigateToWorkspaceCanvas');
+    expect(source).toContain('registerWorkspaceCanvas');
   });
 
   it.todo('resumes the last active document before leaving the workspace idle');
@@ -593,6 +590,80 @@ describe('WorkspaceClient document entry convergence', () => {
 });
 
 describe('WorkspaceClient action-dispatch binding', () => {
+  it('routes canonical mindmap create descriptors through the binding executor', async () => {
+    const executedDescriptors: Array<{ actionId: string; payload: Record<string, unknown> }> = [];
+
+    const binding = createCanvasActionDispatchBinding({
+      getRuntime: () => ({
+        nodes: [],
+        edges: [],
+        currentFile: 'examples/current.tsx',
+        sourceVersions: {},
+        selectedNodeIds: [],
+      }),
+      applyRuntimeAction: () => undefined,
+      executeMutationDescriptor: async (descriptor) => {
+        executedDescriptors.push({
+          actionId: descriptor.actionId,
+          payload: descriptor.payload as Record<string, unknown>,
+        });
+        return {};
+      },
+      commitHistoryEffect: () => undefined,
+      registerPendingActionRouting: () => undefined,
+      clearPendingActionRouting: () => undefined,
+      routeIntentImpl: () => ({
+        ok: true,
+        value: {
+          intentId: 'node.create',
+          steps: [{
+            kind: 'canonical-mutation',
+            actionId: 'canvas.node.create',
+            payload: {
+              canvasId: 'doc-1',
+              filePath: 'examples/current.tsx',
+              node: {
+                id: 'mind-child-1',
+                type: 'shape',
+                props: { content: '' },
+                placement: { mode: 'mindmap-child', parentId: 'root-1' },
+              },
+            },
+          }],
+          rollbackSteps: [],
+        },
+      }),
+    });
+
+    await binding.executeBridgeIntent({
+      surfaceId: 'node-context-menu',
+      intentId: 'node.create',
+      selectionRef: {
+        selectedNodeIds: ['root.rendered'],
+        currentFile: 'examples/current.tsx',
+      },
+      targetRef: {
+        renderedNodeId: 'root.rendered',
+      },
+      rawPayload: {},
+      optimistic: false,
+    });
+
+    expect(executedDescriptors).toEqual([{
+      actionId: 'canvas.node.create',
+      payload: {
+        canvasId: 'doc-1',
+        filePath: 'examples/current.tsx',
+        node: {
+          id: 'mind-child-1',
+          type: 'shape',
+          props: { content: '' },
+          placement: { mode: 'mindmap-child', parentId: 'root-1' },
+        },
+      },
+    }]);
+  });
+
   it('maps compat requests into action-routing envelopes with surface and target fallbacks', async () => {
     let capturedEnvelope: unknown = null;
 
@@ -656,11 +727,12 @@ describe('WorkspaceClient action-dispatch binding', () => {
       intentId: 'selection.content.update',
       selectionRef: {
         selectedNodeIds: ['node-1'],
-        currentFile: 'examples/current.tsx',
+        currentCanvasId: undefined,
       },
       targetRef: {
         renderedNodeId: 'node-1',
-        filePath: 'examples/override.tsx',
+        canvasId: undefined,
+        compatibilityFilePath: 'examples/override.tsx',
         scopeId: 'scope-1',
         frameScope: 'frame-1',
       },
@@ -765,7 +837,7 @@ describe('WorkspaceClient action-dispatch binding', () => {
 
 describe('WorkspaceClient bridge integration', () => {
   it('consumes the action-dispatch binding instead of owning bridge orchestration inline', async () => {
-    const source = await Bun.file(new URL('./WorkspaceClient.tsx', import.meta.url)).text();
+    const source = await Bun.file(CANVAS_EDITOR_PAGE_URL).text();
 
     expect(source).toContain("createCanvasActionDispatchBinding({");
     expect(source).toContain("resolveLegacyEntrypointSurface({");

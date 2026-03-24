@@ -32,7 +32,7 @@ type NodeSourceMeta = {
 export function resolveImmediateCreateEditMode(
   nodeType: CreatePayload['nodeType'],
 ): 'text' | 'markdown-wysiwyg' | null {
-  return isImmediateEditCreateNodeType(nodeType) ? 'markdown-wysiwyg' : null;
+  return (isImmediateEditCreateNodeType(nodeType) || nodeType === 'shape') ? 'markdown-wysiwyg' : null;
 }
 
 export interface ResolvedNodeEditContext {

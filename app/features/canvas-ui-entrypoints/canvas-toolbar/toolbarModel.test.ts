@@ -41,6 +41,7 @@ describe('resolveCanvasToolbarModel', () => {
       { actionId: 'interaction.hand', active: true },
     ]);
     expect(model.find((section) => section.sectionId === 'create')?.actions).toMatchObject([
+      { actionId: 'create.mindmap', active: false },
       { actionId: 'create.rectangle', active: false },
       { actionId: 'create.ellipse', active: false },
       { actionId: 'create.diamond', active: false },
@@ -48,6 +49,9 @@ describe('resolveCanvasToolbarModel', () => {
       { actionId: 'create.markdown', active: true },
       { actionId: 'create.line', active: false },
       { actionId: 'create.sticky', active: false },
+      { actionId: 'create.image', active: false },
+      { actionId: 'create.sticker', active: false },
+      { actionId: 'create.washi-tape', active: false },
     ]);
   });
 
@@ -64,6 +68,10 @@ describe('resolveCanvasToolbarModel', () => {
 
     expect(createSection?.actions.every((action) => action.disabled)).toBe(true);
     expect(createSection?.actions.map((action) => action.disabledReason?.code)).toEqual([
+      'pending-entrypoint-action',
+      'pending-entrypoint-action',
+      'pending-entrypoint-action',
+      'pending-entrypoint-action',
       'pending-entrypoint-action',
       'pending-entrypoint-action',
       'pending-entrypoint-action',

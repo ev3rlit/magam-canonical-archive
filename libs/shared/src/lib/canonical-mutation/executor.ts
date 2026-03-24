@@ -9,6 +9,7 @@ import {
   getCanvasNode,
   persistCanvasNode,
 } from './canvas-node';
+import { createCanvasNodeOperation } from './createCanvasNode';
 import {
   applyObjectBodyBlockInsert,
   applyObjectBodyBlockRemove,
@@ -180,11 +181,30 @@ async function applyOperation(input: {
         record: current.value,
         block: operation.block,
         index: operation.index,
+        afterBlockId: operation.afterBlockId,
       });
       if (apply) {
         await persistObjectRecord(context, next);
       }
       pushChangedId(changed.objects, operation.objectId);
+      return;
+    }
+
+    case 'canvas.node.create': {
+      const canvasId = batch.canvasRef;
+      if (!canvasId) {
+        throw cliError('INVALID_ARGUMENT', 'canvas.node.create requires canvasRef.', {
+          details: { op: operation.op },
+        });
+      }
+
+      await createCanvasNodeOperation({
+        context,
+        canvasId,
+        operation,
+        changed,
+        apply,
+      });
       return;
     }
 

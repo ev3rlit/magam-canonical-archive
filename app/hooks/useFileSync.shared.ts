@@ -7,6 +7,8 @@ export const VERSION_CONFLICT_METRIC_WINDOW_MS = 10 * 60 * 1000;
 export const VERSION_CONFLICT_RATE_THRESHOLD = 0.02;
 
 export type MutationMethod =
+  | 'canvas.node.create'
+  | 'object.body.block.insert'
   | 'node.update'
   | 'node.move'
   | 'node.create'
@@ -52,6 +54,20 @@ export interface EditEventMutators {
   ) => Promise<unknown>;
   createNode: (
     node: Record<string, unknown>,
+    targetCompatibilityFilePath?: string | null,
+    targetCanvasId?: string | null,
+  ) => Promise<unknown>;
+  createCanvasNode: (
+    node: Record<string, unknown>,
+    targetCompatibilityFilePath?: string | null,
+    targetCanvasId?: string | null,
+  ) => Promise<unknown>;
+  insertObjectBodyBlock: (
+    input: {
+      objectId: string;
+      block: Record<string, unknown>;
+      afterBlockId?: string;
+    },
     targetCompatibilityFilePath?: string | null,
     targetCanvasId?: string | null,
   ) => Promise<unknown>;
@@ -426,12 +442,17 @@ export async function applyEditCompletionSnapshot(
     if (!createInput || typeof createInput !== 'object') {
       throw new Error('INVALID_EVENT_SNAPSHOT');
     }
+    const actionId = typeof event.after.actionId === 'string' ? event.after.actionId : 'node.create';
     if (direction === 'before') {
       const createdId = (createInput as { id?: unknown }).id;
       if (typeof createdId !== 'string') {
         throw new Error('INVALID_EVENT_SNAPSHOT');
       }
       await mutators.deleteNode(createdId, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+      return;
+    }
+    if (actionId === 'canvas.node.create') {
+      await mutators.createCanvasNode(createInput as Record<string, unknown>, event.compatibilityFilePath ?? event.filePath, event.canvasId);
       return;
     }
     await mutators.createNode(createInput as Record<string, unknown>, event.compatibilityFilePath ?? event.filePath, event.canvasId);
@@ -443,8 +464,13 @@ export async function applyEditCompletionSnapshot(
     if (!recreateInput || typeof recreateInput !== 'object') {
       throw new Error('INVALID_EVENT_SNAPSHOT');
     }
+    const actionId = typeof event.before.actionId === 'string' ? event.before.actionId : 'node.create';
     if (direction === 'before') {
-      await mutators.createNode(recreateInput as Record<string, unknown>, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+      if (actionId === 'canvas.node.create') {
+        await mutators.createCanvasNode(recreateInput as Record<string, unknown>, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+      } else {
+        await mutators.createNode(recreateInput as Record<string, unknown>, event.compatibilityFilePath ?? event.filePath, event.canvasId);
+      }
       return;
     }
     await mutators.deleteNode(event.nodeId, event.compatibilityFilePath ?? event.filePath, event.canvasId);

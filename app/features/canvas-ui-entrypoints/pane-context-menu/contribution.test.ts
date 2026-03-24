@@ -3,11 +3,19 @@ import { describe, expect, it, mock } from 'bun:test';
 const iconStub = () => null;
 
 mock.module('lucide-react', () => ({
+  Bookmark: iconStub,
+  Circle: iconStub,
+  Diamond: iconStub,
   Download: iconStub,
   FileText: iconStub,
+  Image: iconStub,
   Maximize: iconStub,
+  Minus: iconStub,
   Square: iconStub,
+  StickyNote: iconStub,
+  Ticket: iconStub,
   Type: iconStub,
+  Workflow: iconStub,
 }));
 
 const { createPaneContextMenuSlot } = await import('@/processes/canvas-runtime/builtin-slots/paneContextMenu');
@@ -34,6 +42,7 @@ describe('pane context menu contribution', () => {
       canCreateNode: false,
       actions: {
         createCanvasNode: () => undefined,
+        createMindMapRoot: () => undefined,
         openExportDialog: () => undefined,
         fitView: () => undefined,
       },

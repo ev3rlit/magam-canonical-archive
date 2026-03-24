@@ -11,6 +11,9 @@ function buildPaneMenuActions(input: PaneMenuContextSnapshot): PaneMenuActions |
   if (input.canCreateNode && actions.createCanvasNode) {
     nextActions.createCanvasNode = actions.createCanvasNode;
   }
+  if (input.canCreateNode && actions.createMindMapRoot) {
+    nextActions.createMindMapRoot = actions.createMindMapRoot;
+  }
   if (actions.openExportDialog) {
     nextActions.openExportDialog = actions.openExportDialog;
   }

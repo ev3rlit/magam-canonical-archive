@@ -49,6 +49,7 @@ export interface CreateNodeInput {
     props?: Record<string, unknown>;
     placement?: (
         | { mode: 'canvas-absolute'; x: number; y: number }
+        | { mode: 'mindmap-root'; x: number; y: number; mindmapId: string }
         | { mode: 'mindmap-child'; parentId: string }
         | { mode: 'mindmap-sibling'; siblingOf: string; parentId: string | null }
     );
@@ -369,6 +370,38 @@ function createMarkdownChildElement(content: string): t.JSXElement {
     );
 }
 
+function createImageChildElement(input: {
+    src: string;
+    alt?: string;
+    caption?: string;
+}): t.JSXElement {
+    const attrs = [
+        t.jsxAttribute(
+            t.jsxIdentifier('src'),
+            t.jsxExpressionContainer(t.stringLiteral(input.src)),
+        ),
+        ...(typeof input.alt === 'string'
+            ? [t.jsxAttribute(
+                t.jsxIdentifier('alt'),
+                t.jsxExpressionContainer(t.stringLiteral(input.alt)),
+            )]
+            : []),
+        ...(typeof input.caption === 'string'
+            ? [t.jsxAttribute(
+                t.jsxIdentifier('caption'),
+                t.jsxExpressionContainer(t.stringLiteral(input.caption)),
+            )]
+            : []),
+    ];
+
+    return t.jsxElement(
+        t.jsxOpeningElement(t.jsxIdentifier('Image'), attrs, true),
+        null,
+        [],
+        true,
+    );
+}
+
 function ensureElementCanHostChildren(parentEl: NodePath<t.JSXElement>): void {
     if (!parentEl.node.openingElement.selfClosing) {
         return;
@@ -495,6 +528,26 @@ function findFirstCanvasOrMindMap(ast: t.File): NodePath<t.JSXElement> | null {
     return target;
 }
 
+function findFirstCanvas(ast: t.File): NodePath<t.JSXElement> | null {
+    let target: NodePath<t.JSXElement> | null = null;
+
+    traverse(ast, {
+        JSXElement(path: NodePath<t.JSXElement>) {
+            if (target) {
+                path.stop();
+                return;
+            }
+            const tagName = getJsxTagName(path.node.openingElement);
+            if (tagName === 'Canvas') {
+                target = path;
+                path.stop();
+            }
+        },
+    });
+
+    return target;
+}
+
 function appendElementToContainer(
     container: NodePath<t.JSXElement>,
     element: t.JSXElement,
@@ -598,14 +651,14 @@ function buildNodeElement(input: CreateNodeInput): t.JSXElement {
     const placementProps =
         placement && placementMode === 'canvas-absolute'
             ? { x: placement.x, y: placement.y }
+            : placement && placementMode === 'mindmap-root'
+                ? {}
             : placement && placementMode === 'mindmap-child'
                 ? { from: placement.parentId }
                 : placement && placementMode === 'mindmap-sibling'
                     ? { ...(placement.parentId ? { from: placement.parentId } : {}) }
                     : {};
-    const tag = placementMode === 'mindmap-child' || placementMode === 'mindmap-sibling'
-        ? 'Node'
-        : input.type === 'mindmap'
+    const tag = input.type === 'mindmap'
         ? 'MindMap'
         : input.type === 'shape'
             || input.type === 'rectangle'
@@ -650,6 +703,24 @@ function buildNodeElement(input: CreateNodeInput): t.JSXElement {
         t.jsxOpeningElement(t.jsxIdentifier(tag), attrs, false),
         t.jsxClosingElement(t.jsxIdentifier(tag)),
         toJsxChildren(input.type, props),
+        false,
+    );
+}
+
+function buildMindMapElement(input: CreateNodeInput & { placement: { mode: 'mindmap-root'; x: number; y: number; mindmapId: string } }): t.JSXElement {
+    const nodeElement = buildNodeElement({
+        ...input,
+        placement: undefined,
+    });
+
+    return t.jsxElement(
+        t.jsxOpeningElement(t.jsxIdentifier('MindMap'), [
+            t.jsxAttribute(t.jsxIdentifier('id'), t.jsxExpressionContainer(t.stringLiteral(input.placement.mindmapId))),
+            t.jsxAttribute(t.jsxIdentifier('x'), t.jsxExpressionContainer(t.numericLiteral(input.placement.x))),
+            t.jsxAttribute(t.jsxIdentifier('y'), t.jsxExpressionContainer(t.numericLiteral(input.placement.y))),
+        ], false),
+        t.jsxClosingElement(t.jsxIdentifier('MindMap')),
+        [nodeElement],
         false,
     );
 }
@@ -928,9 +999,11 @@ export async function patchNodeCreate(filePath: string, input: CreateNodeInput):
             throw new Error('ID_COLLISION');
         }
 
-        const newElement = buildNodeElement(input);
         const placement = input.placement;
         const placementMode = placement?.mode;
+        const newElement = placement && placementMode === 'mindmap-root'
+            ? buildMindMapElement(input as CreateNodeInput & { placement: { mode: 'mindmap-root'; x: number; y: number; mindmapId: string } })
+            : buildNodeElement(input);
 
         if (placement && placementMode === 'mindmap-child') {
             const container = findOwningContainerForNodeId(ast, placement.parentId);
@@ -950,12 +1023,63 @@ export async function patchNodeCreate(filePath: string, input: CreateNodeInput):
             return true;
         }
 
-        const container = findFirstCanvasOrMindMap(ast);
+        const container = placementMode === 'mindmap-root'
+            ? findFirstCanvas(ast)
+            : findFirstCanvasOrMindMap(ast);
         if (!container) {
             return false;
         }
         appendElementToContainer(container, newElement);
         return true;
+    });
+}
+
+export async function patchNodeBodyBlockInsert(
+    filePath: string,
+    nodeId: string,
+    block: {
+        blockType: string;
+        source?: string;
+        payload?: Record<string, unknown>;
+    },
+    _afterBlockId?: string,
+): Promise<void> {
+    await patchWithMutator(filePath, (ast) => {
+        const node = getNodeByIdOpeningElement(ast, nodeId);
+        if (!node) {
+            return false;
+        }
+
+        const parentEl = node.parentPath;
+        if (!parentEl || !parentEl.isJSXElement()) {
+            return false;
+        }
+
+        ensureElementCanHostChildren(parentEl);
+        if (block.blockType === 'markdown') {
+            parentEl.node.children.push(createMarkdownChildElement(typeof block.source === 'string' ? block.source : ''));
+            return true;
+        }
+
+        if (block.blockType === 'canvas.image') {
+            const payload = block.payload && typeof block.payload === 'object'
+                ? block.payload
+                : {};
+            const assetRef = payload.assetRef && typeof payload.assetRef === 'object'
+                ? payload.assetRef as Record<string, unknown>
+                : {};
+            const src = typeof assetRef.value === 'string'
+                ? assetRef.value
+                : '';
+            parentEl.node.children.push(createImageChildElement({
+                src,
+                alt: typeof payload.alt === 'string' ? payload.alt : undefined,
+                caption: typeof payload.caption === 'string' ? payload.caption : undefined,
+            }));
+            return true;
+        }
+
+        return false;
     });
 }
 

@@ -3,15 +3,19 @@ import { describe, expect, it, mock } from 'bun:test';
 const iconStub = () => null;
 
 mock.module('lucide-react', () => ({
+  Bookmark: iconStub,
   Circle: iconStub,
   Diamond: iconStub,
   Download: iconStub,
   FileText: iconStub,
+  Image: iconStub,
   Maximize: iconStub,
   Minus: iconStub,
   Square: iconStub,
   StickyNote: iconStub,
+  Ticket: iconStub,
   Type: iconStub,
+  Workflow: iconStub,
 }));
 
 const { sanitizeContextMenuItems } = await import('@/hooks/useContextMenu.helpers');
@@ -29,6 +33,7 @@ describe('paneMenuItems', () => {
   it('shows create actions only for an empty pane surface with create capability', () => {
     const baseActions = {
       createCanvasNode: () => undefined,
+      createMindMapRoot: () => undefined,
       openExportDialog: () => undefined,
       fitView: () => undefined,
     };
@@ -39,6 +44,8 @@ describe('paneMenuItems', () => {
       canCreateNode: true,
       actions: baseActions,
     })).toEqual([
+      'submenu',
+      'separator',
       'create-rectangle',
       'create-ellipse',
       'create-diamond',
@@ -46,6 +53,9 @@ describe('paneMenuItems', () => {
       'create-markdown',
       'create-line',
       'create-sticky',
+      'create-image',
+      'create-sticker',
+      'create-washi-tape',
       'export-all',
       'fit-view',
     ]);
@@ -84,6 +94,7 @@ describe('paneMenuItems', () => {
         createCanvasNode: (nodeType, position) => {
           createCalls.push([nodeType, position]);
         },
+        createMindMapRoot: () => undefined,
         openExportDialog: (scope) => {
           exportCalls.push(scope);
         },

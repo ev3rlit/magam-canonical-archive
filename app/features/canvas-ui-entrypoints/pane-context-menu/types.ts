@@ -3,7 +3,7 @@ import type { ContextMenuActionsContext, ContextMenuContext } from '@/types/cont
 
 export type PaneMenuActions = Pick<
   ContextMenuActionsContext,
-  'createCanvasNode' | 'fitView' | 'openExportDialog'
+  'createCanvasNode' | 'createMindMapRoot' | 'fitView' | 'openExportDialog'
 >;
 
 export interface PaneMenuContextSnapshot {

@@ -1,11 +1,20 @@
 import {
+  Bookmark,
+  Circle,
   Copy,
+  Diamond as DiamondIcon,
   Download,
+  FileText,
+  Image as ImageIcon,
   Lock,
   MousePointerSquareDashed,
   Pencil,
   Plus,
+  Square,
+  StickyNote,
+  Ticket,
   Trash2,
+  Type,
 } from 'lucide-react';
 import type { ContextMenuContext, ContextMenuItem } from '@/types/contextMenu';
 import { getCanvasUiCopy } from '@/features/canvas-ui-entrypoints/copy';
@@ -46,6 +55,27 @@ function isDisabled(actionId: NodeContextMenuActionId, ctx: ContextMenuContext):
 
 function getDisabledReason(actionId: NodeContextMenuActionId, ctx: ContextMenuContext): string | undefined {
   return resolveActionState(ctx, actionId).disabledReason?.message;
+}
+
+function buildMindMapTypeChildren(input: {
+  mode: 'child' | 'sibling';
+}): ContextMenuItem[] {
+  const handler = input.mode === 'child'
+    ? (ctx: ContextMenuContext, nodeType: 'rectangle' | 'ellipse' | 'diamond' | 'text' | 'markdown' | 'line' | 'sticky' | 'image' | 'sticker' | 'washi-tape') => ctx.actions?.createMindMapChild?.(ctx.nodeId!, nodeType)
+    : (ctx: ContextMenuContext, nodeType: 'rectangle' | 'ellipse' | 'diamond' | 'text' | 'markdown' | 'line' | 'sticky' | 'image' | 'sticker' | 'washi-tape') => ctx.actions?.createMindMapSibling?.(ctx.nodeId!, nodeType);
+
+  return [
+    { type: 'action', id: `${input.mode}-rectangle`, label: getCanvasUiCopy().paneMenu.createRectangle, icon: Square, handler: (ctx) => handler(ctx, 'rectangle'), order: 1 },
+    { type: 'action', id: `${input.mode}-ellipse`, label: getCanvasUiCopy().paneMenu.createEllipse, icon: Circle, handler: (ctx) => handler(ctx, 'ellipse'), order: 2 },
+    { type: 'action', id: `${input.mode}-diamond`, label: getCanvasUiCopy().paneMenu.createDiamond, icon: DiamondIcon, handler: (ctx) => handler(ctx, 'diamond'), order: 3 },
+    { type: 'action', id: `${input.mode}-text`, label: getCanvasUiCopy().paneMenu.createText, icon: Type, handler: (ctx) => handler(ctx, 'text'), order: 4 },
+    { type: 'action', id: `${input.mode}-markdown`, label: getCanvasUiCopy().paneMenu.createMarkdown, icon: FileText, handler: (ctx) => handler(ctx, 'markdown'), order: 5 },
+    { type: 'action', id: `${input.mode}-line`, label: getCanvasUiCopy().paneMenu.createLine, icon: Plus, handler: (ctx) => handler(ctx, 'line'), order: 6 },
+    { type: 'action', id: `${input.mode}-sticky`, label: getCanvasUiCopy().paneMenu.createSticky, icon: StickyNote, handler: (ctx) => handler(ctx, 'sticky'), order: 7 },
+    { type: 'action', id: `${input.mode}-image`, label: getCanvasUiCopy().paneMenu.createImage, icon: ImageIcon, handler: (ctx) => handler(ctx, 'image'), order: 8 },
+    { type: 'action', id: `${input.mode}-sticker`, label: getCanvasUiCopy().paneMenu.createSticker, icon: Ticket, handler: (ctx) => handler(ctx, 'sticker'), order: 9 },
+    { type: 'action', id: `${input.mode}-washi-tape`, label: getCanvasUiCopy().paneMenu.createWashiTape, icon: Bookmark, handler: (ctx) => handler(ctx, 'washi-tape'), order: 10 },
+  ];
 }
 
 export const nodeMenuItems: ContextMenuItem[] = [
@@ -102,37 +132,21 @@ export const nodeMenuItems: ContextMenuItem[] = [
     order: 10,
   },
   {
-    type: 'action',
+    type: 'submenu',
     id: 'mindmap-add-child',
     label: copy.addMindmapChild,
     icon: Plus,
-    when: (ctx) => isVisible('mindmap-add-child', ctx),
-    disabled: (ctx) => isDisabled('mindmap-add-child', ctx),
-    disabledReason: (ctx) => getDisabledReason('mindmap-add-child', ctx),
-    handler: (ctx) => {
-      if (ctx.nodeId === undefined || !ctx.actions?.createMindMapChild) {
-        return;
-      }
-
-      return ctx.actions.createMindMapChild(ctx.nodeId);
-    },
+    when: (ctx) => isVisible('mindmap-add-child', ctx) && !isDisabled('mindmap-add-child', ctx),
+    children: buildMindMapTypeChildren({ mode: 'child' }),
     order: 20,
   },
   {
-    type: 'action',
+    type: 'submenu',
     id: 'mindmap-add-sibling',
     label: copy.addMindmapSibling,
     icon: Plus,
-    when: (ctx) => isVisible('mindmap-add-sibling', ctx),
-    disabled: (ctx) => isDisabled('mindmap-add-sibling', ctx),
-    disabledReason: (ctx) => getDisabledReason('mindmap-add-sibling', ctx),
-    handler: (ctx) => {
-      if (ctx.nodeId === undefined || !ctx.actions?.createMindMapSibling) {
-        return;
-      }
-
-      return ctx.actions.createMindMapSibling(ctx.nodeId);
-    },
+    when: (ctx) => isVisible('mindmap-add-sibling', ctx) && !isDisabled('mindmap-add-sibling', ctx),
+    children: buildMindMapTypeChildren({ mode: 'sibling' }),
     order: 21,
   },
   {

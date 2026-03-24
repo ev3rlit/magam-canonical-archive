@@ -495,6 +495,32 @@ export function resolveSelectionBodyEditSession(input: {
   return resolveBodyEditSession(selectedNode);
 }
 
+export function resolveCreateCompleteBodyEditSession(input: {
+  createdNode: BodyEditableFlowNode | null | undefined;
+  pendingCreateEdit: {
+    renderedId: string;
+    mode: 'text' | 'markdown-wysiwyg';
+  } | null | undefined;
+}): ReturnType<typeof resolveBodyEditSession> {
+  if (!input.createdNode || !input.pendingCreateEdit) {
+    return null;
+  }
+
+  if (input.createdNode.id !== input.pendingCreateEdit.renderedId) {
+    return null;
+  }
+
+  const session = resolveBodyEditSession(input.createdNode);
+  if (!session) {
+    return null;
+  }
+
+  return {
+    ...session,
+    mode: input.pendingCreateEdit.mode,
+  };
+}
+
 function resolveSelectionShellCapabilities(node: SelectionShellNode | undefined) {
   if (!node) {
     return {
@@ -1403,8 +1429,10 @@ function GraphCanvasContent({
             surfaceId: 'toolbar',
             surface: 'canvas-toolbar',
             trigger: { source: 'click' },
-            nodeType: activeCreateMode,
-            placement: { mode: 'canvas-absolute', x: position.x, y: position.y },
+            nodeType: activeCreateMode === 'mindmap' ? 'shape' : activeCreateMode,
+            placement: activeCreateMode === 'mindmap'
+              ? { mode: 'mindmap-root', x: position.x, y: position.y }
+              : { mode: 'canvas-absolute', x: position.x, y: position.y },
           }))),
         });
         setEntrypointCreateMode(null);

@@ -9,8 +9,9 @@ import React, {
   useState,
 } from 'react';
 import { RpcClientError, useFileSync } from '@/hooks/useFileSync';
-import { GraphCanvas } from '@/components/GraphCanvas';
+import { GraphCanvas, resolveCreateCompleteBodyEditSession } from '@/components/GraphCanvas';
 import type { GraphCanvasSelectionActionIntentInput } from '@/components/GraphCanvas';
+import { resolveBodySlashCommandSession } from '@/components/nodes/renderableContent';
 import { Header } from '@/components/ui/Header';
 
 import { type QuickOpenCommand } from '@/components/ui/QuickOpenDialog';
@@ -25,9 +26,11 @@ import {
   buildAbsoluteMoveCommand,
   buildReparentCommand,
   buildRelativeMoveCommand,
+  toObjectBodyBlockInsertInput,
   toUpdateNodeProps,
   type CreatePayload,
 } from '@/features/editing/commands';
+import { resolveBodySlashCommand } from '@/features/editing/bodySlashCommands';
 import {
   type ActionRoutingHistoryEffect,
   type ActionRoutingSurfaceId,
@@ -392,6 +395,8 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     updateNode,
     moveNode,
     createNode,
+    createCanvasNode,
+    insertObjectBodyBlock,
     deleteNode,
     reparentNode,
     undoLastEdit,
@@ -610,6 +615,9 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         targetCanvasId,
       );
     }
+    if (descriptor.actionId === 'canvas.node.create') {
+      return createCanvasNode(descriptor.payload.node, targetCompatibilityFilePath, targetCanvasId);
+    }
     if (descriptor.actionId === 'node.create') {
       return createNode(descriptor.payload.node, targetCompatibilityFilePath, targetCanvasId);
     }
@@ -645,7 +653,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     throw new RpcClientError(RPC_ERRORS.INVALID_PARAMS.code, RPC_ERRORS.INVALID_PARAMS.message, {
       stage: 'WorkspaceClient.executeMutationDescriptor',
     });
-  }, [createNode, currentCanvasId, deleteNode, reparentNode, updateNode]);
+  }, [createCanvasNode, createNode, currentCanvasId, deleteNode, reparentNode, updateNode]);
 
   const { dispatchActionRoutingIntentOrThrow } = useMemo(() => createCanvasActionDispatchBinding({
     getRuntime: () => {
@@ -1072,6 +1080,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     nodeType: CreatePayload['nodeType'];
     placement:
       | { mode: 'canvas-absolute'; x: number; y: number }
+      | { mode: 'mindmap-root'; x: number; y: number; mindmapId?: string }
       | { mode: 'mindmap-child'; parentId: string }
       | { mode: 'mindmap-sibling'; siblingOf: string; parentId: string | null };
     initialProps?: Record<string, unknown>;
@@ -1087,7 +1096,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       : input.placement.mode === 'mindmap-sibling'
         ? 'create-mindmap-sibling'
         : 'create-node';
-    const resolvedContext = input.placement.mode === 'canvas-absolute'
+    const resolvedContext = input.placement.mode === 'canvas-absolute' || input.placement.mode === 'mindmap-root'
       ? createPaneActionRoutingContext({
         currentCanvasId,
         currentFile: currentCompatibilityFilePath,
@@ -1570,6 +1579,44 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
 
       const beforeContent = getNodeLabel(node);
       const nextContent = textEditDraft;
+      const slashCommandSession = resolveBodySlashCommandSession(nextContent);
+      if (slashCommandSession) {
+        const sourceMeta = (((node.data || {}) as Record<string, unknown>).sourceMeta || {}) as Record<string, unknown>;
+        const objectId = typeof sourceMeta.sourceId === 'string' && sourceMeta.sourceId.length > 0
+          ? sourceMeta.sourceId
+          : pendingTextEditAction.nodeId;
+        const resolvedSlashCommand = resolveBodySlashCommand(nextContent);
+
+        if (!resolvedSlashCommand) {
+          clearTextEditSession();
+          return;
+        }
+
+        try {
+          await insertObjectBodyBlock(toObjectBodyBlockInsertInput({
+            objectId,
+            block: resolvedSlashCommand.createBlock(`body-${crypto.randomUUID()}`),
+            afterBlockId: 'body-1',
+          }) as unknown as {
+            objectId: string;
+            block: Record<string, unknown>;
+            afterBlockId?: string;
+          }, currentCompatibilityFilePath, currentCanvasId);
+          clearTextEditSession();
+        } catch (error) {
+          editDebugLog('slash-block-insert', error, {
+            nodeId: objectId,
+            command: slashCommandSession.command,
+          });
+          const message = mapEditRpcErrorToToast(error) ?? '블록 추가에 실패했습니다.';
+          setGraphError({
+            message,
+            type: 'EDIT_REJECTED',
+            details: error,
+          });
+        }
+        return;
+      }
       if (beforeContent === nextContent) {
         clearTextEditSession();
         return;
@@ -1604,6 +1651,9 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     clearPendingTextEditAction,
     clearTextEditSession,
     handleSelectionContentCommit,
+    currentCanvasId,
+    currentCompatibilityFilePath,
+    insertObjectBodyBlock,
     pendingTextEditAction,
     selectedNodeIds,
     setGraphError,
@@ -1694,12 +1744,15 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
             if (createdNode) {
               setSelectedNodes([createdNodeId]);
               pendingSelectionNodeIdRef.current = null;
-              if (pendingCreateEditRef.current?.renderedId === createdNodeId) {
-                const data = (createdNode.data || {}) as Record<string, unknown>;
+              const createCompleteSession = resolveCreateCompleteBodyEditSession({
+                createdNode,
+                pendingCreateEdit: pendingCreateEditRef.current,
+              });
+              if (createCompleteSession) {
                 useGraphStore.getState().startTextEditSession({
-                  nodeId: createdNodeId,
-                  initialDraft: typeof data.label === 'string' ? data.label : '',
-                  mode: pendingCreateEditRef.current.mode,
+                  nodeId: createCompleteSession.nodeId,
+                  initialDraft: createCompleteSession.initialDraft,
+                  mode: createCompleteSession.mode,
                 });
                 pendingCreateEditRef.current = null;
               }

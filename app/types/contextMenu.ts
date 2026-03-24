@@ -21,8 +21,9 @@ export interface ContextMenuActionsContext {
     bringSelectionToFront?: (nodeId: string) => Promise<void> | void;
     sendSelectionToBack?: (nodeId: string) => Promise<void> | void;
     createCanvasNode?: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => Promise<void> | void;
-    createMindMapChild?: (nodeId: string) => Promise<void> | void;
-    createMindMapSibling?: (nodeId: string) => Promise<void> | void;
+    createMindMapRoot?: (nodeType: CreatableNodeType, screenPosition: { x: number; y: number }) => Promise<void> | void;
+    createMindMapChild?: (nodeId: string, nodeType?: CreatableNodeType) => Promise<void> | void;
+    createMindMapSibling?: (nodeId: string, nodeType?: CreatableNodeType) => Promise<void> | void;
 }
 
 export interface ContextMenuContext {

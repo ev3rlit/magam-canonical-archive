@@ -462,6 +462,47 @@ export function useFileSync(
         });
     }, [compatibilityFilePath, mutationExecutor, resolveMutationTarget]);
 
+    const createCanvasNode = useCallback(async (
+        node: Record<string, unknown>,
+        targetCompatibilityFilePath: string | null = compatibilityFilePath,
+        targetCanvasId?: string | null,
+    ): Promise<RpcMutationResult> => {
+        const target = resolveMutationTarget(targetCompatibilityFilePath, targetCanvasId);
+        if (!target.canvasId) {
+            throw new Error('SOURCE_VERSION_NOT_READY');
+        }
+        return mutationExecutor.enqueueMutation({
+            method: 'canvas.node.create',
+            canvasId: target.canvasId,
+            buildParams: () => ({ canvasId: target.canvasId, node }),
+        });
+    }, [compatibilityFilePath, mutationExecutor, resolveMutationTarget]);
+
+    const insertObjectBodyBlock = useCallback(async (
+        input: {
+            objectId: string;
+            block: Record<string, unknown>;
+            afterBlockId?: string;
+        },
+        targetCompatibilityFilePath: string | null = compatibilityFilePath,
+        targetCanvasId?: string | null,
+    ): Promise<RpcMutationResult> => {
+        const target = resolveMutationTarget(targetCompatibilityFilePath, targetCanvasId);
+        if (!target.canvasId) {
+            throw new Error('SOURCE_VERSION_NOT_READY');
+        }
+        return mutationExecutor.enqueueMutation({
+            method: 'object.body.block.insert',
+            canvasId: target.canvasId,
+            buildParams: () => ({
+                canvasId: target.canvasId,
+                objectId: input.objectId,
+                block: input.block,
+                ...(input.afterBlockId ? { afterBlockId: input.afterBlockId } : {}),
+            }),
+        });
+    }, [compatibilityFilePath, mutationExecutor, resolveMutationTarget]);
+
     const deleteNode = useCallback(async (
         nodeId: string,
         targetCompatibilityFilePath: string | null = compatibilityFilePath,
@@ -503,10 +544,12 @@ export function useFileSync(
             moveNode,
             updateNode,
             createNode,
+            createCanvasNode,
+            insertObjectBodyBlock,
             deleteNode,
             reparentNode,
         });
-    }, [createNode, deleteNode, moveNode, reparentNode, updateNode]);
+    }, [createCanvasNode, createNode, deleteNode, insertObjectBodyBlock, moveNode, reparentNode, updateNode]);
 
     const undoLastEdit = useCallback(async (): Promise<boolean> => {
         const state = useGraphStore.getState();
@@ -536,5 +579,15 @@ export function useFileSync(
         return true;
     }, [applyEventSnapshot, onFileChange]);
 
-    return { updateNode, moveNode, createNode, deleteNode, reparentNode, undoLastEdit, redoLastEdit };
+    return {
+        updateNode,
+        moveNode,
+        createNode,
+        createCanvasNode,
+        insertObjectBodyBlock,
+        deleteNode,
+        reparentNode,
+        undoLastEdit,
+        redoLastEdit,
+    };
 }

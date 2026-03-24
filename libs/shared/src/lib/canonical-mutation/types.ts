@@ -1,4 +1,4 @@
-import type { ContentBlock, ContentKind, ContentCapability, CanonicalCapabilityKey } from '../canonical-object-contract';
+import type { ContentBlock, ContentKind, CanonicalCapabilityKey } from '../canonical-object-contract';
 
 export interface MutationActor {
   kind: 'agent' | 'user' | 'system';
@@ -35,6 +35,7 @@ export interface ObjectBodyBlockInsertOperation {
   objectId: string;
   block: ContentBlock;
   index?: number;
+  afterBlockId?: string;
 }
 
 export interface ObjectBodyBlockUpdateOperation {
@@ -72,6 +73,29 @@ export interface CanvasNodeReparentOperation {
   parentNodeId: string | null;
 }
 
+export interface CanvasNodeCreateOperation {
+  op: 'canvas.node.create';
+  nodeId: string;
+  nodeType:
+    | 'shape'
+    | 'rectangle'
+    | 'ellipse'
+    | 'diamond'
+    | 'line'
+    | 'text'
+    | 'markdown'
+    | 'sticky'
+    | 'sticker'
+    | 'washi-tape'
+    | 'image';
+  props?: Record<string, unknown>;
+  placement:
+    | { mode: 'canvas-absolute'; x: number; y: number }
+    | { mode: 'mindmap-root'; x: number; y: number; mindmapId: string }
+    | { mode: 'mindmap-child'; parentId: string }
+    | { mode: 'mindmap-sibling'; siblingOf: string; parentId: string | null };
+}
+
 export type MutationOperation =
   | ObjectContentUpdateOperation
   | ObjectCapabilityPatchOperation
@@ -80,6 +104,7 @@ export type MutationOperation =
   | ObjectBodyBlockUpdateOperation
   | ObjectBodyBlockRemoveOperation
   | ObjectBodyBlockReorderOperation
+  | CanvasNodeCreateOperation
   | CanvasNodeMoveOperation
   | CanvasNodeReparentOperation;
 

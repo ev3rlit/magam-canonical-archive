@@ -1,3 +1,4 @@
+import type { ContentBlock } from '../../../libs/shared/src/lib/canonical-object-contract';
 import type {
   EditCommandType,
   EditContentCarrier,
@@ -74,6 +75,7 @@ export interface CreatePayload {
   initialContent?: string;
   placement:
     | { mode: 'canvas-absolute'; x: number; y: number }
+    | { mode: 'mindmap-root'; x: number; y: number; mindmapId?: string }
     | { mode: 'mindmap-child'; parentId: string }
     | { mode: 'mindmap-sibling'; siblingOf: string; parentId: string | null };
 }
@@ -304,6 +306,8 @@ export function toCreateNodeInput(command: CreateCommand): {
         x: command.payload.placement.x,
         y: command.payload.placement.y,
       }
+    : command.payload.placement.mode === 'mindmap-root'
+      ? {}
     : command.payload.placement.mode === 'mindmap-child'
       ? {
           from: command.payload.placement.parentId,
@@ -321,6 +325,32 @@ export function toCreateNodeInput(command: CreateCommand): {
       ...(command.payload.initialContent ? { content: command.payload.initialContent } : {}),
     },
     placement: command.payload.placement,
+  };
+}
+
+export function shouldUseCanonicalCanvasNodeCreate(command: CreateCommand): boolean {
+  return command.payload.placement.mode === 'mindmap-root'
+    || command.type === 'mindmap.child.create'
+    || command.type === 'mindmap.sibling.create'
+    || command.payload.nodeType === 'shape'
+    || command.payload.nodeType === 'text'
+    || command.payload.nodeType === 'markdown'
+    || command.payload.nodeType === 'sticky';
+}
+
+export function toObjectBodyBlockInsertInput(input: {
+  objectId: string;
+  block: ContentBlock;
+  afterBlockId?: string;
+}): {
+  objectId: string;
+  block: ContentBlock;
+  afterBlockId?: string;
+} {
+  return {
+    objectId: input.objectId,
+    block: input.block,
+    ...(input.afterBlockId ? { afterBlockId: input.afterBlockId } : {}),
   };
 }
 

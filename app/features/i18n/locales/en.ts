@@ -166,6 +166,7 @@ export const en = {
         pan: 'Pan',
       },
       create: {
+        mindmap: 'Mindmap',
         rectangle: 'Rectangle',
         ellipse: 'Ellipse',
         diamond: 'Diamond',
@@ -173,6 +174,9 @@ export const en = {
         markdown: 'Markdown',
         line: 'Line',
         sticky: 'Sticky',
+        image: 'Image',
+        sticker: 'Sticker',
+        'washi-tape': 'Washi tape',
       },
       viewport: {
         zoomIn: 'Zoom in',
@@ -193,6 +197,7 @@ export const en = {
       activePresetLabel: (label: string) => `Active: ${label}`,
     },
     paneMenu: {
+      createMindmap: 'Create mindmap',
       createRectangle: 'Create rectangle',
       createEllipse: 'Create ellipse',
       createDiamond: 'Create diamond',
@@ -200,6 +205,9 @@ export const en = {
       createMarkdown: 'Create markdown',
       createLine: 'Create line',
       createSticky: 'Create sticky',
+      createImage: 'Create image',
+      createSticker: 'Create sticker',
+      createWashiTape: 'Create washi tape',
       exportAll: 'Export all',
       fitView: 'Fit view',
     },
@@ -209,6 +217,7 @@ export const en = {
       renameNode: 'Rename ID',
       addMindmapChild: 'Add child',
       addMindmapSibling: 'Add sibling',
+      mindmapTemplate: 'Mindmap template',
       selectGroup: 'Select group',
       enterGroup: 'Enter group',
       groupSelection: 'Create group',

@@ -134,6 +134,7 @@ export interface ActionRoutingPendingRecord {
 export interface ActionRoutingOptimisticMeta extends ActionRoutingPendingRecord {}
 
 export type MutationActionId =
+  | 'canvas.node.create'
   | 'node.update'
   | 'node.create'
   | 'node.delete'
@@ -142,6 +143,17 @@ export type MutationActionId =
   | 'node.z-order.update';
 
 export interface MutationActionPayloadMap {
+  'canvas.node.create': {
+    canvasId?: string;
+    filePath: string;
+    compatibilityFilePath?: string | null;
+    node: {
+      id: string;
+      type: CreatePayload['nodeType'];
+      props: Record<string, unknown>;
+      placement: CreatePayload['placement'];
+    };
+  };
   'node.update': {
     nodeId: string;
     canvasId?: string;

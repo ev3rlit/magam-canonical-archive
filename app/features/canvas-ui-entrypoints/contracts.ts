@@ -11,6 +11,9 @@ export type CanvasEntrypointCreateNodeType =
   | 'text'
   | 'markdown'
   | 'line'
-  | 'sticky';
+  | 'sticky'
+  | 'image'
+  | 'sticker'
+  | 'washi-tape';
 
-export type CanvasEntrypointCreateMode = CanvasEntrypointCreateNodeType | null;
+export type CanvasEntrypointCreateMode = CanvasEntrypointCreateNodeType | 'mindmap' | null;

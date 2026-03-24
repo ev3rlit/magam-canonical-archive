@@ -16,6 +16,7 @@ import {
 } from './GraphCanvas.relayout';
 import {
   buildGraphCanvasCreateIntent,
+  resolveCreateCompleteBodyEditSession,
   resolveCreateGestureInitialProps,
   buildGraphCanvasRenameIntent,
   resolveCanvasDismissal,
@@ -526,6 +527,55 @@ describe('GraphCanvas direct manipulation baseline', () => {
           data: { label: 'B' },
         },
       ],
+    })).toBeNull();
+  });
+
+  it('resolves create-complete immediate edit sessions for new markdown-first body nodes', () => {
+    expect(resolveCreateCompleteBodyEditSession({
+      createdNode: {
+        id: 'shape-1',
+        type: 'shape',
+        data: {
+          label: 'Shape fallback',
+          children: [{ type: 'graph-markdown', content: '### Shape body' }],
+        },
+      },
+      pendingCreateEdit: {
+        renderedId: 'shape-1',
+        mode: 'markdown-wysiwyg',
+      },
+    })).toEqual({
+      nodeId: 'shape-1',
+      initialDraft: '### Shape body',
+      mode: 'markdown-wysiwyg',
+    });
+
+    expect(resolveCreateCompleteBodyEditSession({
+      createdNode: {
+        id: 'shape-2',
+        type: 'shape',
+        data: { label: 'Fallback label' },
+      },
+      pendingCreateEdit: {
+        renderedId: 'shape-2',
+        mode: 'markdown-wysiwyg',
+      },
+    })).toEqual({
+      nodeId: 'shape-2',
+      initialDraft: 'Fallback label',
+      mode: 'markdown-wysiwyg',
+    });
+
+    expect(resolveCreateCompleteBodyEditSession({
+      createdNode: {
+        id: 'shape-3',
+        type: 'shape',
+        data: { label: 'Ignored' },
+      },
+      pendingCreateEdit: {
+        renderedId: 'other-node',
+        mode: 'markdown-wysiwyg',
+      },
     })).toBeNull();
   });
 

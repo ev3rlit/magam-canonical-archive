@@ -1,11 +1,15 @@
 import React from 'react';
 import {
+  Bookmark,
   Circle,
   Diamond,
   FileText,
+  Image as ImageIcon,
   Minus,
+  Share2,
   Square,
   StickyNote,
+  Ticket,
   Type,
 } from 'lucide-react';
 import type { GraphCanvasCreateMode } from '@/components/GraphCanvas.drag';
@@ -55,6 +59,7 @@ export const TOOLBAR_CREATE_ANCHOR_ID = 'toolbar:create-anchor';
 export const TOOLBAR_PRESET_ANCHOR_ID = 'toolbar:preset-anchor';
 
 export const TOOLBAR_CREATE_OPTIONS: ToolbarCreateOption[] = [
+  { id: 'mindmap', label: copy.toolbar.create.mindmap, icon: React.createElement(Share2, { className: 'w-4 h-4' }) },
   { id: 'rectangle', label: copy.toolbar.create.rectangle, icon: React.createElement(Square, { className: 'w-4 h-4' }) },
   { id: 'ellipse', label: copy.toolbar.create.ellipse, icon: React.createElement(Circle, { className: 'w-4 h-4' }) },
   { id: 'diamond', label: copy.toolbar.create.diamond, icon: React.createElement(Diamond, { className: 'w-4 h-4' }) },
@@ -62,6 +67,9 @@ export const TOOLBAR_CREATE_OPTIONS: ToolbarCreateOption[] = [
   { id: 'markdown', label: copy.toolbar.create.markdown, icon: React.createElement(FileText, { className: 'w-4 h-4' }) },
   { id: 'line', label: copy.toolbar.create.line, icon: React.createElement(Minus, { className: 'w-4 h-4' }) },
   { id: 'sticky', label: copy.toolbar.create.sticky, icon: React.createElement(StickyNote, { className: 'w-4 h-4' }) },
+  { id: 'image', label: copy.toolbar.create.image, icon: React.createElement(ImageIcon, { className: 'w-4 h-4' }) },
+  { id: 'sticker', label: copy.toolbar.create.sticker, icon: React.createElement(Ticket, { className: 'w-4 h-4' }) },
+  { id: 'washi-tape', label: copy.toolbar.create['washi-tape'], icon: React.createElement(Bookmark, { className: 'w-4 h-4' }) },
 ];
 
 export function resolveToolbarPresenterState(input: ToolbarPresenterStateInput) {

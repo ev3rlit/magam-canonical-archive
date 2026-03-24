@@ -183,11 +183,17 @@ export function applyObjectBodyBlockInsert(input: {
   record: CanonicalObjectRecord;
   block: ContentBlock;
   index?: number;
+  afterBlockId?: string;
 }): CanonicalObjectRecord {
   const blocks = cloneContentBlocks(readContentBlocks(input.record)) ?? [];
+  const anchorIndex = typeof input.afterBlockId === 'string'
+    ? blocks.findIndex((block) => block.id === input.afterBlockId)
+    : -1;
   const index = typeof input.index === 'number'
     ? Math.max(0, Math.min(input.index, blocks.length))
-    : blocks.length;
+    : anchorIndex >= 0
+      ? anchorIndex + 1
+      : blocks.length;
   blocks.splice(index, 0, cloneContentBlocks([input.block])![0]);
   return applyObjectBodyReplace({
     record: input.record,
