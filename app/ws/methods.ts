@@ -91,25 +91,6 @@ function withDiagnostics(
     };
 }
 
-type CanonicalServices = {
-    queryService: {
-        execute: (request: CanonicalQueryRequest) => Promise<CanonicalQueryResultEnvelope>;
-    };
-    mutationExecutor: {
-        execute: (envelope: CanonicalMutationEnvelope) => Promise<CanonicalMutationResultEnvelope>;
-    };
-};
-
-let canonicalServicesPromise: Promise<CanonicalServices> | null = null;
-let canonicalServicesFactoryForTests: (() => Promise<CanonicalServices>) | null = null;
-
-export function __setCanonicalServicesFactoryForTests(
-    factory: (() => Promise<CanonicalServices>) | null,
-): void {
-    canonicalServicesFactoryForTests = factory;
-    canonicalServicesPromise = null;
-}
-
 function ensureString(value: unknown, fieldName: string): string {
     if (!value || typeof value !== 'string') {
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} is required` };
@@ -427,32 +408,6 @@ async function mutateWithContract(
     });
 }
 
-async function mutateWithCanonicalContract(
-    ctx: RpcContext,
-    common: { filePath: string; baseVersion: string; originId: string; commandId: string },
-    envelope: CanonicalMutationEnvelope,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
-    const services = await getCanonicalServices();
-    const result = await services.mutationExecutor.execute(envelope);
-    if (!result.ok) {
-        return toRpcLikeErrorFromCanonicalFailure(result);
-    }
-
-    ctx.notifyFileChanged?.({
-        filePath: common.filePath,
-        version: result.revision.after,
-        originId: common.originId,
-        commandId: common.commandId,
-    });
-
-    return {
-        success: true,
-        newVersion: result.revision.after,
-        commandId: common.commandId,
-        filePath: common.filePath,
-    };
-}
-
 async function handleFileSubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
     const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
     const canvasId = ensureOptionalString(params.canvasId, 'canvasId');
@@ -499,41 +454,6 @@ async function handleNodeUpdate(
     }
 
     const commandType = inferUpdateCommandType(props, explicitCommandType);
-
-    if (isRevisionToken(common.baseVersion)) {
-        const { workspaceId, documentId } = ensureCanonicalScope(params);
-        const canonicalObjectId = ensureOptionalString(params.canonicalObjectId, 'canonicalObjectId');
-
-        if (commandType === 'node.content.update') {
-            if (typeof props.content !== 'string') {
-                throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'content must be a string' };
-            }
-            if (!canonicalObjectId) {
-                throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canonicalObjectId is required for revision-token content updates' };
-            }
-
-            const contentKind = ensureOptionalString(params.contentKind, 'contentKind');
-            const content = contentKind === 'markdown'
-                ? { kind: 'markdown' as const, source: props.content }
-                : { kind: 'text' as const, value: props.content };
-
-            return mutateWithCanonicalContract(ctx, common, {
-                workspaceId,
-                documentId,
-                baseRevision: common.baseVersion,
-                actor: {
-                    kind: 'user',
-                    id: common.originId,
-                },
-                requestId: common.commandId,
-                operations: [{
-                    op: 'object.update-content',
-                    objectId: canonicalObjectId,
-                    content,
-                }],
-            });
-        }
-    }
 
     try {
         return await mutateWithContract(ctx, common, async () => {
@@ -675,40 +595,6 @@ async function handleNodeCreate(
 
     node.placement = ensureCreatePlacement(node.placement);
 
-    if (isRevisionToken(common.baseVersion)) {
-        const { workspaceId, documentId } = ensureCanonicalScope(params);
-        const canonicalObjectId = ensureString((node as Record<string, unknown>).canonicalObjectId, 'node.canonicalObjectId');
-        const surfaceId = ensureOptionalString(params.surfaceId, 'surfaceId') ?? 'surface-1';
-
-        const layout = node.placement?.mode === 'canvas-absolute'
-            ? { x: node.placement.x, y: node.placement.y }
-            : {};
-
-        return mutateWithCanonicalContract(ctx, common, {
-            workspaceId,
-            documentId,
-            baseRevision: common.baseVersion,
-            actor: {
-                kind: 'user',
-                id: common.originId,
-            },
-            requestId: common.commandId,
-            operations: [{
-                op: 'canvas-node.create',
-                node: {
-                    id: node.id,
-                    documentId,
-                    surfaceId,
-                    nodeKind: 'native',
-                    nodeType: node.type,
-                    canonicalObjectId,
-                    layout,
-                    zIndex: ensureNumber((params.zIndex ?? 1), 'zIndex'),
-                },
-            }],
-        });
-    }
-
     try {
         return await mutateWithContract(ctx, common, async () => {
             const collisionIds = await getGlobalIdentifierCollisions(common.resolvedFilePath);
@@ -746,25 +632,6 @@ async function handleNodeDelete(
     const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
 
-    if (isRevisionToken(common.baseVersion)) {
-        const { workspaceId, documentId } = ensureCanonicalScope(params);
-        return mutateWithCanonicalContract(ctx, common, {
-            workspaceId,
-            documentId,
-            baseRevision: common.baseVersion,
-            actor: {
-                kind: 'user',
-                id: common.originId,
-            },
-            requestId: common.commandId,
-            operations: [{
-                op: 'canvas-node.remove',
-                documentId,
-                nodeId,
-            }],
-        });
-    }
-
     try {
         return await mutateWithContract(ctx, common, async () => {
             await patchNodeDelete(common.resolvedFilePath, nodeId);
@@ -798,26 +665,6 @@ async function handleNodeReparent(
     const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const newParentId = ensureOptionalString(params.newParentId, 'newParentId');
-
-    if (isRevisionToken(common.baseVersion)) {
-        const { workspaceId, documentId } = ensureCanonicalScope(params);
-        return mutateWithCanonicalContract(ctx, common, {
-            workspaceId,
-            documentId,
-            baseRevision: common.baseVersion,
-            actor: {
-                kind: 'user',
-                id: common.originId,
-            },
-            requestId: common.commandId,
-            operations: [{
-                op: 'canvas-node.reparent',
-                documentId,
-                nodeId,
-                parentNodeId: newParentId ?? null,
-            }],
-        });
-    }
 
     try {
         return await mutateWithContract(ctx, common, async () => {

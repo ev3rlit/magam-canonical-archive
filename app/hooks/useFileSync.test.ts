@@ -298,38 +298,6 @@ describe('useFileSync version conflict retry', () => {
     expect(commandIds[0]).not.toBe(commandIds[1]);
   });
 
-  it('VERSION_BASE_REQUIRED 는 재시도하지 않고 즉시 실패한다', async () => {
-    let sendCallCount = 0;
-    const sendRequest = mock(async () => {
-      sendCallCount += 1;
-      throw new RpcClientError(40904, 'VERSION_BASE_REQUIRED', {
-        path: 'baseRevision',
-      });
-    });
-
-    const executor = createPerFileMutationExecutor({
-      sendRequest,
-      buildCommonParams: (params) => ({
-        ...params,
-        baseVersion: 'rev:doc-1:1:rev-1',
-        originId: 'client-1',
-        commandId: 'cmd-base-required',
-      }),
-      applyResultVersion: (result) => result as { success: boolean; newVersion: string },
-    });
-
-    await expect(executor.enqueueMutation({
-      method: 'node.update',
-      filePath: 'a.tsx',
-      buildParams: () => ({ filePath: 'a.tsx', nodeId: 'n1', props: { id: 'n2' } }),
-    })).rejects.toMatchObject({
-      code: 40904,
-      message: 'VERSION_BASE_REQUIRED',
-    });
-
-    expect(sendCallCount).toBe(1);
-  });
-
   it('40901이 2회 연속이면 실패를 전파한다', async () => {
     let sendCallCount = 0;
     const sendRequest = mock(async () => {

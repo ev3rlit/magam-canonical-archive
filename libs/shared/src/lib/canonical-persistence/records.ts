@@ -18,38 +18,6 @@ type CanonicalObjectRecord = SharedCanonicalObjectRecord;
 export type ObjectRelationType = string;
 export type CanvasNodeKind = 'native' | 'plugin' | 'binding-proxy';
 export type CanvasBindingKind = 'object' | 'query' | 'relation-set' | 'field-map';
-export type CanonicalQueryInclude =
-  | 'objects'
-  | 'relations'
-  | 'canvasNodes'
-  | 'bindings'
-  | 'documentRevision';
-
-export interface CanonicalQueryFilters {
-  semanticRole?: string[];
-  primaryContentKind?: Array<string | null>;
-  hasCapability?: string[];
-  alias?: string[];
-}
-
-export interface CanonicalQueryBounds {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-}
-
-export interface FilteredObjectQueryInput {
-  workspaceId: string;
-  filters?: CanonicalQueryFilters;
-  limit?: number;
-  cursor?: string;
-}
-
-export interface FilteredObjectQueryResult {
-  objects: CanonicalObjectRecord[];
-  cursor?: string;
-}
 
 export interface ObjectRelationRecord {
   id: string;

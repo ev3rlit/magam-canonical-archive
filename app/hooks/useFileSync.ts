@@ -332,16 +332,14 @@ export function useFileSync(
             if (versionFilePath) {
                 useGraphStore.getState().setSourceVersionForFile(versionFilePath, typed.newVersion);
             } else {
-                useGraphStore.getState().setSourceVersion(resolvedVersion);
+                useGraphStore.getState().setSourceVersion(typed.newVersion);
             }
         }
         if (typed?.commandId) {
             rememberOwnCommand(recentOwnCommandsRef.current, typed.commandId, Date.now());
             useGraphStore.getState().setLastAppliedCommandId(typed.commandId);
         }
-        return resolvedVersion && !typed.newVersion
-            ? { ...typed, newVersion: resolvedVersion }
-            : typed;
+        return typed;
     }, []);
 
     const resolveMutationTarget = useCallback((
