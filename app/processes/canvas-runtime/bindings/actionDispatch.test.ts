@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, mock } from 'bun:test';
+import { createPaneActionRoutingContext } from '@/components/editor/workspaceEditUtils';
 import { createCanvasActionDispatchBinding } from './actionDispatch';
 
 describe('actionDispatch runtime contribution intents', () => {
@@ -53,5 +54,51 @@ describe('actionDispatch runtime contribution intents', () => {
     });
 
     expect(appliedActions).toEqual(['fit-view']);
+  });
+
+  it('routes canvas-toolbar create intents with compatibility file context', async () => {
+    const executeMutationDescriptor = mock(async () => ({}));
+    const binding = createCanvasActionDispatchBinding({
+      getRuntime: () => ({
+        nodes: [],
+        edges: [],
+        currentCanvasId: 'canvas-bridge',
+        currentCompatibilityFilePath: 'examples/bridge.tsx',
+        canvasVersions: {
+          'canvas-bridge': 'sha256:v1',
+        },
+        currentFile: 'examples/bridge.tsx',
+        sourceVersions: { 'examples/bridge.tsx': 'sha256:v1' },
+        selectedNodeIds: [],
+      }),
+      applyRuntimeAction: () => {},
+      executeMutationDescriptor,
+      commitHistoryEffect: () => {},
+      registerPendingActionRouting: () => {},
+      clearPendingActionRouting: () => {},
+    });
+
+    await expect(binding.dispatchActionRoutingIntentOrThrow({
+      surface: 'canvas-toolbar',
+      intent: 'create-node',
+      resolvedContext: createPaneActionRoutingContext({
+        currentCanvasId: 'canvas-bridge',
+        currentFile: 'examples/bridge.tsx',
+        selectedNodeIds: [],
+      }),
+      uiPayload: {
+        nodeType: 'shape',
+        placement: { mode: 'canvas-absolute', x: 320, y: 240 },
+      },
+      trigger: { source: 'click' },
+    })).resolves.toBeUndefined();
+
+    expect(executeMutationDescriptor).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'canonical-mutation',
+      actionId: 'canvas.node.create',
+      payload: expect.objectContaining({
+        filePath: 'examples/bridge.tsx',
+      }),
+    }));
   });
 });

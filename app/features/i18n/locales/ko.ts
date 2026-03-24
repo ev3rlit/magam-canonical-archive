@@ -189,7 +189,7 @@ export const ko = {
       panModeTitle: '이동 모드 (H)',
       createModeTitle: (label: string) => `생성 모드: ${label}`,
       openCreateModesTitle: '생성 모드 열기',
-      createOnPaneClick: '캔버스 클릭으로 생성',
+      createOnPaneClick: '화면 중앙에 생성',
       createModeOff: '생성 모드 끄기',
       washiPresetCatalogTitle: '와시 프리셋 카탈로그',
       washiPresetCatalogDisabledTitle: '와시 테이프 노드를 선택해야 프리셋 카탈로그를 열 수 있습니다.',

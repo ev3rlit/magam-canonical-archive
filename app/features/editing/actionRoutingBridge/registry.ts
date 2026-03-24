@@ -1281,9 +1281,9 @@ const createEntry: ActionRoutingRegistryEntry<CreateNormalized> = {
       return createResult;
     }
     const target = resolveTarget(context, envelope);
-    const targetFile = envelope.targetRef?.filePath
+    const targetFile = envelope.targetRef?.compatibilityFilePath
       ?? target?.filePath
-      ?? context.currentFile;
+      ?? context.currentCompatibilityFilePath;
     if (!targetFile) {
       return fail('INTENT_PAYLOAD_INVALID', 'target file is required');
     }

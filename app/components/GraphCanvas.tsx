@@ -197,6 +197,28 @@ export function buildGraphCanvasCreateIntent(
   };
 }
 
+export function resolveToolbarCreateScreenPosition(input: {
+  canvasElement: HTMLElement | null;
+  viewportSize?: { width: number; height: number };
+}) {
+  const rect = input.canvasElement?.getBoundingClientRect();
+  if (rect && rect.width > 0 && rect.height > 0) {
+    return {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    };
+  }
+
+  const width = input.viewportSize?.width
+    ?? (typeof window !== 'undefined' ? window.innerWidth : 0);
+  const height = input.viewportSize?.height
+    ?? (typeof window !== 'undefined' ? window.innerHeight : 0);
+  return {
+    x: width / 2,
+    y: height / 2,
+  };
+}
+
 type GraphCanvasActiveCreateMode = Exclude<GraphCanvasCreateMode, null>;
 
 type DragOriginState = {
@@ -924,6 +946,7 @@ function GraphCanvasContent({
   const selectionFloatingMenuOverlayIdRef = useRef<string | null>(null);
   const selectionShellGestureRef = useRef<SelectionShellGestureSession | null>(null);
   const createGestureRef = useRef<GraphCanvasCreateGesture | null>(null);
+  const lastHandledPaneCreateClickTsRef = useRef<number | null>(null);
   const preserveSelectionOnNextPaneDismissRef = useRef<string[] | null>(null);
   const suppressNextPaneClickRef = useRef(false);
   const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -1401,6 +1424,10 @@ function GraphCanvasContent({
 
   const onPaneClick = useCallback(
     async (event: React.MouseEvent) => {
+      if (lastHandledPaneCreateClickTsRef.current === event.timeStamp) {
+        return;
+      }
+
       if (suppressNextPaneClickRef.current) {
         suppressNextPaneClickRef.current = false;
         return;
@@ -1420,6 +1447,7 @@ function GraphCanvasContent({
         return;
       }
 
+      lastHandledPaneCreateClickTsRef.current = event.timeStamp;
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       try {
         await runPendingUiAction({
@@ -1449,6 +1477,61 @@ function GraphCanvasContent({
       setEntrypointCreateMode,
     ],
   );
+
+  const handleToolbarCreate = useCallback(
+    async (mode: GraphCanvasActiveCreateMode) => {
+      if (!onCreateNode || hasPendingUiActions) {
+        return;
+      }
+
+      const screenPosition = resolveToolbarCreateScreenPosition({
+        canvasElement: canvasWrapperRef.current,
+      });
+      const position = screenToFlowPosition(screenPosition);
+
+      await runPendingUiAction({
+        actionType: 'node.create',
+        targetIds: [mode],
+        execute: () => Promise.resolve(onCreateNode(buildGraphCanvasCreateIntent({
+          surfaceId: 'toolbar',
+          surface: 'canvas-toolbar',
+          trigger: { source: 'click' },
+          nodeType: mode === 'mindmap' ? 'shape' : mode,
+          placement: mode === 'mindmap'
+            ? { mode: 'mindmap-root', x: position.x, y: position.y }
+            : { mode: 'canvas-absolute', x: position.x, y: position.y },
+        }))),
+      });
+
+      setEntrypointCreateMode(null);
+    },
+    [
+      hasPendingUiActions,
+      onCreateNode,
+      runPendingUiAction,
+      screenToFlowPosition,
+      setEntrypointCreateMode,
+    ],
+  );
+
+  const onCanvasClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      suppressNextPaneClickRef.current
+      || !createMode
+      || !onCreateNode
+      || !shouldHandleRuntimePaneCreate({ interactionMode, createMode, hasPendingUiActions })
+      || !(event.target instanceof Element)
+      || !event.target.closest('.react-flow__pane')
+    ) {
+      return;
+    }
+
+    if (lastHandledPaneCreateClickTsRef.current === event.timeStamp) {
+      return;
+    }
+
+    void onPaneClick(event);
+  }, [createMode, hasPendingUiActions, interactionMode, onCreateNode, onPaneClick]);
 
 
   // Reset layout state when new graph is loaded
@@ -2009,8 +2092,8 @@ function GraphCanvasContent({
     selectionFloatingMenuSlot: canvasRuntime.slots.selectionFloatingMenu,
     interactionMode,
     setEntrypointInteractionMode,
-    createMode,
-    setEntrypointCreateMode,
+    createMode: null,
+    onToolbarCreateNode: handleToolbarCreate,
     handleZoomIn,
     handleZoomOut,
     handleFitView,
@@ -2019,12 +2102,11 @@ function GraphCanvasContent({
     selectedWashiNodeIds: [],
     onSelectWashiPreset: () => {},
   }), [
-    createMode,
     handleFitView,
+    handleToolbarCreate,
     handleZoomIn,
     handleZoomOut,
     interactionMode,
-    setEntrypointCreateMode,
     setEntrypointInteractionMode,
   ]);
 
@@ -2234,6 +2316,7 @@ function GraphCanvasContent({
         ref={canvasWrapperRef}
         className="relative w-full h-full min-h-[500px] flex-1 bg-background transition-opacity duration-300"
         onMouseDownCapture={onCanvasMouseDownCapture}
+        onClickCapture={onCanvasClickCapture}
         style={{
           opacity: isGraphVisible ? 1 : 0,
           fontFamily: canvasResolvedFontFamily,

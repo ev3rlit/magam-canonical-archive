@@ -189,7 +189,7 @@ export const en = {
       panModeTitle: 'Pan Mode (H)',
       createModeTitle: (label: string) => `Create Mode: ${label}`,
       openCreateModesTitle: 'Open Create Modes',
-      createOnPaneClick: 'Create on pane click',
+      createOnPaneClick: 'Create at viewport center',
       createModeOff: 'Create mode off',
       washiPresetCatalogTitle: 'Washi Preset Catalog',
       washiPresetCatalogDisabledTitle: 'Select a Washi Tape node to open preset catalog',

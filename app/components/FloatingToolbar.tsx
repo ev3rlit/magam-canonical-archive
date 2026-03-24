@@ -18,11 +18,10 @@ import { canvasRuntime } from '@/processes/canvas-runtime/createCanvasRuntime';
 import {
   closeToolbarSurface,
   resolveToolbarPresenterState,
-  selectToolbarCreateMode,
+  selectToolbarCreateOption,
   selectToolbarInteractionMode,
   selectToolbarPreset,
   shouldCloseToolbarSurface,
-  syncToolbarCreateMode,
   syncToolbarInteractionMode,
   toggleToolbarCreateSurface,
   toggleToolbarPresetSurface,
@@ -46,7 +45,7 @@ interface FloatingToolbarProps {
   interactionMode: InteractionMode;
   onInteractionModeChange: (mode: InteractionMode) => void;
   createMode: CanvasEntrypointCreateMode;
-  onCreateModeChange: (mode: CanvasEntrypointCreateMode) => void;
+  onCreateOptionSelect: (mode: Exclude<CanvasEntrypointCreateMode, null>) => void;
   washiPresets?: WashiPresetOption[];
   washiPresetEnabled?: boolean;
   activeWashiPresetId?: string | null;
@@ -59,7 +58,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   interactionMode,
   onInteractionModeChange,
   createMode,
-  onCreateModeChange,
+  onCreateOptionSelect,
   washiPresets = [],
   washiPresetEnabled = false,
   activeWashiPresetId = null,
@@ -70,7 +69,6 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
   const copy = getCanvasUiCopy();
   const entrypointRuntime = useGraphStore((store) => store.entrypointRuntime);
   const setEntrypointInteractionMode = useGraphStore((store) => store.setEntrypointInteractionMode);
-  const setEntrypointCreateMode = useGraphStore((store) => store.setEntrypointCreateMode);
   const registerEntrypointAnchor = useGraphStore((store) => store.registerEntrypointAnchor);
   const clearEntrypointAnchor = useGraphStore((store) => store.clearEntrypointAnchor);
   const openEntrypointSurface = useGraphStore((store) => store.openEntrypointSurface);
@@ -85,13 +83,11 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
     closeEntrypointSurface,
   };
   const {
-    activeCreateLabel,
     activeWashiPresetLabel,
     canOpenWashiPreset,
     hasPendingEntrypointActions,
     isCreateMenuOpen,
     isWashiPresetMenuOpen,
-    resolvedCreateMode,
     resolvedInteractionMode,
   } = resolveToolbarPresenterState({
     runtime: canvasRuntime,
@@ -116,14 +112,6 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
       setEntrypointInteractionMode,
     });
   }, [entrypointRuntime.activeTool.interactionMode, interactionMode, setEntrypointInteractionMode]);
-
-  useEffect(() => {
-    syncToolbarCreateMode({
-      runtimeCreateMode: entrypointRuntime.activeTool.createMode,
-      createMode,
-      setEntrypointCreateMode,
-    });
-  }, [createMode, entrypointRuntime.activeTool.createMode, setEntrypointCreateMode]);
 
   useEffect(() => {
     if (!isWashiPresetMenuOpen) {
@@ -209,7 +197,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
 
       <div className="relative" ref={createMenuRef}>
         <PrimitiveToolbarButton
-          active={isCreateMenuOpen || resolvedCreateMode !== null}
+          active={isCreateMenuOpen}
           disabled={hasPendingEntrypointActions}
           data-floating-toolbar-create-toggle
           onClick={() => toggleToolbarCreateSurface({
@@ -218,7 +206,7 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
             createMenuElement: createMenuRef.current,
             api: toolbarSurfaceApi,
           })}
-          title={activeCreateLabel ? copy.floatingToolbar.createModeTitle(activeCreateLabel) : copy.floatingToolbar.openCreateModesTitle}
+          title={copy.floatingToolbar.openCreateModesTitle}
         >
           <Plus className="w-4 h-4" />
         </PrimitiveToolbarButton>
@@ -232,13 +220,11 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
               {TOOLBAR_CREATE_OPTIONS.map((option) => (
                 <MenuItem
                   key={option.id}
-                  active={resolvedCreateMode === option.id}
                   className="justify-between gap-2"
                   onClick={() => {
-                    selectToolbarCreateMode({
+                    selectToolbarCreateOption({
                       mode: option.id,
-                      setEntrypointCreateMode,
-                      onCreateModeChange,
+                      onCreateOptionSelect,
                       api: toolbarSurfaceApi,
                     });
                   }}
@@ -247,23 +233,9 @@ export const FloatingToolbar: React.FC<FloatingToolbarProps> = ({
                     {option.icon}
                     {option.label}
                   </span>
-                  {resolvedCreateMode === option.id && <Check className="w-3.5 h-3.5 shrink-0" />}
                 </MenuItem>
               ))}
             </div>
-            <MenuItem
-              className="text-xs text-foreground/56"
-              onClick={() => {
-                selectToolbarCreateMode({
-                  mode: null,
-                  setEntrypointCreateMode,
-                  onCreateModeChange,
-                  api: toolbarSurfaceApi,
-                });
-              }}
-            >
-              {copy.floatingToolbar.createModeOff}
-            </MenuItem>
           </Menu>
         )}
       </div>

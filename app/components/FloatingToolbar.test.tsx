@@ -77,10 +77,7 @@ async function renderToolbar(environment: TestEnvironment) {
         interactionMode="pointer"
         onInteractionModeChange={() => {}}
         createMode={null}
-        onCreateModeChange={() => {}}
-        onZoomIn={() => {}}
-        onZoomOut={() => {}}
-        onFitView={() => {}}
+        onCreateOptionSelect={() => {}}
         washiPresets={[{ id: 'preset-1', label: 'Preset 1' }]}
         washiPresetEnabled
         activeWashiPresetId="preset-1"
@@ -123,7 +120,7 @@ describe('FloatingToolbar runtime-state integration', () => {
 
     await renderToolbar(environment);
 
-    expect(environment.dom.window.document.body.textContent).toContain('캔버스 클릭으로 생성');
+    expect(environment.dom.window.document.body.textContent).toContain('화면 중앙에 생성');
   });
 
   it('disables shared-surface toggles while pending actions exist', async () => {
@@ -158,9 +155,43 @@ describe('FloatingToolbar runtime-state integration', () => {
     expect(source).toContain('resolveToolbarPresenterState({');
     expect(source).toContain('toggleToolbarCreateSurface({');
     expect(source).toContain('toggleToolbarPresetSurface({');
-    expect(source).toContain('selectToolbarCreateMode({');
+    expect(source).toContain('selectToolbarCreateOption({');
     expect(source).toContain('selectToolbarPreset({');
     expect(source).not.toContain('createOpenSurfaceDescriptor({');
     expect(source).not.toContain('createEntrypointAnchor({');
+  });
+
+  it('selecting a create option invokes immediate toolbar creation', async () => {
+    const selected: string[] = [];
+
+    await act(async () => {
+      environment.root.render(
+        <FloatingToolbar
+          interactionMode="pointer"
+          onInteractionModeChange={() => {}}
+          createMode={null}
+          onCreateOptionSelect={(mode) => {
+            selected.push(mode);
+          }}
+          washiPresets={[]}
+        />,
+      );
+    });
+
+    const createToggle = environment.dom.window.document.querySelector('[data-floating-toolbar-create-toggle]') as HTMLButtonElement;
+    await act(async () => {
+      createToggle.click();
+    });
+
+    const markdownItem = Array.from(environment.dom.window.document.querySelectorAll('button'))
+      .find((element) => element.textContent?.includes('마크다운')) as HTMLButtonElement | undefined;
+
+    expect(markdownItem).toBeDefined();
+
+    await act(async () => {
+      markdownItem?.click();
+    });
+
+    expect(selected).toEqual(['markdown']);
   });
 });

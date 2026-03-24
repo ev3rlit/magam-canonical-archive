@@ -79,7 +79,7 @@ export interface GraphCanvasToolbarContributionInput extends GraphCanvasHostBind
   interactionMode: EntrypointInteractionMode;
   setEntrypointInteractionMode: (mode: EntrypointInteractionMode) => void;
   createMode: GraphCanvasCreateMode;
-  setEntrypointCreateMode: (mode: GraphCanvasCreateMode) => void;
+  onToolbarCreateNode: (mode: Exclude<GraphCanvasCreateMode, null>) => void;
   handleZoomIn: () => void;
   handleZoomOut: () => void;
   handleFitView: () => void;
@@ -410,7 +410,7 @@ export function createGraphCanvasToolbarContribution(input: GraphCanvasToolbarCo
       interactionMode: input.interactionMode,
       onInteractionModeChange: input.setEntrypointInteractionMode,
       createMode: input.createMode,
-      onCreateModeChange: input.setEntrypointCreateMode,
+      onCreateOptionSelect: input.onToolbarCreateNode,
       washiPresets: input.washiPresets,
       washiPresetEnabled: input.selectedWashiNodeIds.length > 0,
       activeWashiPresetId: input.activeWashiPresetId,

@@ -18,6 +18,7 @@ import {
   buildGraphCanvasCreateIntent,
   resolveCreateCompleteBodyEditSession,
   resolveCreateGestureInitialProps,
+  resolveToolbarCreateScreenPosition,
   buildGraphCanvasRenameIntent,
   resolveCanvasDismissal,
   resolveGroupFocusEntry,
@@ -751,6 +752,24 @@ describe('GraphCanvas create mode helpers', () => {
       createMode: 'shape',
       hasPendingUiActions: false,
     })).toBe(true);
+  });
+
+  it('toolbar create는 canvas viewport 중심 좌표를 기본값으로 사용한다', () => {
+    const canvasElement = {
+      getBoundingClientRect: () => ({
+        left: 100,
+        top: 60,
+        width: 800,
+        height: 600,
+      }),
+    } as unknown as HTMLElement;
+
+    expect(resolveToolbarCreateScreenPosition({
+      canvasElement,
+    })).toEqual({
+      x: 500,
+      y: 360,
+    });
   });
 });
 

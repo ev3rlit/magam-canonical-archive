@@ -235,14 +235,12 @@ export function selectToolbarInteractionMode(input: {
   input.onInteractionModeChange(input.mode);
 }
 
-export function selectToolbarCreateMode(input: {
-  mode: GraphCanvasCreateMode;
-  setEntrypointCreateMode: (mode: GraphCanvasCreateMode) => void;
-  onCreateModeChange: (mode: GraphCanvasCreateMode) => void;
+export function selectToolbarCreateOption(input: {
+  mode: Exclude<GraphCanvasCreateMode, null>;
+  onCreateOptionSelect: (mode: Exclude<GraphCanvasCreateMode, null>) => void;
   api: Pick<ToolbarPresenterSurfaceApi, 'clearEntrypointAnchor' | 'closeEntrypointSurface'>;
 }) {
-  input.setEntrypointCreateMode(input.mode);
-  input.onCreateModeChange(input.mode);
+  input.onCreateOptionSelect(input.mode);
   closeToolbarSurface({
     anchorId: TOOLBAR_CREATE_ANCHOR_ID,
     api: input.api,
