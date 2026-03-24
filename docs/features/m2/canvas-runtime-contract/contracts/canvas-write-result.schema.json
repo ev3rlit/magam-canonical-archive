@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://magam.dev/contracts/canvas-runtime-contract/canvas-write-result.v1.schema.json",
+  "title": "MutationResultEnvelopeV1",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "data"],
+      "properties": {
+        "ok": { "const": true },
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mutationId",
+            "canvasRevisionBefore",
+            "canvasRevisionAfter",
+            "changed",
+            "warnings",
+            "dryRun"
+          ],
+          "properties": {
+            "mutationId": { "type": "string", "minLength": 1 },
+            "canvasRevisionBefore": { "type": ["integer", "null"] },
+            "canvasRevisionAfter": { "type": ["integer", "null"] },
+            "changed": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["objects", "nodes", "edges", "bindings", "pluginInstances"],
+              "properties": {
+                "objects": { "type": "array", "items": { "type": "string" } },
+                "nodes": { "type": "array", "items": { "type": "string" } },
+                "edges": { "type": "array", "items": { "type": "string" } },
+                "bindings": { "type": "array", "items": { "type": "string" } },
+                "pluginInstances": { "type": "array", "items": { "type": "string" } }
+              }
+            },
+            "warnings": { "type": "array", "items": { "type": "string" } },
+            "dryRun": { "type": "boolean" }
+          }
+        },
+        "meta": { "type": "object" }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "error"],
+      "properties": {
+        "ok": { "const": false },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "retryable"],
+          "properties": {
+            "code": { "type": "string", "minLength": 1 },
+            "message": { "type": "string", "minLength": 1 },
+            "details": { "type": "object" },
+            "retryable": { "type": "boolean" }
+          }
+        },
+        "meta": { "type": "object" }
+      }
+    }
+  ]
+}

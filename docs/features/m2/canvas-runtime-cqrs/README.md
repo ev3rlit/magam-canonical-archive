@@ -2,7 +2,7 @@
 
 작성일: 2026-03-24  
 상태: Draft  
-범위: `database-first-canvas-platform`  
+범위: `m2`  
 목표: `GraphCanvas`를 UI renderer로 축소하고, canvas runtime을 `Read / Command / Write`로 분리해 framework-neutral editor architecture를 확정한다.
 
 ## 1. 배경

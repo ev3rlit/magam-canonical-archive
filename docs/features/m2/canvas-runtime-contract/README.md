@@ -2,7 +2,7 @@
 
 작성일: 2026-03-24  
 상태: Draft  
-범위: `database-first-canvas-platform`  
+범위: `m2`  
 목표: UI와 CLI가 공통으로 소비할 `canvas runtime`의 read model, command vocabulary, write result contract를 먼저 고정한다.
 
 ## 1. 개요
@@ -188,13 +188,23 @@ CLI와 직접 겹치는 핵심은 다음이다.
 
 ### 7.1 Contract Spec 작성
 
-별도 plan/tasks 문서에서 아래를 구체화한다.
+이번 feature 폴더 안에서 다음 계약 파일을 기준 입력으로 고정한다.
 
-- read model shape
-- command vocabulary
-- mutation result envelope
-- dry-run envelope
-- conflict envelope
+- `contracts/canvas-hierarchy.contract.ts`
+- `contracts/canvas-hierarchy.schema.json`
+- `contracts/canvas-command-vocabulary.contract.ts`
+- `contracts/canvas-operator-catalog.contract.ts`
+- `contracts/canvas-mutation-batch.contract.ts`
+- `contracts/canvas-mutation-batch.schema.json`
+- `contracts/canvas-write-result.contract.ts`
+- `contracts/canvas-write-result.schema.json`
+- `contracts/canvas-conflict-dry-run.contract.ts`
+
+정리 원칙:
+
+- `ai-first-canonical-cli/contracts/*`에서 runtime 공용 계약이 되는 항목만 가져온다.
+- CLI noun surface처럼 transport-specific한 계약은 그대로 복사하지 않는다.
+- `canvas-runtime-cqrs`의 구조 문서에서 예시로만 존재하던 command/read/write 경계는 여기서 타입 계약으로 승격한다.
 
 ### 7.2 CQRS 문서와 정렬
 
@@ -221,5 +231,5 @@ CLI와 직접 겹치는 핵심은 다음이다.
 ## 9. 관련 문서
 
 - `../canvas-runtime-cqrs/README.md`
-- `../ai-cli-headless-surface/README.md`
-- `../../../m2/ai-first-canonical-cli/README.md`
+- `../../database-first-canvas-platform/ai-cli-headless-surface/README.md`
+- `../ai-first-canonical-cli/README.md`
