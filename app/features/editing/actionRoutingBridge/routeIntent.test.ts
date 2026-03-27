@@ -36,7 +36,7 @@ describe('action routing bridge routeIntent', () => {
     if (!result.ok) return;
     expect(result.value.steps).toHaveLength(2);
     expect(result.value.steps[0]?.kind).toBe('runtime-only-action');
-    expect(result.value.steps[1]?.kind).toBe('canonical-mutation');
+    expect(result.value.steps[1]?.kind).toBe('runtime-mutation');
     expect(result.value.rollbackSteps).toHaveLength(1);
   });
 
@@ -57,7 +57,7 @@ describe('action routing bridge routeIntent', () => {
     if (!result.ok) return;
     expect(result.value.steps).toHaveLength(1);
     expect(result.value.steps[0]).toMatchObject({
-      kind: 'canonical-mutation',
+      kind: 'compatibility-mutation',
       actionId: 'node.update',
     });
   });
@@ -71,8 +71,7 @@ describe('action routing bridge routeIntent', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.steps[0]).toMatchObject({
-      kind: 'canonical-mutation',
-      actionId: 'node.create',
+      kind: 'runtime-mutation',
     });
   });
 });

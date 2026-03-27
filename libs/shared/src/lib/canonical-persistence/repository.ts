@@ -1,4 +1,4 @@
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { CanonicalObjectRecord } from '../canonical-object-contract';
 import { cloneContentBlocks, isSemanticRole, readContentBlocks } from '../canonical-object-contract';
 import type {
@@ -1361,5 +1361,35 @@ export class CanonicalPersistenceRepository {
     });
 
     return okResult(record);
+  }
+
+  async listCanvasRevisions(canvasId: string): Promise<CanvasRevisionRecord[]> {
+    const rows = await this.db.query.canvasRevisions.findMany({
+      where: eq(canvasRevisions.canvasId, canvasId),
+      orderBy: [desc(canvasRevisions.revisionNo)],
+    });
+
+    return rows.map((row) => ({
+      id: row.id,
+      canvasId: row.canvasId,
+      revisionNo: row.revisionNo,
+      authorKind: row.authorKind,
+      authorId: row.authorId,
+      mutationBatch: row.mutationBatch,
+      snapshotRef: row.snapshotRef ?? null,
+      createdAt: row.createdAt,
+    }));
+  }
+
+  async getLatestCanvasRevision(canvasId: string): Promise<number> {
+    const latest = await this.db.query.canvasRevisions.findFirst({
+      where: eq(canvasRevisions.canvasId, canvasId),
+      columns: {
+        revisionNo: true,
+      },
+      orderBy: [desc(canvasRevisions.revisionNo)],
+    });
+
+    return latest?.revisionNo ?? 0;
   }
 }

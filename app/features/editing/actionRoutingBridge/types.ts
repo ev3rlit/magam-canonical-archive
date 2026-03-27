@@ -2,6 +2,7 @@ import type { Edge, Node } from 'reactflow';
 import type { CreatePayload } from '@/features/editing/commands';
 import type { EditMeta } from '@/features/editing/editability';
 import type { UpdateNodeCommandType } from '@/hooks/useFileSync.shared';
+import type { CanvasRuntimeCommandV1 } from '../../../../libs/shared/src/lib/canvas-runtime';
 
 export type ActionRoutingSurfaceId =
   | 'toolbar'
@@ -70,8 +71,8 @@ export interface ActionRoutingResolvedTarget {
 }
 
 export type DispatchKind =
-  | 'canonical-mutation'
-  | 'canonical-query'
+  | 'runtime-mutation'
+  | 'compatibility-mutation'
   | 'runtime-only-action';
 
 export type RuntimeActionId =
@@ -133,7 +134,7 @@ export interface ActionRoutingPendingRecord {
 
 export interface ActionRoutingOptimisticMeta extends ActionRoutingPendingRecord {}
 
-export type MutationActionId =
+export type CompatibilityMutationActionId =
   | 'canvas.node.create'
   | 'node.update'
   | 'node.create'
@@ -142,7 +143,7 @@ export type MutationActionId =
   | 'node.group-membership.update'
   | 'node.z-order.update';
 
-export interface MutationActionPayloadMap {
+export interface CompatibilityMutationActionPayloadMap {
   'canvas.node.create': {
     canvasId?: string;
     filePath: string;
@@ -202,6 +203,17 @@ export interface MutationActionPayloadMap {
   };
 }
 
+export interface RuntimeMutationDescriptor extends DispatchDescriptorBase {
+  kind: 'runtime-mutation';
+  payload: {
+    canvasId?: string;
+    filePath: string;
+    compatibilityFilePath?: string | null;
+    dryRun?: boolean;
+    commands: CanvasRuntimeCommandV1[];
+  };
+}
+
 interface DispatchDescriptorBase {
   kind: DispatchKind;
   historyEffect?: ActionRoutingHistoryEffect;
@@ -217,25 +229,22 @@ export type RuntimeActionDescriptor<TActionId extends RuntimeActionId = RuntimeA
     }
     : never;
 
-export type MutationDispatchDescriptor<TActionId extends MutationActionId = MutationActionId> =
-  TActionId extends MutationActionId
+export type CompatibilityMutationDispatchDescriptor<TActionId extends CompatibilityMutationActionId = CompatibilityMutationActionId> =
+  TActionId extends CompatibilityMutationActionId
     ? DispatchDescriptorBase & {
-      kind: 'canonical-mutation';
+      kind: 'compatibility-mutation';
       actionId: TActionId;
-      payload: MutationActionPayloadMap[TActionId];
+      payload: CompatibilityMutationActionPayloadMap[TActionId];
     }
     : never;
 
-export interface QueryDispatchDescriptor extends DispatchDescriptorBase {
-  kind: 'canonical-query';
-  actionId: string;
-  payload: Record<string, unknown>;
-}
+export type MutationDispatchDescriptor =
+  | RuntimeMutationDescriptor
+  | CompatibilityMutationDispatchDescriptor;
 
 export type DispatchDescriptor =
   | RuntimeActionDescriptor
-  | MutationDispatchDescriptor
-  | QueryDispatchDescriptor;
+  | MutationDispatchDescriptor;
 
 export interface OrderedDispatchPlan {
   intentId: string;

@@ -138,6 +138,7 @@ export function resolveNodeActionRoutingContext(
   currentFileOrSelectedNodeIds: string | null | string[],
   maybeSelectedNodeIds?: string[],
 ): ActionRoutingResolvedContext {
+  // The workspace adapter only supplies local selection and file context around the shared runtime command boundary.
   const selectedNodeIds = Array.isArray(currentFileOrSelectedNodeIds)
     ? currentFileOrSelectedNodeIds
     : (maybeSelectedNodeIds ?? []);

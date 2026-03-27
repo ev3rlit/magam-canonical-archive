@@ -125,8 +125,7 @@ describe('action routing bridge registry', () => {
     expect(plan?.ok).toBe(true);
     if (!plan || !plan.ok) return;
     expect(plan.value.steps[0]).toMatchObject({
-      kind: 'canonical-mutation',
-      actionId: 'canvas.node.create',
+      kind: 'runtime-mutation',
       payload: {
         canvasId: 'doc-1',
       },
@@ -169,8 +168,7 @@ describe('action routing bridge registry', () => {
     expect(plan?.ok).toBe(true);
     if (!plan || !plan.ok) return;
     expect(plan.value.steps[0]).toMatchObject({
-      kind: 'canonical-mutation',
-      actionId: 'canvas.node.create',
+      kind: 'runtime-mutation',
     });
   });
 
@@ -222,18 +220,15 @@ describe('action routing bridge registry', () => {
 
     expect(plan?.ok).toBe(true);
     if (!plan || !plan.ok) return;
-    expect(plan.value.steps[0]).toMatchObject({
-      kind: 'canonical-mutation',
-      actionId: 'canvas.node.create',
-      payload: {
-        canvasId: 'doc-1',
-        node: {
-          placement: {
-            mode: 'mindmap-root',
-          },
-        },
-      },
-    });
+    expect(plan.value.steps[0]?.kind).toBe('runtime-mutation');
+    const step = plan.value.steps[0];
+    if (!step || step.kind !== 'runtime-mutation') return;
+    expect(step.payload.canvasId).toBe('doc-1');
+    const createCommand = step.payload.commands[0];
+    expect(createCommand?.name).toBe('canvas.node.create');
+    if (!createCommand || createCommand.name !== 'canvas.node.create') return;
+    expect(createCommand.placement.mode).toBe('mindmap-root');
+    expect(createCommand.placement.mindmapId).toBeTruthy();
   });
 
   it('normalizes content updates against canonical content carriers', () => {
@@ -280,8 +275,8 @@ describe('action routing bridge registry', () => {
         surfaceId: 'node-context-menu',
         intentId: 'node.delete',
         selectionRef: {
-          currentFile: 'examples/bridge.tsx',
           selectedNodeIds: ['shape-1'],
+          currentCanvasId: 'canvas-bridge',
         },
         targetRef: {
           renderedNodeId: 'shape-1',
@@ -313,8 +308,8 @@ describe('action routing bridge registry', () => {
         surfaceId: 'node-context-menu',
         intentId: 'node.duplicate',
         selectionRef: {
-          currentFile: 'examples/bridge.tsx',
           selectedNodeIds: ['shape-1'],
+          currentCanvasId: 'canvas-bridge',
         },
         targetRef: {
           renderedNodeId: 'shape-1',
@@ -334,8 +329,8 @@ describe('action routing bridge registry', () => {
         surfaceId: 'node-context-menu',
         intentId: 'node.duplicate',
         selectionRef: {
-          currentFile: 'examples/bridge.tsx',
           selectedNodeIds: ['shape-1'],
+          currentCanvasId: 'canvas-bridge',
         },
         targetRef: {
           renderedNodeId: 'shape-1',
@@ -352,8 +347,7 @@ describe('action routing bridge registry', () => {
     expect(plan?.ok).toBe(true);
     if (!plan || !plan.ok) return;
     expect(plan.value.steps[0]).toMatchObject({
-      kind: 'canonical-mutation',
-      actionId: 'node.create',
+      kind: 'runtime-mutation',
     });
   });
 
@@ -368,8 +362,8 @@ describe('action routing bridge registry', () => {
         surfaceId: 'node-context-menu',
         intentId: 'node.group.select',
         selectionRef: {
-          currentFile: 'examples/bridge.tsx',
           selectedNodeIds: ['mind-1'],
+          currentCanvasId: 'canvas-bridge',
         },
         targetRef: {
           renderedNodeId: 'mind-1',
@@ -389,8 +383,8 @@ describe('action routing bridge registry', () => {
         surfaceId: 'node-context-menu',
         intentId: 'node.group.select',
         selectionRef: {
-          currentFile: 'examples/bridge.tsx',
           selectedNodeIds: ['mind-1'],
+          currentCanvasId: 'canvas-bridge',
         },
         targetRef: {
           renderedNodeId: 'mind-1',
@@ -465,7 +459,7 @@ describe('action routing bridge registry', () => {
       },
     });
     expect(plan.value.steps[1]).toMatchObject({
-      kind: 'canonical-mutation',
+      kind: 'compatibility-mutation',
       actionId: 'node.group-membership.update',
       payload: {
         nodeId: 'shape-a',
@@ -522,7 +516,7 @@ describe('action routing bridge registry', () => {
     expect(plan?.ok).toBe(true);
     if (!plan || !plan.ok) return;
     expect(plan.value.steps[1]).toMatchObject({
-      kind: 'canonical-mutation',
+      kind: 'compatibility-mutation',
       actionId: 'node.group-membership.update',
       payload: {
         nodeId: 'shape-a',
@@ -580,8 +574,8 @@ describe('action routing bridge registry', () => {
         surfaceId: 'node-context-menu',
         intentId: 'node.lock.toggle',
         selectionRef: {
-          currentFile: 'examples/bridge.tsx',
           selectedNodeIds: ['locked-1'],
+          currentCanvasId: 'canvas-bridge',
         },
         targetRef: {
           renderedNodeId: 'locked-1',

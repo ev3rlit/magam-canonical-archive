@@ -862,8 +862,8 @@ describe('RPC editing methods', () => {
     const routed = routeIntent({
       envelope: createRenameIntentEnvelope({
         selectionRef: {
-          currentFile: filePath,
           selectedNodeIds: ['n1'],
+          currentCanvasId: 'canvas-bridge',
         },
         targetRef: {
           renderedNodeId: 'n1',
@@ -885,7 +885,9 @@ describe('RPC editing methods', () => {
 
     expect(routed.ok).toBe(true);
     if (!routed.ok) return;
-    const step = routed.value.steps[0] as MutationDispatchDescriptor<'node.update'>;
+    const step = routed.value.steps[0] as MutationDispatchDescriptor;
+    expect(step.kind).toBe('compatibility-mutation');
+    if (step.kind !== 'compatibility-mutation') return;
     const result = await methods[step.actionId]({
       ...step.payload,
       baseVersion: sha(original),
@@ -908,8 +910,8 @@ describe('RPC editing methods', () => {
     const routed = routeIntent({
       envelope: createPaneCreateIntentEnvelope({
         selectionRef: {
-          currentFile: filePath,
           selectedNodeIds: [],
+          currentCanvasId: 'doc-bridge-create',
         },
       }),
       context: makeActionRoutingContext({
@@ -922,9 +924,17 @@ describe('RPC editing methods', () => {
 
     expect(routed.ok).toBe(true);
     if (!routed.ok) return;
-    const step = routed.value.steps[0] as MutationDispatchDescriptor<'canvas.node.create'>;
-    const result = await methods[step.actionId]({
-      ...step.payload,
+    const step = routed.value.steps[0] as MutationDispatchDescriptor;
+    expect(step.kind).toBe('runtime-mutation');
+    if (step.kind !== 'runtime-mutation') return;
+    const result = await methods['canvas.runtime.mutate']({
+      canvasId: step.payload.canvasId,
+      filePath: step.payload.filePath,
+      batch: {
+        workspaceId: 'workspace',
+        canvasId: step.payload.canvasId,
+        commands: step.payload.commands,
+      },
       baseVersion: sha(original),
       originId: 'client-bridge',
       commandId: 'cmd-bridge-create',

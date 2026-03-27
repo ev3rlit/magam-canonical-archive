@@ -1,4 +1,5 @@
 import type { EditCompletionEvent } from '@/store/graph';
+import type { MutationResultEnvelopeV1 } from '../../libs/shared/src/lib/canvas-runtime';
 
 const OWN_COMMAND_TTL_MS = 60_000;
 
@@ -7,6 +8,7 @@ export const VERSION_CONFLICT_METRIC_WINDOW_MS = 10 * 60 * 1000;
 export const VERSION_CONFLICT_RATE_THRESHOLD = 0.02;
 
 export type MutationMethod =
+  | 'canvas.runtime.mutate'
   | 'canvas.node.create'
   | 'object.body.block.insert'
   | 'node.update'
@@ -28,6 +30,7 @@ export interface RpcMutationResult {
   newVersion?: string;
   commandId?: string;
   canvasId?: string;
+  runtimeResult?: MutationResultEnvelopeV1;
 }
 
 export interface UpdateNodeMutationOptions {

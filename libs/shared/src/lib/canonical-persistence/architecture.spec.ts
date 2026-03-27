@@ -47,4 +47,20 @@ describe('canonical-persistence architecture', () => {
 
     expect(violations).toEqual([]);
   });
+
+  it('does not depend on canvas-runtime implementation modules', async () => {
+    const files = await listTypeScriptFiles(FEATURE_DIR);
+    const implementationFiles = files.filter((file) => !file.endsWith('.spec.ts'));
+
+    const violations: string[] = [];
+
+    for (const file of implementationFiles) {
+      const source = await fs.readFile(file, 'utf8');
+      if (/from\s+['"][^'"]*canvas-runtime\//.test(source)) {
+        violations.push(path.relative(process.cwd(), file));
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
 });

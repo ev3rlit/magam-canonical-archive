@@ -9,8 +9,9 @@ describe('actionDispatch runtime contribution intents', () => {
       getRuntime: () => ({
         nodes: [],
         edges: [],
-        currentFile: 'examples/bridge.tsx',
-        sourceVersions: { 'examples/bridge.tsx': 'sha256:v1' },
+        currentCanvasId: 'canvas-bridge',
+        currentCompatibilityFilePath: 'examples/bridge.tsx',
+        canvasVersions: { 'canvas-bridge': 'sha256:v1' },
         selectedNodeIds: [],
       }),
       applyRuntimeAction: (descriptor) => {
@@ -47,7 +48,7 @@ describe('actionDispatch runtime contribution intents', () => {
       intentId: 'selection.debug.runtime-action',
       selectionRef: {
         selectedNodeIds: [],
-        currentFile: 'examples/bridge.tsx',
+        currentCanvasId: 'canvas-bridge',
       },
       rawPayload: {},
       optimistic: false,
@@ -67,8 +68,6 @@ describe('actionDispatch runtime contribution intents', () => {
         canvasVersions: {
           'canvas-bridge': 'sha256:v1',
         },
-        currentFile: 'examples/bridge.tsx',
-        sourceVersions: { 'examples/bridge.tsx': 'sha256:v1' },
         selectedNodeIds: [],
       }),
       applyRuntimeAction: () => {},
@@ -94,8 +93,7 @@ describe('actionDispatch runtime contribution intents', () => {
     })).resolves.toBeUndefined();
 
     expect(executeMutationDescriptor).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'canonical-mutation',
-      actionId: 'canvas.node.create',
+      kind: 'runtime-mutation',
       payload: expect.objectContaining({
         filePath: 'examples/bridge.tsx',
       }),

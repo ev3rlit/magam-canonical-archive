@@ -7,10 +7,17 @@ import { createHash } from 'crypto';
 import { basename, isAbsolute, resolve } from 'path';
 import { resolveCanonicalCanvasCompatibilityFilePath } from '../../libs/shared/src/lib/canonical-canvas-shell';
 import {
+    buildEditingProjection,
+    buildHierarchyProjection,
+    buildRenderProjection,
     CanonicalPersistenceRepository,
     createCanonicalPgliteDb,
-    executeMutationBatch,
+    createCanvasRuntimeServiceContext,
+    dispatchCanvasMutation,
     type ContentBlock,
+    type CanvasMutationBatchV1,
+    type MutationResultEnvelopeV1,
+    readContentBlocks,
 } from '../../libs/shared/src';
 import {
     patchFile,
@@ -350,11 +357,78 @@ function ensureContentBlock(value: unknown): ContentBlock {
 
     return {
         id,
-        blockType,
+        blockType: blockType as ContentBlock['blockType'],
         payload: input.payload && typeof input.payload === 'object' ? input.payload as Record<string, unknown> : {},
         ...(typeof input.textualProjection === 'string' ? { textualProjection: input.textualProjection } : {}),
         ...(input.metadata && typeof input.metadata === 'object' ? { metadata: input.metadata as Record<string, unknown> } : {}),
     };
+}
+
+function toRuntimeBodyBlock(block: ContentBlock): { blockId: string; kind: 'paragraph' | 'callout' | 'custom'; props: Record<string, unknown> } {
+    if (block.blockType === 'text') {
+        return {
+            blockId: block.id,
+            kind: 'paragraph',
+            props: {
+                text: block.text,
+            },
+        };
+    }
+
+    if (block.blockType === 'markdown') {
+        return {
+            blockId: block.id,
+            kind: 'callout',
+            props: {
+                source: block.source,
+                text: block.source,
+            },
+        };
+    }
+
+    return {
+        blockId: block.id,
+        kind: 'custom',
+        props: {
+            ...(block.payload ?? {}),
+            ...(block.textualProjection ? { textualProjection: block.textualProjection } : {}),
+            ...(block.metadata ? { metadata: block.metadata } : {}),
+        },
+    };
+}
+
+function toLegacyBodyBlock(block: ReturnType<typeof toRuntimeBodyBlock>): {
+    blockType: string;
+    source?: string;
+    text?: string;
+    payload?: Record<string, unknown>;
+} {
+    if (block.kind === 'paragraph') {
+        return {
+            blockType: 'text',
+            text: typeof block.props.text === 'string' ? block.props.text : '',
+        };
+    }
+
+    if (block.kind === 'callout') {
+        return {
+            blockType: 'markdown',
+            source: typeof block.props.source === 'string' ? block.props.source : '',
+        };
+    }
+
+    return {
+        blockType: 'runtime.custom',
+        payload: block.props,
+    };
+}
+
+function toRuntimeNodeKind(nodeType: string): 'node' | 'sticker' {
+    return nodeType === 'sticker' ? 'sticker' : 'node';
+}
+
+function toRuntimeNodeType(nodeType: string): string {
+    return nodeType === 'mindmap' ? 'shape' : nodeType;
 }
 
 function isFileMutexEnabled(): boolean {
@@ -495,6 +569,415 @@ async function mutateWithContract(
     });
 }
 
+function runtimeFailureToRpcError(envelope: MutationResultEnvelopeV1): never {
+    if (envelope.ok) {
+        throw { ...RPC_ERRORS.INTERNAL_ERROR, data: 'Expected runtime mutation failure.' };
+    }
+
+    if (envelope.error.code === 'VERSION_CONFLICT') {
+        throw {
+            ...RPC_ERRORS.VERSION_CONFLICT,
+            data: {
+                expected: envelope.error.details?.expectedCanvasRevision,
+                actual: envelope.error.details?.actualCanvasRevision,
+                ...envelope.error.details,
+            },
+        };
+    }
+
+    if (envelope.error.code === 'NOT_FOUND') {
+        throw {
+            ...RPC_ERRORS.NODE_NOT_FOUND,
+            data: envelope.error.details,
+        };
+    }
+
+    if (envelope.error.code === 'VALIDATION_FAILED') {
+        throw {
+            ...RPC_ERRORS.CONTENT_CONTRACT_VIOLATION,
+            data: envelope.error.details,
+        };
+    }
+
+    throw {
+        ...RPC_ERRORS.PATCH_FAILED,
+        data: envelope.error.details ?? { reason: envelope.error.message },
+    };
+}
+
+async function executeRuntimeMutation(
+    rootPath: string | undefined,
+    buildBatch: (
+        workspaceId: string,
+        runtimeContext: ReturnType<typeof createCanvasRuntimeServiceContext>,
+    ) => Promise<CanvasMutationBatchV1> | CanvasMutationBatchV1,
+) {
+    return withCanonicalContext(rootPath, async ({ db, repository, targetDir, dataDir, workspaceId }) => {
+        const runtimeContext = createCanvasRuntimeServiceContext({
+            db,
+            repository,
+            targetDir,
+            dataDir,
+            defaultWorkspaceId: workspaceId,
+        });
+        const batch = await buildBatch(workspaceId, runtimeContext);
+        return dispatchCanvasMutation(runtimeContext, batch);
+    });
+}
+
+function ensureRuntimeMutationBatch(
+    value: unknown,
+    fallbackCanvasId?: string,
+): CanvasMutationBatchV1 {
+    const batch = ensureRecord(value, 'batch');
+    const commands = Array.isArray(batch.commands)
+        ? batch.commands.filter((command): command is CanvasMutationBatchV1['commands'][number] => isRecord(command))
+        : [];
+
+    if (commands.length === 0) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'batch.commands must include at least one command' };
+    }
+
+    const workspaceId = typeof batch.workspaceId === 'string' && batch.workspaceId.length > 0
+        ? batch.workspaceId
+        : 'workspace';
+    const canvasId = typeof batch.canvasId === 'string' && batch.canvasId.length > 0
+        ? batch.canvasId
+        : fallbackCanvasId;
+
+    return {
+        workspaceId,
+        ...(canvasId ? { canvasId } : {}),
+        ...(typeof batch.reason === 'string' ? { reason: batch.reason } : {}),
+        ...(typeof batch.dryRun === 'boolean' ? { dryRun: batch.dryRun } : {}),
+        ...(isRecord(batch.actor) && typeof batch.actor.kind === 'string' && typeof batch.actor.id === 'string'
+            ? {
+                actor: {
+                    kind: batch.actor.kind as CanvasMutationBatchV1['actor'] extends infer T
+                        ? T extends { kind: infer U; id: string }
+                            ? U
+                            : never
+                        : never,
+                    id: batch.actor.id,
+                },
+            }
+            : {}),
+        ...(isRecord(batch.preconditions) && typeof batch.preconditions.canvasRevision === 'number'
+            ? {
+                preconditions: {
+                    canvasRevision: batch.preconditions.canvasRevision,
+                },
+            }
+            : {}),
+        commands,
+    };
+}
+
+function getCompatibilityPatchNodeId(input: {
+    command: CanvasMutationBatchV1['commands'][number];
+    nodesByObjectId: Map<string, string>;
+}): string {
+    if ('nodeId' in input.command && typeof input.command.nodeId === 'string') {
+        return input.command.nodeId;
+    }
+
+    if ('objectId' in input.command && typeof input.command.objectId === 'string') {
+        return input.nodesByObjectId.get(input.command.objectId) ?? input.command.objectId;
+    }
+
+    throw { ...RPC_ERRORS.PATCH_SURFACE_VIOLATION, data: { reason: 'Cannot resolve compatibility patch node id.' } };
+}
+
+function resolveAfterBlockIdForCompatibilityPatch(input: {
+    command: Extract<CanvasMutationBatchV1['commands'][number], { name: 'object.body.block.insert' }>;
+    objectRecord: Record<string, unknown>;
+}): string | undefined {
+    const blocks = readContentBlocks(input.objectRecord ?? {}) ?? [];
+    const position = input.command.position;
+
+    if (position.mode === 'start') {
+        return undefined;
+    }
+
+    if (position.mode === 'end') {
+        return blocks.at(-1)?.id;
+    }
+
+    if (position.mode === 'index') {
+        return position.index > 0 ? blocks[position.index - 1]?.id : undefined;
+    }
+
+    if (position.mode === 'anchor') {
+        const match = position.anchorId.match(/:body-(before|after):([^:]+)$/);
+        if (!match) {
+            return blocks.at(-1)?.id;
+        }
+
+        const [, relation, blockId] = match;
+        if (relation === 'after') {
+            return blockId;
+        }
+
+        const index = blocks.findIndex((block) => block.id === blockId);
+        return index > 0 ? blocks[index - 1]?.id : undefined;
+    }
+
+    return blocks.at(-1)?.id;
+}
+
+async function applyRuntimeMutationCompatibilityPatches(input: {
+    runtimeContext: ReturnType<typeof createCanvasRuntimeServiceContext>;
+    batch: CanvasMutationBatchV1;
+    resolvedFilePath: string;
+}): Promise<void> {
+    const nodes = input.batch.canvasId
+        ? await input.runtimeContext.repository.listCanvasNodes(input.batch.canvasId)
+        : [];
+    const nodesByObjectId = new Map(
+        nodes
+            .filter((node) => typeof node.canonicalObjectId === 'string' && node.canonicalObjectId.length > 0)
+            .map((node) => [node.canonicalObjectId as string, node.id]),
+    );
+
+    for (const command of input.batch.commands) {
+        switch (command.name) {
+            case 'canvas.node.create': {
+                const props: Record<string, unknown> = {
+                    ...(typeof command.transform?.width === 'number' ? { width: command.transform.width } : {}),
+                    ...(typeof command.transform?.height === 'number' ? { height: command.transform.height } : {}),
+                    ...(typeof command.transform?.rotation === 'number' ? { rotation: command.transform.rotation } : {}),
+                    ...(typeof command.presentationStyle?.fillColor === 'string' ? { fill: command.presentationStyle.fillColor } : {}),
+                    ...(typeof command.presentationStyle?.strokeColor === 'string' ? { stroke: command.presentationStyle.strokeColor } : {}),
+                    ...(typeof command.presentationStyle?.strokeWidth === 'number' ? { strokeWidth: command.presentationStyle.strokeWidth } : {}),
+                    ...(typeof command.presentationStyle?.opacity === 'number' ? { opacity: command.presentationStyle.opacity } : {}),
+                    ...(typeof command.presentationStyle?.textColor === 'string' ? { color: command.presentationStyle.textColor } : {}),
+                    ...(typeof command.presentationStyle?.fontFamily === 'string' ? { fontFamily: command.presentationStyle.fontFamily } : {}),
+                    ...(typeof command.presentationStyle?.fontSize === 'number' ? { fontSize: command.presentationStyle.fontSize } : {}),
+                    ...(typeof command.renderProfile?.inkProfile === 'string' ? { inkProfile: command.renderProfile.inkProfile } : {}),
+                    ...(typeof command.renderProfile?.paperBlend === 'string' ? { paperBlend: command.renderProfile.paperBlend } : {}),
+                };
+
+                const placement = command.placement.mode === 'mindmap-child'
+                    ? { mode: 'mindmap-child' as const, parentId: command.placement.parentNodeId }
+                    : command.placement.mode === 'mindmap-sibling'
+                        ? {
+                            mode: 'mindmap-sibling' as const,
+                            siblingOf: command.placement.siblingOfNodeId,
+                            parentId: command.placement.parentNodeId,
+                        }
+                        : command.placement.mode === 'mindmap-root'
+                            ? {
+                                mode: 'mindmap-root' as const,
+                                x: command.placement.x,
+                                y: command.placement.y,
+                                mindmapId: typeof command.placement.mindmapId === 'string' && command.placement.mindmapId.length > 0
+                                    ? command.placement.mindmapId
+                                    : `mindmap-${command.nodeId}`,
+                            }
+                            : {
+                                mode: 'canvas-absolute' as const,
+                                x: command.placement.x,
+                                y: command.placement.y,
+                            };
+
+                await patchNodeCreate(input.resolvedFilePath, {
+                    id: command.nodeId,
+                    type: (command.nodeType ?? 'shape') as CreateNodeInput['type'],
+                    props,
+                    placement,
+                });
+                break;
+            }
+
+            case 'canvas.node.move':
+                await patchNodePosition(input.resolvedFilePath, command.nodeId, command.x, command.y);
+                break;
+
+            case 'canvas.node.reparent':
+                await patchNodeReparent(input.resolvedFilePath, command.nodeId, command.parentNodeId);
+                break;
+
+            case 'canvas.node.resize':
+                await patchFile(input.resolvedFilePath, command.nodeId, {
+                    width: command.nextSize.width,
+                    height: command.nextSize.height,
+                    size: {
+                        width: command.nextSize.width,
+                        height: command.nextSize.height,
+                    },
+                });
+                break;
+
+            case 'canvas.node.rotate':
+                await patchFile(input.resolvedFilePath, command.nodeId, { rotation: command.nextRotation });
+                break;
+
+            case 'canvas.node.presentation-style.update': {
+                const patch: Record<string, unknown> = {
+                    ...(typeof command.presentationStyle.fillColor === 'string' ? { fill: command.presentationStyle.fillColor } : {}),
+                    ...(typeof command.presentationStyle.strokeColor === 'string' ? { stroke: command.presentationStyle.strokeColor } : {}),
+                    ...(typeof command.presentationStyle.strokeWidth === 'number' ? { strokeWidth: command.presentationStyle.strokeWidth } : {}),
+                    ...(typeof command.presentationStyle.opacity === 'number' ? { opacity: command.presentationStyle.opacity } : {}),
+                    ...(typeof command.presentationStyle.textColor === 'string' ? { color: command.presentationStyle.textColor } : {}),
+                    ...(typeof command.presentationStyle.fontFamily === 'string' ? { fontFamily: command.presentationStyle.fontFamily } : {}),
+                    ...(typeof command.presentationStyle.fontSize === 'number' ? { fontSize: command.presentationStyle.fontSize } : {}),
+                };
+                if (Object.keys(patch).length > 0) {
+                    await patchNodeStyle(input.resolvedFilePath, command.nodeId, patch as NodeProps);
+                }
+                break;
+            }
+
+            case 'canvas.node.render-profile.update':
+                await patchFile(input.resolvedFilePath, command.nodeId, {
+                    ...command.renderProfile,
+                });
+                break;
+
+            case 'canvas.node.rename':
+                await patchFile(input.resolvedFilePath, command.nodeId, {
+                    label: command.nextDisplayName,
+                });
+                break;
+
+            case 'canvas.node.delete':
+                await patchNodeDelete(input.resolvedFilePath, command.nodeId);
+                break;
+
+            case 'canvas.node.z-order.update':
+                await patchFile(input.resolvedFilePath, command.nodeId, { zIndex: command.zIndex });
+                break;
+
+            case 'object.content.update': {
+                const nodeId = getCompatibilityPatchNodeId({ command, nodesByObjectId });
+                const nextContent = typeof command.patch.text === 'string'
+                    ? command.patch.text
+                    : typeof command.patch.source === 'string'
+                        ? command.patch.source
+                        : typeof command.patch.value === 'string'
+                            ? command.patch.value
+                            : null;
+                if (nextContent !== null) {
+                    await patchNodeContent(input.resolvedFilePath, nodeId, nextContent);
+                }
+                break;
+            }
+
+            case 'object.body.block.insert': {
+                const nodeId = getCompatibilityPatchNodeId({ command, nodesByObjectId });
+                const objectResult = await input.runtimeContext.repository.getCanonicalObject(
+                    input.batch.workspaceId,
+                    command.objectId,
+                );
+                if (!objectResult.ok) {
+                    throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { objectId: command.objectId } };
+                }
+                const afterBlockId = resolveAfterBlockIdForCompatibilityPatch({
+                    command,
+                    objectRecord: objectResult.value,
+                });
+                await patchNodeBodyBlockInsert(
+                    input.resolvedFilePath,
+                    nodeId,
+                    toLegacyBodyBlock(command.block),
+                    afterBlockId,
+                );
+                break;
+            }
+
+            default:
+                throw {
+                    ...RPC_ERRORS.PATCH_SURFACE_VIOLATION,
+                    data: {
+                        reason: `Unsupported compatibility patch command ${command.name}.`,
+                    },
+                };
+        }
+    }
+}
+
+async function handleCanvasRuntimeMutate(
+    params: Record<string, unknown>,
+    ctx: RpcContext,
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; runtimeResult?: MutationResultEnvelopeV1 }> {
+    const common = await ensureCommonParams(params);
+    const initialBatch = ensureRuntimeMutationBatch(params.batch, common.canvasId);
+
+    try {
+        let runtimeResult: MutationResultEnvelopeV1 | undefined;
+
+        if (initialBatch.dryRun) {
+            await ensureBaseVersion(common.resolvedFilePath, common.baseVersion);
+            const runtimeMutation = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
+                ...initialBatch,
+                workspaceId,
+                ...(initialBatch.canvasId ? { canvasId: initialBatch.canvasId } : {}),
+                dryRun: true,
+            }));
+
+            if (!runtimeMutation.envelope.ok) {
+                runtimeFailureToRpcError(runtimeMutation.envelope);
+            }
+
+            runtimeResult = runtimeMutation.envelope;
+            return {
+                success: true,
+                newVersion: common.baseVersion,
+                commandId: common.commandId,
+                filePath: common.filePath,
+                runtimeResult,
+            };
+        }
+
+        const result = await mutateWithContract(ctx, common, async () => {
+            await withCanonicalContext(common.rootPath, async ({ db, repository, targetDir, dataDir, workspaceId }) => {
+                const runtimeContext = createCanvasRuntimeServiceContext({
+                    db,
+                    repository,
+                    targetDir,
+                    dataDir,
+                    defaultWorkspaceId: workspaceId,
+                });
+                const batch: CanvasMutationBatchV1 = {
+                    ...initialBatch,
+                    workspaceId,
+                    ...(initialBatch.canvasId ? { canvasId: initialBatch.canvasId } : {}),
+                };
+                const runtimeMutation = await dispatchCanvasMutation(runtimeContext, batch);
+                if (!runtimeMutation.envelope.ok) {
+                    runtimeFailureToRpcError(runtimeMutation.envelope);
+                }
+                runtimeResult = runtimeMutation.envelope;
+                await applyRuntimeMutationCompatibilityPatches({
+                    runtimeContext,
+                    batch,
+                    resolvedFilePath: common.resolvedFilePath,
+                });
+            });
+        });
+
+        return runtimeResult ? { ...result, runtimeResult } : result;
+    } catch (error) {
+        const e = error as { code?: number; message?: string; data?: unknown } | Error;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'canvas.runtime.mutate',
+            stage: 'ws.canvas.runtime.mutate',
+            details: {
+                canvasId: initialBatch.canvasId ?? common.canvasId ?? null,
+            },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: (e as Error).message }, diagnostics) };
+    }
+}
+
 async function handleFileSubscribe(params: Record<string, unknown>, ctx: RpcContext): Promise<{ success: boolean }> {
     const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
     const canvasId = ensureOptionalString(params.canvasId, 'canvasId');
@@ -539,10 +1022,65 @@ async function handleCanvasUnsubscribe(params: Record<string, unknown>, ctx: Rpc
     return { success: true };
 }
 
+async function handleCanvasRuntimeProjections(
+    params: Record<string, unknown>,
+    _ctx: RpcContext,
+): Promise<{
+    canvasId: string;
+    hierarchyProjection: Awaited<ReturnType<typeof buildHierarchyProjection>>;
+    renderProjection: Awaited<ReturnType<typeof buildRenderProjection>>;
+    editingProjection: Awaited<ReturnType<typeof buildEditingProjection>>;
+}> {
+    const canvasId = ensureString(params.canvasId, 'canvasId');
+    const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
+    const surfaceId = ensureOptionalString(params.surfaceId, 'surfaceId');
+    const workspaceIdParam = ensureOptionalString(params.workspaceId, 'workspaceId');
+    const nodeIds = Array.isArray(params.nodeIds)
+        ? params.nodeIds.filter((value): value is string => typeof value === 'string' && value.length > 0)
+        : undefined;
+
+    return withCanonicalContext(rootPath, async ({ db, repository, targetDir, dataDir, workspaceId }) => {
+        const runtimeContext = createCanvasRuntimeServiceContext({
+            db,
+            repository,
+            targetDir,
+            dataDir,
+            defaultWorkspaceId: workspaceId,
+        });
+        const resolvedWorkspaceId = workspaceIdParam ?? workspaceId;
+
+        const [hierarchyProjection, renderProjection, editingProjection] = await Promise.all([
+            buildHierarchyProjection(runtimeContext, {
+                canvasId,
+                workspaceId: resolvedWorkspaceId,
+                ...(surfaceId ? { surfaceId } : {}),
+            }),
+            buildRenderProjection(runtimeContext, {
+                canvasId,
+                workspaceId: resolvedWorkspaceId,
+                ...(surfaceId ? { surfaceId } : {}),
+            }),
+            buildEditingProjection(runtimeContext, {
+                canvasId,
+                workspaceId: resolvedWorkspaceId,
+                ...(surfaceId ? { surfaceId } : {}),
+                ...(nodeIds && nodeIds.length > 0 ? { nodeIds } : {}),
+            }),
+        ]);
+
+        return {
+            canvasId,
+            hierarchyProjection,
+            renderProjection,
+            editingProjection,
+        };
+    });
+}
+
 async function handleNodeUpdate(
     params: Record<string, unknown>,
     ctx: RpcContext,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; runtimeResult?: MutationResultEnvelopeV1 }> {
     const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const props = params.props as NodeProps | undefined;
@@ -555,7 +1093,82 @@ async function handleNodeUpdate(
     const commandType = inferUpdateCommandType(props, explicitCommandType);
 
     try {
-        return await mutateWithContract(ctx, common, async () => {
+        let runtimeResult: MutationResultEnvelopeV1 | undefined;
+        const result = await mutateWithContract(ctx, common, async () => {
+            if (common.canvasId && commandType && commandType !== 'node.move.relative' && commandType !== 'node.group.update' && commandType !== 'node.rename') {
+                const runtimeMutation = await executeRuntimeMutation(common.rootPath, async (workspaceId, runtimeContext) => {
+                    if (commandType === 'node.style.update') {
+                        return {
+                            workspaceId,
+                            canvasId: common.canvasId!,
+                            commands: [{
+                                name: 'canvas.node.presentation-style.update',
+                                canvasId: common.canvasId!,
+                                nodeId,
+                                presentationStyle: {
+                                    ...(typeof props.fill === 'string' ? { fillColor: props.fill } : {}),
+                                    ...(typeof props.stroke === 'string' ? { strokeColor: props.stroke } : {}),
+                                    ...(typeof props.strokeWidth === 'number' ? { strokeWidth: props.strokeWidth } : {}),
+                                    ...(typeof props.opacity === 'number' ? { opacity: props.opacity } : {}),
+                                    ...(typeof props.color === 'string' ? { textColor: props.color } : {}),
+                                    ...(typeof props.fontFamily === 'string' ? { fontFamily: props.fontFamily } : {}),
+                                    ...(typeof props.fontSize === 'number' ? { fontSize: props.fontSize } : {}),
+                                },
+                            }],
+                        };
+                    }
+
+                    if (commandType === 'node.z-order.update') {
+                        return {
+                            workspaceId,
+                            canvasId: common.canvasId!,
+                            commands: [{
+                                name: 'canvas.node.z-order.update',
+                                canvasId: common.canvasId!,
+                                nodeId,
+                                zIndex: ensureNumber(props.zIndex, 'props.zIndex'),
+                            }],
+                        };
+                    }
+
+                    const nodeRecord = await runtimeContext.repository.getCanvasNode(common.canvasId!, nodeId);
+                    if (!nodeRecord.ok) {
+                        throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId } };
+                    }
+                    const objectId = nodeRecord.value.canonicalObjectId ?? nodeId;
+                    const objectRecord = await runtimeContext.repository.getCanonicalObject(workspaceId, objectId);
+                    if (!objectRecord.ok) {
+                        throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId, objectId } };
+                    }
+                    const contentKind = objectRecord.value.primaryContentKind === 'text'
+                        ? 'text'
+                        : objectRecord.value.primaryContentKind === 'media'
+                            ? 'media'
+                            : objectRecord.value.primaryContentKind === 'sequence'
+                                ? 'sequence'
+                                : 'markdown';
+
+                        return {
+                            workspaceId,
+                            canvasId: common.canvasId!,
+                            commands: [{
+                                name: 'object.content.update',
+                            objectId,
+                            kind: contentKind,
+                            patch: contentKind === 'text'
+                                ? { text: props.content, value: props.content }
+                                : { source: props.content, value: props.content },
+                            expectedContentKind: contentKind,
+                        }],
+                    };
+                });
+
+                if (!runtimeMutation.envelope.ok) {
+                    runtimeFailureToRpcError(runtimeMutation.envelope);
+                }
+                runtimeResult = runtimeMutation.envelope;
+            }
+
             const collisionIds = await getGlobalIdentifierCollisions(common.resolvedFilePath);
             if (collisionIds.length > 0) {
                 throw { ...RPC_ERRORS.ID_COLLISION, data: { collisionIds } };
@@ -586,6 +1199,7 @@ async function handleNodeUpdate(
 
             await patchFile(common.resolvedFilePath, nodeId, props);
         });
+        return runtimeResult ? { ...result, runtimeResult } : result;
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
         const failedAction = commandType ?? 'node.update';
@@ -622,20 +1236,41 @@ async function handleNodeUpdate(
 async function handleNodeMove(
     params: Record<string, unknown>,
     ctx: RpcContext,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; runtimeResult?: MutationResultEnvelopeV1 }> {
     const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const x = ensureNumber(params.x, 'x');
     const y = ensureNumber(params.y, 'y');
 
     try {
-        return await mutateWithContract(ctx, common, async () => {
+        let runtimeResult: MutationResultEnvelopeV1 | undefined;
+        const result = await mutateWithContract(ctx, common, async () => {
+            if (common.canvasId) {
+                const runtimeMutation = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
+                    workspaceId,
+                    canvasId: common.canvasId!,
+                    commands: [{
+                        name: 'canvas.node.move',
+                        canvasId: common.canvasId!,
+                        nodeId,
+                        x,
+                        y,
+                    }],
+                }));
+
+                if (!runtimeMutation.envelope.ok) {
+                    runtimeFailureToRpcError(runtimeMutation.envelope);
+                }
+                runtimeResult = runtimeMutation.envelope;
+            }
+
             const collisionIds = await getGlobalIdentifierCollisions(common.resolvedFilePath);
             if (collisionIds.length > 0) {
                 throw { ...RPC_ERRORS.ID_COLLISION, data: { collisionIds } };
             }
             await patchNodePosition(common.resolvedFilePath, nodeId, x, y);
         });
+        return runtimeResult ? { ...result, runtimeResult } : result;
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
         const diagnostics = createIntentScopedDiagnostics({
@@ -660,7 +1295,7 @@ async function handleNodeMove(
 async function handleNodeCreate(
     params: Record<string, unknown>,
     ctx: RpcContext,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; runtimeResult?: MutationResultEnvelopeV1 }> {
     const common = await ensureCommonParams(params);
     const node = params.node as CreateNodeInput | undefined;
 
@@ -695,13 +1330,54 @@ async function handleNodeCreate(
     node.placement = ensureCreatePlacement(node.placement);
 
     try {
-        return await mutateWithContract(ctx, common, async () => {
+        let runtimeResult: MutationResultEnvelopeV1 | undefined;
+        const result = await mutateWithContract(ctx, common, async () => {
+            if (common.canvasId) {
+                const runtimeMutation = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
+                    workspaceId,
+                    canvasId: common.canvasId,
+                    commands: [{
+                        name: 'canvas.node.create',
+                        canvasId: common.canvasId,
+                        nodeId: node.id,
+                        kind: toRuntimeNodeKind(node.type),
+                        nodeType: toRuntimeNodeType(node.type),
+                        placement: node.placement?.mode === 'mindmap-child'
+                            ? { mode: 'mindmap-child', parentNodeId: node.placement.parentId }
+                            : node.placement?.mode === 'mindmap-sibling'
+                                ? {
+                                    mode: 'mindmap-sibling',
+                                    siblingOfNodeId: node.placement.siblingOf,
+                                    parentNodeId: node.placement.parentId,
+                                }
+                                : node.placement?.mode === 'mindmap-root'
+                                    ? {
+                                    mode: 'mindmap-root',
+                                    x: node.placement.x,
+                                    y: node.placement.y,
+                                    mindmapId: node.placement.mindmapId ?? `mindmap-${node.id}`,
+                                }
+                                    : {
+                                        mode: 'canvas-absolute',
+                                        x: ensureNumber((node.placement as Record<string, unknown>).x, 'node.placement.x'),
+                                        y: ensureNumber((node.placement as Record<string, unknown>).y, 'node.placement.y'),
+                                    },
+                    }],
+                }));
+
+                if (!runtimeMutation.envelope.ok) {
+                    runtimeFailureToRpcError(runtimeMutation.envelope);
+                }
+                runtimeResult = runtimeMutation.envelope;
+            }
+
             const collisionIds = await getGlobalIdentifierCollisions(common.resolvedFilePath);
             if (collisionIds.length > 0) {
                 throw { ...RPC_ERRORS.ID_COLLISION, data: { collisionIds } };
             }
             await patchNodeCreate(common.resolvedFilePath, node);
         });
+        return runtimeResult ? { ...result, runtimeResult } : result;
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
         const diagnostics = createIntentScopedDiagnostics({
@@ -727,7 +1403,7 @@ async function handleNodeCreate(
 async function handleCanvasNodeCreate(
     params: Record<string, unknown>,
     ctx: RpcContext,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; runtimeResult?: MutationResultEnvelopeV1 }> {
     const common = await ensureCommonParams(params);
     const node = params.node as CreateNodeInput | undefined;
 
@@ -766,29 +1442,60 @@ async function handleCanvasNodeCreate(
     }
 
     try {
-        return await mutateWithContract(ctx, common, async () => {
-            await withCanonicalContext(common.rootPath, async ({ db, repository, targetDir, dataDir, workspaceId }) => {
-                await executeMutationBatch({
-                    context: {
-                        db,
-                        repository,
-                        targetDir,
-                        dataDir,
-                        defaultWorkspaceId: workspaceId,
+        let runtimeResult: MutationResultEnvelopeV1 | undefined;
+        const result = await mutateWithContract(ctx, common, async () => {
+            const runtimeMutation = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
+                workspaceId,
+                canvasId: common.canvasId!,
+                commands: [{
+                    name: 'canvas.node.create',
+                    canvasId: common.canvasId!,
+                    nodeId,
+                    kind: toRuntimeNodeKind(nodeType),
+                    nodeType: toRuntimeNodeType(nodeType),
+                    placement: placement.mode === 'mindmap-child'
+                        ? { mode: 'mindmap-child', parentNodeId: placement.parentId }
+                        : placement.mode === 'mindmap-sibling'
+                            ? {
+                                mode: 'mindmap-sibling',
+                                siblingOfNodeId: placement.siblingOf,
+                                parentNodeId: placement.parentId,
+                            }
+                            : placement.mode === 'mindmap-root'
+                                ? {
+                                mode: 'mindmap-root',
+                                x: placement.x,
+                                y: placement.y,
+                                mindmapId: placement.mindmapId ?? `mindmap-${nodeId}`,
+                            }
+                                : {
+                                    mode: 'canvas-absolute',
+                                    x: placement.x,
+                                    y: placement.y,
+                                },
+                    transform: {
+                        ...(typeof (node.props as Record<string, unknown> | undefined)?.width === 'number'
+                            ? { width: (node.props as Record<string, unknown>).width as number }
+                            : {}),
+                        ...(typeof (node.props as Record<string, unknown> | undefined)?.height === 'number'
+                            ? { height: (node.props as Record<string, unknown>).height as number }
+                            : {}),
                     },
-                    batch: {
-                        workspaceRef: workspaceId,
-                        canvasRef: common.canvasId!,
-                        operations: [{
-                            op: 'canvas.node.create',
-                            nodeId,
-                            nodeType,
-                            props: ensureRecord(node.props ?? {}, 'node.props'),
-                            placement,
-                        }],
+                    presentationStyle: {
+                        ...(typeof (node.props as Record<string, unknown> | undefined)?.fill === 'string'
+                            ? { fillColor: (node.props as Record<string, unknown>).fill as string }
+                            : {}),
+                        ...(typeof (node.props as Record<string, unknown> | undefined)?.stroke === 'string'
+                            ? { strokeColor: (node.props as Record<string, unknown>).stroke as string }
+                            : {}),
                     },
-                });
-            });
+                }],
+            }));
+
+            if (!runtimeMutation.envelope.ok) {
+                runtimeFailureToRpcError(runtimeMutation.envelope);
+            }
+            runtimeResult = runtimeMutation.envelope;
 
             await patchNodeCreate(common.resolvedFilePath, {
                 id: nodeId,
@@ -802,6 +1509,7 @@ async function handleCanvasNodeCreate(
                 placement,
             });
         });
+        return runtimeResult ? { ...result, runtimeResult } : result;
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
         const diagnostics = createIntentScopedDiagnostics({
@@ -828,7 +1536,7 @@ async function handleCanvasNodeCreate(
 async function handleObjectBodyBlockInsert(
     params: Record<string, unknown>,
     ctx: RpcContext,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; runtimeResult?: MutationResultEnvelopeV1 }> {
     const common = await ensureCommonParams(params);
     if (!common.canvasId) {
         throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
@@ -839,31 +1547,29 @@ async function handleObjectBodyBlockInsert(
     const afterBlockId = ensureOptionalString(params.afterBlockId, 'afterBlockId');
 
     try {
-        return await mutateWithContract(ctx, common, async () => {
-            await withCanonicalContext(common.rootPath, async ({ db, repository, targetDir, dataDir, workspaceId }) => {
-                await executeMutationBatch({
-                    context: {
-                        db,
-                        repository,
-                        targetDir,
-                        dataDir,
-                        defaultWorkspaceId: workspaceId,
-                    },
-                    batch: {
-                        workspaceRef: workspaceId,
-                        canvasRef: common.canvasId!,
-                        operations: [{
-                            op: 'object.body.block.insert',
-                            objectId,
-                            block,
-                            ...(afterBlockId ? { afterBlockId } : {}),
-                        }],
-                    },
-                });
-            });
+        let runtimeResult: MutationResultEnvelopeV1 | undefined;
+        const result = await mutateWithContract(ctx, common, async () => {
+            const runtimeMutation = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
+                workspaceId,
+                canvasId: common.canvasId!,
+                commands: [{
+                    name: 'object.body.block.insert',
+                    objectId,
+                    block: toRuntimeBodyBlock(block),
+                    position: afterBlockId
+                        ? { mode: 'anchor', anchorId: `node:${objectId}:body-after:${afterBlockId}` }
+                        : { mode: 'end' },
+                }],
+            }));
+
+            if (!runtimeMutation.envelope.ok) {
+                runtimeFailureToRpcError(runtimeMutation.envelope);
+            }
+            runtimeResult = runtimeMutation.envelope;
 
             await patchNodeBodyBlockInsert(common.resolvedFilePath, objectId, block, afterBlockId);
         });
+        return runtimeResult ? { ...result, runtimeResult } : result;
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
         const diagnostics = createIntentScopedDiagnostics({
@@ -886,14 +1592,33 @@ async function handleObjectBodyBlockInsert(
 async function handleNodeDelete(
     params: Record<string, unknown>,
     ctx: RpcContext,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; runtimeResult?: MutationResultEnvelopeV1 }> {
     const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
 
     try {
-        return await mutateWithContract(ctx, common, async () => {
+        let runtimeResult: MutationResultEnvelopeV1 | undefined;
+        const result = await mutateWithContract(ctx, common, async () => {
+            if (common.canvasId) {
+                const runtimeMutation = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
+                    workspaceId,
+                    canvasId: common.canvasId!,
+                    commands: [{
+                        name: 'canvas.node.delete',
+                        canvasId: common.canvasId!,
+                        nodeId,
+                    }],
+                }));
+
+                if (!runtimeMutation.envelope.ok) {
+                    runtimeFailureToRpcError(runtimeMutation.envelope);
+                }
+                runtimeResult = runtimeMutation.envelope;
+            }
+
             await patchNodeDelete(common.resolvedFilePath, nodeId);
         });
+        return runtimeResult ? { ...result, runtimeResult } : result;
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
         const diagnostics = createIntentScopedDiagnostics({
@@ -919,15 +1644,35 @@ async function handleNodeDelete(
 async function handleNodeReparent(
     params: Record<string, unknown>,
     ctx: RpcContext,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string }> {
+): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; runtimeResult?: MutationResultEnvelopeV1 }> {
     const common = await ensureCommonParams(params);
     const nodeId = ensureString(params.nodeId, 'nodeId');
     const newParentId = ensureOptionalString(params.newParentId, 'newParentId');
 
     try {
-        return await mutateWithContract(ctx, common, async () => {
+        let runtimeResult: MutationResultEnvelopeV1 | undefined;
+        const result = await mutateWithContract(ctx, common, async () => {
+            if (common.canvasId) {
+                const runtimeMutation = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
+                    workspaceId,
+                    canvasId: common.canvasId!,
+                    commands: [{
+                        name: 'canvas.node.reparent',
+                        canvasId: common.canvasId!,
+                        nodeId,
+                        parentNodeId: newParentId ?? null,
+                    }],
+                }));
+
+                if (!runtimeMutation.envelope.ok) {
+                    runtimeFailureToRpcError(runtimeMutation.envelope);
+                }
+                runtimeResult = runtimeMutation.envelope;
+            }
+
             await patchNodeReparent(common.resolvedFilePath, nodeId, newParentId || null);
         });
+        return runtimeResult ? { ...result, runtimeResult } : result;
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
         const diagnostics = createIntentScopedDiagnostics({
@@ -1194,6 +1939,8 @@ export const methods: Record<string, RpcHandler> = {
     'file.unsubscribe': handleFileUnsubscribe,
     'canvas.subscribe': handleCanvasSubscribe,
     'canvas.unsubscribe': handleCanvasUnsubscribe,
+    'canvas.runtime.projections': handleCanvasRuntimeProjections,
+    'canvas.runtime.mutate': handleCanvasRuntimeMutate,
     'canvas.node.create': handleCanvasNodeCreate,
     'object.body.block.insert': handleObjectBodyBlockInsert,
     'node.update': handleNodeUpdate,

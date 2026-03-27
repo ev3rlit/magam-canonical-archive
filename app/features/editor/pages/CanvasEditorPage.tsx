@@ -9,6 +9,7 @@ import React, {
   useState,
 } from 'react';
 import { RpcClientError } from '@/hooks/useFileSync';
+import type { RpcMutationResult } from '@/hooks/useFileSync.shared';
 import { useCanvasRuntime } from '@/hooks/useCanvasRuntime';
 import { GraphCanvas, resolveCreateCompleteBodyEditSession } from '@/components/GraphCanvas';
 import type { GraphCanvasSelectionActionIntentInput } from '@/components/GraphCanvas';
@@ -390,6 +391,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
   }, [activeWorkspace, loadActiveWorkspaceCanvases]);
 
   const {
+    dispatchRuntimeMutation,
     updateNode,
     moveNode,
     createNode,
@@ -397,10 +399,12 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     insertObjectBodyBlock,
     deleteNode,
     reparentNode,
+    getRuntimeProjections,
     undoLastEdit,
     redoLastEdit,
   } = useCanvasRuntime(
     currentCanvasId,
+    activeWorkspace?.id ?? null,
     activeWorkspace?.rootPath ?? workspaceRootPath,
     handleCanvasInvalidated,
     handleWorkspaceFilesChange,
@@ -548,10 +552,11 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     }
   }, [restoreNodeData]);
 
-  const commitHistoryEffect = useCallback((effect: ActionRoutingHistoryEffect, result: {
-    commandId?: string;
-    newVersion?: string;
-  }) => {
+  const commitHistoryEffect = useCallback((effect: ActionRoutingHistoryEffect, result: RpcMutationResult) => {
+    if (result.runtimeResult?.ok && (!result.runtimeResult.meta?.undoable || result.runtimeResult.data.dryRun)) {
+      return;
+    }
+
     const nextVersion = result.newVersion
       ?? (effect.canvasId ? useGraphStore.getState().canvasVersions[effect.canvasId] : null)
       ?? useGraphStore.getState().sourceVersions[effect.filePath]
@@ -598,13 +603,19 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
   }, [currentCanvasId, handleCanvasInvalidated, pushEditCompletionEvent]);
 
   const executeMutationDescriptor = useCallback(async (descriptor: MutationDispatchDescriptor) => {
+    if (descriptor.kind === 'runtime-mutation') {
+      return dispatchRuntimeMutation({
+        canvasId: descriptor.payload.canvasId ?? currentCanvasId,
+        ...(descriptor.payload.dryRun !== undefined ? { dryRun: descriptor.payload.dryRun } : {}),
+        commands: descriptor.payload.commands,
+      });
+    }
+
     const targetCanvasId = descriptor.payload.canvasId ?? currentCanvasId;
-    const targetCompatibilityFilePath = descriptor.payload.compatibilityFilePath ?? descriptor.payload.filePath;
     if (descriptor.actionId === 'node.update') {
       return updateNode(
         descriptor.payload.nodeId,
         descriptor.payload.props,
-        targetCompatibilityFilePath,
         descriptor.payload.commandType
           ? { commandType: descriptor.payload.commandType }
           : undefined,
@@ -612,19 +623,18 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       );
     }
     if (descriptor.actionId === 'canvas.node.create') {
-      return createCanvasNode(descriptor.payload.node, targetCompatibilityFilePath, targetCanvasId);
+      return createCanvasNode(descriptor.payload.node, targetCanvasId);
     }
     if (descriptor.actionId === 'node.create') {
-      return createNode(descriptor.payload.node, targetCompatibilityFilePath, targetCanvasId);
+      return createNode(descriptor.payload.node, targetCanvasId);
     }
     if (descriptor.actionId === 'node.delete') {
-      return deleteNode(descriptor.payload.nodeId, targetCompatibilityFilePath, targetCanvasId);
+      return deleteNode(descriptor.payload.nodeId, targetCanvasId);
     }
     if (descriptor.actionId === 'node.reparent') {
       return reparentNode(
         descriptor.payload.nodeId,
         descriptor.payload.newParentId,
-        targetCompatibilityFilePath,
         targetCanvasId,
       );
     }
@@ -632,7 +642,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       return updateNode(
         descriptor.payload.nodeId,
         { groupId: descriptor.payload.groupId },
-        targetCompatibilityFilePath,
         { commandType: 'node.group.update' },
         targetCanvasId,
       );
@@ -641,7 +650,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       return updateNode(
         descriptor.payload.nodeId,
         { zIndex: descriptor.payload.zIndex },
-        targetCompatibilityFilePath,
         { commandType: 'node.z-order.update' },
         targetCanvasId,
       );
@@ -649,7 +657,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     throw new RpcClientError(RPC_ERRORS.INVALID_PARAMS.code, RPC_ERRORS.INVALID_PARAMS.message, {
       stage: 'WorkspaceClient.executeMutationDescriptor',
     });
-  }, [createCanvasNode, createNode, currentCanvasId, deleteNode, reparentNode, updateNode]);
+  }, [createCanvasNode, createNode, currentCanvasId, deleteNode, dispatchRuntimeMutation, reparentNode, updateNode]);
 
   const { dispatchActionRoutingIntentOrThrow } = useMemo(() => createCanvasActionDispatchBinding({
     getRuntime: () => {
@@ -1204,7 +1212,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       const result = await reparentNode(
         command.target.sourceId,
         command.payload.next.parentId,
-        command.target.compatibilityFilePath ?? command.target.filePath,
         currentCanvasId,
       );
       const nextVersion = result.newVersion
@@ -1314,7 +1321,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         const result = await updateNode(
           editTarget.nodeId,
           toUpdateNodeProps(relativeCommand),
-          targetFile,
           { commandType: relativeCommand.type },
           currentCanvasId,
         );
@@ -1359,7 +1365,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       previous: { x: payload.originX, y: payload.originY },
       next: { x: payload.x, y: payload.y },
     });
-    const result = await moveNode(editTarget.nodeId, payload.x, payload.y, targetFile, currentCanvasId);
+    const result = await moveNode(editTarget.nodeId, payload.x, payload.y, currentCanvasId);
     const nextVersion = result.newVersion
       ?? (currentCanvasId ? useGraphStore.getState().canvasVersions[currentCanvasId] : null)
       ?? baseVersion;
@@ -1597,7 +1603,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
             objectId: string;
             block: Record<string, unknown>;
             afterBlockId?: string;
-          }, currentCompatibilityFilePath, currentCanvasId);
+          }, currentCanvasId);
           clearTextEditSession();
         } catch (error) {
           editDebugLog('slash-block-insert', error, {
@@ -1680,16 +1686,18 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       try {
         setGraphError(null); // Clear previous errors
 
-        const response = await fetch('/api/render', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            canvasId: currentCanvasId,
-            ...(activeWorkspace?.rootPath ?? workspaceRootPath
-              ? { rootPath: activeWorkspace?.rootPath ?? workspaceRootPath }
-              : {}),
+        const rootPath = activeWorkspace?.rootPath ?? workspaceRootPath;
+        const [response, runtimeProjectionResult] = await Promise.all([
+          fetch('/api/render', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              canvasId: currentCanvasId,
+              ...(rootPath ? { rootPath } : {}),
+            }),
           }),
-        });
+          getRuntimeProjections().catch(() => null),
+        ]);
 
         const data = await response.json();
 
@@ -1725,7 +1733,16 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
           return;
         }
 
-        const parsed = parseRenderGraph(data);
+        const parsed = parseRenderGraph(
+          runtimeProjectionResult
+            ? {
+                ...data,
+                hierarchyProjection: runtimeProjectionResult.hierarchyProjection,
+                renderProjection: runtimeProjectionResult.renderProjection,
+                editingProjection: runtimeProjectionResult.editingProjection,
+              }
+            : data,
+        );
         if (parsed) {
           setCurrentCanvasId(typeof data.canvasId === 'string'
             ? data.canvasId
@@ -1771,7 +1788,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     }
 
     renderCanvas();
-  }, [activeWorkspace?.rootPath, currentCanvasId, currentCompatibilityFilePath, draftCanvases, refreshKey, setCurrentCanvasId, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on canvas changes
+  }, [activeWorkspace?.rootPath, currentCanvasId, currentCompatibilityFilePath, draftCanvases, getRuntimeProjections, refreshKey, setCurrentCanvasId, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on canvas changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">

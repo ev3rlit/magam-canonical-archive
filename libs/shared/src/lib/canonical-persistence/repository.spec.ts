@@ -309,4 +309,34 @@ describe('CanonicalPersistenceRepository', () => {
 
     await handle.close();
   });
+
+  it('lists canvas revisions newest-first and resolves the latest revision number', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const repository = new CanonicalPersistenceRepository(handle.db);
+
+    await repository.appendCanvasRevision({
+      id: 'rev-1',
+      canvasId: 'doc-1',
+      revisionNo: 1,
+      authorKind: 'system',
+      authorId: 'seed',
+      mutationBatch: { op: 'seed-1' },
+    });
+    await repository.appendCanvasRevision({
+      id: 'rev-2',
+      canvasId: 'doc-1',
+      revisionNo: 2,
+      authorKind: 'system',
+      authorId: 'seed',
+      mutationBatch: { op: 'seed-2' },
+    });
+
+    await expect(repository.getLatestCanvasRevision('doc-1')).resolves.toBe(2);
+    await expect(repository.listCanvasRevisions('doc-1')).resolves.toEqual([
+      expect.objectContaining({ id: 'rev-2', revisionNo: 2 }),
+      expect.objectContaining({ id: 'rev-1', revisionNo: 1 }),
+    ]);
+
+    await handle.close();
+  });
 });

@@ -10,6 +10,13 @@ import {
   type CanvasNodeRecord,
   type PluginInstanceResolution,
 } from '../canonical-persistence';
+import {
+  buildEditingProjection,
+  buildRenderProjection,
+  createCanvasRuntimeServiceContext,
+  type CanvasEditingProjectionResponseV1,
+  type CanvasRenderProjectionResponseV1,
+} from '../canvas-runtime';
 import { getWorkspaceCanvas } from './workspace-canvas';
 
 const CANONICAL_MIGRATIONS_FOLDER = fileURLToPath(
@@ -29,6 +36,17 @@ export interface CanonicalRenderGraphResponse {
   canvasId: string;
   title: string | null;
   sourceVersion: string;
+  renderProjection?: CanvasRenderProjectionResponseV1;
+  editingProjection?: CanvasEditingProjectionResponseV1;
+}
+
+export interface CanvasRuntimeSnapshotResponse {
+  canvasId: string;
+  workspaceId: string;
+  title: string | null;
+  sourceVersion: string;
+  renderProjection: CanvasRenderProjectionResponseV1;
+  editingProjection: CanvasEditingProjectionResponseV1;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -498,6 +516,7 @@ export async function renderCanonicalCanvas(input: {
       dataDir: handle.dataDir,
       defaultWorkspaceId: input.workspaceId ?? 'workspace',
     };
+    const runtimeContext = createCanvasRuntimeServiceContext(context);
 
     const canvas = await getWorkspaceCanvas(context, input.canvasId, input.workspaceId ?? context.defaultWorkspaceId);
     const nodes = await repository.listCanvasNodes(input.canvasId);
@@ -522,7 +541,7 @@ export async function renderCanonicalCanvas(input: {
         }),
     );
 
-    return buildCanonicalRenderResponse({
+    const response = buildCanonicalRenderResponse({
       canvasId: input.canvasId,
       title: canvas.title,
       latestRevision: canvas.latestRevision,
@@ -530,7 +549,52 @@ export async function renderCanonicalCanvas(input: {
       objectsById,
       pluginByNodeId,
     });
+
+    const runtimeSnapshot = await readCanvasRuntimeSnapshot({
+      runtimeContext,
+      canvasId: input.canvasId,
+      workspaceId: canvas.workspaceId,
+      title: canvas.title,
+      latestRevision: canvas.latestRevision,
+    });
+
+    return {
+      ...response,
+      renderProjection: runtimeSnapshot.renderProjection,
+      editingProjection: runtimeSnapshot.editingProjection,
+    };
   } finally {
     await handle.close();
   }
+}
+
+export async function readCanvasRuntimeSnapshot(input: {
+  runtimeContext: ReturnType<typeof createCanvasRuntimeServiceContext>;
+  canvasId: string;
+  workspaceId: string;
+  title: string | null;
+  latestRevision: number | null;
+}): Promise<CanvasRuntimeSnapshotResponse> {
+  const [renderProjection, editingProjection] = await Promise.all([
+    buildRenderProjection(input.runtimeContext, {
+      canvasId: input.canvasId,
+      workspaceId: input.workspaceId,
+    }),
+    buildEditingProjection(input.runtimeContext, {
+      canvasId: input.canvasId,
+      workspaceId: input.workspaceId,
+    }),
+  ]);
+
+  return {
+    canvasId: input.canvasId,
+    workspaceId: input.workspaceId,
+    title: input.title,
+    sourceVersion: hashCanvasSourceVersion({
+      canvasId: input.canvasId,
+      latestRevision: input.latestRevision,
+    }),
+    renderProjection,
+    editingProjection,
+  };
 }

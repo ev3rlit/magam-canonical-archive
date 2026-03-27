@@ -32,6 +32,13 @@ export interface WorkspaceCanvasShellSummary {
   updatedAt: Date | null;
 }
 
+export interface RuntimeWorkspaceCanvasShell {
+  canvasId: string;
+  workspaceId: string;
+  title: string | null;
+  latestRevision: number | null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -239,6 +246,20 @@ export async function getWorkspaceCanvas(
     latestRevision: revisions[0]?.revisionNo ?? null,
     createdAt: revisions.length > 0 ? revisions[revisions.length - 1]?.createdAt ?? null : null,
     updatedAt: revisions[0]?.createdAt ?? null,
+  };
+}
+
+export async function getRuntimeWorkspaceCanvasShell(
+  context: HeadlessServiceContext,
+  canvasId: string,
+  workspaceId = context.defaultWorkspaceId,
+): Promise<RuntimeWorkspaceCanvasShell> {
+  const shell = await getWorkspaceCanvas(context, canvasId, workspaceId);
+  return {
+    canvasId: shell.canvasId,
+    workspaceId: shell.workspaceId,
+    title: shell.title,
+    latestRevision: shell.latestRevision,
   };
 }
 
