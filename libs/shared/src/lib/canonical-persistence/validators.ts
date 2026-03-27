@@ -1,4 +1,5 @@
 import type {
+  CanvasHistoryCursorRecord,
   CanvasBindingRecord,
   CanvasNodeRecord,
   CanvasRevisionRecord,
@@ -410,6 +411,36 @@ export function validateCanvasRevisionRecord(record: CanvasRevisionRecord): Pers
   }
   if (!isRecord(record.mutationBatch)) {
     return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'mutationBatch must be an object.', { path: 'mutationBatch' });
+  }
+  if (record.sessionId !== undefined && record.sessionId !== null && !isString(record.sessionId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'sessionId must be a string when provided.', { path: 'sessionId' });
+  }
+  if (record.runtimeHistory !== undefined && record.runtimeHistory !== null && !isRecord(record.runtimeHistory)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'runtimeHistory must be an object when provided.', { path: 'runtimeHistory' });
+  }
+
+  return okResult(record);
+}
+
+export function validateCanvasHistoryCursorRecord(record: CanvasHistoryCursorRecord): PersistenceResult<CanvasHistoryCursorRecord> {
+  if (!isNonEmptyString(record.canvasId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'canvasId is required.', { path: 'canvasId' });
+  }
+  if (!isNonEmptyString(record.actorId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'actorId is required.', { path: 'actorId' });
+  }
+  if (!isNonEmptyString(record.sessionId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'sessionId is required.', { path: 'sessionId' });
+  }
+  if (record.undoRevisionNo !== undefined && record.undoRevisionNo !== null && !isNumber(record.undoRevisionNo)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'undoRevisionNo must be a number when provided.', {
+      path: 'undoRevisionNo',
+    });
+  }
+  if (record.redoRevisionNo !== undefined && record.redoRevisionNo !== null && !isNumber(record.redoRevisionNo)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'redoRevisionNo must be a number when provided.', {
+      path: 'redoRevisionNo',
+    });
   }
 
   return okResult(record);

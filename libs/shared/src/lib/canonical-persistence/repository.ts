@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { CanonicalObjectRecord } from '../canonical-object-contract';
 import { cloneContentBlocks, isSemanticRole, readContentBlocks } from '../canonical-object-contract';
 import type {
+  CanvasHistoryCursorRecord,
   CanvasBindingRecord,
   CanvasNodeRecord,
   CloneEditableNoteInput,
@@ -20,6 +21,7 @@ import type { CanonicalDb } from './pglite-db';
 import {
   canonicalObjects,
   canvasBindings,
+  canvasHistoryCursors,
   canvasNodes,
   canvasRevisions,
   objectRelations,
@@ -32,6 +34,7 @@ import {
 import {
   validateCanonicalObjectRecord,
   validateCanvasBindingRecord,
+  validateCanvasHistoryCursorRecord,
   validateCanvasNodeRecord,
   validateCanvasRevisionRecord,
   validateObjectRelationRecord,
@@ -46,6 +49,7 @@ import {
 type CanonicalObjectRow = typeof canonicalObjects.$inferSelect;
 type CanvasNodeRow = typeof canvasNodes.$inferSelect;
 type CanvasBindingRow = typeof canvasBindings.$inferSelect;
+type CanvasHistoryCursorRow = typeof canvasHistoryCursors.$inferSelect;
 type PluginPackageRow = typeof pluginPackages.$inferSelect;
 type PluginVersionRow = typeof pluginVersions.$inferSelect;
 type PluginExportRow = typeof pluginExports.$inferSelect;
@@ -127,6 +131,17 @@ function fromCanvasBindingRow(row: CanvasBindingRow): CanvasBindingRecord {
     sourceRef: row.sourceRef,
     mapping: row.mapping,
     createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function fromCanvasHistoryCursorRow(row: CanvasHistoryCursorRow): CanvasHistoryCursorRecord {
+  return {
+    canvasId: row.canvasId,
+    actorId: row.actorId,
+    sessionId: row.sessionId,
+    undoRevisionNo: row.undoRevisionNo ?? null,
+    redoRevisionNo: row.redoRevisionNo ?? null,
     updatedAt: row.updatedAt,
   };
 }
@@ -289,6 +304,12 @@ export class CanonicalPersistenceRepository {
 
     const existing = await this.getCanonicalObject(input.record.workspaceId, input.record.id);
     if (existing.ok) {
+      if (existing.value.deletedAt && (input.operation ?? 'create') === 'create') {
+        return this.upsertCanonicalObject({
+          ...validation.value,
+          deletedAt: null,
+        });
+      }
       return errResult(
         isEditableNoteLikeRecord(validation.value)
           ? 'EDITABLE_OBJECT_REQUIRES_CLONE'
@@ -1355,12 +1376,14 @@ export class CanonicalPersistenceRepository {
       revisionNo: record.revisionNo,
       authorKind: record.authorKind,
       authorId: record.authorId,
+      sessionId: record.sessionId ?? null,
       mutationBatch: record.mutationBatch,
+      runtimeHistory: record.runtimeHistory ?? null,
       snapshotRef: record.snapshotRef ?? null,
       createdAt: record.createdAt ?? new Date(),
     });
 
-    return okResult(record);
+    return okResult(validation.value);
   }
 
   async listCanvasRevisions(canvasId: string): Promise<CanvasRevisionRecord[]> {
@@ -1375,7 +1398,9 @@ export class CanonicalPersistenceRepository {
       revisionNo: row.revisionNo,
       authorKind: row.authorKind,
       authorId: row.authorId,
+      sessionId: row.sessionId ?? null,
       mutationBatch: row.mutationBatch,
+      runtimeHistory: row.runtimeHistory ?? null,
       snapshotRef: row.snapshotRef ?? null,
       createdAt: row.createdAt,
     }));
@@ -1391,5 +1416,56 @@ export class CanonicalPersistenceRepository {
     });
 
     return latest?.revisionNo ?? 0;
+  }
+
+  async getCanvasHistoryCursor(
+    canvasId: string,
+    actorId: string,
+    sessionId: string,
+  ): Promise<PersistenceResult<CanvasHistoryCursorRecord | null>> {
+    const row = await this.db.query.canvasHistoryCursors.findFirst({
+      where: and(
+        eq(canvasHistoryCursors.canvasId, canvasId),
+        eq(canvasHistoryCursors.actorId, actorId),
+        eq(canvasHistoryCursors.sessionId, sessionId),
+      ),
+    });
+
+    return okResult(row ? fromCanvasHistoryCursorRow(row) : null);
+  }
+
+  async upsertCanvasHistoryCursor(record: CanvasHistoryCursorRecord): Promise<PersistenceResult<CanvasHistoryCursorRecord>> {
+    const validation = validateCanvasHistoryCursorRecord(record);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const values = {
+      canvasId: validation.value.canvasId,
+      actorId: validation.value.actorId,
+      sessionId: validation.value.sessionId,
+      undoRevisionNo: validation.value.undoRevisionNo ?? null,
+      redoRevisionNo: validation.value.redoRevisionNo ?? null,
+      updatedAt: validation.value.updatedAt ?? new Date(),
+    };
+
+    const rows = await this.db
+      .insert(canvasHistoryCursors)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [
+          canvasHistoryCursors.canvasId,
+          canvasHistoryCursors.actorId,
+          canvasHistoryCursors.sessionId,
+        ],
+        set: {
+          undoRevisionNo: values.undoRevisionNo,
+          redoRevisionNo: values.redoRevisionNo,
+          updatedAt: values.updatedAt,
+        },
+      })
+      .returning();
+
+    return okResult(fromCanvasHistoryCursorRow(rows[0]!));
   }
 }

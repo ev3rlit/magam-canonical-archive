@@ -235,6 +235,7 @@ export interface CanvasMutationBatchV1 {
   workspaceId: WorkspaceIdV1;
   canvasId?: CanvasIdV1;
   actor?: MutationActorV1;
+  sessionId?: string;
   reason?: string;
   preconditions?: CanvasMutationPreconditionsV1;
   dryRun?: boolean;

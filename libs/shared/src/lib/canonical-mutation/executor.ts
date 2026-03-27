@@ -433,8 +433,9 @@ export async function executeMutationBatch(input: {
   context: HeadlessServiceContext;
   batch: MutationBatch;
   dryRun?: boolean;
+  appendRevision?: boolean;
 }): Promise<MutationExecutionResult> {
-  const { context, batch, dryRun = false } = input;
+  const { context, batch, dryRun = false, appendRevision = true } = input;
   ensureOperations(batch);
 
   const currentRevision = batch.canvasRef
@@ -472,7 +473,7 @@ export async function executeMutationBatch(input: {
   }
 
   const nextRevision = batch.canvasRef ? currentRevision + 1 : null;
-  if (!dryRun && batch.canvasRef) {
+  if (!dryRun && appendRevision && batch.canvasRef) {
     const actor = resolveActor(batch);
     const revision: CanvasRevisionRecord = {
       id: randomUUID(),

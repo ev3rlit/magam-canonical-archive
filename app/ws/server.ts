@@ -88,6 +88,7 @@ const server = Bun.serve({
                 ws,
                 subscriptions: clients.get(ws)!,
                 notifyFileChanged: broadcastFileChanged,
+                notifyCanvasChanged: broadcastCanvasChanged,
             };
 
             try {
@@ -169,21 +170,17 @@ function broadcastCompatibilityFileListUpdate(event: 'add' | 'unlink', filePath:
     console.log(WS_SERVER_MESSAGES.broadcastCompatibilityFilesChanged(event, relativePath));
 }
 
-function broadcastFileChanged(payload: {
-    canvasId?: string;
-    filePath: string;
-    resolvedFilePath: string;
-    newVersion: string;
+function broadcastCanvasChanged(payload: {
+    canvasId: string;
+    canvasRevision: number;
     originId: string;
     commandId: string;
     rootPath?: string;
 }) {
     const now = Date.now();
-    recentCommandEvents.set(payload.resolvedFilePath, now);
-
     const canvasNotification = createNotification('canvas.changed', {
-        ...(payload.canvasId ? { canvasId: payload.canvasId } : {}),
-        newVersion: payload.newVersion,
+        canvasId: payload.canvasId,
+        canvasRevision: payload.canvasRevision,
         originId: payload.originId,
         commandId: payload.commandId,
         timestamp: now,
@@ -191,7 +188,40 @@ function broadcastFileChanged(payload: {
     });
     const canvasMessage = JSON.stringify(canvasNotification);
 
+    clients.forEach((subscriptions, ws) => {
+        if (!subscriptions.has(`canvas:${payload.canvasId}`)) {
+            return;
+        }
+
+        (ws as { send: (data: string) => void }).send(canvasMessage);
+    });
+    console.log(WS_SERVER_MESSAGES.broadcastCanvasChanged(payload.canvasId));
+}
+
+function broadcastFileChanged(payload: {
+    canvasId?: string;
+    filePath: string;
+    resolvedFilePath: string;
+    newVersion: string;
+    originId: string;
+    commandId: string;
+    canvasRevision?: number;
+    rootPath?: string;
+}) {
+    const now = Date.now();
+    recentCommandEvents.set(payload.resolvedFilePath, now);
     if (payload.canvasId) {
+        const canvasNotification = createNotification('canvas.changed', {
+            canvasId: payload.canvasId,
+            newVersion: payload.newVersion,
+            ...(typeof payload.canvasRevision === 'number' ? { canvasRevision: payload.canvasRevision } : {}),
+            originId: payload.originId,
+            commandId: payload.commandId,
+            timestamp: now,
+            ...(payload.rootPath ? { rootPath: payload.rootPath } : {}),
+        });
+        const canvasMessage = JSON.stringify(canvasNotification);
+
         clients.forEach((subscriptions, ws) => {
             if (!subscriptions.has(`canvas:${payload.canvasId}`)) {
                 return;

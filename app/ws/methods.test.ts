@@ -927,22 +927,160 @@ describe('RPC editing methods', () => {
     const step = routed.value.steps[0] as MutationDispatchDescriptor;
     expect(step.kind).toBe('runtime-mutation');
     if (step.kind !== 'runtime-mutation') return;
+    const createCommand = step.payload.commands.find((command) => command.name === 'canvas.node.create');
+    expect(createCommand?.name).toBe('canvas.node.create');
+    if (!createCommand || createCommand.name !== 'canvas.node.create') return;
     const result = await methods['canvas.runtime.mutate']({
       canvasId: step.payload.canvasId,
-      filePath: step.payload.filePath,
       batch: {
         workspaceId: 'workspace',
         canvasId: step.payload.canvasId,
+        actor: {
+          kind: 'user',
+          id: 'client-bridge',
+        },
+        sessionId: 'session-bridge',
         commands: step.payload.commands,
       },
-      baseVersion: sha(original),
       originId: 'client-bridge',
       commandId: 'cmd-bridge-create',
-    }, { ws: {}, subscriptions: new Set() }) as { success: boolean };
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean; canvasRevision?: number };
 
     expect(result.success).toBe(true);
-    const patched = await readFile(filePath, 'utf-8');
-    expect(patched.includes('<Shape')).toBe(true);
-    expect(patched.includes('<Markdown>')).toBe(true);
+    expect(result.canvasRevision).toBe(1);
+
+    const compatibilitySource = await readFile(filePath, 'utf-8');
+    expect(compatibilitySource).toBe(original);
+
+    const projections = await methods['canvas.runtime.projections']({
+      canvasId: step.payload.canvasId,
+    }, { ws: {}, subscriptions: new Set() }) as {
+      renderProjection: {
+        canvasRevision: number;
+        nodes: Array<{ nodeId: string }>;
+      };
+    };
+    expect(projections.renderProjection.canvasRevision).toBe(1);
+    expect(projections.renderProjection.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ nodeId: createCommand.nodeId }),
+      ]),
+    );
+  });
+
+  it('canvas.runtime.undo / canvas.runtime.redo 는 runtime history로만 상태를 왕복한다', async () => {
+    process.env.MAGAM_TARGET_DIR = dirname(await makeTempTsx(`
+      export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }
+    `));
+
+    const mutate = await methods['canvas.runtime.mutate']({
+      canvasId: 'doc-runtime-history',
+      batch: {
+        workspaceId: 'workspace',
+        canvasId: 'doc-runtime-history',
+        actor: {
+          kind: 'user',
+          id: 'client-history',
+        },
+        sessionId: 'session-history',
+        commands: [{
+          name: 'canvas.node.create',
+          canvasId: 'doc-runtime-history',
+          nodeId: 'runtime-node-1',
+          kind: 'node',
+          nodeType: 'shape',
+          placement: {
+            mode: 'canvas-absolute',
+            x: 120,
+            y: 160,
+          },
+        }],
+      },
+      originId: 'client-history',
+      commandId: 'cmd-runtime-create',
+    }, { ws: {}, subscriptions: new Set() }) as { success: boolean; canvasRevision?: number };
+
+    expect(mutate).toMatchObject({
+      success: true,
+      canvasRevision: 1,
+    });
+
+    const afterCreate = await methods['canvas.runtime.projections']({
+      canvasId: 'doc-runtime-history',
+    }, { ws: {}, subscriptions: new Set() }) as {
+      renderProjection: {
+        canvasRevision: number;
+        nodes: Array<{ nodeId: string }>;
+      };
+    };
+    expect(afterCreate.renderProjection.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ nodeId: 'runtime-node-1' }),
+      ]),
+    );
+
+    const undone = await methods['canvas.runtime.undo']({
+      canvasId: 'doc-runtime-history',
+      actorId: 'client-history',
+      sessionId: 'session-history',
+      originId: 'client-history',
+      commandId: 'cmd-runtime-undo',
+    }, { ws: {}, subscriptions: new Set() }) as {
+      success: boolean;
+      runtimeResult: { ok: boolean };
+      canvasRevision?: number;
+    };
+    expect(undone).toMatchObject({
+      success: true,
+      runtimeResult: { ok: true },
+      canvasRevision: 2,
+    });
+
+    const afterUndo = await methods['canvas.runtime.projections']({
+      canvasId: 'doc-runtime-history',
+    }, { ws: {}, subscriptions: new Set() }) as {
+      renderProjection: {
+        canvasRevision: number;
+        nodes: Array<{ nodeId: string }>;
+      };
+    };
+    expect(afterUndo.renderProjection.canvasRevision).toBe(2);
+    expect(afterUndo.renderProjection.nodes).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ nodeId: 'runtime-node-1' }),
+      ]),
+    );
+
+    const redone = await methods['canvas.runtime.redo']({
+      canvasId: 'doc-runtime-history',
+      actorId: 'client-history',
+      sessionId: 'session-history',
+      originId: 'client-history',
+      commandId: 'cmd-runtime-redo',
+    }, { ws: {}, subscriptions: new Set() }) as {
+      success: boolean;
+      runtimeResult: { ok: boolean };
+      canvasRevision?: number;
+    };
+    expect(redone).toMatchObject({
+      success: true,
+      runtimeResult: { ok: true },
+      canvasRevision: 3,
+    });
+
+    const afterRedo = await methods['canvas.runtime.projections']({
+      canvasId: 'doc-runtime-history',
+    }, { ws: {}, subscriptions: new Set() }) as {
+      renderProjection: {
+        canvasRevision: number;
+        nodes: Array<{ nodeId: string }>;
+      };
+    };
+    expect(afterRedo.renderProjection.canvasRevision).toBe(3);
+    expect(afterRedo.renderProjection.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ nodeId: 'runtime-node-1' }),
+      ]),
+    );
   });
 });

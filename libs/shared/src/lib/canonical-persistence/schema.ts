@@ -131,12 +131,39 @@ export const canvasRevisions = pgTable(
     revisionNo: integer('revision_no').notNull(),
     authorKind: text('author_kind').$type<'user' | 'agent' | 'system'>().notNull(),
     authorId: text('author_id').notNull(),
+    sessionId: text('session_id'),
     mutationBatch: jsonb('mutation_batch').$type<Record<string, unknown>>().notNull(),
+    runtimeHistory: jsonb('runtime_history').$type<Record<string, unknown>>(),
     snapshotRef: text('snapshot_ref'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   },
   (table) => ({
     canvasRevisionIdx: index('idx_document_revisions_document_revision').on(table.canvasId, table.revisionNo),
+    canvasAuthorSessionIdx: index('idx_document_revisions_document_author_session').on(
+      table.canvasId,
+      table.authorId,
+      table.sessionId,
+      table.revisionNo,
+    ),
+  }),
+);
+
+export const canvasHistoryCursors = pgTable(
+  'canvas_history_cursors',
+  {
+    canvasId: text('document_id').notNull(),
+    actorId: text('actor_id').notNull(),
+    sessionId: text('session_id').notNull(),
+    undoRevisionNo: integer('undo_revision_no'),
+    redoRevisionNo: integer('redo_revision_no'),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.canvasId, table.actorId, table.sessionId],
+      name: 'canvas_history_cursors_document_actor_session_pk',
+    }),
+    canvasCursorIdx: index('idx_canvas_history_cursors_document').on(table.canvasId, table.updatedAt),
   }),
 );
 

@@ -233,6 +233,7 @@ export interface GraphState {
   sourceVersion: string | null;
   sourceVersions: Record<string, string>;
   canvasVersions: Record<string, string>;
+  canvasRevisionsById: Record<string, number>;
   clientId: string;
   lastAppliedCommandId?: string;
   status: 'idle' | 'loading' | 'error' | 'success' | 'connected';
@@ -264,10 +265,11 @@ export interface GraphState {
   hoveredNodeIdsByGroupId: Record<string, string[]>;
   pendingActionRoutingByKey: Record<string, ActionRoutingPendingRecord>;
   actionRoutingPendingByToken: Record<string, ActionOptimisticLifecycleEvent>;
-  setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null; sourceVersions?: Record<string, string>; canvasVersions?: Record<string, string> }) => void;
+  setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null; sourceVersions?: Record<string, string>; canvasVersions?: Record<string, string>; canvasRevisionsById?: Record<string, number> }) => void;
   setSourceVersion: (version: string | null) => void;
   setSourceVersionForFile: (filePath: string, version: string | null) => void;
   setCanvasVersion: (canvasId: string, version: string | null) => void;
+  setCanvasRevision: (canvasId: string, revision: number | null) => void;
   setLastAppliedCommandId: (commandId?: string) => void;
   hydrateWorkspaceRegistry: () => Promise<{
     workspaces: RegisteredWorkspace[];
@@ -826,6 +828,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   sourceVersion: null,
   sourceVersions: {},
   canvasVersions: {},
+  canvasRevisionsById: {},
   clientId: uuidv4(),
   lastAppliedCommandId: undefined,
   status: 'idle',
@@ -870,11 +873,13 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     sourceVersion,
     sourceVersions,
     canvasVersions,
+    canvasRevisionsById,
   }) => set((state) => {
     const nextSourceVersions = sourceVersions
       ? normalizeWorkspaceAwareSourceVersions(state.workspaceRootPath, sourceVersions)
       : state.sourceVersions;
     const nextCanvasVersions = canvasVersions ?? state.canvasVersions;
+    const nextCanvasRevisionsById = canvasRevisionsById ?? state.canvasRevisionsById;
     const normalizedMindMapGroups = mindMapGroups.map(normalizeMindMapGroup);
     const resolvedLayoutType = layoutType ?? normalizedMindMapGroups[0]?.layoutType ?? 'compact';
     return {
@@ -893,6 +898,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
           : {}),
       sourceVersions: nextSourceVersions,
       canvasVersions: nextCanvasVersions,
+      canvasRevisionsById: nextCanvasRevisionsById,
       activeGroupFocusGroupId: null,
       entrypointRuntime: resetEntrypointRuntimeState({
         current: state.entrypointRuntime,
@@ -960,6 +966,22 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     return {
       canvasVersions: nextCanvasVersions,
       ...(state.currentCanvasId === canvasId ? { sourceVersion: version } : {}),
+    };
+  }),
+  setCanvasRevision: (canvasId, revision) => set((state) => {
+    if (!canvasId) {
+      return state;
+    }
+
+    const nextCanvasRevisionsById = { ...state.canvasRevisionsById };
+    if (typeof revision === 'number') {
+      nextCanvasRevisionsById[canvasId] = revision;
+    } else {
+      delete nextCanvasRevisionsById[canvasId];
+    }
+
+    return {
+      canvasRevisionsById: nextCanvasRevisionsById,
     };
   }),
   setLastAppliedCommandId: (lastAppliedCommandId) => set({ lastAppliedCommandId }),

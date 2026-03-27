@@ -34,6 +34,7 @@ export interface CanonicalRenderGraphResponse {
     children: RenderNode[];
   };
   canvasId: string;
+  canvasRevision: number;
   title: string | null;
   sourceVersion: string;
   renderProjection?: CanvasRenderProjectionResponseV1;
@@ -42,6 +43,7 @@ export interface CanonicalRenderGraphResponse {
 
 export interface CanvasRuntimeSnapshotResponse {
   canvasId: string;
+  canvasRevision: number;
   workspaceId: string;
   title: string | null;
   sourceVersion: string;
@@ -490,6 +492,7 @@ export function buildCanonicalRenderResponse(input: {
       children: topLevelChildren,
     },
     canvasId: input.canvasId,
+    canvasRevision: input.latestRevision ?? 0,
     title: input.title,
     sourceVersion: hashCanvasSourceVersion({
       canvasId: input.canvasId,
@@ -588,6 +591,7 @@ export async function readCanvasRuntimeSnapshot(input: {
 
   return {
     canvasId: input.canvasId,
+    canvasRevision: input.latestRevision ?? 0,
     workspaceId: input.workspaceId,
     title: input.title,
     sourceVersion: hashCanvasSourceVersion({

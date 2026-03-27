@@ -103,6 +103,7 @@ export async function buildRenderProjection(
 ): Promise<CanvasRenderProjectionResponseV1> {
   const workspaceId = request.workspaceId ?? context.headless.defaultWorkspaceId;
   const nodes = await context.repository.listCanvasNodes(request.canvasId, request.surfaceId);
+  const canvasRevision = await context.repository.getLatestCanvasRevision(request.canvasId);
   const objects = await context.repository.listCanonicalObjects(workspaceId);
   const objectsById = new Map(objects.map((record) => [record.id, record]));
 
@@ -149,6 +150,7 @@ export async function buildRenderProjection(
 
   return {
     canvasId: request.canvasId,
+    canvasRevision,
     workspaceId,
     surfaceId: request.surfaceId ?? null,
     nodes: renderNodes,

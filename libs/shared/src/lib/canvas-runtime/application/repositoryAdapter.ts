@@ -1,5 +1,6 @@
 import type { HeadlessServiceContext } from '../../canonical-cli';
 import type {
+  CanvasHistoryCursorRecord,
   CanvasNodeRecord,
   CanvasRevisionRecord,
   PluginInstanceResolution,
@@ -8,13 +9,22 @@ import type { RuntimeWorkspaceCanvasShell } from '../../canonical-query/workspac
 import { getRuntimeWorkspaceCanvasShell } from '../../canonical-query/workspace-canvas';
 import type {
   CanvasRuntimeRepositoryPort,
+  RuntimeCanvasHistoryCursorRecord,
   RuntimeCanvasNodeRecord,
   RuntimeCanvasRevisionRecord,
   RuntimeCanvasShellRecord,
+  RuntimeStoredCanvasHistoryRecord,
   RuntimePluginInstanceResolution,
 } from './repositoryPorts';
 
 function toRevisionRecord(record: CanvasRevisionRecord): RuntimeCanvasRevisionRecord {
+  return {
+    ...record,
+    runtimeHistory: record.runtimeHistory as RuntimeStoredCanvasHistoryRecord | null | undefined,
+  };
+}
+
+function toHistoryCursorRecord(record: CanvasHistoryCursorRecord): RuntimeCanvasHistoryCursorRecord {
   return {
     ...record,
   };
@@ -94,7 +104,7 @@ export function createCanvasRuntimeRepositoryAdapter(
         : result;
     },
     async appendCanvasRevision(record) {
-      const result = await headless.repository.appendCanvasRevision(record);
+      const result = await headless.repository.appendCanvasRevision(record as CanvasRevisionRecord);
       return result.ok
         ? { ok: true, value: toRevisionRecord(result.value) }
         : result;
@@ -104,6 +114,18 @@ export function createCanvasRuntimeRepositoryAdapter(
       return rows.map(toRevisionRecord);
     },
     getLatestCanvasRevision: (canvasId) => headless.repository.getLatestCanvasRevision(canvasId),
+    async getCanvasHistoryCursor(canvasId, actorId, sessionId) {
+      const result = await headless.repository.getCanvasHistoryCursor(canvasId, actorId, sessionId);
+      return result.ok
+        ? { ok: true, value: result.value ? toHistoryCursorRecord(result.value) : null }
+        : result;
+    },
+    async upsertCanvasHistoryCursor(record) {
+      const result = await headless.repository.upsertCanvasHistoryCursor(record);
+      return result.ok
+        ? { ok: true, value: toHistoryCursorRecord(result.value) }
+        : result;
+    },
     async getCanvasShell(canvasId, workspaceId) {
       const canvas = await getRuntimeWorkspaceCanvasShell(headless, canvasId, workspaceId);
       return toCanvasShellRecord(canvas);

@@ -129,6 +129,7 @@ export async function buildEditingProjection(
 ): Promise<CanvasEditingProjectionResponseV1> {
   const workspaceId = request.workspaceId ?? context.headless.defaultWorkspaceId;
   const allNodes = await context.repository.listCanvasNodes(request.canvasId, request.surfaceId);
+  const canvasRevision = await context.repository.getLatestCanvasRevision(request.canvasId);
   const nodes = request.nodeIds?.length
     ? allNodes.filter((node) => request.nodeIds?.includes(node.id))
     : allNodes;
@@ -137,6 +138,7 @@ export async function buildEditingProjection(
 
   return {
     canvasId: request.canvasId,
+    canvasRevision,
     workspaceId,
     surfaceId: request.surfaceId ?? null,
     nodes: nodes.map((node) => {

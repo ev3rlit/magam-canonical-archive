@@ -7,12 +7,14 @@ export function normalizeReplayBatch(input: {
   commands: CanvasRuntimeCommandV1[];
   resolvedAgainstRevision: number | null;
   actor?: { kind: 'agent' | 'user' | 'system'; id: string; displayName?: string };
+  sessionId?: string;
   reason?: string;
 }): CanvasHistoryReplayBatchV1 {
   return {
     workspaceId: input.workspaceId,
     canvasId: input.canvasId,
     ...(input.actor ? { actor: input.actor } : {}),
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(input.reason ? { reason: input.reason } : {}),
     commands: input.commands as CanvasHistoryReplayBatchV1['commands'],
     normalization: {

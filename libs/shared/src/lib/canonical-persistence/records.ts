@@ -65,9 +65,20 @@ export interface CanvasRevisionRecord {
   revisionNo: number;
   authorKind: 'user' | 'agent' | 'system';
   authorId: string;
+  sessionId?: string | null;
   mutationBatch: Record<string, unknown>;
+  runtimeHistory?: Record<string, unknown> | null;
   snapshotRef?: string | null;
   createdAt?: Date;
+}
+
+export interface CanvasHistoryCursorRecord {
+  canvasId: string;
+  actorId: string;
+  sessionId: string;
+  undoRevisionNo?: number | null;
+  redoRevisionNo?: number | null;
+  updatedAt?: Date;
 }
 
 export interface PluginPackageRecord {

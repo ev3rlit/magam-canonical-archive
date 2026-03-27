@@ -8,6 +8,20 @@
       "when": 1773742492705,
       "tag": "0000_aspiring_malcolm_colcord",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1773742492706,
+      "tag": "0001_plugin_runtime",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773742492707,
+      "tag": "0002_runtime_history",
+      "breakpoints": true
     }
   ]
 }

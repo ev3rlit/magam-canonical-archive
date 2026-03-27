@@ -2,6 +2,7 @@ import type { CanonicalObjectRecord, ContentBlock } from '../../canonical-object
 import type {
   PersistenceResult,
 } from '../../canonical-persistence';
+import type { CanvasHistoryEntryV1 } from '../contracts';
 
 export interface RuntimeCanvasNodeRecord {
   id: string;
@@ -29,9 +30,27 @@ export interface RuntimeCanvasRevisionRecord {
   revisionNo: number;
   authorKind: 'user' | 'agent' | 'system';
   authorId: string;
+  sessionId?: string | null;
   mutationBatch: Record<string, unknown>;
+  runtimeHistory?: RuntimeStoredCanvasHistoryRecord | null;
   snapshotRef?: string | null;
   createdAt?: Date;
+}
+
+export interface RuntimeStoredCanvasHistoryRecord {
+  kind: 'mutation' | 'undo' | 'redo';
+  sourceRevisionNo?: number | null;
+  sourceHistoryEntryId?: string | null;
+  entry: CanvasHistoryEntryV1;
+}
+
+export interface RuntimeCanvasHistoryCursorRecord {
+  canvasId: string;
+  actorId: string;
+  sessionId: string;
+  undoRevisionNo?: number | null;
+  redoRevisionNo?: number | null;
+  updatedAt?: Date;
 }
 
 export interface RuntimePluginInstanceResolution {
@@ -125,5 +144,13 @@ export interface CanvasRuntimeRepositoryPort {
   appendCanvasRevision(record: RuntimeCanvasRevisionRecord): Promise<PersistenceResult<RuntimeCanvasRevisionRecord>>;
   listCanvasRevisions(canvasId: string): Promise<RuntimeCanvasRevisionRecord[]>;
   getLatestCanvasRevision(canvasId: string): Promise<number>;
+  getCanvasHistoryCursor(
+    canvasId: string,
+    actorId: string,
+    sessionId: string,
+  ): Promise<PersistenceResult<RuntimeCanvasHistoryCursorRecord | null>>;
+  upsertCanvasHistoryCursor(
+    record: RuntimeCanvasHistoryCursorRecord,
+  ): Promise<PersistenceResult<RuntimeCanvasHistoryCursorRecord>>;
   getCanvasShell(canvasId: string, workspaceId: string): Promise<RuntimeCanvasShellRecord>;
 }

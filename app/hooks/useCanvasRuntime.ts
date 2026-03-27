@@ -9,18 +9,19 @@ import type {
   CanvasHierarchyProjectionResponseV1,
   CanvasRenderProjectionResponseV1,
   CanvasRuntimeCommandV1,
+  CanvasRedoRequestV1,
+  CanvasUndoRequestV1,
 } from '../../libs/shared/src/lib/canvas-runtime';
 import { useGraphStore } from '@/store/graph';
 import { editDebugLog, isEditDebugEnabled } from '@/utils/editDebug';
 import {
-  applyEditCompletionSnapshot,
   createPerCanvasMutationExecutor,
   pruneExpiredOwnCommands,
   rememberOwnCommand,
   resolveFileSyncWsUrl,
   RpcClientError,
-  shouldReloadAfterHistoryReplay,
   shouldReloadForCanvasChange,
+  type MutationMethod,
   type RpcMutationResult,
   type UpdateNodeMutationOptions,
   type VersionConflictMetricsSnapshot,
@@ -302,13 +303,17 @@ export function useCanvasRuntime(
     if ('method' in data && data.method === 'canvas.changed') {
       const incomingCanvasId = typeof data.params?.canvasId === 'string' ? data.params.canvasId : undefined;
       const incomingVersion = typeof data.params?.newVersion === 'string' ? data.params.newVersion : undefined;
+      const incomingCanvasRevision = typeof data.params?.canvasRevision === 'number' ? data.params.canvasRevision : undefined;
       const incomingOriginId = data.params?.originId;
       const incomingCommandId = data.params?.commandId;
-      const { clientId, lastAppliedCommandId, setCanvasVersion } = useGraphStore.getState();
+      const { clientId, lastAppliedCommandId, setCanvasRevision, setCanvasVersion } = useGraphStore.getState();
       pruneExpiredOwnCommands(recentOwnCommandsRef.current, Date.now());
 
       if (incomingCanvasId && incomingVersion) {
         setCanvasVersion(incomingCanvasId, incomingVersion);
+      }
+      if (incomingCanvasId && incomingCanvasRevision !== undefined) {
+        setCanvasRevision(incomingCanvasId, incomingCanvasRevision);
       }
 
       const shouldReload = shouldReloadForCanvasChange({
@@ -387,15 +392,24 @@ export function useCanvasRuntime(
     };
   }, [canvasId, handleMessage, onCanvasRegistryChanged, rejectPendingRequests, sendRequest, workspaceRootPath]);
 
-  const withCommon = useCallback((params: Record<string, unknown>) => {
+  const withCommon = useCallback((method: MutationMethod, params: Record<string, unknown>) => {
     const targetCanvasId = typeof params.canvasId === 'string' ? params.canvasId : canvasId;
     if (!targetCanvasId) {
       throw new Error('CANVAS_ID_NOT_READY');
     }
 
     const { canvasVersions, clientId } = useGraphStore.getState();
+    const requiresCompatibilityVersion = (
+      method === 'canvas.node.create'
+      || method === 'object.body.block.insert'
+      || method === 'node.update'
+      || method === 'node.move'
+      || method === 'node.create'
+      || method === 'node.delete'
+      || method === 'node.reparent'
+    );
     const baseVersion = canvasVersions[targetCanvasId] ?? null;
-    if (!baseVersion || isClientOnlyDraftSourceVersion(baseVersion)) {
+    if (requiresCompatibilityVersion && (!baseVersion || isClientOnlyDraftSourceVersion(baseVersion))) {
       throw new Error('SOURCE_VERSION_NOT_READY');
     }
 
@@ -405,10 +419,10 @@ export function useCanvasRuntime(
 
     return {
       ...params,
-      baseVersion,
       canvasId: targetCanvasId,
       originId: clientId,
       commandId,
+      ...(requiresCompatibilityVersion && baseVersion ? { baseVersion } : {}),
       ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
     };
   }, [canvasId, workspaceRootPath]);
@@ -417,6 +431,11 @@ export function useCanvasRuntime(
     const typed = result as RpcMutationResult;
     if (typed?.newVersion && typed.canvasId) {
       useGraphStore.getState().setCanvasVersion(typed.canvasId, typed.newVersion);
+    }
+    const nextCanvasRevision = typed?.canvasRevision
+      ?? (typed?.runtimeResult?.ok ? typed.runtimeResult.data.canvasRevisionAfter ?? undefined : undefined);
+    if (typed?.canvasId && typeof nextCanvasRevision === 'number') {
+      useGraphStore.getState().setCanvasRevision(typed.canvasId, nextCanvasRevision);
     }
     if (typed?.commandId) {
       rememberOwnCommand(recentOwnCommandsRef.current, typed.commandId, Date.now());
@@ -451,7 +470,9 @@ export function useCanvasRuntime(
     applyResultVersion,
     onVersionConflictActual: (actualVersion) => {
       const activeCanvasId = currentCanvasIdRef.current;
-      if (activeCanvasId) {
+      if (activeCanvasId && typeof actualVersion === 'number') {
+        useGraphStore.getState().setCanvasRevision(activeCanvasId, actualVersion);
+      } else if (activeCanvasId && typeof actualVersion === 'string') {
         useGraphStore.getState().setCanvasVersion(activeCanvasId, actualVersion);
       }
     },
@@ -501,6 +522,10 @@ export function useCanvasRuntime(
       throw new Error('SOURCE_VERSION_NOT_READY');
     }
 
+    const state = useGraphStore.getState();
+    const canvasRevision = state.canvasRevisionsById[resolvedCanvasId];
+    const sessionId = state.workspaceSessionKey ?? state.activeWorkspaceId ?? state.clientId;
+
     return mutationExecutor.enqueueMutation({
       method: 'canvas.runtime.mutate',
       canvasId: resolvedCanvasId,
@@ -509,8 +534,20 @@ export function useCanvasRuntime(
         batch: {
           workspaceId: workspaceId ?? 'workspace',
           canvasId: resolvedCanvasId,
+          actor: {
+            kind: 'user',
+            id: state.clientId,
+          },
+          sessionId,
           ...(typeof input.dryRun === 'boolean' ? { dryRun: input.dryRun } : {}),
           ...(input.reason ? { reason: input.reason } : {}),
+          ...(typeof canvasRevision === 'number'
+            ? {
+                preconditions: {
+                  canvasRevision,
+                },
+              }
+            : {}),
           commands: input.commands,
         } satisfies CanvasMutationBatchV1,
       }),
@@ -741,45 +778,53 @@ export function useCanvasRuntime(
     });
   }, [canvasId, executeRuntimeMutation]);
 
-  const applyEventSnapshot = useCallback(async (event: Parameters<typeof applyEditCompletionSnapshot>[0], direction: 'before' | 'after'): Promise<void> => {
-    await applyEditCompletionSnapshot(event, direction, {
-      moveNode,
-      updateNode,
-      createNode,
-      createCanvasNode,
-      insertObjectBodyBlock,
-      deleteNode,
-      reparentNode,
-    });
-  }, [createCanvasNode, createNode, deleteNode, insertObjectBodyBlock, moveNode, reparentNode, updateNode]);
-
   const undoLastEdit = useCallback(async (): Promise<boolean> => {
-    const state = useGraphStore.getState();
-    const event = state.peekUndoEditEvent();
-    if (!event) {
+    if (!canvasId) {
       return false;
     }
-    await applyEventSnapshot(event, 'before');
-    useGraphStore.getState().commitUndoEventSuccess(event.eventId);
-    if (shouldReloadAfterHistoryReplay(event)) {
-      onCanvasInvalidated();
+
+    const state = useGraphStore.getState();
+    const request: CanvasUndoRequestV1 = {
+      canvasId,
+      actorId: state.clientId,
+      sessionId: state.workspaceSessionKey ?? state.activeWorkspaceId ?? state.clientId,
+    };
+
+    const result = applyResultVersion(await sendRequest(
+      'canvas.runtime.undo',
+      withCommon('canvas.runtime.undo', request as unknown as Record<string, unknown>),
+    ));
+    if (!result.success || !result.runtimeResult?.ok) {
+      return false;
     }
+
+    onCanvasInvalidated();
     return true;
-  }, [applyEventSnapshot, onCanvasInvalidated]);
+  }, [applyResultVersion, canvasId, onCanvasInvalidated, sendRequest, withCommon]);
 
   const redoLastEdit = useCallback(async (): Promise<boolean> => {
-    const state = useGraphStore.getState();
-    const event = state.peekRedoEditEvent();
-    if (!event) {
+    if (!canvasId) {
       return false;
     }
-    await applyEventSnapshot(event, 'after');
-    useGraphStore.getState().commitRedoEventSuccess(event.eventId);
-    if (shouldReloadAfterHistoryReplay(event)) {
-      onCanvasInvalidated();
+
+    const state = useGraphStore.getState();
+    const request: CanvasRedoRequestV1 = {
+      canvasId,
+      actorId: state.clientId,
+      sessionId: state.workspaceSessionKey ?? state.activeWorkspaceId ?? state.clientId,
+    };
+
+    const result = applyResultVersion(await sendRequest(
+      'canvas.runtime.redo',
+      withCommon('canvas.runtime.redo', request as unknown as Record<string, unknown>),
+    ));
+    if (!result.success || !result.runtimeResult?.ok) {
+      return false;
     }
+
+    onCanvasInvalidated();
     return true;
-  }, [applyEventSnapshot, onCanvasInvalidated]);
+  }, [applyResultVersion, canvasId, onCanvasInvalidated, sendRequest, withCommon]);
 
   return {
     dispatchRuntimeMutation: executeRuntimeMutation,

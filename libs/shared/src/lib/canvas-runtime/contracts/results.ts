@@ -146,6 +146,7 @@ export interface CanvasHistoryReplayBatchV1 {
   workspaceId: WorkspaceIdV1;
   canvasId: CanvasIdV1;
   actor?: MutationActorV1;
+  sessionId?: string;
   reason?: string;
   commands: CanvasHistoryReplayCommandV1[];
   normalization: {

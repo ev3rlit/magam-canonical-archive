@@ -45,6 +45,7 @@ export interface CanvasHierarchyProjectionRequestV1 {
 
 export interface CanvasHierarchyProjectionResponseV1 {
   canvasId: CanvasIdV1;
+  canvasRevision: number;
   workspaceId?: WorkspaceIdV1;
   surfaceId?: SurfaceIdV1 | null;
   roots: CanvasHierarchyProjectionNodeV1[];
@@ -88,6 +89,7 @@ export interface CanvasRenderProjectionRequestV1 {
 
 export interface CanvasRenderProjectionResponseV1 {
   canvasId: CanvasIdV1;
+  canvasRevision: number;
   workspaceId?: WorkspaceIdV1;
   surfaceId?: SurfaceIdV1 | null;
   nodes: CanvasRenderProjectionNodeV1[];
@@ -155,6 +157,7 @@ export interface CanvasEditingProjectionRequestV1 {
 
 export interface CanvasEditingProjectionResponseV1 {
   canvasId: CanvasIdV1;
+  canvasRevision: number;
   workspaceId?: WorkspaceIdV1;
   surfaceId?: SurfaceIdV1 | null;
   nodes: CanvasEditingProjectionNodeV1[];

@@ -14,8 +14,12 @@ import {
     createCanonicalPgliteDb,
     createCanvasRuntimeServiceContext,
     dispatchCanvasMutation,
+    redoCanvasMutation,
+    undoCanvasMutation,
     type ContentBlock,
     type CanvasMutationBatchV1,
+    type CanvasRedoRequestV1,
+    type CanvasUndoRequestV1,
     type MutationResultEnvelopeV1,
     readContentBlocks,
 } from '../../libs/shared/src';
@@ -44,6 +48,14 @@ export interface RpcContext {
         filePath: string;
         resolvedFilePath: string;
         newVersion: string;
+        originId: string;
+        commandId: string;
+        rootPath?: string;
+        canvasRevision?: number;
+    }) => void;
+    notifyCanvasChanged?: (payload: {
+        canvasId: string;
+        canvasRevision: number;
         originId: string;
         commandId: string;
         rootPath?: string;
@@ -357,7 +369,7 @@ function ensureContentBlock(value: unknown): ContentBlock {
 
     return {
         id,
-        blockType: blockType as ContentBlock['blockType'],
+        blockType: blockType as Extract<ContentBlock, { payload: Record<string, unknown> }>['blockType'],
         payload: input.payload && typeof input.payload === 'object' ? input.payload as Record<string, unknown> : {},
         ...(typeof input.textualProjection === 'string' ? { textualProjection: input.textualProjection } : {}),
         ...(input.metadata && typeof input.metadata === 'object' ? { metadata: input.metadata as Record<string, unknown> } : {}),
@@ -397,7 +409,7 @@ function toRuntimeBodyBlock(block: ContentBlock): { blockId: string; kind: 'para
     };
 }
 
-function toLegacyBodyBlock(block: ReturnType<typeof toRuntimeBodyBlock>): {
+function toLegacyBodyBlock(block: ReturnType<typeof toRuntimeBodyBlock> | { blockId: string; kind: string; props: Record<string, unknown> }): {
     blockType: string;
     source?: string;
     text?: string;
@@ -522,6 +534,14 @@ async function ensureCommonParams(params: Record<string, unknown>) {
         ? { filePath: inputFilePath, resolvedFilePath: resolveWorkspaceFilePath(inputFilePath, rootPath) }
         : await resolveCanvasCompatibilityPath(canvasId as string, rootPath);
     return { canvasId: canvasId ?? undefined, filePath: resolved.filePath, resolvedFilePath: resolved.resolvedFilePath, rootPath, baseVersion, originId, commandId };
+}
+
+function ensureRuntimeCommonParams(params: Record<string, unknown>) {
+    const canvasId = ensureString(params.canvasId, 'canvasId');
+    const originId = ensureString(params.originId, 'originId');
+    const commandId = ensureString(params.commandId, 'commandId');
+    const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
+    return { canvasId, originId, commandId, rootPath };
 }
 
 async function getFileVersion(filePath: string): Promise<string> {
@@ -649,6 +669,7 @@ function ensureRuntimeMutationBatch(
         workspaceId,
         ...(canvasId ? { canvasId } : {}),
         ...(typeof batch.reason === 'string' ? { reason: batch.reason } : {}),
+        ...(typeof batch.sessionId === 'string' && batch.sessionId.length > 0 ? { sessionId: batch.sessionId } : {}),
         ...(typeof batch.dryRun === 'boolean' ? { dryRun: batch.dryRun } : {}),
         ...(isRecord(batch.actor) && typeof batch.actor.kind === 'string' && typeof batch.actor.id === 'string'
             ? {
@@ -673,6 +694,36 @@ function ensureRuntimeMutationBatch(
     };
 }
 
+function ensureCanvasUndoRequest(value: Record<string, unknown>, fallbackCanvasId?: string): CanvasUndoRequestV1 {
+    const canvasId = typeof value.canvasId === 'string' && value.canvasId.length > 0
+        ? value.canvasId
+        : fallbackCanvasId;
+    if (!canvasId) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
+    }
+
+    return {
+        canvasId,
+        actorId: ensureString(value.actorId, 'actorId'),
+        sessionId: ensureString(value.sessionId, 'sessionId'),
+    };
+}
+
+function ensureCanvasRedoRequest(value: Record<string, unknown>, fallbackCanvasId?: string): CanvasRedoRequestV1 {
+    const canvasId = typeof value.canvasId === 'string' && value.canvasId.length > 0
+        ? value.canvasId
+        : fallbackCanvasId;
+    if (!canvasId) {
+        throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
+    }
+
+    return {
+        canvasId,
+        actorId: ensureString(value.actorId, 'actorId'),
+        sessionId: ensureString(value.sessionId, 'sessionId'),
+    };
+}
+
 function getCompatibilityPatchNodeId(input: {
     command: CanvasMutationBatchV1['commands'][number];
     nodesByObjectId: Map<string, string>;
@@ -690,7 +741,7 @@ function getCompatibilityPatchNodeId(input: {
 
 function resolveAfterBlockIdForCompatibilityPatch(input: {
     command: Extract<CanvasMutationBatchV1['commands'][number], { name: 'object.body.block.insert' }>;
-    objectRecord: Record<string, unknown>;
+    objectRecord: Parameters<typeof readContentBlocks>[0];
 }): string | undefined {
     const blocks = readContentBlocks(input.objectRecord ?? {}) ?? [];
     const position = input.command.position;
@@ -899,64 +950,38 @@ async function applyRuntimeMutationCompatibilityPatches(input: {
 async function handleCanvasRuntimeMutate(
     params: Record<string, unknown>,
     ctx: RpcContext,
-): Promise<{ success: boolean; newVersion: string; commandId: string; filePath: string; runtimeResult?: MutationResultEnvelopeV1 }> {
-    const common = await ensureCommonParams(params);
+): Promise<{ success: boolean; commandId: string; canvasId: string; canvasRevision?: number; runtimeResult: MutationResultEnvelopeV1 }> {
+    const common = ensureRuntimeCommonParams(params);
     const initialBatch = ensureRuntimeMutationBatch(params.batch, common.canvasId);
 
     try {
-        let runtimeResult: MutationResultEnvelopeV1 | undefined;
-
-        if (initialBatch.dryRun) {
-            await ensureBaseVersion(common.resolvedFilePath, common.baseVersion);
-            const runtimeMutation = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
-                ...initialBatch,
-                workspaceId,
-                ...(initialBatch.canvasId ? { canvasId: initialBatch.canvasId } : {}),
-                dryRun: true,
-            }));
-
-            if (!runtimeMutation.envelope.ok) {
-                runtimeFailureToRpcError(runtimeMutation.envelope);
-            }
-
-            runtimeResult = runtimeMutation.envelope;
-            return {
-                success: true,
-                newVersion: common.baseVersion,
-                commandId: common.commandId,
-                filePath: common.filePath,
-                runtimeResult,
-            };
+        const runtimeMutation = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
+            ...initialBatch,
+            workspaceId,
+            canvasId: initialBatch.canvasId ?? common.canvasId,
+        }));
+        if (!runtimeMutation.envelope.ok) {
+            runtimeFailureToRpcError(runtimeMutation.envelope);
         }
 
-        const result = await mutateWithContract(ctx, common, async () => {
-            await withCanonicalContext(common.rootPath, async ({ db, repository, targetDir, dataDir, workspaceId }) => {
-                const runtimeContext = createCanvasRuntimeServiceContext({
-                    db,
-                    repository,
-                    targetDir,
-                    dataDir,
-                    defaultWorkspaceId: workspaceId,
-                });
-                const batch: CanvasMutationBatchV1 = {
-                    ...initialBatch,
-                    workspaceId,
-                    ...(initialBatch.canvasId ? { canvasId: initialBatch.canvasId } : {}),
-                };
-                const runtimeMutation = await dispatchCanvasMutation(runtimeContext, batch);
-                if (!runtimeMutation.envelope.ok) {
-                    runtimeFailureToRpcError(runtimeMutation.envelope);
-                }
-                runtimeResult = runtimeMutation.envelope;
-                await applyRuntimeMutationCompatibilityPatches({
-                    runtimeContext,
-                    batch,
-                    resolvedFilePath: common.resolvedFilePath,
-                });
+        const canvasRevision = runtimeMutation.envelope.data.canvasRevisionAfter ?? undefined;
+        if (!runtimeMutation.envelope.data.dryRun && typeof canvasRevision === 'number') {
+            ctx.notifyCanvasChanged?.({
+                canvasId: common.canvasId,
+                canvasRevision,
+                originId: common.originId,
+                commandId: common.commandId,
+                ...(common.rootPath ? { rootPath: common.rootPath } : {}),
             });
-        });
+        }
 
-        return runtimeResult ? { ...result, runtimeResult } : result;
+        return {
+            success: true,
+            commandId: common.commandId,
+            canvasId: common.canvasId,
+            ...(typeof canvasRevision === 'number' ? { canvasRevision } : {}),
+            runtimeResult: runtimeMutation.envelope,
+        };
     } catch (error) {
         const e = error as { code?: number; message?: string; data?: unknown } | Error;
         const diagnostics = createIntentScopedDiagnostics({
@@ -964,6 +989,126 @@ async function handleCanvasRuntimeMutate(
             stage: 'ws.canvas.runtime.mutate',
             details: {
                 canvasId: initialBatch.canvasId ?? common.canvasId ?? null,
+            },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: (e as Error).message }, diagnostics) };
+    }
+}
+
+async function handleCanvasRuntimeUndo(
+    params: Record<string, unknown>,
+    ctx: RpcContext,
+): Promise<{ success: boolean; commandId: string; canvasId: string; canvasRevision?: number; runtimeResult: MutationResultEnvelopeV1 }> {
+    const common = ensureRuntimeCommonParams(params);
+    const request = ensureCanvasUndoRequest(params, common.canvasId);
+
+    try {
+        const runtimeMutation = await withCanonicalContext(common.rootPath, async ({ db, repository, targetDir, dataDir, workspaceId }) => {
+            const runtimeContext = createCanvasRuntimeServiceContext({
+                db,
+                repository,
+                targetDir,
+                dataDir,
+                defaultWorkspaceId: workspaceId,
+            });
+            return undoCanvasMutation(runtimeContext, request);
+        });
+
+        const canvasRevision = runtimeMutation.envelope.ok
+            ? runtimeMutation.envelope.data.canvasRevisionAfter ?? undefined
+            : undefined;
+        if (runtimeMutation.envelope.ok && typeof canvasRevision === 'number') {
+            ctx.notifyCanvasChanged?.({
+                canvasId: request.canvasId,
+                canvasRevision,
+                originId: common.originId,
+                commandId: common.commandId,
+                ...(common.rootPath ? { rootPath: common.rootPath } : {}),
+            });
+        }
+
+        return {
+            success: runtimeMutation.envelope.ok,
+            commandId: common.commandId,
+            canvasId: request.canvasId,
+            ...(typeof canvasRevision === 'number' ? { canvasRevision } : {}),
+            runtimeResult: runtimeMutation.envelope,
+        };
+    } catch (error) {
+        const e = error as { code?: number; message?: string; data?: unknown } | Error;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'canvas.runtime.undo',
+            stage: 'ws.canvas.runtime.undo',
+            details: {
+                canvasId: request.canvasId,
+            },
+        });
+        if (typeof (e as any).code === 'number') {
+            const typed = e as { code: number; message?: string; data?: unknown };
+            throw {
+                code: typed.code,
+                message: typed.message,
+                data: withDiagnostics(typed.data, diagnostics),
+            };
+        }
+        throw { ...RPC_ERRORS.PATCH_FAILED, data: withDiagnostics({ reason: (e as Error).message }, diagnostics) };
+    }
+}
+
+async function handleCanvasRuntimeRedo(
+    params: Record<string, unknown>,
+    ctx: RpcContext,
+): Promise<{ success: boolean; commandId: string; canvasId: string; canvasRevision?: number; runtimeResult: MutationResultEnvelopeV1 }> {
+    const common = ensureRuntimeCommonParams(params);
+    const request = ensureCanvasRedoRequest(params, common.canvasId);
+
+    try {
+        const runtimeMutation = await withCanonicalContext(common.rootPath, async ({ db, repository, targetDir, dataDir, workspaceId }) => {
+            const runtimeContext = createCanvasRuntimeServiceContext({
+                db,
+                repository,
+                targetDir,
+                dataDir,
+                defaultWorkspaceId: workspaceId,
+            });
+            return redoCanvasMutation(runtimeContext, request);
+        });
+
+        const canvasRevision = runtimeMutation.envelope.ok
+            ? runtimeMutation.envelope.data.canvasRevisionAfter ?? undefined
+            : undefined;
+        if (runtimeMutation.envelope.ok && typeof canvasRevision === 'number') {
+            ctx.notifyCanvasChanged?.({
+                canvasId: request.canvasId,
+                canvasRevision,
+                originId: common.originId,
+                commandId: common.commandId,
+                ...(common.rootPath ? { rootPath: common.rootPath } : {}),
+            });
+        }
+
+        return {
+            success: runtimeMutation.envelope.ok,
+            commandId: common.commandId,
+            canvasId: request.canvasId,
+            ...(typeof canvasRevision === 'number' ? { canvasRevision } : {}),
+            runtimeResult: runtimeMutation.envelope,
+        };
+    } catch (error) {
+        const e = error as { code?: number; message?: string; data?: unknown } | Error;
+        const diagnostics = createIntentScopedDiagnostics({
+            failedAction: 'canvas.runtime.redo',
+            stage: 'ws.canvas.runtime.redo',
+            details: {
+                canvasId: request.canvasId,
             },
         });
         if (typeof (e as any).code === 'number') {
@@ -1338,7 +1483,7 @@ async function handleNodeCreate(
                     canvasId: common.canvasId,
                     commands: [{
                         name: 'canvas.node.create',
-                        canvasId: common.canvasId,
+                        canvasId: common.canvasId!,
                         nodeId: node.id,
                         kind: toRuntimeNodeKind(node.type),
                         nodeType: toRuntimeNodeType(node.type),
@@ -1941,6 +2086,8 @@ export const methods: Record<string, RpcHandler> = {
     'canvas.unsubscribe': handleCanvasUnsubscribe,
     'canvas.runtime.projections': handleCanvasRuntimeProjections,
     'canvas.runtime.mutate': handleCanvasRuntimeMutate,
+    'canvas.runtime.undo': handleCanvasRuntimeUndo,
+    'canvas.runtime.redo': handleCanvasRuntimeRedo,
     'canvas.node.create': handleCanvasNodeCreate,
     'object.body.block.insert': handleObjectBodyBlockInsert,
     'node.update': handleNodeUpdate,

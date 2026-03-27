@@ -225,6 +225,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       sourceVersion: null,
       sourceVersions: {},
       canvasVersions: {},
+      canvasRevisionsById: {},
     });
     setSelectedNodes([]);
     clearTextEditSession();
@@ -243,6 +244,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       sourceVersion: null,
       sourceVersions: {},
       canvasVersions: {},
+      canvasRevisionsById: {},
       lastActiveCanvasPath: null,
       draftCanvases: [],
     });
@@ -489,6 +491,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
           sourceVersion: null,
           sourceVersions: {},
           canvasVersions: {},
+          canvasRevisionsById: {},
         });
         setGraphError(null);
       }
@@ -554,6 +557,38 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
 
   const commitHistoryEffect = useCallback((effect: ActionRoutingHistoryEffect, result: RpcMutationResult) => {
     if (result.runtimeResult?.ok && (!result.runtimeResult.meta?.undoable || result.runtimeResult.data.dryRun)) {
+      return;
+    }
+
+    const usesRuntimeHistory = Boolean(
+      result.runtimeResult?.ok
+      && result.runtimeResult.meta?.undoable
+      && !result.runtimeResult.data.dryRun,
+    );
+
+    if (usesRuntimeHistory) {
+      if (effect.pendingSelectionRenderedId) {
+        pendingSelectionNodeIdRef.current = effect.pendingSelectionRenderedId;
+        const createdNode = (
+          effect.after
+          && typeof effect.after === 'object'
+          && 'create' in (effect.after as Record<string, unknown>)
+        )
+          ? (effect.after as { create?: { type?: string } }).create
+          : undefined;
+        if (
+          createdNode?.type
+          && resolveImmediateCreateEditMode(createdNode.type as CreatePayload['nodeType'])
+        ) {
+          pendingCreateEditRef.current = {
+            renderedId: effect.pendingSelectionRenderedId,
+            mode: resolveImmediateCreateEditMode(createdNode.type as CreatePayload['nodeType']) as PendingCreateEdit['mode'],
+          };
+        }
+      }
+      if (effect.reloadGraphOnSuccess) {
+        handleCanvasInvalidated();
+      }
       return;
     }
 
@@ -1214,25 +1249,32 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         command.payload.next.parentId,
         currentCanvasId,
       );
-      const nextVersion = result.newVersion
-        ?? (currentCanvasId ? useGraphStore.getState().canvasVersions[currentCanvasId] : null)
-        ?? baseVersion;
-      const commandId = result.commandId ?? crypto.randomUUID();
+      const usesRuntimeHistory = Boolean(
+        result.runtimeResult?.ok
+        && result.runtimeResult.meta?.undoable
+        && !result.runtimeResult.data.dryRun,
+      );
+      if (!usesRuntimeHistory) {
+        const nextVersion = result.newVersion
+          ?? (currentCanvasId ? useGraphStore.getState().canvasVersions[currentCanvasId] : null)
+          ?? baseVersion;
+        const commandId = result.commandId ?? crypto.randomUUID();
 
-      pushEditCompletionEvent({
-        eventId: crypto.randomUUID(),
-        type: 'NODE_REPARENTED',
-        nodeId: command.target.sourceId,
-        canvasId: currentCanvasId ?? '',
-        filePath: command.target.filePath,
-        compatibilityFilePath: command.target.compatibilityFilePath ?? command.target.filePath,
-        commandId,
-        baseVersion,
-        nextVersion,
-        before: command.payload.previous,
-        after: command.payload.next,
-        committedAt: Date.now(),
-      });
+        pushEditCompletionEvent({
+          eventId: crypto.randomUUID(),
+          type: 'NODE_REPARENTED',
+          nodeId: command.target.sourceId,
+          canvasId: currentCanvasId ?? '',
+          filePath: command.target.filePath,
+          compatibilityFilePath: command.target.compatibilityFilePath ?? command.target.filePath,
+          commandId,
+          baseVersion,
+          nextVersion,
+          before: command.payload.previous,
+          after: command.payload.next,
+          committedAt: Date.now(),
+        });
+      }
       handleCanvasInvalidated();
     } catch (error) {
       const message = mapEditRpcErrorToToast(error) ?? 'MindMap 구조 변경에 실패했습니다.';
@@ -1324,24 +1366,31 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
           { commandType: relativeCommand.type },
           currentCanvasId,
         );
-        const nextVersion = result.newVersion
-          ?? (currentCanvasId ? useGraphStore.getState().canvasVersions[currentCanvasId] : null)
-          ?? baseVersion;
-        const commandId = result.commandId ?? crypto.randomUUID();
-        pushEditCompletionEvent({
-          eventId: crypto.randomUUID(),
-          type: 'RELATIVE_MOVE_COMMITTED',
-          nodeId: editTarget.nodeId,
-          canvasId: currentCanvasId ?? '',
-          filePath: targetFile,
-          compatibilityFilePath: targetFile,
-          commandId,
-          baseVersion,
-          nextVersion,
-          before: relativeCommand.payload.previous,
-          after: relativeCommand.payload.next,
-          committedAt: Date.now(),
-        });
+        const usesRuntimeHistory = Boolean(
+          result.runtimeResult?.ok
+          && result.runtimeResult.meta?.undoable
+          && !result.runtimeResult.data.dryRun,
+        );
+        if (!usesRuntimeHistory) {
+          const nextVersion = result.newVersion
+            ?? (currentCanvasId ? useGraphStore.getState().canvasVersions[currentCanvasId] : null)
+            ?? baseVersion;
+          const commandId = result.commandId ?? crypto.randomUUID();
+          pushEditCompletionEvent({
+            eventId: crypto.randomUUID(),
+            type: 'RELATIVE_MOVE_COMMITTED',
+            nodeId: editTarget.nodeId,
+            canvasId: currentCanvasId ?? '',
+            filePath: targetFile,
+            compatibilityFilePath: targetFile,
+            commandId,
+            baseVersion,
+            nextVersion,
+            before: relativeCommand.payload.previous,
+            after: relativeCommand.payload.next,
+            committedAt: Date.now(),
+          });
+        }
       } catch (error) {
         restoreNodeData(payload.nodeId, previousData);
         throw error;
@@ -1366,24 +1415,31 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       next: { x: payload.x, y: payload.y },
     });
     const result = await moveNode(editTarget.nodeId, payload.x, payload.y, currentCanvasId);
-    const nextVersion = result.newVersion
-      ?? (currentCanvasId ? useGraphStore.getState().canvasVersions[currentCanvasId] : null)
-      ?? baseVersion;
-    const commandId = result.commandId ?? crypto.randomUUID();
-    pushEditCompletionEvent({
-      eventId: crypto.randomUUID(),
-      type: 'ABSOLUTE_MOVE_COMMITTED',
-      nodeId: editTarget.nodeId,
-      canvasId: currentCanvasId ?? '',
-      filePath: targetFile,
-      compatibilityFilePath: targetFile,
-      commandId,
-      baseVersion,
-      nextVersion,
-      before: absoluteCommand.payload.previous,
-      after: absoluteCommand.payload.next,
-      committedAt: Date.now(),
-    });
+    const usesRuntimeHistory = Boolean(
+      result.runtimeResult?.ok
+      && result.runtimeResult.meta?.undoable
+      && !result.runtimeResult.data.dryRun,
+    );
+    if (!usesRuntimeHistory) {
+      const nextVersion = result.newVersion
+        ?? (currentCanvasId ? useGraphStore.getState().canvasVersions[currentCanvasId] : null)
+        ?? baseVersion;
+      const commandId = result.commandId ?? crypto.randomUUID();
+      pushEditCompletionEvent({
+        eventId: crypto.randomUUID(),
+        type: 'ABSOLUTE_MOVE_COMMITTED',
+        nodeId: editTarget.nodeId,
+        canvasId: currentCanvasId ?? '',
+        filePath: targetFile,
+        compatibilityFilePath: targetFile,
+        commandId,
+        baseVersion,
+        nextVersion,
+        before: absoluteCommand.payload.previous,
+        after: absoluteCommand.payload.next,
+        committedAt: Date.now(),
+      });
+    }
   }, [handleMindMapReparentCommit, moveNode, pushEditCompletionEvent, restoreNodeData, updateNode]);
 
   const washiPresetCatalog = useMemo(() => getWashiPresetPatternCatalog(), []);
@@ -1674,6 +1730,9 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
           canvasVersions: {
             ...(currentCanvasId ? { [currentCanvasId]: 'draft:empty-canvas' } : {}),
           },
+          canvasRevisionsById: {
+            ...(currentCanvasId ? { [currentCanvasId]: 0 } : {}),
+          },
           sourceVersions: {
             ...useGraphStore.getState().sourceVersions,
             [currentCompatibilityFilePath]: 'draft:empty-canvas',
@@ -1750,6 +1809,8 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
           const resolvedCanvasId = typeof data.canvasId === 'string'
             ? data.canvasId
             : currentCanvasId;
+          const resolvedCanvasRevision = runtimeProjectionResult?.renderProjection.canvasRevision
+            ?? (typeof data.canvasRevision === 'number' ? data.canvasRevision : undefined);
           setGraph({
             ...parsed,
             canvasVersions: (
@@ -1757,6 +1818,14 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
                 ? {
                     ...useGraphStore.getState().canvasVersions,
                     [resolvedCanvasId]: data.sourceVersion,
+                  }
+                : undefined
+            ),
+            canvasRevisionsById: (
+              resolvedCanvasId && typeof resolvedCanvasRevision === 'number'
+                ? {
+                    ...useGraphStore.getState().canvasRevisionsById,
+                    [resolvedCanvasId]: resolvedCanvasRevision,
                   }
                 : undefined
             ),
