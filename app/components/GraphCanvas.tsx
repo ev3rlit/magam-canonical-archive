@@ -151,7 +151,6 @@ export interface GraphCanvasCreateIntentInput {
   initialProps?: Record<string, unknown>;
   targetRenderedNodeId?: string;
   targetNodeId?: string;
-  filePath?: string;
   scopeId?: string;
   frameScope?: string;
 }

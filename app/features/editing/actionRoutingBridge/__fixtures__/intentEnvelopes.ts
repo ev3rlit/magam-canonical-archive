@@ -71,7 +71,6 @@ export function createNodeChildIntentEnvelope(overrides?: Partial<UIIntentEnvelo
     },
     targetRef: {
       renderedNodeId: 'mind-1',
-      compatibilityFilePath: 'examples/bridge.tsx',
     },
     rawPayload: {
       nodeType: 'shape',

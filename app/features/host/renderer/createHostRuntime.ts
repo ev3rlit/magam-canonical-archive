@@ -20,7 +20,7 @@ import {
 export interface RendererBootstrapController {
   getSession: () => Promise<DesktopBootstrapSession | null>;
   markLoading: () => Promise<DesktopBootstrapSession | null>;
-  markReady: (payload?: { currentFile?: string | null }) => Promise<DesktopBootstrapSession | null>;
+  markReady: () => Promise<DesktopBootstrapSession | null>;
   markFailed: (payload: DesktopBootstrapFailure) => Promise<DesktopBootstrapSession | null>;
 }
 

@@ -198,11 +198,11 @@ describe('app-state routes', () => {
 
   it('lists, upserts, and clears recent canvases', async () => {
     mockListRecentCanvases.mockResolvedValueOnce([
-      { workspaceId: 'ws-1', canvasPath: 'docs/alpha.graph.tsx' },
+      { workspaceId: 'ws-1', canvasId: 'canvas-alpha' },
     ]);
     mockUpsertRecentCanvas.mockResolvedValueOnce({
       workspaceId: 'ws-1',
-      canvasPath: 'docs/beta.graph.tsx',
+      canvasId: 'canvas-beta',
     });
 
     const listResponse = await recentCanvasesRoute.GET(
@@ -211,7 +211,7 @@ describe('app-state routes', () => {
     expect(listResponse.status).toBe(200);
     expect(mockListRecentCanvases).toHaveBeenCalledWith('ws-1');
     expect(await listResponse.json()).toEqual([
-      expect.objectContaining({ canvasPath: 'docs/alpha.graph.tsx' }),
+      expect.objectContaining({ canvasId: 'canvas-alpha' }),
     ]);
 
     const upsertResponse = await recentCanvasesRoute.POST(new Request('http://localhost/api/app-state/recent-canvases', {
@@ -219,13 +219,13 @@ describe('app-state routes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         workspaceId: 'ws-1',
-        canvasPath: 'docs/beta.graph.tsx',
+        canvasId: 'canvas-beta',
       }),
     }));
     expect(upsertResponse.status).toBe(200);
     expect(mockUpsertRecentCanvas).toHaveBeenCalledWith({
       workspaceId: 'ws-1',
-      canvasPath: 'docs/beta.graph.tsx',
+      canvasId: 'canvas-beta',
       lastOpenedAt: undefined,
     });
 

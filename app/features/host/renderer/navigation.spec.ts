@@ -30,10 +30,16 @@ function installWindowStub(input?: {
                 wsUrl: 'ws://127.0.0.1:3004',
                 appStateDbPath: '/tmp/app-state-pgdata',
                 workspacePath: null,
+                workspaceMode: 'transient' as const,
+                storageBackend: 'memory' as const,
+                transientCanvasId: 'transient-canvas-test',
               },
               capabilities: {
                 workspace: {
                   async selectWorkspace() {
+                    return null;
+                  },
+                  async chooseSaveLocation() {
                     return null;
                   },
                   async revealInOs() {

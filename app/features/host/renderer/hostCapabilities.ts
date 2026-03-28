@@ -27,6 +27,9 @@ export function createWebHostCapabilities(): HostCapabilitySurface {
       async selectWorkspace() {
         return null;
       },
+      async chooseSaveLocation() {
+        return null;
+      },
       async revealInOs() {
         return;
       },

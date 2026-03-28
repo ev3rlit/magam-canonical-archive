@@ -178,6 +178,7 @@ export function createDesktopRpcAdapter(input?: {
         body: JSON.stringify({
           rootPath: input.rootPath,
           ...(typeof input.title === 'string' ? { title: input.title } : {}),
+          ...(typeof input.canvasId === 'string' ? { canvasId: input.canvasId } : {}),
         }),
         headers: createJsonHeaders(),
       }),

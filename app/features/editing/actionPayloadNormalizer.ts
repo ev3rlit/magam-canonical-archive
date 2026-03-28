@@ -133,18 +133,11 @@ function buildRenderedNodeId(target: ActionRoutingTargetSnapshot, sourceId: stri
 function resolveBaseVersion(
   runtime: ActionRoutingRuntimeSnapshot,
   canvasId: string,
-  compatibilityFilePath: string | null,
   input: { surface: EntryPointSurface; intent: ActionRoutingIntent },
 ): string {
   const baseVersion = runtime.canvasVersions[canvasId];
   if (typeof baseVersion === 'string' && baseVersion.length > 0) {
     return baseVersion;
-  }
-  const legacyBaseVersion = compatibilityFilePath
-    ? runtime.sourceVersions?.[compatibilityFilePath]
-    : undefined;
-  if (typeof legacyBaseVersion === 'string' && legacyBaseVersion.length > 0) {
-    return legacyBaseVersion;
   }
   throw createActionRoutingBridgeError({
     code: 'NORMALIZATION_FAILED',
@@ -174,18 +167,13 @@ function resolveTargetNode(
 function resolveEditTarget(
   target: ActionRoutingTargetSnapshot | undefined,
   fallbackCanvasId: string | null,
-  fallbackCompatibilityFilePath: string | null,
   input: { surface: EntryPointSurface; intent: ActionRoutingIntent },
 ): EditTarget {
   const sourceId = ensureString(target?.sourceId, { ...input, field: 'target.sourceId' });
   const canvasId = ensureString(target?.canvasId ?? fallbackCanvasId, { ...input, field: 'target.canvasId' });
-  const filePathCandidate = target?.compatibilityFilePath ?? fallbackCompatibilityFilePath;
-  const filePath = ensureString(filePathCandidate, { ...input, field: 'target.filePath' });
   return {
     sourceId,
     canvasId,
-    filePath,
-    compatibilityFilePath: filePath,
     ...(target?.renderedNodeId ? { renderedId: target.renderedNodeId } : {}),
     ...(target?.scopeId ? { scopeId: target.scopeId } : {}),
     ...(target?.frameScope ? { frameScope: target.frameScope } : {}),
@@ -208,19 +196,6 @@ function pickNodeDataSnapshot(
   }, {});
 }
 
-function resolveCompatibilityFilePath(
-  request: ActionRoutingBridgeRequest,
-  runtime: ActionRoutingRuntimeSnapshot,
-): string {
-  const targetFilePath = request.resolvedContext.target?.compatibilityFilePath
-    ?? runtime.currentCompatibilityFilePath;
-  return ensureString(targetFilePath, {
-    surface: request.surface,
-    intent: request.intent,
-    field: 'filePath',
-  });
-}
-
 function resolveCanvasId(
   request: ActionRoutingBridgeRequest,
   runtime: ActionRoutingRuntimeSnapshot,
@@ -228,8 +203,6 @@ function resolveCanvasId(
   return ensureString(
     request.resolvedContext.target?.canvasId
       ?? runtime.currentCanvasId
-      ?? runtime.currentCompatibilityFilePath
-      ?? runtime.currentFile
       ?? (typeof request.uiPayload.canvasId === 'string' ? request.uiPayload.canvasId : undefined),
     {
     surface: request.surface,
@@ -251,8 +224,7 @@ function normalizeCreateNode(
     intent: request.intent,
   });
   const canvasId = resolveCanvasId(request, runtime);
-  const filePath = resolveCompatibilityFilePath(request, runtime);
-  const baseVersion = resolveBaseVersion(runtime, canvasId, filePath, request);
+  const baseVersion = resolveBaseVersion(runtime, canvasId, request);
   const existingSourceIds = runtime.nodes.map((node) => {
     const sourceMeta = (node.data as { sourceMeta?: { sourceId?: unknown } } | undefined)?.sourceMeta;
     return typeof sourceMeta?.sourceId === 'string' ? sourceMeta.sourceId : node.id;
@@ -261,15 +233,12 @@ function normalizeCreateNode(
   const defaults = getCreateDefaults(nodeType);
   const target: ActionRoutingTargetSnapshot = {
     canvasId,
-    compatibilityFilePath: filePath,
     ...(typeof request.uiPayload.scopeId === 'string' ? { scopeId: request.uiPayload.scopeId } : {}),
     ...(typeof request.uiPayload.frameScope === 'string' ? { frameScope: request.uiPayload.frameScope } : {}),
   };
   const editTarget: EditTarget = {
     sourceId: nextId,
     canvasId,
-    filePath,
-    compatibilityFilePath: filePath,
     ...(target.scopeId ? { scopeId: target.scopeId } : {}),
     ...(target.frameScope ? { frameScope: target.frameScope } : {}),
   };
@@ -317,10 +286,9 @@ function normalizeRenameNode(
   const editTarget = resolveEditTarget(
     request.resolvedContext.target,
     runtime.currentCanvasId,
-    runtime.currentCompatibilityFilePath,
     request,
   );
-  const baseVersion = resolveBaseVersion(runtime, editTarget.canvasId ?? runtime.currentCanvasId ?? editTarget.filePath, editTarget.filePath, request);
+  const baseVersion = resolveBaseVersion(runtime, editTarget.canvasId ?? runtime.currentCanvasId ?? null, request);
   const nextId = ensureString(request.uiPayload.nextId, {
     surface: request.surface,
     intent: request.intent,
@@ -357,10 +325,9 @@ function normalizeStyleUpdate(
   const editTarget = resolveEditTarget(
     request.resolvedContext.target,
     runtime.currentCanvasId,
-    runtime.currentCompatibilityFilePath,
     request,
   );
-  const baseVersion = resolveBaseVersion(runtime, editTarget.canvasId ?? runtime.currentCanvasId ?? editTarget.filePath, editTarget.filePath, request);
+  const baseVersion = resolveBaseVersion(runtime, editTarget.canvasId ?? runtime.currentCanvasId ?? null, request);
   const renderedNodeId = ensureString(request.resolvedContext.target?.renderedNodeId, {
     surface: request.surface,
     intent: request.intent,

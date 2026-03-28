@@ -208,7 +208,6 @@ export function createCanvasActionDispatchBinding(
         nodes: runtime.nodes,
         edges: runtime.edges,
         currentCanvasId: runtime.currentCanvasId,
-        currentCompatibilityFilePath: runtime.currentCompatibilityFilePath,
         canvasVersions: runtime.canvasVersions,
       },
       registry,
@@ -256,17 +255,14 @@ export function createCanvasActionDispatchBinding(
     const runtime = input.getRuntime();
     const uiPayloadTarget = request.uiPayload as {
       canvasId?: unknown;
-      filePath?: unknown;
       scopeId?: unknown;
       frameScope?: unknown;
     };
-    const targetRef = request.resolvedContext.target || typeof uiPayloadTarget.filePath === 'string' || typeof uiPayloadTarget.canvasId === 'string'
+    const targetRef = request.resolvedContext.target || typeof uiPayloadTarget.canvasId === 'string'
       ? {
         renderedNodeId: request.resolvedContext.target?.renderedNodeId,
         canvasId: request.resolvedContext.target?.canvasId
           ?? (typeof uiPayloadTarget.canvasId === 'string' ? uiPayloadTarget.canvasId : runtime.currentCanvasId ?? undefined),
-        compatibilityFilePath: request.resolvedContext.target?.compatibilityFilePath
-          ?? (typeof uiPayloadTarget.filePath === 'string' ? uiPayloadTarget.filePath : undefined),
         scopeId: request.resolvedContext.target?.scopeId
           ?? (typeof uiPayloadTarget.scopeId === 'string' ? uiPayloadTarget.scopeId : undefined),
         frameScope: request.resolvedContext.target?.frameScope

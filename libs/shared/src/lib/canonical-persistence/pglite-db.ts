@@ -58,6 +58,32 @@ async function hasPluginRuntimeSchema(client: PGlite): Promise<boolean> {
   return requiredTables.size === 0;
 }
 
+async function hasCorePersistenceSchema(client: PGlite): Promise<boolean> {
+  const requiredTables = new Set([
+    'objects',
+    'object_relations',
+    'canvas_nodes',
+    'canvas_bindings',
+    'document_revisions',
+  ]);
+
+  const result = await client.query(`
+    select tablename
+    from pg_tables
+    where schemaname = 'public'
+      and tablename in ('objects', 'object_relations', 'canvas_nodes', 'canvas_bindings', 'document_revisions')
+  `);
+
+  for (const row of result.rows as Array<Record<string, unknown>>) {
+    const tablename = typeof row['tablename'] === 'string' ? row['tablename'] : null;
+    if (tablename) {
+      requiredTables.delete(tablename);
+    }
+  }
+
+  return requiredTables.size === 0;
+}
+
 async function hasRuntimeHistorySchema(client: PGlite): Promise<boolean> {
   const columnResult = await client.query(`
     select column_name
@@ -243,9 +269,27 @@ export async function createCanonicalPgliteDb(
   const db = drizzle(client, { schema });
 
   if (options?.runMigrations !== false) {
-    await migrate(db, {
-      migrationsFolder,
-    });
+    const hasCoreSchema = await hasCorePersistenceSchema(client);
+    try {
+      await migrate(db, {
+        migrationsFolder,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const looksLikeExistingSchemaConflict = (
+        message.includes('already exists')
+        || message.includes('duplicate')
+        || message.includes('plugin_packages')
+        || message.includes('plugin_versions')
+        || message.includes('plugin_exports')
+        || message.includes('plugin_permissions')
+        || message.includes('plugin_instances')
+      );
+
+      if (!hasCoreSchema || !looksLikeExistingSchemaConflict) {
+        throw error;
+      }
+    }
     // Compatibility guard: when migration journal metadata lags behind the new SQL file,
     // plugin runtime tables can be absent even after migrate(). Bootstrap only if missing.
     if (!(await hasPluginRuntimeSchema(client))) {

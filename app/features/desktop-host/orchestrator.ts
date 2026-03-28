@@ -22,7 +22,7 @@ export interface DesktopHostOrchestrator {
   getSession: () => DesktopBootstrapSession;
   markRendererFailed: (payload: DesktopBootstrapFailure) => DesktopBootstrapSession;
   markRendererLoading: () => DesktopBootstrapSession;
-  markRendererReady: (payload?: { currentFile?: string | null }) => DesktopBootstrapSession;
+  markRendererReady: () => DesktopBootstrapSession;
   selectWorkspace: (workspacePath: string) => Promise<DesktopBootstrapSession>;
   start: () => Promise<DesktopBootstrapSession>;
   stop: () => Promise<void>;
@@ -34,7 +34,7 @@ export interface DesktopHostOrchestratorConfig {
   bunBin: string;
   httpPort: number;
   repoRoot: string;
-  workspacePath: string;
+  workspacePath: string | null;
   wsPort: number;
 }
 
@@ -51,6 +51,9 @@ export function createDesktopHostOrchestrator(
     wsUrl: `ws://127.0.0.1:${config.wsPort}`,
     appStateDbPath: config.appStateDbPath,
     workspacePath,
+    workspaceMode: workspacePath ? 'persisted' : 'transient',
+    storageBackend: workspacePath ? 'file' : 'memory',
+    transientCanvasId: session.transientCanvasId,
   };
 
   function updateSession(
@@ -60,7 +63,7 @@ export function createDesktopHostOrchestrator(
     return session;
   }
 
-  async function restartBackend(nextWorkspacePath: string): Promise<DesktopBootstrapSession> {
+  async function restartBackend(nextWorkspacePath: string | null): Promise<DesktopBootstrapSession> {
     updateSession({
       backendState: 'starting',
       lastError: undefined,
@@ -90,12 +93,19 @@ export function createDesktopHostOrchestrator(
         wsUrl: backend.wsUrl,
         appStateDbPath: config.appStateDbPath,
         workspacePath,
+        workspaceMode: nextWorkspacePath ? 'persisted' : 'transient',
+        storageBackend: nextWorkspacePath ? 'file' : 'memory',
+        transientCanvasId: nextWorkspacePath ? null : session.transientCanvasId,
       };
       updateSession({
         backendState: 'ready',
         workspacePath,
       });
-      events.emit({ type: 'workspace-selected', path: workspacePath });
+      if (workspacePath) {
+        events.emit({ type: 'workspace-selected', path: workspacePath });
+      } else {
+        events.emit({ type: 'workspace-cleared' });
+      }
       events.emit({ type: 'backend-ready' });
       return session;
     } catch (error) {

@@ -6,7 +6,7 @@ export interface DesktopBackendLifecycleConfig {
   bunBin: string;
   httpPort: number;
   repoRoot: string;
-  workspacePath: string;
+  workspacePath: string | null;
   wsPort: number;
 }
 
@@ -86,13 +86,16 @@ export async function startDesktopBackend(
     ...process.env,
     MAGAM_APP_STATE_DB_PATH: config.appStateDbPath,
     MAGAM_HTTP_PORT: String(config.httpPort),
-    MAGAM_TARGET_DIR: config.workspacePath,
+    MAGAM_TARGET_DIR: config.workspacePath ?? config.repoRoot,
     MAGAM_WS_PORT: String(config.wsPort),
   };
+  const serveArgs = config.workspacePath
+    ? ['serve', config.workspacePath]
+    : ['serve'];
 
   const httpProcess = spawnProcess(
     'desktop-http',
-    [config.bunBin, 'run', 'libs/cli/src/bin.ts', 'serve', config.workspacePath],
+    [config.bunBin, 'run', 'libs/cli/src/bin.ts', ...serveArgs],
     config.repoRoot,
     env,
   );

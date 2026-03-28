@@ -10,7 +10,6 @@ describe('actionDispatch runtime contribution intents', () => {
         nodes: [],
         edges: [],
         currentCanvasId: 'canvas-bridge',
-        currentCompatibilityFilePath: 'examples/bridge.tsx',
         canvasVersions: { 'canvas-bridge': 'sha256:v1' },
         selectedNodeIds: [],
       }),
@@ -57,14 +56,13 @@ describe('actionDispatch runtime contribution intents', () => {
     expect(appliedActions).toEqual(['fit-view']);
   });
 
-  it('routes canvas-toolbar create intents with compatibility file context', async () => {
+  it('routes canvas-toolbar create intents without requiring compatibility file context', async () => {
     const executeMutationDescriptor = mock(async () => ({}));
     const binding = createCanvasActionDispatchBinding({
       getRuntime: () => ({
         nodes: [],
         edges: [],
         currentCanvasId: 'canvas-bridge',
-        currentCompatibilityFilePath: 'examples/bridge.tsx',
         canvasVersions: {
           'canvas-bridge': 'sha256:v1',
         },
@@ -82,7 +80,6 @@ describe('actionDispatch runtime contribution intents', () => {
       intent: 'create-node',
       resolvedContext: createPaneActionRoutingContext({
         currentCanvasId: 'canvas-bridge',
-        currentFile: 'examples/bridge.tsx',
         selectedNodeIds: [],
       }),
       uiPayload: {
@@ -95,7 +92,7 @@ describe('actionDispatch runtime contribution intents', () => {
     expect(executeMutationDescriptor).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'runtime-mutation',
       payload: expect.objectContaining({
-        filePath: 'examples/bridge.tsx',
+        canvasId: 'canvas-bridge',
       }),
     }));
   });

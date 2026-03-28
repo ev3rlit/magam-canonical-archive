@@ -1,6 +1,15 @@
-import { basename, isAbsolute, resolve } from 'path';
 import type { ContentBlock } from '../../../libs/shared/src';
 import { RPC_ERRORS } from '../rpc';
+
+function getPathBasename(value: string): string {
+  const normalized = value.replace(/\\/g, '/').replace(/\/+$/, '');
+  const segments = normalized.split('/');
+  return segments[segments.length - 1] || '';
+}
+
+function isAbsoluteLocalPath(value: string): boolean {
+  return /^(?:[a-zA-Z]:[\\/]|\/)/.test(value);
+}
 
 export interface NodeProps {
   id?: string;
@@ -84,7 +93,7 @@ export type UpdateCommandType =
   | 'node.z-order.update';
 
 export function sanitizeWorkspaceId(targetDir: string): string {
-  const base = basename(targetDir).trim() || 'workspace';
+  const base = getPathBasename(targetDir).trim() || 'workspace';
   const sanitized = base
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, '-')
@@ -129,11 +138,11 @@ export function ensureOptionalRootPath(
   if (!trimmed) {
     throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} must not be empty` };
   }
-  if (!isAbsolute(trimmed)) {
+  if (!isAbsoluteLocalPath(trimmed)) {
     throw { ...RPC_ERRORS.INVALID_PARAMS, data: `${fieldName} must be an absolute path` };
   }
 
-  return resolve(trimmed);
+  return trimmed.replace(/\\/g, '/');
 }
 
 export function ensureNumber(value: unknown, fieldName: string): number {

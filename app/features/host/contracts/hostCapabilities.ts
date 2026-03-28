@@ -10,6 +10,7 @@ export type HostAppEvent =
 export interface HostCapabilitySurface {
   workspace: {
     selectWorkspace: () => Promise<{ path: string } | null>;
+    chooseSaveLocation: () => Promise<{ path: string } | null>;
     revealInOs: (path: string) => Promise<void>;
   };
   shell: {
@@ -28,6 +29,9 @@ export interface DesktopBootstrapFailure {
 export interface DesktopBootstrapSession {
   sessionId: string;
   workspacePath: string | null;
+  workspaceMode: 'transient' | 'persisted';
+  storageBackend: 'memory' | 'file';
+  transientCanvasId: string | null;
   backendState: 'idle' | 'starting' | 'ready' | 'failed' | 'stopping';
   rendererState: 'idle' | 'loading' | 'ready' | 'failed';
   startedAt: number;
@@ -41,12 +45,15 @@ export interface DesktopRuntimeConfig {
   wsUrl: string;
   appStateDbPath: string | null;
   workspacePath: string | null;
+  workspaceMode: 'transient' | 'persisted';
+  storageBackend: 'memory' | 'file';
+  transientCanvasId: string | null;
 }
 
 export interface HostBootstrapSurface {
   getSession: () => Promise<DesktopBootstrapSession | null>;
   markRendererLoading: () => Promise<DesktopBootstrapSession | null>;
-  markRendererReady: (payload?: { currentFile?: string | null }) => Promise<DesktopBootstrapSession | null>;
+  markRendererReady: () => Promise<DesktopBootstrapSession | null>;
   markRendererFailed: (payload: DesktopBootstrapFailure) => Promise<DesktopBootstrapSession | null>;
 }
 

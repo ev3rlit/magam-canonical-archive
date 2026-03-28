@@ -37,21 +37,22 @@ export interface AppWorkspaceSessionUpdateInput {
 
 export interface AppRecentCanvasRecord {
   workspaceId: string;
-  canvasPath: string;
+  canvasId: string;
   lastOpenedAt?: Date | null;
   updatedAt?: Date;
 }
 
 export interface AppRecentCanvasUpsertInput {
   workspaceId: string;
-  canvasPath: string;
+  canvasId: string;
   lastOpenedAt?: Date | null;
 }
 
 export type AppPreferenceKey =
   | 'theme.mode'
   | 'font.globalFamily'
-  | 'workspace.lastActiveCanvasSession';
+  | 'workspace.lastActiveCanvasSession'
+  | 'workspace.lastActiveCanvasIdSession';
 
 export interface AppPreferenceRecord {
   key: AppPreferenceKey | string;

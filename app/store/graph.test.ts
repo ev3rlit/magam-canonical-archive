@@ -337,10 +337,16 @@ describe('font hierarchy state', () => {
             wsUrl: 'ws://127.0.0.1:3004',
             appStateDbPath: '/tmp/app-state-pgdata',
             workspacePath: null,
+            workspaceMode: 'transient',
+            storageBackend: 'memory',
+            transientCanvasId: 'transient-canvas-test',
           },
           capabilities: {
             workspace: {
               async selectWorkspace() {
+                return null;
+              },
+              async chooseSaveLocation() {
                 return null;
               },
               async revealInOs() {

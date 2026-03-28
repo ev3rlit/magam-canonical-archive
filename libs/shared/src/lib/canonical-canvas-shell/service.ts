@@ -38,7 +38,7 @@ function resolveMigrationsFolder(): string {
   return resolveCanonicalMigrationsFolder(process.cwd());
 }
 
-function createCompatibilityFilePath(canvasId: string): string {
+function createCanvasStoragePath(canvasId: string): string {
   const fallback = `canvases/${canvasId}.graph.tsx`;
   return fallback;
 }
@@ -97,7 +97,7 @@ export async function createCanonicalCanvas(
 ): Promise<CanonicalCanvasShellRecord> {
   return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context, workspaceId) => {
     const canvasId = input.canvasId?.trim() || `doc-${randomUUID()}`;
-    const compatibilityFilePath = createCompatibilityFilePath(canvasId);
+    const storagePath = createCanvasStoragePath(canvasId);
     const title = typeof input.title === 'string' && input.title.trim().length > 0
       ? input.title.trim()
       : null;
@@ -114,7 +114,7 @@ export async function createCanonicalCanvas(
         canvasShell: {
           workspaceId,
           title,
-          filePath: compatibilityFilePath,
+          filePath: storagePath,
           createdAt: createdAt.toISOString(),
         },
       },

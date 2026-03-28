@@ -10,8 +10,6 @@ import { createPendingUiRequestId } from '@/features/canvas-ui-entrypoints/ui-ru
 export interface EditTarget {
   sourceId: string;
   canvasId?: string;
-  filePath: string;
-  compatibilityFilePath?: string | null;
   renderedId?: string;
   scopeId?: string;
   frameScope?: string;

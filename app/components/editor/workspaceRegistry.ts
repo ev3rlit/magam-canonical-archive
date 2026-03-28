@@ -17,7 +17,6 @@ export interface WorkspaceCanvasSummary {
   canvasId?: string;
   workspaceId?: string;
   latestRevision?: number | null;
-  filePath?: string | null;
   size?: number;
   modifiedAt?: number;
 }
@@ -50,7 +49,6 @@ export interface WorkspaceSidebarCanvas {
   workspaceId?: string;
   latestRevision?: number | null;
   title: string;
-  compatibilityFilePath?: string | null;
 }
 
 export interface LastActiveCanvasMap {
@@ -61,6 +59,7 @@ const WORKSPACE_REGISTRY_STORAGE_KEY = 'magam:workspaceRegistry:v1';
 const ACTIVE_WORKSPACE_STORAGE_KEY = 'magam:activeWorkspaceId:v1';
 const LAST_ACTIVE_CANVASES_STORAGE_KEY = 'magam:lastActiveCanvases:v1';
 export const LAST_ACTIVE_CANVAS_SESSION_PREFERENCE_KEY = 'workspace.lastActiveCanvasSession';
+export const LAST_ACTIVE_CANVAS_ID_SESSION_PREFERENCE_KEY = 'workspace.lastActiveCanvasIdSession';
 export const LEGACY_WORKSPACE_REGISTRY_IMPORT_PREFERENCE_KEY = 'workspace.registryLegacyImportCompleted';
 
 export type WorkspaceRegistryAppStateRpcClient = Pick<
@@ -209,10 +208,10 @@ export function lastActiveCanvasMapToRecentCanvasInputs(
   const knownWorkspaceIds = new Set(workspaces.map((workspace) => workspace.id));
 
   return Object.entries(lastActiveCanvases)
-    .filter(([workspaceId, canvasPath]) => knownWorkspaceIds.has(workspaceId) && !!canvasPath)
-    .map(([workspaceId, canvasPath]) => ({
+    .filter(([workspaceId, canvasId]) => knownWorkspaceIds.has(workspaceId) && !!canvasId)
+    .map(([workspaceId, canvasId]) => ({
       workspaceId,
-      canvasPath,
+      canvasId,
       lastOpenedAt: new Date(),
     }));
 }
@@ -223,7 +222,7 @@ export function recentCanvasesToLastActiveCanvasMap(
   const lastActiveCanvases: LastActiveCanvasMap = {};
 
   for (const [workspaceId, recentCanvases] of Object.entries(recentCanvasesByWorkspace)) {
-    const currentCanvas = recentCanvases[0]?.canvasPath;
+    const currentCanvas = recentCanvases[0]?.canvasId;
     if (currentCanvas) {
       lastActiveCanvases[workspaceId] = currentCanvas;
     }
@@ -251,9 +250,9 @@ export function preferenceToLastActiveCanvasMap(
 
   const lastActiveCanvases: LastActiveCanvasMap = {};
 
-  for (const [workspaceId, canvasPath] of Object.entries(value)) {
-    if (typeof canvasPath === 'string') {
-      lastActiveCanvases[workspaceId] = canvasPath;
+  for (const [workspaceId, canvasId] of Object.entries(value)) {
+    if (typeof canvasId === 'string') {
+      lastActiveCanvases[workspaceId] = canvasId;
     }
   }
 
@@ -274,7 +273,7 @@ function sanitizeLastActiveCanvasMap(
 
   return Object.fromEntries(
     Object.entries(map).filter(
-      ([workspaceId, canvasPath]) => knownWorkspaceIds.has(workspaceId) && typeof canvasPath === 'string' && canvasPath.length > 0,
+      ([workspaceId, canvasId]) => knownWorkspaceIds.has(workspaceId) && typeof canvasId === 'string' && canvasId.length > 0,
     ),
   );
 }
@@ -414,29 +413,8 @@ export function updateWorkspaceFromProbe(
   };
 }
 
-export function resolveWorkspaceCanvasAbsolutePath(rootPath: string, relativePath: string): string {
-  const normalizedRelativePath = normalizePathSeparators(relativePath).replace(/^\/+/, '');
-  return `${normalizePathSeparators(trimTrailingSeparators(rootPath))}/${normalizedRelativePath}`;
-}
-
-export function normalizeWorkspaceCanvasPath(
-  rootPath: string | null | undefined,
-  filePath: string,
-): string {
-  const normalizedFilePath = normalizePathSeparators(filePath).trim();
-  if (!normalizedFilePath) {
-    return normalizedFilePath;
-  }
-
-  if (isAbsoluteLocalPath(normalizedFilePath) || !rootPath) {
-    return normalizedFilePath;
-  }
-
-  return resolveWorkspaceCanvasAbsolutePath(rootPath, normalizedFilePath);
-}
-
 export function buildSidebarCanvases(
-  rootPath: string,
+  _rootPath: string,
   canvases: WorkspaceCanvasSummary[],
 ): WorkspaceSidebarCanvas[] {
   return canvases
@@ -448,10 +426,14 @@ export function buildSidebarCanvases(
       ...(typeof canvas.workspaceId === 'string' ? { workspaceId: canvas.workspaceId } : {}),
       ...(canvas.latestRevision !== undefined ? { latestRevision: canvas.latestRevision } : {}),
       title: typeof canvas.title === 'string' ? canvas.title : '',
-      compatibilityFilePath: typeof canvas.filePath === 'string'
-        ? resolveWorkspaceCanvasAbsolutePath(rootPath, canvas.filePath)
-        : null,
     }));
+}
+
+export function normalizeWorkspaceCanvasPath(
+  _rootPath: string | null | undefined,
+  canvasId: string,
+): string {
+  return canvasId.trim();
 }
 
 export function sortWorkspaces(workspaces: RegisteredWorkspace[]): RegisteredWorkspace[] {

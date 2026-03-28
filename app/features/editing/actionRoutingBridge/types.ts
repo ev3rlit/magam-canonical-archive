@@ -36,7 +36,6 @@ export interface ActionRoutingSelectionRef {
 export interface ActionRoutingTargetRef {
   renderedNodeId?: string;
   canvasId?: string;
-  compatibilityFilePath?: string;
   scopeId?: string;
   frameScope?: string;
 }
@@ -54,7 +53,6 @@ export interface ActionRoutingContext {
   nodes: Node[];
   edges: Edge[];
   currentCanvasId: string | null;
-  currentCompatibilityFilePath: string | null;
   canvasVersions: Record<string, string>;
   now?: number;
 }
@@ -63,7 +61,6 @@ export interface ActionRoutingResolvedTarget {
   renderedNodeId: string;
   sourceId: string;
   canvasId?: string;
-  filePath: string;
   scopeId?: string;
   frameScope?: string;
   editMeta?: EditMeta;
@@ -110,8 +107,6 @@ export interface ActionRoutingHistoryEffect {
     | 'NODE_Z_ORDER_UPDATED';
   nodeId: string;
   canvasId?: string;
-  filePath: string;
-  compatibilityFilePath?: string | null;
   baseVersion: string;
   before: Record<string, unknown>;
   after: Record<string, unknown>;
@@ -125,8 +120,6 @@ export interface ActionRoutingPendingRecord {
   intentId: string;
   surfaceId: ActionRoutingSurfaceId;
   canvasId?: string;
-  filePath: string;
-  compatibilityFilePath?: string | null;
   nodeId?: string;
   rollbackSteps: DispatchDescriptor[];
   startedAt: number;
@@ -146,8 +139,6 @@ export type CompatibilityMutationActionId =
 export interface CompatibilityMutationActionPayloadMap {
   'canvas.node.create': {
     canvasId?: string;
-    filePath: string;
-    compatibilityFilePath?: string | null;
     node: {
       id: string;
       type: CreatePayload['nodeType'];
@@ -158,15 +149,11 @@ export interface CompatibilityMutationActionPayloadMap {
   'node.update': {
     nodeId: string;
     canvasId?: string;
-    filePath: string;
-    compatibilityFilePath?: string | null;
     props: Record<string, unknown>;
     commandType?: UpdateNodeCommandType;
   };
   'node.create': {
     canvasId?: string;
-    filePath: string;
-    compatibilityFilePath?: string | null;
     node: {
       id: string;
       type: CreatePayload['nodeType'];
@@ -177,28 +164,20 @@ export interface CompatibilityMutationActionPayloadMap {
   'node.delete': {
     nodeId: string;
     canvasId?: string;
-    filePath: string;
-    compatibilityFilePath?: string | null;
   };
   'node.reparent': {
     nodeId: string;
     canvasId?: string;
-    filePath: string;
-    compatibilityFilePath?: string | null;
     newParentId: string | null;
   };
   'node.group-membership.update': {
     nodeId: string;
     canvasId?: string;
-    filePath: string;
-    compatibilityFilePath?: string | null;
     groupId: string | null;
   };
   'node.z-order.update': {
     nodeId: string;
     canvasId?: string;
-    filePath: string;
-    compatibilityFilePath?: string | null;
     zIndex: number | null;
   };
 }
@@ -207,8 +186,6 @@ export interface RuntimeMutationDescriptor extends DispatchDescriptorBase {
   kind: 'runtime-mutation';
   payload: {
     canvasId?: string;
-    filePath: string;
-    compatibilityFilePath?: string | null;
     dryRun?: boolean;
     commands: CanvasRuntimeCommandV1[];
   };

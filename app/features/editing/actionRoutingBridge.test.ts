@@ -23,13 +23,8 @@ describe('actionRoutingBridge', () => {
   it('pane create intent uses bridge catalog and emits optimistic apply/commit lifecycle', async () => {
     const runtime = {
       currentCanvasId: 'canvas-bridge',
-      currentCompatibilityFilePath: 'examples/bridge.tsx',
       canvasVersions: {
         'canvas-bridge': 'sha256:base',
-      },
-      currentFile: 'examples/bridge.tsx',
-      sourceVersions: {
-        'examples/bridge.tsx': 'sha256:base',
       },
       nodes: [stickerBridgeNodeFixture],
       selectedNodeIds: [],
@@ -45,7 +40,6 @@ describe('actionRoutingBridge', () => {
       intent: 'create-node',
       resolvedContext: createPaneActionRoutingContext({
         currentCanvasId: runtime.currentCanvasId,
-        currentFile: runtime.currentFile,
         selectedNodeIds: runtime.selectedNodeIds,
       }),
       uiPayload: {
@@ -70,13 +64,8 @@ describe('actionRoutingBridge', () => {
   it('style update rejects disallowed patch keys with explicit bridge error', async () => {
     const runtime = {
       currentCanvasId: 'canvas-bridge',
-      currentCompatibilityFilePath: 'examples/bridge.tsx',
       canvasVersions: {
         'canvas-bridge': 'sha256:base',
-      },
-      currentFile: 'examples/bridge.tsx',
-      sourceVersions: {
-        'examples/bridge.tsx': 'sha256:base',
       },
       nodes: [stickerBridgeNodeFixture],
       selectedNodeIds: ['sticker-1'],
@@ -89,7 +78,6 @@ describe('actionRoutingBridge', () => {
       resolvedContext: resolveNodeActionRoutingContext(
         stickerBridgeNodeFixture,
         runtime.currentCanvasId,
-        runtime.currentFile,
         runtime.selectedNodeIds,
       ),
       uiPayload: {
@@ -108,13 +96,8 @@ describe('actionRoutingBridge', () => {
   it('node context child create keeps source scope and bridge contract stable', async () => {
     const runtime = {
       currentCanvasId: 'canvas-mindmap',
-      currentCompatibilityFilePath: 'examples/mindmap.tsx',
       canvasVersions: {
         'canvas-mindmap': 'sha256:base-mindmap',
-      },
-      currentFile: 'examples/mindmap.tsx',
-      sourceVersions: {
-        'examples/mindmap.tsx': 'sha256:base-mindmap',
       },
       nodes: [mindmapBridgeNodeFixture],
       selectedNodeIds: ['mindmap.child-1'],
@@ -127,7 +110,6 @@ describe('actionRoutingBridge', () => {
       resolvedContext: resolveNodeActionRoutingContext(
         mindmapBridgeNodeFixture,
         runtime.currentCanvasId,
-        runtime.currentFile,
         runtime.selectedNodeIds,
       ),
       uiPayload: {
@@ -149,13 +131,8 @@ describe('actionRoutingBridge', () => {
   it('unregistered surface intent returns INVALID_INTENT contract response', async () => {
     const runtime = {
       currentCanvasId: 'canvas-bridge',
-      currentCompatibilityFilePath: 'examples/bridge.tsx',
       canvasVersions: {
         'canvas-bridge': 'sha256:base',
-      },
-      currentFile: 'examples/bridge.tsx',
-      sourceVersions: {
-        'examples/bridge.tsx': 'sha256:base',
       },
       nodes: [],
       selectedNodeIds: [],
@@ -167,7 +144,6 @@ describe('actionRoutingBridge', () => {
       intent: 'rename-node',
       resolvedContext: createPaneActionRoutingContext({
         currentCanvasId: runtime.currentCanvasId,
-        currentFile: runtime.currentFile,
         selectedNodeIds: runtime.selectedNodeIds,
       }),
       uiPayload: {},

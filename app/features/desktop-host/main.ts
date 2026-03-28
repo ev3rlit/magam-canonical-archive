@@ -15,8 +15,9 @@ function resolveRepoRoot(): string {
   return process.env.MAGAM_REPO_ROOT || resolve(__dirname, '../../..');
 }
 
-function resolveWorkspacePath(repoRoot: string): string {
-  return process.env.MAGAM_TARGET_DIR || resolve(repoRoot, 'examples');
+function resolveWorkspacePath(_repoRoot: string): string | null {
+  const explicit = process.env.MAGAM_TARGET_DIR?.trim();
+  return explicit && explicit.length > 0 ? explicit : null;
 }
 
 function resolveHtmlPath(): string {
@@ -79,6 +80,10 @@ async function main(): Promise<void> {
       mainWindow.webContents.send(DESKTOP_HOST_CHANNELS.appEvent, {
         type: 'workspace-selected',
         path: session.workspacePath,
+      });
+    } else {
+      mainWindow.webContents.send(DESKTOP_HOST_CHANNELS.appEvent, {
+        type: 'workspace-cleared',
       });
     }
     if (session.backendState === 'ready') {
@@ -229,6 +234,17 @@ async function main(): Promise<void> {
     const selectedPath = assertAbsolutePath(result.filePaths[0]);
     await orchestrator.selectWorkspace(selectedPath);
     return { path: selectedPath };
+  });
+  ipcMain.handle(DESKTOP_HOST_CHANNELS.chooseSaveLocation, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return { path: assertAbsolutePath(result.filePaths[0]) };
   });
   ipcMain.handle(DESKTOP_HOST_CHANNELS.revealInOs, async (_event, rawPath: string) => {
     shell.showItemInFolder(assertAbsolutePath(rawPath));

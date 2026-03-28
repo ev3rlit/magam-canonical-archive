@@ -32,6 +32,7 @@ export interface CreateWorkspaceCanvasResult {
 export interface WorkspaceCanvasCreateInput {
   rootPath: string;
   title?: string | null;
+  canvasId?: string | null;
 }
 
 export interface WorkspaceFileBrowserActionInput {

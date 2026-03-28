@@ -9,10 +9,16 @@ function createDesktopHostBridge() {
       wsUrl: 'ws://127.0.0.1:3004',
       appStateDbPath: '/tmp/app-state-pgdata',
       workspacePath: '/tmp/workspace',
+      workspaceMode: 'persisted' as const,
+      storageBackend: 'file' as const,
+      transientCanvasId: null,
     },
     capabilities: {
       workspace: {
         async selectWorkspace() {
+          return null;
+        },
+        async chooseSaveLocation() {
           return null;
         },
         async revealInOs() {
@@ -79,6 +85,9 @@ describe('getHostRuntime', () => {
       wsUrl: 'ws://127.0.0.1:3004',
       appStateDbPath: '/tmp/app-state-pgdata',
       workspacePath: '/tmp/workspace',
+      workspaceMode: 'persisted',
+      storageBackend: 'file',
+      transientCanvasId: null,
     }));
     expect(runtime.rpc.descriptor.hostMode).toBe('desktop-primary');
     expect(runtime.rpc.descriptor.methods).not.toContain('chat.send');

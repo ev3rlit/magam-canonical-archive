@@ -1,13 +1,5 @@
-import React from 'react';
-import { WorkspaceDetailPage } from '@/features/workspace/pages/WorkspaceDetailPage';
+import { redirect } from 'next/navigation';
 
-interface PageProps {
-  params: Promise<{
-    id: string;
-  }>;
-}
-
-export default async function Page({ params }: PageProps) {
-  const { id } = await params;
-  return <WorkspaceDetailPage workspaceId={id} />;
+export default async function Page() {
+  redirect('/app');
 }

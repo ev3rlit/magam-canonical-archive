@@ -1,13 +1,10 @@
 import {
   buildContentDraftPatch,
   buildContentUpdateCommand,
-  buildCreateCommand,
   buildGroupMembershipUpdateCommand,
   buildRenameCommand,
-  shouldUseCanonicalCanvasNodeCreate,
   buildStyleUpdateCommand,
   buildZOrderUpdateCommand,
-  toCreateNodeInput,
   toUpdateNodeProps,
   type CreatePayload,
 } from '@/features/editing/commands';
@@ -46,7 +43,6 @@ type ResolvedTarget = {
   renderedNodeId: string;
   sourceId: string;
   canvasId?: string;
-  filePath: string;
   scopeId?: string;
   frameScope?: string;
   editMeta?: EditMeta;
@@ -78,13 +74,17 @@ type RenameNormalized = {
 
 type CreateNormalized = {
   canvasId?: string;
-  targetFile: string;
   sourceId: string;
   scopeId?: string;
   frameScope?: string;
   nodeType: CreatePayload['nodeType'];
   placement: CreatePayload['placement'];
-  createInput: ReturnType<typeof toCreateNodeInput>;
+  createInput: {
+    id: string;
+    type: CreatePayload['nodeType'];
+    props: Record<string, unknown>;
+    placement: CreatePayload['placement'];
+  };
   useCanonicalCreate: boolean;
   baseVersion: string;
   renderedId: string;
@@ -92,7 +92,6 @@ type CreateNormalized = {
 
 type DuplicateNormalized = {
   target: ResolvedTarget;
-  targetFile: string;
   sourceId: string;
   scopeId?: string;
   frameScope?: string;
@@ -130,13 +129,11 @@ type GroupSelectionNormalized = {
   targets: SelectionStructuralTarget[];
   nextGroupId: string;
   baseVersion: string;
-  filePath: string;
 };
 
 type UngroupSelectionNormalized = {
   targets: SelectionStructuralTarget[];
   baseVersion: string;
-  filePath: string;
 };
 
 type ZOrderDirection = 'bring-to-front' | 'send-to-back';
@@ -145,7 +142,6 @@ type ZOrderSelectionNormalized = {
   targets: Array<SelectionStructuralTarget & { nextZIndex: number }>;
   direction: ZOrderDirection;
   baseVersion: string;
-  filePath: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -183,11 +179,7 @@ function resolveTarget(
     ? sourceMeta.sourceId
     : deriveLocalSourceId(node.id, sourceMeta.frameScope);
   const canvasId = envelope.targetRef?.canvasId ?? context.currentCanvasId ?? undefined;
-  const filePath = typeof sourceMeta.filePath === 'string' && sourceMeta.filePath.length > 0
-    ? sourceMeta.filePath
-    : envelope.targetRef?.compatibilityFilePath ?? context.currentCompatibilityFilePath;
-
-  if (!filePath) {
+  if (!canvasId) {
     return null;
   }
 
@@ -195,7 +187,6 @@ function resolveTarget(
     renderedNodeId: node.id,
     sourceId,
     canvasId,
-    filePath,
     scopeId: typeof sourceMeta.scopeId === 'string' ? sourceMeta.scopeId : undefined,
     frameScope: typeof sourceMeta.frameScope === 'string' ? sourceMeta.frameScope : undefined,
     editMeta: getNodeEditMeta(node),
@@ -687,7 +678,6 @@ function resolveSelectionTargets(
   envelope: UIIntentEnvelope,
 ): ActionRoutingResult<{
   targets: SelectionStructuralTarget[];
-  filePath: string;
   baseVersion: string;
 }> {
   const selectedNodeIds = envelope.selectionRef.selectedNodeIds;
@@ -731,18 +721,17 @@ function resolveSelectionTargets(
     return fail('INTENT_GATING_DENIED', 'selection is required');
   }
 
-  if (targets.some(({ target }) => target.filePath !== firstTarget.target.filePath)) {
-    return fail('INTENT_GATING_DENIED', 'selection must belong to a single file');
+  if (targets.some(({ target }) => target.canvasId !== firstTarget.target.canvasId)) {
+    return fail('INTENT_GATING_DENIED', 'selection must belong to a single canvas');
   }
 
-  const versionResult = requireBaseVersion(context, firstTarget.target.filePath);
+  const versionResult = requireBaseVersion(context, firstTarget.target.canvasId ?? null);
   if (!versionResult.ok) {
     return versionResult;
   }
 
   return ok({
     targets,
-    filePath: firstTarget.target.filePath,
     baseVersion: versionResult.value,
   });
 }
@@ -754,7 +743,7 @@ function buildStylePlan(input: {
   const command = buildStyleUpdateCommand({
     target: {
       sourceId: input.normalized.target.sourceId,
-      filePath: input.normalized.target.filePath,
+      canvasId: input.normalized.target.canvasId,
       renderedId: input.normalized.target.renderedNodeId,
       editMeta: input.normalized.target.editMeta,
     },
@@ -771,7 +760,7 @@ function buildStylePlan(input: {
     intentId: input.envelope.intentId,
     surfaceId: input.envelope.surfaceId,
     baseVersion: input.normalized.baseVersion,
-    filePath: input.normalized.target.filePath,
+    canvasId: input.normalized.target.canvasId,
     nodeId: input.normalized.target.sourceId,
     rollbackSteps,
   });
@@ -789,7 +778,6 @@ function buildStylePlan(input: {
               kind: 'runtime-mutation' as const,
               payload: {
                 canvasId: input.normalized.target.canvasId,
-                filePath: command.target.filePath,
                 commands: [{
                   name: 'canvas.node.presentation-style.update',
                   canvasId: input.normalized.target.canvasId,
@@ -809,7 +797,7 @@ function buildStylePlan(input: {
               historyEffect: {
                 eventType: 'STYLE_UPDATED',
                 nodeId: command.target.sourceId,
-                filePath: command.target.filePath,
+                canvasId: command.target.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: command.payload.previous,
                 after: command.payload.patch,
@@ -820,7 +808,7 @@ function buildStylePlan(input: {
               actionId: 'node.update' as const,
               payload: {
                 nodeId: command.target.sourceId,
-                filePath: command.target.filePath,
+                canvasId: command.target.canvasId,
                 props: toUpdateNodeProps(command),
                 commandType: command.type,
               },
@@ -828,7 +816,7 @@ function buildStylePlan(input: {
               historyEffect: {
                 eventType: 'STYLE_UPDATED',
                 nodeId: command.target.sourceId,
-                filePath: command.target.filePath,
+                canvasId: command.target.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: command.payload.previous,
                 after: command.payload.patch,
@@ -848,7 +836,7 @@ function buildContentPlan(input: {
   const command = buildContentUpdateCommand({
     target: {
       sourceId: input.normalized.target.sourceId,
-      filePath: input.normalized.target.filePath,
+      canvasId: input.normalized.target.canvasId,
       renderedId: input.normalized.target.renderedNodeId,
       editMeta: input.normalized.target.editMeta,
     },
@@ -867,7 +855,7 @@ function buildContentPlan(input: {
     intentId: input.envelope.intentId,
     surfaceId: input.envelope.surfaceId,
     baseVersion: input.normalized.baseVersion,
-    filePath: input.normalized.target.filePath,
+    canvasId: input.normalized.target.canvasId,
     nodeId: input.normalized.target.sourceId,
     rollbackSteps,
   });
@@ -888,7 +876,6 @@ function buildContentPlan(input: {
               kind: 'runtime-mutation' as const,
               payload: {
                 canvasId: input.normalized.target.canvasId,
-                filePath: command.target.filePath,
                 commands: [createRuntimeContentUpdateCommand({
                   objectId: resolveRuntimeObjectId(targetNode, input.normalized.target),
                   kind: resolveRuntimeContentKind(targetNode),
@@ -899,7 +886,7 @@ function buildContentPlan(input: {
               historyEffect: {
                 eventType: 'CONTENT_UPDATED',
                 nodeId: command.target.sourceId,
-                filePath: command.target.filePath,
+                canvasId: command.target.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: command.payload.previous,
                 after: command.payload.next,
@@ -910,7 +897,7 @@ function buildContentPlan(input: {
               actionId: 'node.update' as const,
               payload: {
                 nodeId: command.target.sourceId,
-                filePath: command.target.filePath,
+                canvasId: command.target.canvasId,
                 props: toUpdateNodeProps(command),
                 commandType: command.type,
               },
@@ -918,7 +905,7 @@ function buildContentPlan(input: {
               historyEffect: {
                 eventType: 'CONTENT_UPDATED',
                 nodeId: command.target.sourceId,
-                filePath: command.target.filePath,
+                canvasId: command.target.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: command.payload.previous,
                 after: command.payload.next,
@@ -937,7 +924,7 @@ function buildRenamePlan(input: {
   const command = buildRenameCommand({
     target: {
       sourceId: input.normalized.target.sourceId,
-      filePath: input.normalized.target.filePath,
+      canvasId: input.normalized.target.canvasId,
       renderedId: input.normalized.target.renderedNodeId,
       editMeta: input.normalized.target.editMeta,
     },
@@ -953,14 +940,14 @@ function buildRenamePlan(input: {
         actionId: 'node.update',
         payload: {
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           props: toUpdateNodeProps(command),
           commandType: command.type,
         },
         historyEffect: {
           eventType: 'NODE_RENAMED',
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           baseVersion: input.normalized.baseVersion,
           before: command.payload.previous,
           after: command.payload.next,
@@ -979,6 +966,19 @@ function buildCreatePlan(input: {
   const createActionId = input.normalized.useCanonicalCreate
     ? 'canvas.node.create'
     : 'node.create';
+  const runtimeHistoryEffect = {
+    eventType: 'NODE_CREATED' as const,
+    nodeId: input.normalized.sourceId,
+    baseVersion: input.normalized.baseVersion,
+    before: { created: false },
+    after: {
+      actionId: 'canvas.node.create',
+      create: input.normalized.createInput,
+      renderedId: input.normalized.renderedId,
+    },
+    reloadGraphOnSuccess: true,
+    pendingSelectionRenderedId: input.normalized.renderedId,
+  };
   return {
     intentId: input.intentId,
     steps: [
@@ -988,7 +988,6 @@ function buildCreatePlan(input: {
               kind: 'runtime-mutation' as const,
               payload: {
                 canvasId: input.normalized.canvasId,
-                filePath: input.normalized.targetFile,
                 commands: createRuntimeCreateCommands({
                   canvasId: input.normalized.canvasId,
                   sourceId: input.normalized.sourceId,
@@ -997,33 +996,19 @@ function buildCreatePlan(input: {
                   createInput: input.normalized.createInput,
                 }),
               },
-              historyEffect: {
-                eventType: 'NODE_CREATED',
-                nodeId: input.normalized.sourceId,
-                filePath: input.normalized.targetFile,
-                baseVersion: input.normalized.baseVersion,
-                before: { created: false },
-                after: {
-                  actionId: 'canvas.node.create',
-                  create: input.normalized.createInput,
-                  renderedId: input.normalized.renderedId,
-                },
-                reloadGraphOnSuccess: true,
-                pendingSelectionRenderedId: input.normalized.renderedId,
-              },
+              historyEffect: runtimeHistoryEffect,
             }
           : {
               kind: 'compatibility-mutation' as const,
               actionId: createActionId as 'canvas.node.create' | 'node.create',
               payload: {
-                filePath: input.normalized.targetFile,
                 ...(input.normalized.canvasId ? { canvasId: input.normalized.canvasId } : {}),
                 node: input.normalized.createInput,
               },
               historyEffect: {
                 eventType: 'NODE_CREATED',
                 nodeId: input.normalized.sourceId,
-                filePath: input.normalized.targetFile,
+                canvasId: input.normalized.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: { created: false },
                 after: {
@@ -1054,7 +1039,6 @@ function buildDuplicatePlan(input: {
               kind: 'runtime-mutation' as const,
               payload: {
                 canvasId: input.normalized.target.canvasId,
-                filePath: input.normalized.targetFile,
                 commands: createRuntimeCreateCommands({
                   canvasId: input.normalized.target.canvasId,
                   sourceId: input.normalized.sourceId,
@@ -1066,7 +1050,7 @@ function buildDuplicatePlan(input: {
               historyEffect: {
                 eventType: 'NODE_CREATED',
                 nodeId: input.normalized.sourceId,
-                filePath: input.normalized.targetFile,
+                canvasId: input.normalized.target.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: { created: false },
                 after: {
@@ -1081,13 +1065,13 @@ function buildDuplicatePlan(input: {
               kind: 'compatibility-mutation' as const,
               actionId: 'node.create' as const,
               payload: {
-                filePath: input.normalized.targetFile,
+                canvasId: input.normalized.target.canvasId,
                 node: input.normalized.createInput,
               },
               historyEffect: {
                 eventType: 'NODE_CREATED',
                 nodeId: input.normalized.sourceId,
-                filePath: input.normalized.targetFile,
+                canvasId: input.normalized.target.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: { created: false },
                 after: {
@@ -1117,7 +1101,6 @@ function buildDeletePlan(input: {
               kind: 'runtime-mutation' as const,
               payload: {
                 canvasId: input.normalized.target.canvasId,
-                filePath: input.normalized.target.filePath,
                 commands: [{
                   name: 'canvas.node.delete',
                   canvasId: input.normalized.target.canvasId,
@@ -1127,7 +1110,7 @@ function buildDeletePlan(input: {
               historyEffect: {
                 eventType: 'NODE_DELETED',
                 nodeId: input.normalized.target.sourceId,
-                filePath: input.normalized.target.filePath,
+                canvasId: input.normalized.target.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: {
                   create: input.normalized.recreateInput,
@@ -1143,12 +1126,12 @@ function buildDeletePlan(input: {
               actionId: 'node.delete' as const,
               payload: {
                 nodeId: input.normalized.target.sourceId,
-                filePath: input.normalized.target.filePath,
+                canvasId: input.normalized.target.canvasId,
               },
               historyEffect: {
                 eventType: 'NODE_DELETED',
                 nodeId: input.normalized.target.sourceId,
-                filePath: input.normalized.target.filePath,
+                canvasId: input.normalized.target.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: {
                   create: input.normalized.recreateInput,
@@ -1177,7 +1160,7 @@ function buildLockTogglePlan(input: {
         actionId: 'node.update',
         payload: {
           nodeId: input.normalized.target.sourceId,
-          filePath: input.normalized.target.filePath,
+          canvasId: input.normalized.target.canvasId,
           props: {
             locked: input.normalized.nextLocked,
           },
@@ -1185,7 +1168,7 @@ function buildLockTogglePlan(input: {
         historyEffect: {
           eventType: 'NODE_LOCK_TOGGLED',
           nodeId: input.normalized.target.sourceId,
-          filePath: input.normalized.target.filePath,
+          canvasId: input.normalized.target.canvasId,
           baseVersion: input.normalized.baseVersion,
           before: {
             locked: input.normalized.previousLocked,
@@ -1236,7 +1219,7 @@ function buildGroupSelectionPlan(input: {
     const command = buildGroupMembershipUpdateCommand({
       target: {
         sourceId: target.sourceId,
-        filePath: target.filePath,
+        canvasId: target.canvasId,
         renderedId: target.renderedNodeId,
         editMeta: target.editMeta,
       },
@@ -1256,13 +1239,13 @@ function buildGroupSelectionPlan(input: {
         actionId: 'node.group-membership.update' as const,
         payload: {
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           groupId: command.payload.next.groupId,
         },
         historyEffect: {
           eventType: 'NODE_GROUP_MEMBERSHIP_UPDATED' as const,
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           baseVersion: input.normalized.baseVersion,
           before: command.payload.previous,
           after: command.payload.next,
@@ -1305,7 +1288,7 @@ function buildUngroupSelectionPlan(input: {
     const command = buildGroupMembershipUpdateCommand({
       target: {
         sourceId: target.sourceId,
-        filePath: target.filePath,
+        canvasId: target.canvasId,
         renderedId: target.renderedNodeId,
         editMeta: target.editMeta,
       },
@@ -1325,13 +1308,13 @@ function buildUngroupSelectionPlan(input: {
         actionId: 'node.group-membership.update' as const,
         payload: {
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           groupId: command.payload.next.groupId,
         },
         historyEffect: {
           eventType: 'NODE_GROUP_MEMBERSHIP_UPDATED' as const,
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           baseVersion: input.normalized.baseVersion,
           before: command.payload.previous,
           after: command.payload.next,
@@ -1362,7 +1345,7 @@ function buildZOrderSelectionPlan(input: {
     const command = buildZOrderUpdateCommand({
       target: {
         sourceId: target.sourceId,
-        filePath: target.filePath,
+        canvasId: target.canvasId,
         renderedId: target.renderedNodeId,
         editMeta: target.editMeta,
       },
@@ -1383,7 +1366,6 @@ function buildZOrderSelectionPlan(input: {
               kind: 'runtime-mutation' as const,
               payload: {
                 canvasId: target.canvasId,
-                filePath: command.target.filePath,
                 commands: [{
                   name: 'canvas.node.z-order.update' as const,
                   canvasId: target.canvasId,
@@ -1394,7 +1376,7 @@ function buildZOrderSelectionPlan(input: {
               historyEffect: {
                 eventType: 'NODE_Z_ORDER_UPDATED' as const,
                 nodeId: command.target.sourceId,
-                filePath: command.target.filePath,
+                canvasId: command.target.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: command.payload.previous,
                 after: command.payload.next,
@@ -1405,13 +1387,13 @@ function buildZOrderSelectionPlan(input: {
               actionId: 'node.z-order.update' as const,
               payload: {
                 nodeId: command.target.sourceId,
-                filePath: command.target.filePath,
+                canvasId: command.target.canvasId,
                 zIndex: command.payload.next.zIndex,
               },
               historyEffect: {
                 eventType: 'NODE_Z_ORDER_UPDATED' as const,
                 nodeId: command.target.sourceId,
-                filePath: command.target.filePath,
+                canvasId: command.target.canvasId,
                 baseVersion: input.normalized.baseVersion,
                 before: command.payload.previous,
                 after: command.payload.next,
@@ -1468,7 +1450,7 @@ const styleUpdateEntry: ActionRoutingRegistryEntry<StyleNormalized> = {
       }
       return acc;
     }, {});
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1509,7 +1491,7 @@ const contentUpdateEntry: ActionRoutingRegistryEntry<ContentNormalized> = {
     }
     const previousData = ((target.node.data || {}) as Record<string, unknown>);
     const previousContent = typeof previousData.label === 'string' ? previousData.label : '';
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1551,7 +1533,7 @@ const renameEntry: ActionRoutingRegistryEntry<RenameNormalized> = {
     if (nextIdResult.value === target.sourceId) {
       return fail('INTENT_PAYLOAD_INVALID', 'nextId must differ from the current id');
     }
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1600,13 +1582,21 @@ const createEntry: ActionRoutingRegistryEntry<CreateNormalized> = {
       return createResult;
     }
     const target = resolveTarget(context, envelope);
-    const targetFile = envelope.targetRef?.compatibilityFilePath
-      ?? target?.filePath
-      ?? context.currentCompatibilityFilePath;
-    if (!targetFile) {
-      return fail('INTENT_PAYLOAD_INVALID', 'target file is required');
+    const canvasId = context.currentCanvasId ?? target?.canvasId ?? envelope.targetRef?.canvasId;
+    const useCanonicalCreate = (
+      createResult.value.placement.mode === 'mindmap-root'
+      || createResult.value.placement.mode === 'mindmap-child'
+      || createResult.value.placement.mode === 'mindmap-sibling'
+      || createResult.value.nodeType === 'shape'
+      || createResult.value.nodeType === 'text'
+      || createResult.value.nodeType === 'markdown'
+      || createResult.value.nodeType === 'sticky'
+      || Boolean(canvasId)
+    );
+    if (!canvasId) {
+      return fail('INTENT_PAYLOAD_INVALID', 'canvasId is required');
     }
-    const versionResult = requireBaseVersion(context, targetFile);
+    const versionResult = requireBaseVersion(context, canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1624,44 +1614,38 @@ const createEntry: ActionRoutingRegistryEntry<CreateNormalized> = {
           mindmapId: mindmapScopeId,
         }
       : createResult.value.placement;
-    const command = buildCreateCommand({
-      type: createResult.value.placement.mode === 'canvas-absolute' || createResult.value.placement.mode === 'mindmap-root'
-        ? 'node.create'
-        : createResult.value.placement.mode === 'mindmap-child'
-          ? 'mindmap.child.create'
-          : 'mindmap.sibling.create',
-      target: {
-        sourceId: nextId,
-        filePath: targetFile,
-        scopeId: envelope.targetRef?.scopeId ?? target?.scopeId,
-        frameScope: envelope.targetRef?.frameScope ?? target?.frameScope,
+    const createInput = {
+      id: nextId,
+      type: createResult.value.nodeType,
+      props: {
+        ...defaults.initialProps,
+        ...(createResult.value.initialProps ?? {}),
+        ...(defaults.initialContent ? { content: defaults.initialContent } : {}),
+        ...(normalizedPlacement.mode === 'canvas-absolute'
+          ? { x: normalizedPlacement.x, y: normalizedPlacement.y }
+          : normalizedPlacement.mode === 'mindmap-child'
+            ? { from: normalizedPlacement.parentId }
+            : normalizedPlacement.mode === 'mindmap-sibling'
+              ? {
+                  ...(normalizedPlacement.parentId ? { from: normalizedPlacement.parentId } : {}),
+                }
+              : {}),
       },
-      payload: {
-        nodeType: createResult.value.nodeType,
-        id: nextId,
-        initialProps: {
-          ...defaults.initialProps,
-          ...(createResult.value.initialProps ?? {}),
-        },
-        initialContent: defaults.initialContent,
-        placement: normalizedPlacement,
-      },
-    });
-    const useCanonicalCreate = shouldUseCanonicalCanvasNodeCreate(command);
+      placement: normalizedPlacement,
+    };
     const renderedId = buildRenderedNodeId({
       sourceId: nextId,
       scopeId: mindmapScopeId ?? envelope.targetRef?.scopeId ?? target?.scopeId,
       frameScope: envelope.targetRef?.frameScope ?? target?.frameScope,
     });
     return ok({
-      canvasId: context.currentCanvasId ?? target?.canvasId,
-      targetFile,
+      ...(canvasId ? { canvasId } : {}),
       sourceId: nextId,
       scopeId: mindmapScopeId ?? envelope.targetRef?.scopeId ?? target?.scopeId,
       frameScope: envelope.targetRef?.frameScope ?? target?.frameScope,
       nodeType: createResult.value.nodeType,
       placement: normalizedPlacement,
-      createInput: toCreateNodeInput(command),
+      createInput,
       useCanonicalCreate,
       baseVersion: versionResult.value,
       renderedId,
@@ -1718,7 +1702,7 @@ const duplicateEntry: ActionRoutingRegistryEntry<DuplicateNormalized> = {
     if (!target) {
       return fail('INTENT_PAYLOAD_INVALID', 'target node is required');
     }
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1745,7 +1729,6 @@ const duplicateEntry: ActionRoutingRegistryEntry<DuplicateNormalized> = {
     });
     return ok({
       target,
-      targetFile: target.filePath,
       sourceId: nextId,
       scopeId: target.scopeId,
       frameScope: target.frameScope,
@@ -1783,7 +1766,7 @@ const deleteEntry: ActionRoutingRegistryEntry<DeleteNormalized> = {
     if (!target) {
       return fail('INTENT_PAYLOAD_INVALID', 'target node is required');
     }
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1833,7 +1816,7 @@ const lockToggleEntry: ActionRoutingRegistryEntry<LockToggleNormalized> = {
     if (!target) {
       return fail('INTENT_PAYLOAD_INVALID', 'target node is required');
     }
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1914,7 +1897,6 @@ const groupSelectionEntry: ActionRoutingRegistryEntry<GroupSelectionNormalized> 
       targets: selectionResult.value.targets,
       nextGroupId: createUniqueGroupId(context.nodes),
       baseVersion: selectionResult.value.baseVersion,
-      filePath: selectionResult.value.filePath,
     });
   },
   buildDispatch: ({ envelope, normalized }) => ok(buildGroupSelectionPlan({ envelope, normalized })),
@@ -1950,7 +1932,6 @@ const ungroupSelectionEntry: ActionRoutingRegistryEntry<UngroupSelectionNormaliz
     return ok({
       targets,
       baseVersion: selectionResult.value.baseVersion,
-      filePath: selectionResult.value.filePath,
     });
   },
   buildDispatch: ({ envelope, normalized }) => ok(buildUngroupSelectionPlan({ envelope, normalized })),
@@ -2010,7 +1991,6 @@ function createZOrderEntry(direction: ZOrderDirection): ActionRoutingRegistryEnt
         }),
         direction,
         baseVersion: selectionResult.value.baseVersion,
-        filePath: selectionResult.value.filePath,
       });
     },
     buildDispatch: ({ envelope, normalized }) => ok(buildZOrderSelectionPlan({ envelope, normalized })),

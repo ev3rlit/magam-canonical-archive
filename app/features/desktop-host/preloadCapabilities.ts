@@ -10,6 +10,7 @@ export function createPreloadCapabilities(
     capabilities: {
       workspace: {
         selectWorkspace: () => ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.selectWorkspace),
+        chooseSaveLocation: () => ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.chooseSaveLocation),
         revealInOs: (path: string) => ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.revealInOs, path),
       },
       shell: {

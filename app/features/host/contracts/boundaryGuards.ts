@@ -54,6 +54,7 @@ export function assertHostCapabilitySurface(surface: HostCapabilitySurface): Hos
   }
 
   assertFunction(surface.workspace?.selectWorkspace, 'workspace.selectWorkspace');
+  assertFunction(surface.workspace?.chooseSaveLocation, 'workspace.chooseSaveLocation');
   assertFunction(surface.workspace?.revealInOs, 'workspace.revealInOs');
   assertFunction(surface.shell?.openExternal, 'shell.openExternal');
   assertFunction(surface.lifecycle?.onAppEvent, 'lifecycle.onAppEvent');

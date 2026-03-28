@@ -28,6 +28,9 @@ describe('host RPC adapters', () => {
         wsUrl: 'ws://127.0.0.1:3004',
         appStateDbPath: '/tmp/app-state-pgdata',
         workspacePath: null,
+        workspaceMode: 'transient',
+        storageBackend: 'memory',
+        transientCanvasId: 'transient-canvas-test',
       },
     });
 
@@ -116,6 +119,9 @@ describe('host RPC adapters', () => {
         wsUrl: 'ws://127.0.0.1:3004',
         appStateDbPath: '/tmp/app-state-pgdata',
         workspacePath: null,
+        workspaceMode: 'transient',
+        storageBackend: 'memory',
+        transientCanvasId: 'transient-canvas-test',
       },
     });
 
@@ -161,6 +167,9 @@ describe('host RPC adapters', () => {
         wsUrl: 'ws://127.0.0.1:3004',
         appStateDbPath: '/tmp/app-state-pgdata',
         workspacePath: null,
+        workspaceMode: 'transient',
+        storageBackend: 'memory',
+        transientCanvasId: 'transient-canvas-test',
       },
     }).getFileTree('/tmp/workspace');
 
@@ -194,7 +203,7 @@ describe('host RPC adapters', () => {
       .mockResolvedValueOnce(jsonResponse([
         {
           workspaceId: 'ws-1',
-          canvasPath: 'docs/alpha.graph.tsx',
+          canvasId: 'canvas-alpha',
         },
       ]))
       .mockResolvedValueOnce(jsonResponse({
@@ -215,7 +224,7 @@ describe('host RPC adapters', () => {
       expect.objectContaining({ activeWorkspaceId: 'ws-1' }),
     );
     await expect(adapter.listAppStateRecentCanvases('ws-1')).resolves.toEqual([
-      expect.objectContaining({ canvasPath: 'docs/alpha.graph.tsx' }),
+      expect.objectContaining({ canvasId: 'canvas-alpha' }),
     ]);
     await expect(adapter.getAppStatePreference('theme.mode')).resolves.toEqual(
       expect.objectContaining({ key: 'theme.mode', valueJson: 'light' }),
@@ -261,7 +270,7 @@ describe('host RPC adapters', () => {
       .mockResolvedValueOnce(jsonResponse([
         {
           workspaceId: 'ws-1',
-          canvasPath: 'docs/alpha.graph.tsx',
+          canvasId: 'canvas-alpha',
         },
       ]))
       .mockResolvedValueOnce(jsonResponse({
@@ -278,6 +287,9 @@ describe('host RPC adapters', () => {
         wsUrl: 'ws://127.0.0.1:3004',
         appStateDbPath: '/tmp/app-state-pgdata',
         workspacePath: null,
+        workspaceMode: 'transient',
+        storageBackend: 'memory',
+        transientCanvasId: 'transient-canvas-test',
       },
     });
 

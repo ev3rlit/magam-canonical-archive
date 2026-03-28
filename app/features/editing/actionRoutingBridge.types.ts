@@ -45,7 +45,6 @@ export interface ActionRoutingTargetSnapshot {
   renderedNodeId?: string;
   sourceId?: string;
   canvasId?: string | null;
-  compatibilityFilePath?: string | null;
   nodeType?: string;
   scopeId?: string;
   frameScope?: string;
@@ -191,10 +190,7 @@ export interface ActionRoutingBridgeResponse {
 
 export interface ActionRoutingRuntimeSnapshot {
   currentCanvasId: string | null;
-  currentCompatibilityFilePath: string | null;
   canvasVersions: Record<string, string>;
-  currentFile?: string | null;
-  sourceVersions?: Record<string, string>;
   nodes: Node[];
   selectedNodeIds: string[];
 }
