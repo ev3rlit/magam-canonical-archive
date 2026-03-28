@@ -52,6 +52,7 @@ function resolveMindMapCreateNodeType(
 }
 
 export interface GraphCanvasHostContextMenuActionsInput {
+  createMode: GraphCanvasCreateMode;
   copyImageToClipboard: (nodeIds?: string[]) => Promise<void> | void;
   handleFitView: () => void;
   openExportDialog: (scope: 'selection' | 'full', selectedNodeIds?: string[]) => void;

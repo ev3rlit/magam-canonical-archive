@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createCanonicalPgliteDb } from '../canonical-persistence/pglite-db';
 import { CanonicalPersistenceRepository } from '../canonical-persistence/repository';
 import type { HeadlessServiceContext } from '../canonical-cli/context';
-import { getDocument, getWorkspaceCanvas, listWorkspaceCanvases, listWorkspaces } from './workspace-canvas';
+import { getCanvas, getWorkspaceCanvas, listWorkspaceCanvases, listWorkspaces } from './workspace-canvas';
 import { queryObjects, querySurfaceNodes, searchCanvases } from './object-surface-search';
 
 function buildNoteRecord(id: string) {
@@ -44,7 +44,7 @@ describe('headless query services', () => {
       layout: { x: 16, y: 24, width: 120, height: 80 },
       zIndex: 1,
     });
-    await repository.appendDocumentRevision({
+    await repository.appendCanvasRevision({
       id: 'rev-1',
       canvasId: 'doc-1',
       revisionNo: 1,
@@ -104,7 +104,7 @@ describe('headless query services', () => {
       layout: { x: 20, y: 30, width: 160, height: 90 },
       zIndex: 2,
     });
-    await repository.appendDocumentRevision({
+    await repository.appendCanvasRevision({
       id: 'rev-2',
       canvasId: 'doc-2',
       revisionNo: 2,
@@ -134,7 +134,7 @@ describe('headless query services', () => {
       },
     ]);
 
-    const document = await getDocument(context, 'doc-2');
+    const document = await getCanvas(context, 'doc-2');
     expect(document).toEqual({
       id: 'doc-2',
       surfaceIds: ['main'],
@@ -168,7 +168,7 @@ describe('headless query services', () => {
       defaultWorkspaceId: 'ws-1',
     };
 
-    await repository.appendDocumentRevision({
+    await repository.appendCanvasRevision({
       id: 'docrev-1',
       canvasId: 'doc-shell-1',
       revisionNo: 1,
@@ -183,7 +183,7 @@ describe('headless query services', () => {
       },
     });
 
-    await repository.appendDocumentRevision({
+    await repository.appendCanvasRevision({
       id: 'docrev-2',
       canvasId: 'doc-shell-1',
       revisionNo: 2,

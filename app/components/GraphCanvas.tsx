@@ -71,6 +71,7 @@ import {
   isDragCreateNodeType,
   isDragRequiredCreateNodeType,
 } from '@/features/editing/createDefaults';
+import type { CanvasEntrypointCreateNodeType } from '@/features/canvas-ui-entrypoints/contracts';
 import { resolveNodeEditContext } from '@/components/editor/workspaceEditUtils';
 import {
   OverlayHostProvider,
@@ -220,6 +221,11 @@ export function resolveToolbarCreateScreenPosition(input: {
 }
 
 type GraphCanvasActiveCreateMode = Exclude<GraphCanvasCreateMode, null>;
+type GraphCanvasToolbarCreateMode = GraphCanvasActiveCreateMode;
+type GraphCanvasDragCreateMode = Extract<
+  CanvasEntrypointCreateNodeType,
+  'rectangle' | 'ellipse' | 'diamond' | 'line' | 'sticky'
+>;
 
 type DragOriginState = {
   x: number;
@@ -276,7 +282,7 @@ type SelectionShellGestureSession =
     };
 
 type GraphCanvasCreateGesture = {
-  nodeType: GraphCanvasActiveCreateMode;
+  nodeType: GraphCanvasDragCreateMode;
   startScreen: { x: number; y: number };
   currentScreen: { x: number; y: number };
 };
@@ -1215,6 +1221,7 @@ function GraphCanvasContent({
   }, [fitView, getViewport, persistActiveTabViewport]);
 
   const contextMenuActions = useMemo(() => createGraphCanvasContextMenuActions({
+    createMode,
     copyImageToClipboard,
     handleFitView,
     openExportDialog: (scope: 'selection' | 'full', selectedNodeIds?: string[]) => {
@@ -1247,6 +1254,7 @@ function GraphCanvasContent({
     buildCreateIntent: buildGraphCanvasCreateIntent,
   }), [
     copyImageToClipboard,
+    createMode,
     enterGroupFocusForNode,
     onBringSelectionToFront,
     handleFitView,
@@ -1355,8 +1363,8 @@ function GraphCanvasContent({
       return;
     }
 
-    const session: GraphCanvasCreateGesture = {
-      nodeType: createMode as GraphCanvasActiveCreateMode,
+      const session: GraphCanvasCreateGesture = {
+        nodeType: createMode,
       startScreen: { x: event.clientX, y: event.clientY },
       currentScreen: { x: event.clientX, y: event.clientY },
     };
@@ -1479,7 +1487,7 @@ function GraphCanvasContent({
   );
 
   const handleToolbarCreate = useCallback(
-    async (mode: GraphCanvasActiveCreateMode) => {
+    async (mode: GraphCanvasToolbarCreateMode) => {
       if (!onCreateNode || hasPendingUiActions) {
         return;
       }

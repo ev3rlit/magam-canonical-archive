@@ -1,6 +1,6 @@
 import { mkdtemp, rm } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createAppStatePgliteDb } from './pglite-db';
 import { AppStatePersistenceRepository } from './repository';

@@ -50,10 +50,10 @@ function readCanvasShellMetadata(
     return null;
   }
 
-  const shell = isRecord(mutationBatch.canvasShell)
-    ? mutationBatch.canvasShell
-    : isRecord(mutationBatch.meta) && isRecord(mutationBatch.meta.canvasShell)
-      ? mutationBatch.meta.canvasShell
+  const shell = isRecord(mutationBatch['canvasShell'])
+    ? mutationBatch['canvasShell']
+    : isRecord(mutationBatch['meta']) && isRecord(mutationBatch['meta']['canvasShell'])
+      ? mutationBatch['meta']['canvasShell']
       : null;
 
   if (!shell) {
@@ -61,9 +61,9 @@ function readCanvasShellMetadata(
   }
 
   return {
-    ...(typeof shell.workspaceId === 'string' ? { workspaceId: shell.workspaceId } : {}),
-    ...(typeof shell.title === 'string' ? { title: shell.title } : { title: null }),
-    ...(typeof shell.filePath === 'string' ? { filePath: shell.filePath } : { filePath: null }),
+    ...(typeof shell['workspaceId'] === 'string' ? { workspaceId: shell['workspaceId'] } : {}),
+    ...(typeof shell['title'] === 'string' ? { title: shell['title'] } : { title: null }),
+    ...(typeof shell['filePath'] === 'string' ? { filePath: shell['filePath'] } : { filePath: null }),
   };
 }
 
@@ -83,7 +83,7 @@ export async function listWorkspaceIds(context: HeadlessServiceContext): Promise
   return uniqueStrings([
     context.defaultWorkspaceId,
     ...fallbackIds,
-    ...allObjects.map((row) => row.workspaceId),
+    ...allObjects.map((row) => row['workspaceId']),
   ]);
 }
 

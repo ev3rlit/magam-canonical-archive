@@ -1,4 +1,8 @@
 import type { CreatePayload } from './commands';
+import type {
+  CanvasEntrypointCreateMode,
+  CanvasEntrypointCreateNodeType,
+} from '@/features/canvas-ui-entrypoints/contracts';
 import { DEFAULT_WASHI_PRESET_ID } from '@/utils/washiTapeDefaults';
 import { getDefaultStickerCreateProps } from '@/utils/stickerDefaults';
 import {
@@ -143,14 +147,14 @@ export function getCreateDefaults(nodeType: CreatePayload['nodeType']): {
 }
 
 export function isImmediateEditCreateNodeType(
-  nodeType: CreatePayload['nodeType'],
-): boolean {
+  nodeType: CreatePayload['nodeType'] | CanvasEntrypointCreateMode,
+): nodeType is Extract<CanvasEntrypointCreateNodeType, 'text' | 'markdown' | 'sticky'> {
   return nodeType === 'text' || nodeType === 'markdown' || nodeType === 'sticky';
 }
 
 export function isDragCreateNodeType(
-  nodeType: CreatePayload['nodeType'],
-): boolean {
+  nodeType: CreatePayload['nodeType'] | CanvasEntrypointCreateMode,
+): nodeType is Extract<CanvasEntrypointCreateNodeType, 'rectangle' | 'ellipse' | 'diamond' | 'line' | 'sticky'> {
   return nodeType === 'rectangle'
     || nodeType === 'ellipse'
     || nodeType === 'diamond'
@@ -159,8 +163,8 @@ export function isDragCreateNodeType(
 }
 
 export function isDragRequiredCreateNodeType(
-  nodeType: CreatePayload['nodeType'],
-): boolean {
+  nodeType: CreatePayload['nodeType'] | CanvasEntrypointCreateMode,
+): nodeType is Extract<CanvasEntrypointCreateNodeType, 'line'> {
   return nodeType === 'line';
 }
 

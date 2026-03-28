@@ -24,13 +24,13 @@ function toPresentationStyle(record: { props?: Record<string, unknown> | null; s
     ...(record.style ?? {}),
   };
   const next: PresentationStyleV1 = {
-    ...(readString(source.fill) ? { fillColor: readString(source.fill) } : {}),
-    ...(readString(source.stroke) ? { strokeColor: readString(source.stroke) } : {}),
-    ...(typeof source.strokeWidth === 'number' ? { strokeWidth: source.strokeWidth } : {}),
-    ...(typeof source.opacity === 'number' ? { opacity: source.opacity } : {}),
-    ...(readString(source.color) ? { textColor: readString(source.color) } : {}),
-    ...(readString(source.fontFamily) ? { fontFamily: readString(source.fontFamily) } : {}),
-    ...(typeof source.fontSize === 'number' ? { fontSize: source.fontSize } : {}),
+    ...(readString(source['fill']) ? { fillColor: readString(source['fill']) } : {}),
+    ...(readString(source['stroke']) ? { strokeColor: readString(source['stroke']) } : {}),
+    ...(typeof source['strokeWidth'] === 'number' ? { strokeWidth: source['strokeWidth'] } : {}),
+    ...(typeof source['opacity'] === 'number' ? { opacity: source['opacity'] } : {}),
+    ...(readString(source['color']) ? { textColor: readString(source['color']) } : {}),
+    ...(readString(source['fontFamily']) ? { fontFamily: readString(source['fontFamily']) } : {}),
+    ...(typeof source['fontSize'] === 'number' ? { fontSize: source['fontSize'] } : {}),
   };
 
   return Object.keys(next).length > 0 ? next : undefined;
@@ -42,12 +42,12 @@ function toRenderProfile(record: { props?: Record<string, unknown> | null; style
     ...(record.style ?? {}),
   };
   const next: RenderProfileV1 = {
-    ...(typeof source.roughness === 'number' ? { roughness: source.roughness } : {}),
-    ...(typeof source.wobble === 'number' ? { wobble: source.wobble } : {}),
-    ...(typeof source.pressureVariance === 'number' ? { pressureVariance: source.pressureVariance } : {}),
-    ...(typeof source.angleVariance === 'number' ? { angleVariance: source.angleVariance } : {}),
-    ...(readString(source.inkProfile) ? { inkProfile: source.inkProfile as RenderProfileV1['inkProfile'] } : {}),
-    ...(readString(source.paperBlend) ? { paperBlend: source.paperBlend as RenderProfileV1['paperBlend'] } : {}),
+    ...(typeof source['roughness'] === 'number' ? { roughness: source['roughness'] } : {}),
+    ...(typeof source['wobble'] === 'number' ? { wobble: source['wobble'] } : {}),
+    ...(typeof source['pressureVariance'] === 'number' ? { pressureVariance: source['pressureVariance'] } : {}),
+    ...(typeof source['angleVariance'] === 'number' ? { angleVariance: source['angleVariance'] } : {}),
+    ...(readString(source['inkProfile']) ? { inkProfile: source['inkProfile'] as RenderProfileV1['inkProfile'] } : {}),
+    ...(readString(source['paperBlend']) ? { paperBlend: source['paperBlend'] as RenderProfileV1['paperBlend'] } : {}),
   };
 
   return Object.keys(next).length > 0 ? next : undefined;
@@ -66,7 +66,7 @@ function createSummary(record: CanonicalObjectRecord | null) {
 }
 
 function readMindmapId(record: CanonicalObjectRecord | null): string | null {
-  const scopeId = record?.sourceMeta?.scopeId;
+  const scopeId = record?.sourceMeta?.['scopeId'];
   return typeof scopeId === 'string' && scopeId.length > 0 ? scopeId : null;
 }
 
@@ -82,17 +82,17 @@ function toRenderNode(input: {
     surfaceId: node.surfaceId,
     canonicalObjectId: node.canonicalObjectId ?? null,
     transform: {
-      x: readNumber(node.layout.x),
-      y: readNumber(node.layout.y),
-      width: readNumber(node.layout.width, readNumber(node.props?.width, 160)),
-      height: readNumber(node.layout.height, readNumber(node.props?.height, 90)),
-      rotation: readNumber(node.style?.rotation ?? node.props?.rotation),
-      ...(typeof node.layout.scaleX === 'number' ? { scaleX: node.layout.scaleX as number } : {}),
-      ...(typeof node.layout.scaleY === 'number' ? { scaleY: node.layout.scaleY as number } : {}),
+      x: readNumber(node.layout['x']),
+      y: readNumber(node.layout['y']),
+      width: readNumber(node.layout['width'], readNumber(node.props?.['width'], 160)),
+      height: readNumber(node.layout['height'], readNumber(node.props?.['height'], 90)),
+      rotation: readNumber(node.style?.['rotation'] ?? node.props?.['rotation']),
+      ...(typeof node.layout['scaleX'] === 'number' ? { scaleX: node.layout['scaleX'] as number } : {}),
+      ...(typeof node.layout['scaleY'] === 'number' ? { scaleY: node.layout['scaleY'] as number } : {}),
     },
     presentationStyle: toPresentationStyle(node),
     renderProfile: toRenderProfile(node),
-    visible: node.props?.hidden !== true,
+    visible: node.props?.['hidden'] !== true,
     summary: createSummary(objectRecord),
   };
 }

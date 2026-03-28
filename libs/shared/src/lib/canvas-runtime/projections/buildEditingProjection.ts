@@ -144,7 +144,7 @@ export async function buildEditingProjection(
     nodes: nodes.map((node) => {
       const objectRecord = node.canonicalObjectId ? objectsById.get(node.canonicalObjectId) ?? null : null;
       const bodyBlocks = readContentBlocks(objectRecord ?? {}) ?? [];
-      const locked = node.props?.locked === true;
+      const locked = node.props?.['locked'] === true;
       const interactionCapabilities = deriveInteractionCapabilities({
         nodeKind: node.nodeKind,
         nodeType: node.nodeType,

@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import * as path from 'node:path';
 import { cliError, persistenceFailureToCliError } from '../canonical-cli';
-import { createCanonicalPgliteDb, CanonicalPersistenceRepository } from '../canonical-persistence';
+import {
+  createCanonicalPgliteDb,
+  CanonicalPersistenceRepository,
+  resolveCanonicalMigrationsFolder,
+} from '../canonical-persistence';
 import type { HeadlessServiceContext } from '../canonical-cli';
 import {
   getCurrentCanvasRevision,
@@ -32,7 +35,7 @@ function resolveWorkspaceId(targetDir: string, workspaceId?: string): string {
 }
 
 function resolveMigrationsFolder(): string {
-  return fileURLToPath(new URL('../canonical-persistence/drizzle/', import.meta.url));
+  return resolveCanonicalMigrationsFolder(process.cwd());
 }
 
 function createCompatibilityFilePath(canvasId: string): string {

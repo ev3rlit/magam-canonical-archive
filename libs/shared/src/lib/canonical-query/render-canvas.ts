@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import type { CanonicalObjectRecord, MediaContentCapability } from '../canonical-object-contract';
 import { readContentBlocks } from '../canonical-object-contract';
 import type { HeadlessServiceContext } from '../canonical-cli';
@@ -19,9 +18,7 @@ import {
 } from '../canvas-runtime';
 import { getWorkspaceCanvas } from './workspace-canvas';
 
-const CANONICAL_MIGRATIONS_FOLDER = fileURLToPath(
-  new URL('../canonical-persistence/drizzle/', import.meta.url),
-);
+const CANONICAL_MIGRATIONS_FOLDER = resolveCanonicalMigrationsFolder(process.cwd());
 
 type RenderNode = {
   type: string;
@@ -79,10 +76,10 @@ function resolveFrameProps(
     : {};
   return {
     ...(readString((node.props ?? {})['type']) ? { type: (node.props ?? {})['type'] } : {}),
-    ...(readString(frame.shape) ? { type: frame.shape } : {}),
-    ...(readString(frame.fill) ? { fill: frame.fill } : {}),
-    ...(readString(frame.stroke) ? { stroke: frame.stroke } : {}),
-    ...(readNumber(frame.strokeWidth) !== undefined ? { strokeWidth: readNumber(frame.strokeWidth) } : {}),
+    ...(readString(frame['shape']) ? { type: frame['shape'] } : {}),
+    ...(readString(frame['fill']) ? { fill: frame['fill'] } : {}),
+    ...(readString(frame['stroke']) ? { stroke: frame['stroke'] } : {}),
+    ...(readNumber(frame['strokeWidth']) !== undefined ? { strokeWidth: readNumber(frame['strokeWidth']) } : {}),
   };
 }
 
@@ -146,16 +143,16 @@ function resolveBodyChildren(objectRecord: CanonicalObjectRecord | null): Render
     }
 
     if (block.blockType === 'canvas.image') {
-      const assetRef = isRecord(block.payload?.assetRef) ? block.payload.assetRef : null;
-      const src = assetRef && assetRef.kind === 'external-url'
-        ? readString(assetRef.value)
+      const assetRef = isRecord(block.payload?.['assetRef']) ? block.payload['assetRef'] : null;
+      const src = assetRef && assetRef['kind'] === 'external-url'
+        ? readString(assetRef['value'])
         : undefined;
       return src
         ? [{
             type: 'graph-image',
             props: {
               src,
-              ...(readString(block.payload?.alt) ? { alt: block.payload.alt } : {}),
+              ...(readString(block.payload?.['alt']) ? { alt: block.payload['alt'] } : {}),
             },
           }]
         : [];
@@ -175,7 +172,7 @@ function resolveNodeSourceMeta(input: {
     : {};
   return {
     ...sourceMeta,
-    sourceId: readString(sourceMeta.sourceId) ?? input.node.id,
+    sourceId: readString(sourceMeta['sourceId']) ?? input.node.id,
     kind: input.mindmapId ? 'mindmap' : 'canvas',
     ...(input.mindmapId ? { scopeId: input.mindmapId } : {}),
     renderedId: input.node.id,
@@ -194,8 +191,8 @@ function buildBaseNodeProps(input: {
     id: input.node.id,
     ...(input.includePosition
       ? {
-          ...(readNumber(input.node.layout.x) !== undefined ? { x: input.node.layout.x } : {}),
-          ...(readNumber(input.node.layout.y) !== undefined ? { y: input.node.layout.y } : {}),
+          ...(readNumber(input.node.layout['x']) !== undefined ? { x: input.node.layout['x'] } : {}),
+          ...(readNumber(input.node.layout['y']) !== undefined ? { y: input.node.layout['y'] } : {}),
         }
       : {}),
     ...props,
@@ -400,8 +397,8 @@ function buildMindmapChildren(input: {
     type: 'graph-mindmap',
     props: {
       id: mindmapId,
-      x: readNumber(input.root.layout.x) ?? 0,
-      y: readNumber(input.root.layout.y) ?? 0,
+      x: readNumber(input.root.layout['x']) ?? 0,
+      y: readNumber(input.root.layout['y']) ?? 0,
     },
     children: treeNodes.map((node) => {
       const objectRecord = node.canonicalObjectId

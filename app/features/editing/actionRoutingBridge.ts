@@ -38,8 +38,9 @@ function resolveNextVersion(
   response: { newVersion?: string },
   deps: ActionRoutingBridgeDependencies,
 ): string {
+  const canvasId = normalized.editTarget.canvasId!;
   return response.newVersion
-    ?? deps.runtime.canvasVersions[normalized.editTarget.canvasId]
+    ?? deps.runtime.canvasVersions[canvasId]
     ?? normalized.baseVersion;
 }
 
@@ -62,7 +63,6 @@ async function dispatchCreateNode(
   const result = await deps.createNode(
     createInput,
     normalized.editTarget.canvasId,
-    normalized.editTarget.compatibilityFilePath ?? normalized.editTarget.filePath,
   );
   const commandId = result.commandId ?? createId(deps);
   deps.setPendingSelectionNodeId?.(normalized.renderedId);
@@ -70,7 +70,7 @@ async function dispatchCreateNode(
     eventId: createId(deps),
     type: 'NODE_CREATED',
     nodeId: normalized.editTarget.sourceId,
-    canvasId: normalized.editTarget.canvasId,
+    canvasId: normalized.editTarget.canvasId!,
     filePath: normalized.editTarget.filePath,
     compatibilityFilePath: normalized.editTarget.compatibilityFilePath ?? normalized.editTarget.filePath,
     commandId,
@@ -101,16 +101,15 @@ async function dispatchRenameNode(
   const result = await deps.updateNode(
     command.target.sourceId,
     toUpdateNodeProps(command),
-    command.target.canvasId,
-    command.target.compatibilityFilePath ?? command.target.filePath,
     { commandType: command.type },
+    command.target.canvasId,
   );
   const commandId = result.commandId ?? createId(deps);
   deps.pushEditCompletionEvent?.({
     eventId: createId(deps),
     type: 'NODE_RENAMED',
     nodeId: command.target.sourceId,
-    canvasId: command.target.canvasId,
+    canvasId: command.target.canvasId!,
     filePath: command.target.filePath,
     compatibilityFilePath: command.target.compatibilityFilePath ?? command.target.filePath,
     commandId,
@@ -148,16 +147,15 @@ async function dispatchStyleUpdate(
     const result = await deps.updateNode(
       command.target.sourceId,
       toUpdateNodeProps(command),
-      command.target.canvasId,
-      command.target.compatibilityFilePath ?? command.target.filePath,
       { commandType: command.type },
+      command.target.canvasId,
     );
     const commandId = result.commandId ?? createId(deps);
     deps.pushEditCompletionEvent?.({
       eventId: createId(deps),
       type: 'STYLE_UPDATED',
       nodeId: command.target.sourceId,
-      canvasId: command.target.canvasId,
+      canvasId: command.target.canvasId!,
       filePath: command.target.filePath,
       compatibilityFilePath: command.target.compatibilityFilePath ?? command.target.filePath,
       commandId,

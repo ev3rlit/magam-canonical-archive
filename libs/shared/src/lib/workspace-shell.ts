@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import * as path from 'node:path';
 
 const COMPATIBILITY_DOCUMENT_EXTENSIONS = new Set(['.tsx']);
 const COMPATIBILITY_DOCUMENT_SOURCE = [
@@ -91,7 +91,7 @@ function normalizeAbsolutePath(rawPath: string, fieldName: string): string {
 }
 
 export function resolveDefaultWorkspaceRootPath(): string {
-  return path.resolve(process.env.MAGAM_TARGET_DIR || process.cwd());
+  return path.resolve(process.env['MAGAM_TARGET_DIR'] || process.cwd());
 }
 
 function isWithinRoot(rootPath: string, candidatePath: string): boolean {

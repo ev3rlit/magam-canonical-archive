@@ -12,7 +12,7 @@ export async function runCanvasCommand(args: string[]): Promise<ResourceCommandR
     case 'get':
       return withHeadlessContext({
         targetDir: getOptionalStringFlag(parsed, 'target-dir'),
-        canvasRef: getOptionalStringFlag(parsed, 'canvas'),
+        canvasRef: getOptionalStringFlag(parsed, 'canvas') ?? getOptionalStringFlag(parsed, 'document'),
         requireCanvas: true,
       }, async (context) => ({
         data: await getCanvas(context, context.resolvedCanvasId!),

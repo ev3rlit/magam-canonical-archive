@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   createCanonicalCanvas,
   getCanonicalCanvas,
@@ -23,7 +23,6 @@ describe('canonical canvas shell service', () => {
     const created = await createCanonicalCanvas({
       targetDir,
       workspaceId: 'ws-shell',
-      filePath: 'docs/alpha.graph.tsx',
       actor: {
         kind: 'user',
         id: 'tester',

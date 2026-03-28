@@ -284,7 +284,7 @@ function normalizeCreateNode(
         ? { x: placement.x, y: placement.y }
         : placement.mode === 'mindmap-child'
           ? { from: placement.parentId }
-          : placement.parentId
+          : placement.mode === 'mindmap-sibling' && placement.parentId
             ? { from: placement.parentId }
             : {}),
       ...(defaults.initialContent ? { content: defaults.initialContent } : {}),

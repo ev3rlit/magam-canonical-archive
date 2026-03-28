@@ -100,7 +100,7 @@ function toSeededContentBlocks(input: {
   return [
     createDefaultMarkdownContentBlock(
       'body-1',
-      typeof input.props.content === 'string' ? input.props.content : '',
+      typeof input.props['content'] === 'string' ? input.props['content'] : '',
     ),
   ];
 }
@@ -143,31 +143,31 @@ function toCanvasNodeProps(input: {
   parentNodeId: string | null;
 }): Record<string, unknown> {
   const props = { ...input.props };
-  delete props.content;
-  delete props.x;
-  delete props.y;
-  delete props.from;
+  delete props['content'];
+  delete props['x'];
+  delete props['y'];
+  delete props['from'];
 
   const size = readRecordProp(props, 'size');
   if (
     size
     && !('width' in props)
-    && typeof size.width === 'number'
-    && Number.isFinite(size.width)
+    && typeof size['width'] === 'number'
+    && Number.isFinite(size['width'])
   ) {
-    props.width = size.width;
+    props['width'] = size['width'];
   }
   if (
     size
     && !('height' in props)
-    && typeof size.height === 'number'
-    && Number.isFinite(size.height)
+    && typeof size['height'] === 'number'
+    && Number.isFinite(size['height'])
   ) {
-    props.height = size.height;
+    props['height'] = size['height'];
   }
 
   if (input.parentNodeId) {
-    props.from = input.parentNodeId;
+    props['from'] = input.parentNodeId;
   }
 
   return props;

@@ -204,14 +204,12 @@ export interface ActionRoutingBridgeDependencies {
   updateNode: (
     nodeId: string,
     props: Record<string, unknown>,
-    targetCanvasId?: string | null,
-    targetCompatibilityFilePath?: string | null,
     options?: UpdateNodeMutationOptions,
+    targetCanvasId?: string | null,
   ) => Promise<RpcMutationResult>;
   createNode: (
     node: Record<string, unknown>,
     targetCanvasId?: string | null,
-    targetCompatibilityFilePath?: string | null,
   ) => Promise<RpcMutationResult>;
   updateNodeData?: (nodeId: string, partialData: Record<string, unknown>) => void;
   restoreNodeData?: (nodeId: string, previousData: Record<string, unknown>) => void;

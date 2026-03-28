@@ -74,7 +74,7 @@ function toLegacyBodyBlock(block: BodyBlockEntityV1) {
       return {
         id: block.blockId,
         blockType: 'text' as const,
-        text: typeof block.props.text === 'string' ? block.props.text : '',
+        text: typeof block.props['text'] === 'string' ? block.props['text'] : '',
       };
     case 'callout':
     case 'heading':
@@ -83,10 +83,10 @@ function toLegacyBodyBlock(block: BodyBlockEntityV1) {
       return {
         id: block.blockId,
         blockType: 'markdown' as const,
-        source: typeof block.props.source === 'string'
-          ? block.props.source
-          : typeof block.props.text === 'string'
-            ? block.props.text
+        source: typeof block.props['source'] === 'string'
+          ? block.props['source']
+          : typeof block.props['text'] === 'string'
+            ? block.props['text']
             : '',
       };
     default:
@@ -717,8 +717,8 @@ function buildRestoreDeletedNodeCommands(input: {
   object: CanonicalObjectRecord | null;
 }): CanvasHistoryReplayCommandV1[] {
   const commands: CanvasHistoryReplayCommandV1[] = [];
-  const x = readOptionalNumber((input.node.layout as Record<string, unknown>)?.x) ?? 0;
-  const y = readOptionalNumber((input.node.layout as Record<string, unknown>)?.y) ?? 0;
+  const x = readOptionalNumber((input.node.layout as Record<string, unknown>)?.['x']) ?? 0;
+  const y = readOptionalNumber((input.node.layout as Record<string, unknown>)?.['y']) ?? 0;
   const transform = toTransformFromNode(input.node);
   const presentationStyle = toPresentationStyleFromNode(input.node);
   const renderProfile = toRenderProfileFromNode(input.node);
@@ -827,8 +827,8 @@ function buildInverseCommandsFromSnapshot(
 
     case 'canvas.node.move': {
       const moveSnapshot = snapshot as Extract<CommandSnapshot, { command: { name: 'canvas.node.move' } }>;
-      const x = readOptionalNumber((moveSnapshot.node.layout as Record<string, unknown>)?.x) ?? 0;
-      const y = readOptionalNumber((moveSnapshot.node.layout as Record<string, unknown>)?.y) ?? 0;
+      const x = readOptionalNumber((moveSnapshot.node.layout as Record<string, unknown>)?.['x']) ?? 0;
+      const y = readOptionalNumber((moveSnapshot.node.layout as Record<string, unknown>)?.['y']) ?? 0;
       return [{
         name: 'canvas.node.move',
         canvasId: batch.canvasId as string,
