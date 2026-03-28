@@ -36,11 +36,6 @@ describe('host RPC adapters', () => {
 
     expect(web.descriptor.methods).toEqual(CORE_RPC_LOGICAL_METHODS);
     expect(desktop.descriptor.methods).toEqual(CORE_RPC_LOGICAL_METHODS);
-    expect(CORE_RPC_LOGICAL_METHODS).not.toContain('chat.send');
-    expect(CORE_RPC_LOGICAL_METHODS).not.toContain('chat.stop');
-    expect(CORE_RPC_LOGICAL_METHODS).not.toContain('chat.sessions.list');
-    expect('sendChat' in web).toBe(false);
-    expect('sendChat' in desktop).toBe(false);
     expect(validateAdapterParity({
       desktop: desktop.descriptor,
       web: web.descriptor,

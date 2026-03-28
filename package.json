@@ -28,7 +28,6 @@
     "test": "bun test",
     "test:pdf-golden": "bun test app/utils/pdfGolden.test.ts",
     "test:e2e": "playwright test",
-    "chat:smoke": "bun run scripts/chat-smoke.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:generate:canonical": "drizzle-kit generate --config=drizzle.canonical.config.ts",
