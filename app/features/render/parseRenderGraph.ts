@@ -125,7 +125,6 @@ export interface RenderNode {
     messageSpacing?: number;
     sourceMeta?: {
       sourceId: string;
-      filePath?: string;
       kind: 'canvas' | 'mindmap';
       scopeId?: string;
       renderedId?: string;
@@ -161,7 +160,7 @@ interface RenderGraphResponse {
     };
   };
   sourceVersion?: string | null;
-  sourceVersions?: Record<string, string>;
+  assetBasePath?: string | null;
   renderProjection?: CanvasRenderProjectionResponseV1;
   editingProjection?: CanvasEditingProjectionResponseV1;
 }
@@ -265,7 +264,7 @@ export interface ParsedRenderGraph {
   canvasBackground?: CanvasBackgroundStyle;
   canvasFontFamily?: FontFamilyPreset;
   sourceVersion?: string | null;
-  sourceVersions?: Record<string, string>;
+  assetBasePath?: string | null;
 }
 
 export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph | null {
@@ -1604,6 +1603,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
     canvasBackground,
     canvasFontFamily,
     sourceVersion: data.sourceVersion ?? null,
-    sourceVersions: data.sourceVersions,
+    assetBasePath: typeof data.assetBasePath === 'string' ? data.assetBasePath : null,
   };
 }

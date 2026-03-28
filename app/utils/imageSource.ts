@@ -31,7 +31,7 @@ function normalizePathSegments(segments: string[]): string[] {
     return normalized;
 }
 
-export function resolveWorkspaceAssetPath(currentFilePath: string | null, rawSrc: string): string {
+export function resolveWorkspaceAssetPath(assetBasePath: string | null, rawSrc: string): string {
     const src = normalizeSegment(rawSrc);
 
     if (!src || isRemoteSource(src)) {
@@ -42,7 +42,7 @@ export function resolveWorkspaceAssetPath(currentFilePath: string | null, rawSrc
         return src.replace(/^\/+/, '');
     }
 
-    const fileDir = currentFilePath ? currentFilePath.split('/').slice(0, -1).join('/') : '';
+    const fileDir = assetBasePath ? assetBasePath.split('/').slice(0, -1).join('/') : '';
     const segments = src.startsWith('./') || src.startsWith('../')
         ? src.split('/')
         : `${fileDir ? `${fileDir}/` : ''}${src}`.split('/');
@@ -51,8 +51,8 @@ export function resolveWorkspaceAssetPath(currentFilePath: string | null, rawSrc
     return normalized.join('/');
 }
 
-export function toAssetApiUrl(currentFilePath: string | null, rawSrc: string): string {
-    const resolved = resolveWorkspaceAssetPath(currentFilePath, rawSrc);
+export function toAssetApiUrl(assetBasePath: string | null, rawSrc: string): string {
+    const resolved = resolveWorkspaceAssetPath(assetBasePath, rawSrc);
 
     if (!resolved || isRemoteSource(resolved) || resolved.startsWith('blob:') || resolved.startsWith('http://localhost/')) {
         return resolved;

@@ -12,17 +12,8 @@ export const WS_SERVER_MESSAGES = {
   notificationReceived: (method: string) => `[WS] Received notification: ${method}`,
   clientDisconnected: (count: number) => `[WS] Client disconnected. Total: ${count}`,
   runningAt: (port: number) => `[WS] Server running at ws://localhost:${port}`,
-  watchingPath: (watchPath: string) => `[WS] Watching for file changes in: ${watchPath}`,
-  broadcastCompatibilityFilesChanged: (event: 'add' | 'unlink', relativePath: string) => `[WS] Broadcasted compatibility files.changed: ${event} - ${relativePath}`,
   broadcastCanvasChanged: (canvasId: string) => `[WS] Broadcasted canvas.changed: ${canvasId}`,
-  broadcastFileChanged: (filePath: string) => `[WS] Broadcasted file.changed (command): ${filePath}`,
-  fileChanged: (filePath: string) => `[WS] File changed: ${filePath}`,
-  failedToHashChangedFile: '[WS] Failed to hash changed file:',
   notifiedClientAbout: (subscription: string) => `[WS] Notified client about: ${subscription}`,
-  fileAdded: (filePath: string) => `[WS] File added: ${filePath}`,
-  fileDeleted: (filePath: string) => `[WS] File deleted: ${filePath}`,
-  watcherError: '[WS] Watcher error:',
-  watcherInitialized: '[WS] File watcher initialized',
   shuttingDown: '\n[WS] Shutting down...',
 } as const;
 

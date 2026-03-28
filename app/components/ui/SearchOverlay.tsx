@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Search, FileText, CircleDot, X } from 'lucide-react';
+import { Check, Search, CircleDot, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SearchResult, buildSearchResults } from '@/utils/search';
 import { useGraphStore } from '@/store/graph';
@@ -18,9 +18,7 @@ export const SearchOverlay: React.FC = () => {
     searchResults,
     activeResultIndex,
     nodes,
-    files,
     currentCanvasId,
-    currentFile,
     closeSearch,
     setSearchMode,
     setSearchQuery,
@@ -29,7 +27,6 @@ export const SearchOverlay: React.FC = () => {
     setSearchActiveIndex,
     setSearchHighlightElementIds,
     setSelectedNodes,
-    setCurrentFile,
   } = useGraphStore((state) => state);
   const { navigateToNode } = useNodeNavigation();
   const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
@@ -56,7 +53,6 @@ export const SearchOverlay: React.FC = () => {
     const startAt = performance.now();
     const nextResults = buildSearchResults({
       nodes,
-      files,
       currentCanvasId,
       query: debouncedQuery,
       mode: searchMode,
@@ -86,7 +82,6 @@ export const SearchOverlay: React.FC = () => {
   }, [
     isSearchOpen,
     nodes,
-    files,
     currentCanvasId,
     searchMode,
     debouncedQuery,
@@ -143,14 +138,6 @@ export const SearchOverlay: React.FC = () => {
       key: result.key,
     });
 
-    if (result.type === 'file') {
-      if (result.key !== currentFile) {
-        setCurrentFile(result.key);
-      }
-      closeSearch({ clearQuery: true, clearHighlights: true });
-      return;
-    }
-
     const navigate = () => {
       const nodeExists = useGraphStore.getState().nodes.some((node) => node.id === result.key);
       if (!nodeExists) {
@@ -171,7 +158,7 @@ export const SearchOverlay: React.FC = () => {
       }
 
       if (remaining <= 0) {
-        console.warn('[Search] Node not found after file switch:', result.key);
+        console.warn('[Search] Node not found after canvas search:', result.key);
         setSearchHighlightElementIds([]);
         return;
       }
@@ -324,11 +311,7 @@ export const SearchOverlay: React.FC = () => {
                   )}
                 >
                   <div className="flex items-center gap-2">
-                    {result.type === 'element' ? (
-                      <CircleDot className="w-3.5 h-3.5 flex-shrink-0 text-primary" />
-                    ) : (
-                      <FileText className="w-3.5 h-3.5 flex-shrink-0 text-success" />
-                    )}
+                    <CircleDot className="w-3.5 h-3.5 flex-shrink-0 text-primary" />
                     <span className="font-medium truncate">{result.title}</span>
                     <span className="ml-auto text-xs text-foreground/48">
                       {copy.resultTypeLabels[result.type]}

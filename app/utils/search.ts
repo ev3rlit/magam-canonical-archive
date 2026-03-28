@@ -1,7 +1,7 @@
 import type { Node } from 'reactflow';
 
 export type SearchMode = 'global' | 'page';
-export type SearchResultType = 'element' | 'file';
+export type SearchResultType = 'element';
 export type MatchKind = 'exact' | 'prefix' | 'contains';
 
 export interface SearchIndexElementItem {
@@ -13,21 +13,11 @@ export interface SearchIndexElementItem {
   searchableText: string;
 }
 
-export interface SearchIndexFileItem {
-  type: 'file';
-  filePath: string;
-  fileName: string;
-  searchableText: string;
-}
-
-export type SearchIndexItem = SearchIndexElementItem | SearchIndexFileItem;
-
 export interface SearchResult {
   type: SearchResultType;
   key: string;
   title: string;
   subtitle?: string;
-  filePath?: string;
   canvasId?: string;
   score: number;
   matchKind: MatchKind;
@@ -35,7 +25,6 @@ export interface SearchResult {
 
 interface BuildSearchResultsParams {
   nodes: Node[];
-  files: string[];
   currentCanvasId: string | null;
   query: string;
   mode: SearchMode;
@@ -128,19 +117,10 @@ export const buildSearchIndex = (nodes: Node[], currentCanvasId: string | null):
   return nodeItems;
 };
 
-const getFileName = (path: string): string => {
-  const chunks = path.split('/');
-  return chunks[chunks.length - 1] || path;
-};
-
 const sortSearchResults = (results: SearchResult[], currentCanvasId: string | null): SearchResult[] => {
   return results.sort((a, b) => {
     if (a.score !== b.score) {
       return b.score - a.score;
-    }
-
-    if (a.type !== b.type) {
-      return a.type === 'element' ? -1 : 1;
     }
 
     const aCurrent = a.canvasId === currentCanvasId ? 1 : 0;
@@ -203,34 +183,8 @@ const buildElementResult = (item: SearchIndexElementItem, query: string): Search
   };
 };
 
-const buildFileResult = (path: string, query: string): SearchResult | null => {
-  const fileName = getFileName(path);
-  const candidates = [path, fileName];
-  const matches = candidates
-    .map((candidate) => getMatchKind(candidate, query))
-    .filter((match): match is MatchKind => Boolean(match));
-
-  if (matches.length === 0) {
-    return null;
-  }
-
-  const bestMatch = matches[0];
-  const score = SEARCH_SCORE[bestMatch];
-
-  return {
-    type: 'file',
-    key: path,
-    title: fileName,
-    subtitle: path,
-    filePath: path,
-    score,
-    matchKind: bestMatch,
-  };
-};
-
 export const buildSearchResults = ({
   nodes,
-  files,
   currentCanvasId,
   query,
   mode,
@@ -242,18 +196,9 @@ export const buildSearchResults = ({
     return [];
   }
 
-  const fileItems = files
-    .map((filePath) => buildFileResult(filePath, normalizedQuery))
-    .filter((item): item is SearchResult => item !== null);
-
   const elementItems = buildSearchIndex(nodes, currentCanvasId)
     .map((item) => buildElementResult(item, normalizedQuery))
     .filter((item): item is SearchResult => item !== null);
 
-  const mergedItems = [
-    ...elementItems,
-    ...(mode === 'global' ? fileItems : []),
-  ];
-
-  return sortSearchResults(mergedItems, currentCanvasId).slice(0, maxResults);
+  return sortSearchResults(elementItems, currentCanvasId).slice(0, maxResults);
 };

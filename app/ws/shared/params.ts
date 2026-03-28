@@ -58,16 +58,6 @@ export interface CreateNodeInput {
 export interface RpcContext {
   ws: unknown;
   subscriptions: Set<string>;
-  notifyFileChanged?: (payload: {
-    canvasId?: string;
-    filePath: string;
-    resolvedFilePath: string;
-    newVersion: string;
-    originId: string;
-    commandId: string;
-    rootPath?: string;
-    canvasRevision?: number;
-  }) => void;
   notifyCanvasChanged?: (payload: {
     canvasId: string;
     canvasRevision: number;

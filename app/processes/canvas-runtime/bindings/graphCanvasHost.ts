@@ -241,7 +241,6 @@ export function createGraphCanvasContextMenuActions(
         nodeType,
         placement: { mode: 'mindmap-child', parentId },
         targetRenderedNodeId: renderedNodeId,
-        filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
         scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
       }));
@@ -268,7 +267,6 @@ export function createGraphCanvasContextMenuActions(
         nodeType,
         placement: { mode: 'mindmap-sibling', siblingOf, parentId },
         targetRenderedNodeId: renderedNodeId,
-        filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
         scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
       }));

@@ -139,8 +139,8 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
   // Workspace-canvas-shell migration anchor:
   // workspace registry/session state now lives in the graph store instead of local component state.
   const {
-    setFiles,
     setGraph,
+    setAssetBasePath,
     currentCanvasId,
     setCurrentCanvasId,
     workspaceRootPath,
@@ -148,7 +148,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     activeWorkspaceId,
     workspaceCanvasesByWorkspaceId,
     canvasVersions,
-    files,
     nodes,
     selectedNodeIds,
     setSelectedNodes,
@@ -167,8 +166,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     pushEditCompletionEvent,
     registerPendingActionRouting,
     clearPendingActionRouting,
-    draftCanvases,
-    setFileTree,
     setWorkspaceSession,
     hydrateWorkspaceRegistry,
     replaceRegisteredWorkspaces,
@@ -263,35 +260,30 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       nodes: [],
       edges: [],
       sourceVersion: null,
-      sourceVersions: {},
       canvasVersions: {},
       canvasRevisionsById: {},
+      assetBasePath: null,
     });
     setSelectedNodes([]);
     clearTextEditSession();
     clearPendingTextEditAction();
     closeSearch({ clearQuery: true, clearHighlights: true });
     setGraphError(null);
-    setFileTree(null);
     setWorkspaceSession({
       workspaceId,
       rootPath,
     });
     useGraphStore.setState({
-      files: [],
-      currentFile: null,
       sourceVersion: null,
-      sourceVersions: {},
       canvasVersions: {},
       canvasRevisionsById: {},
       lastActiveCanvasId: null,
-      draftCanvases: [],
+      assetBasePath: null,
     });
   }, [
     clearPendingTextEditAction,
     clearTextEditSession,
     closeSearch,
-    setFileTree,
     setGraph,
     setGraphError,
     setSelectedNodes,
@@ -344,10 +336,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     },
   ) => {
     try {
-      const [data, legacyTree] = await Promise.all([
-        hostRpc.listWorkspaceCanvases(workspace.rootPath),
-        hostRpc.getFileTree(workspace.rootPath).catch(() => ({ tree: null })),
-      ]);
+      const data = await hostRpc.listWorkspaceCanvases(workspace.rootPath);
       const resolvedHealth = resolveWorkspaceCanvasesHealth(data);
       if (!data.health || typeof data.health.state !== 'string') {
         console.warn('[WorkspaceCanvasesLoad] Compatibility payload without health; falling back to inferred ok state', {
@@ -366,8 +355,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         : sidebarCanvases[0]?.canvasId ?? null;
 
       setWorkspaceCanvases(workspace.id, sidebarCanvases);
-      setFiles([]);
-      setFileTree(legacyTree.tree);
       await syncWorkspaceEntry(data, { existingId: workspace.id });
       setWorkspacePathStatus({
         workspaceId: workspace.id,
@@ -407,8 +394,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         error,
       });
       setWorkspaceCanvases(workspace.id, []);
-      setFiles([]);
-      setFileTree(null);
       const message = error instanceof Error
         ? error.message
         : '캔버스 목록을 불러오는 데 실패했습니다.';
@@ -418,7 +403,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         details: error,
       });
     }
-  }, [hostRpc, setFileTree, setFiles, setGraphError, setWorkspaceCanvases, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
+  }, [hostRpc, setGraphError, setWorkspaceCanvases, setWorkspacePathStatus, setWorkspaceSession, syncWorkspaceEntry]);
 
   const handleWorkspaceFilesChange = useCallback(() => {
     if (!activeWorkspace) {
@@ -515,7 +500,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
   }, [activeWorkspace, currentCanvasId, hostRpc, isTransientSession]);
 
   const openTabByPath = useCallback(
-    (_pageId: string) => {
+    (_canvasId: string) => {
       setIsQuickOpenOpen(false);
       return true;
     },
@@ -548,9 +533,9 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
           nodes: [],
           edges: [],
           sourceVersion: null,
-          sourceVersions: {},
           canvasVersions: {},
           canvasRevisionsById: {},
+          assetBasePath: null,
         });
         setGraphError(null);
       }
@@ -723,19 +708,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     navigateToDashboard();
   }, [activeWorkspace, removeRegisteredWorkspace]);
 
-  const handleOpenLegacyFile = useCallback((filePath: string) => {
-    if (!activeWorkspace) {
-      return false;
-    }
-
-    void hostRpc.launchWorkspaceFileBrowser({
-      rootPath: activeWorkspace.rootPath,
-      action: 'open',
-      filePath,
-    });
-    return true;
-  }, [activeWorkspace, hostRpc]);
-
   const restoreNodeData = useCallback((nodeId: string, previousData: Record<string, unknown> | undefined) => {
     useGraphStore.setState((state) => ({
       nodes: state.nodes.map((node) => (
@@ -818,7 +790,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
 
     const nextVersion = result.newVersion
       ?? (effect.canvasId ? useGraphStore.getState().canvasVersions[effect.canvasId] : null)
-      ?? useGraphStore.getState().sourceVersions[effect.filePath]
       ?? effect.baseVersion;
     const commandId = result.commandId ?? crypto.randomUUID();
 
@@ -1908,30 +1879,13 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
           nodes: [],
           edges: [],
           sourceVersion: null,
-          sourceVersions: {},
           canvasVersions: {
             [currentCanvasId]: 'draft:transient-canvas',
           },
           canvasRevisionsById: {
             [currentCanvasId]: 0,
           },
-        });
-        setGraphError(null);
-        return;
-      }
-
-      if (currentCanvasId && draftCanvases.includes(currentCanvasId)) {
-        setGraph({
-          nodes: [],
-          edges: [],
-          sourceVersion: null,
-          canvasVersions: {
-            ...(currentCanvasId ? { [currentCanvasId]: 'draft:empty-canvas' } : {}),
-          },
-          canvasRevisionsById: {
-            ...(currentCanvasId ? { [currentCanvasId]: 0 } : {}),
-          },
-          sourceVersions: {},
+          assetBasePath: null,
         });
         setGraphError(null);
         return;
@@ -2024,6 +1978,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
                   }
                 : undefined
             ),
+            assetBasePath: typeof data.assetBasePath === 'string' ? data.assetBasePath : null,
           });
           if (pendingSelectionNodeIdRef.current) {
             const createdNodeId = pendingSelectionNodeIdRef.current;
@@ -2052,7 +2007,7 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
     }
 
     renderCanvas();
-  }, [activeWorkspace?.rootPath, currentCanvasId, draftCanvases, getRuntimeProjections, isTransientSession, refreshKey, setCurrentCanvasId, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on canvas changes
+  }, [activeWorkspace?.rootPath, currentCanvasId, getRuntimeProjections, isTransientSession, refreshKey, setCurrentCanvasId, setGraph, setSelectedNodes, workspaceRootPath]); // refreshKey triggers re-render on canvas changes
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-foreground">
@@ -2061,7 +2016,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         workspaces={sidebarWorkspaces}
         canvases={sidebarCanvases}
         isTransientWorkspace={isTransientSession}
-        fileTree={useGraphStore.getState().fileTree}
         isLoading={isSavingTransientWorkspace}
         onSelectWorkspace={handleSelectWorkspace}
         onSaveWorkspace={handleSaveWorkspace}
@@ -2073,7 +2027,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         onRevealWorkspace={handleRevealWorkspace}
         onReconnectWorkspace={handleReconnectWorkspace}
         onRemoveWorkspace={handleRemoveWorkspace}
-        onOpenLegacyFile={handleOpenLegacyFile}
       />
       <div className="flex flex-1 flex-col h-full overflow-hidden relative">
         <Header
@@ -2110,9 +2063,12 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
         {isQuickOpenOpen && (
           <LazyQuickOpenDialog
             isOpen={isQuickOpenOpen}
-            files={files}
+            canvases={sidebarCanvases.map((canvas) => ({
+              canvasId: canvas.canvasId,
+              title: canvas.title,
+            }))}
             commands={quickOpenCommands}
-            onOpenFile={openTabByPath}
+            onOpenCanvas={handleOpenCanvas}
             onRunCommand={runQuickOpenCommand}
             onClose={() => setIsQuickOpenOpen(false)}
           />

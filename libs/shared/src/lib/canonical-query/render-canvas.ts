@@ -34,6 +34,7 @@ export interface CanonicalRenderGraphResponse {
   canvasRevision: number;
   title: string | null;
   sourceVersion: string;
+  assetBasePath: string;
   renderProjection?: CanvasRenderProjectionResponseV1;
   editingProjection?: CanvasEditingProjectionResponseV1;
 }
@@ -167,9 +168,10 @@ function resolveNodeSourceMeta(input: {
   objectRecord: CanonicalObjectRecord | null;
   mindmapId?: string;
 }): Record<string, unknown> {
-  const sourceMeta = isRecord(input.objectRecord?.sourceMeta)
+  const rawSourceMeta = isRecord(input.objectRecord?.sourceMeta)
     ? input.objectRecord?.sourceMeta as Record<string, unknown>
     : {};
+  const { filePath: _legacyFilePath, ...sourceMeta } = rawSourceMeta;
   return {
     ...sourceMeta,
     sourceId: readString(sourceMeta['sourceId']) ?? input.node.id,
@@ -495,6 +497,7 @@ export function buildCanonicalRenderResponse(input: {
       canvasId: input.canvasId,
       latestRevision: input.latestRevision,
     }),
+    assetBasePath: `canvases/${input.canvasId}.graph.tsx`,
   };
 }
 

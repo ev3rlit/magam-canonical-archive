@@ -54,7 +54,6 @@ export interface ObjectCoreRelations {
 
 export interface ObjectCoreSourceMeta {
   sourceId: string;
-  filePath?: string;
   scopeId?: string;
   kind?: 'canvas' | 'mindmap';
   renderedId?: string;

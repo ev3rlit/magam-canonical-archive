@@ -36,7 +36,7 @@ export const ko = {
       searchTitle: '검색 · ⌘K',
     },
     quickOpen: {
-      placeholder: '파일/명령 검색... (명령은 > 로 시작)',
+      placeholder: '캔버스/명령 검색... (명령은 > 로 시작)',
       noResults: '검색 결과가 없습니다.',
       commandHint: '명령',
       footer: {
@@ -46,7 +46,7 @@ export const ko = {
     },
     searchOverlay: {
       dialogLabel: '검색',
-      placeholder: '노드 또는 파일 검색...',
+      placeholder: '노드 검색...',
       inputLabel: '검색어 입력',
       closeLabel: '검색 닫기',
       modeLabels: {
@@ -54,14 +54,13 @@ export const ko = {
         page: '현재 페이지',
       },
       emptyHint: {
-        global: '현재 파일 및 노드를 검색하려면 입력하세요.',
+        global: '캔버스의 노드를 검색하려면 입력하세요.',
         page: '현재 페이지의 노드를 검색하려면 입력하세요.',
       },
       noResults: '검색 결과 없음',
       resultCount: (count: number) => `${count}건 찾음`,
       resultTypeLabels: {
         element: '노드',
-        file: '파일',
       },
       footer: {
         move: '↑↓: 이동',

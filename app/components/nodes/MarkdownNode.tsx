@@ -139,8 +139,8 @@ const MarkdownNode = ({ data, selected }: NodeProps<MarkdownNodeData>) => {
         },
         img: ({ node, src, alt, ...props }) => {
             void node;
-            const currentFile = useGraphStore.getState().currentFile;
-            const resolvedSrc = src ? toAssetApiUrl(currentFile, src) : '';
+            const assetBasePath = useGraphStore.getState().assetBasePath;
+            const resolvedSrc = src ? toAssetApiUrl(assetBasePath, src) : '';
             return <img src={resolvedSrc} alt={alt || ''} {...props} />;
         },
     }), [handleLinkClick]);

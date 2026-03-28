@@ -121,7 +121,7 @@ const getHandleConfig = (pos: string = 'top') => {
 const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
   const nodeId = useNodeId();
   const { isZoomBold } = useZoom();
-  const currentFile = useGraphStore((state) => state.currentFile);
+  const assetBasePath = useGraphStore((state) => state.assetBasePath);
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
   const activeTextEditNodeId = useGraphStore((state) => state.activeTextEditNodeId);
@@ -318,7 +318,7 @@ const ShapeNode = ({ data, selected }: NodeProps<ShapeNodeData>) => {
     });
   };
 
-  const imageUrl = data.imageSrc ? toAssetApiUrl(currentFile, data.imageSrc) : '';
+  const imageUrl = data.imageSrc ? toAssetApiUrl(assetBasePath, data.imageSrc) : '';
   const hasImage = !!imageUrl && data.type !== 'triangle';
   const hasLineShape = data.type === 'line';
   const imageStyle = hasImage ? {

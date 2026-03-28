@@ -22,15 +22,15 @@ const IMAGE_FIT_MAP: Record<NonNullable<ImageNodeData['fit']>, string> = {
 };
 
 const ImageNode = ({ data, selected }: NodeProps<ImageNodeData>) => {
-  const currentFile = useGraphStore((state) => state.currentFile);
+  const assetBasePath = useGraphStore((state) => state.assetBasePath);
   const [loadError, setLoadError] = useState(false);
 
   const src = useMemo(() => {
     if (!data.src) {
       return '';
     }
-    return toAssetApiUrl(currentFile, data.src);
-  }, [currentFile, data.src]);
+    return toAssetApiUrl(assetBasePath, data.src);
+  }, [assetBasePath, data.src]);
 
   const objectFit = useMemo(
     () => (data.fit ? IMAGE_FIT_MAP[data.fit] : 'object-contain'),

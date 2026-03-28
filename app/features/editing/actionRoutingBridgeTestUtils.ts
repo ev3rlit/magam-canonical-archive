@@ -16,13 +16,11 @@ export function createActionRoutingBridgeDependencies(
       success: true,
       newVersion: 'sha256:updated',
       commandId: 'cmd-update-1',
-      filePath: runtime.currentFile ?? undefined,
     })),
     createNode: mock(async () => ({
       success: true,
       newVersion: 'sha256:created',
       commandId: 'cmd-create-1',
-      filePath: runtime.currentFile ?? undefined,
     })),
     updateNodeData: mock(() => {}),
     restoreNodeData: mock(() => {}),

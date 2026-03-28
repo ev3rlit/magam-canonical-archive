@@ -94,14 +94,8 @@ export function buildCanvasSubscriptionRequests(input: {
     ...(input.workspaceRootPath ? { rootPath: input.workspaceRootPath } : {}),
   };
   const methods = input.subscribe
-    ? [
-        WS_SUBSCRIPTION_METHODS.canvasSubscribe,
-        WS_SUBSCRIPTION_METHODS.fileSubscribe,
-      ]
-    : [
-        WS_SUBSCRIPTION_METHODS.canvasUnsubscribe,
-        WS_SUBSCRIPTION_METHODS.fileUnsubscribe,
-      ];
+    ? [WS_SUBSCRIPTION_METHODS.canvasSubscribe]
+    : [WS_SUBSCRIPTION_METHODS.canvasUnsubscribe];
 
   return methods.map((method, index) => ({
     jsonrpc: '2.0',
@@ -112,11 +106,7 @@ export function buildCanvasSubscriptionRequests(input: {
 }
 
 export function isSubscriptionNotificationMethod(method: string): boolean {
-  return (
-    method === WS_NOTIFICATION_METHODS.canvasChanged
-    || method === WS_NOTIFICATION_METHODS.fileChanged
-    || method === WS_NOTIFICATION_METHODS.filesChanged
-  );
+  return method === WS_NOTIFICATION_METHODS.canvasChanged;
 }
 
 export function useCanvasRuntime(
@@ -254,30 +244,6 @@ export function useCanvasRuntime(
       return;
     }
 
-    if ('method' in data && data.method === WS_NOTIFICATION_METHODS.fileChanged) {
-      const incomingCanvasId = typeof data.params?.canvasId === 'string' ? data.params.canvasId : undefined;
-      const incomingVersion = typeof data.params?.version === 'string' ? data.params.version : undefined;
-      const incomingOriginId = data.params?.originId;
-      const incomingCommandId = typeof data.params?.commandId === 'string' ? data.params.commandId : undefined;
-      const { clientId, setCanvasVersion } = useGraphStore.getState();
-      pruneExpiredOwnCommands(recentOwnCommandsRef.current, Date.now());
-
-      if (incomingCanvasId && incomingVersion) {
-        setCanvasVersion(incomingCanvasId, incomingVersion);
-      }
-
-      const isOwnCommand = typeof incomingCommandId === 'string'
-        && recentOwnCommandsRef.current.has(incomingCommandId)
-        && incomingOriginId === clientId;
-      if (!isOwnCommand) {
-        onCanvasInvalidated();
-      }
-      return;
-    }
-
-    if ('method' in data && data.method === WS_NOTIFICATION_METHODS.filesChanged) {
-      onCanvasRegistryChanged?.();
-    }
   }, [onCanvasInvalidated, onCanvasRegistryChanged]);
 
   useEffect(() => {

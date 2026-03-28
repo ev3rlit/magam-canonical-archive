@@ -108,8 +108,7 @@ describe('host RPC adapters', () => {
         canvasCount: 0,
         documents: [],
         lastModifiedAt: null,
-      }))
-      .mockResolvedValueOnce(jsonResponse({ launched: true }));
+      }));
     globalThis.fetch = fetchMock as typeof fetch;
 
     const adapter = createDesktopRpcAdapter({
@@ -126,10 +125,6 @@ describe('host RPC adapters', () => {
     });
 
     await adapter.ensureWorkspace('/tmp/workspace');
-    await adapter.launchWorkspaceFileBrowser({
-      rootPath: '/tmp/workspace',
-      action: 'open',
-    });
 
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
@@ -140,48 +135,9 @@ describe('host RPC adapters', () => {
         body: JSON.stringify({ rootPath: '/tmp/workspace', action: 'ensure' }),
       }),
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      'http://127.0.0.1:3003/workspaces',
-      expect.objectContaining({
-        method: 'POST',
-        cache: 'no-store',
-        body: JSON.stringify({ rootPath: '/tmp/workspace', action: 'open' }),
-      }),
-    );
     expect(fetchMock).not.toHaveBeenCalledWith(
       expect.stringContaining('127.0.0.1:3002'),
       expect.anything(),
-    );
-  });
-
-  it('passes workspace root overrides into file-tree requests for both transports', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ tree: null }));
-    globalThis.fetch = fetchMock as typeof fetch;
-
-    await createWebRpcAdapter().getFileTree('/tmp/workspace');
-    await createDesktopRpcAdapter({
-      runtimeConfig: {
-        mode: 'desktop-primary',
-        httpBaseUrl: 'http://127.0.0.1:3003',
-        wsUrl: 'ws://127.0.0.1:3004',
-        appStateDbPath: '/tmp/app-state-pgdata',
-        workspacePath: null,
-        workspaceMode: 'transient',
-        storageBackend: 'memory',
-        transientCanvasId: 'transient-canvas-test',
-      },
-    }).getFileTree('/tmp/workspace');
-
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      1,
-      '/api/file-tree?rootPath=%2Ftmp%2Fworkspace',
-      expect.objectContaining({ cache: 'no-store' }),
-    );
-    expect(fetchMock).toHaveBeenNthCalledWith(
-      2,
-      'http://127.0.0.1:3003/file-tree?rootPath=%2Ftmp%2Fworkspace',
-      expect.objectContaining({ cache: 'no-store' }),
     );
   });
 

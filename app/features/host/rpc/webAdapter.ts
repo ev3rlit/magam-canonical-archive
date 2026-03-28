@@ -2,7 +2,6 @@ import {
   CreateWorkspaceCanvasResult,
   RendererRpcClient,
   WorkspaceCanvasCreateInput,
-  WorkspaceFileBrowserActionInput,
   isCreateWorkspaceCanvasResult,
 } from '@/features/host/renderer/rpcClient';
 import type {
@@ -72,7 +71,7 @@ function createDescriptor(): RpcAdapterDescriptor {
     methods: CORE_RPC_LOGICAL_METHODS,
     async healthCheck() {
       try {
-        await requestJson('/api/files');
+        await requestJson('/api/workspaces');
         return true;
       } catch {
         return false;
@@ -100,7 +99,6 @@ export function createWebRpcAdapter(): RendererRpcClient {
   return {
     descriptor,
     healthCheck: descriptor.healthCheck,
-    listFiles: () => requestJson('/api/files'),
     listAppStateWorkspaces: () => requestJson<AppWorkspaceRecord[]>('/api/app-state/workspaces'),
     upsertAppStateWorkspace: (input: AppWorkspaceUpsertInput) =>
       requestJson('/api/app-state/workspaces', {
@@ -164,26 +162,6 @@ export function createWebRpcAdapter(): RendererRpcClient {
         }),
         headers: createJsonHeaders(),
       }),
-    async launchWorkspaceFileBrowser(input: WorkspaceFileBrowserActionInput) {
-      await requestJson('/api/workspaces', {
-        method: 'POST',
-        body: JSON.stringify({
-          rootPath: input.rootPath,
-          action: input.action,
-          ...(input.filePath ? { filePath: input.filePath } : {}),
-          ...(input.targetPath ? { targetPath: input.targetPath } : {}),
-        }),
-        headers: createJsonHeaders(),
-      });
-    },
-    createFile: (filePath) =>
-      requestJson('/api/files', {
-        method: 'POST',
-        body: JSON.stringify({ filePath }),
-        headers: createJsonHeaders(),
-      }),
-    getFileTree: (rootPath?: string | null) =>
-      requestJson(`/api/file-tree${buildRootPathQuery(rootPath)}`),
     renderCanvas: (input) =>
       requestRenderJson('/api/render', {
         method: 'POST',

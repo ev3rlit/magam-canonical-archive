@@ -10,7 +10,6 @@ import type { HeadlessServiceContext } from '../canonical-cli';
 import {
   getCurrentCanvasRevision,
   getWorkspaceCanvas,
-  getWorkspaceCanvasCompatibilityFilePath,
   listWorkspaceCanvases,
 } from '../canonical-query/workspace-canvas';
 import type {
@@ -36,11 +35,6 @@ function resolveWorkspaceId(targetDir: string, workspaceId?: string): string {
 
 function resolveMigrationsFolder(): string {
   return resolveCanonicalMigrationsFolder(process.cwd());
-}
-
-function createCanvasStoragePath(canvasId: string): string {
-  const fallback = `canvases/${canvasId}.graph.tsx`;
-  return fallback;
 }
 
 async function withCanonicalCanvasContext<T>(
@@ -86,18 +80,11 @@ export async function getCanonicalCanvas(
   ));
 }
 
-export async function resolveCanonicalCanvasCompatibilityFilePath(input: GetCanonicalCanvasShellInput): Promise<string | null> {
-  return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context) => (
-    getWorkspaceCanvasCompatibilityFilePath(context, input.canvasId)
-  ));
-}
-
 export async function createCanonicalCanvas(
   input: CreateCanonicalCanvasShellInput,
 ): Promise<CanonicalCanvasShellRecord> {
   return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context, workspaceId) => {
     const canvasId = input.canvasId?.trim() || `doc-${randomUUID()}`;
-    const storagePath = createCanvasStoragePath(canvasId);
     const title = typeof input.title === 'string' && input.title.trim().length > 0
       ? input.title.trim()
       : null;
@@ -114,7 +101,6 @@ export async function createCanonicalCanvas(
         canvasShell: {
           workspaceId,
           title,
-          filePath: storagePath,
           createdAt: createdAt.toISOString(),
         },
       },

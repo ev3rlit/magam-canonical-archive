@@ -406,7 +406,7 @@ const resolveImageErrorStateKey = (src: string, index: number) => `${src}:${inde
 
 const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
   const nodeId = useNodeId();
-  const currentFile = useGraphStore((state) => state.currentFile);
+  const assetBasePath = useGraphStore((state) => state.assetBasePath);
   const globalFontFamily = useGraphStore((state) => state.globalFontFamily);
   const canvasFontFamily = useGraphStore((state) => state.canvasFontFamily);
   const normalized = useMemo(() => normalizeStickerData(data as Record<string, unknown>), [data]);
@@ -527,11 +527,11 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
       rotation: data.rotation ?? 0,
       width: data.width,
       height: data.height,
-      currentFile,
+      assetBasePath,
     });
   }, [
     children,
-    currentFile,
+    assetBasePath,
     data.height,
     data.rotation,
     data.width,
@@ -689,7 +689,7 @@ const StickerNode = ({ data, selected }: NodeProps<StickerNodeData>) => {
 
             if (child.type === 'graph-image') {
               const resolved = child.src
-                ? toAssetApiUrl(currentFile, child.src)
+                ? toAssetApiUrl(assetBasePath, child.src)
                 : '';
 
               const imageErrorKey = resolved

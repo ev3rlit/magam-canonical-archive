@@ -45,7 +45,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readCanvasShellMetadata(
   mutationBatch: Record<string, unknown> | null | undefined,
-): { workspaceId?: string; title?: string | null; filePath?: string | null } | null {
+): { workspaceId?: string; title?: string | null } | null {
   if (!isRecord(mutationBatch)) {
     return null;
   }
@@ -63,7 +63,6 @@ function readCanvasShellMetadata(
   return {
     ...(typeof shell['workspaceId'] === 'string' ? { workspaceId: shell['workspaceId'] } : {}),
     ...(typeof shell['title'] === 'string' ? { title: shell['title'] } : { title: null }),
-    ...(typeof shell['filePath'] === 'string' ? { filePath: shell['filePath'] } : { filePath: null }),
   };
 }
 
@@ -261,25 +260,6 @@ export async function getRuntimeWorkspaceCanvasShell(
     title: shell.title,
     latestRevision: shell.latestRevision,
   };
-}
-
-export async function getWorkspaceCanvasCompatibilityFilePath(
-  context: HeadlessServiceContext,
-  canvasId: string,
-): Promise<string | null> {
-  const revisions = await context.db.query.canvasRevisions.findMany({
-    where: eq(canvasRevisions.canvasId, canvasId),
-    columns: {
-      mutationBatch: true,
-    },
-    orderBy: [desc(canvasRevisions.revisionNo)],
-  });
-
-  const latestMetadata = revisions
-    .map((revision) => readCanvasShellMetadata(revision.mutationBatch))
-    .find((metadata) => metadata !== null) ?? null;
-
-  return latestMetadata?.filePath ?? null;
 }
 
 export async function listWorkspaceCanvases(

@@ -88,19 +88,7 @@ export function resolveMindMapEmbeds(container: Container): Container {
       let props = stripInternalProps(inst.props);
 
       if (nextInMindMap) {
-        if (sourceFile) {
-          props = {
-            ...props,
-            sourceMeta: {
-              ...(
-                props.sourceMeta && typeof props.sourceMeta === 'object'
-                  ? props.sourceMeta as Record<string, unknown>
-                  : {}
-              ),
-              filePath: sourceFile,
-            },
-          };
-        }
+        void sourceFile;
 
         if (inst.type === 'graph-edge') {
           const resolvedFrom = resolveFromValue(

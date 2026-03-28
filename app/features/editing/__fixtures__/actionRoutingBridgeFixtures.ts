@@ -6,7 +6,6 @@ export const stickerCanonicalObjectFixture: CanonicalObject = {
     id: 'sticker-1',
     sourceMeta: {
       sourceId: 'sticker-1',
-      filePath: 'examples/bridge.tsx',
       kind: 'canvas',
     },
   },
@@ -34,7 +33,6 @@ export const stickerBridgeNodeFixture = {
     shadow: 'md',
     sourceMeta: {
       sourceId: 'sticker-1',
-      filePath: 'examples/bridge.tsx',
       kind: 'canvas',
     },
     canonicalObject: stickerCanonicalObjectFixture,
@@ -55,7 +53,6 @@ export const mindmapBridgeNodeFixture = {
     groupId: 'mindmap',
     sourceMeta: {
       sourceId: 'child-1',
-      filePath: 'examples/mindmap.tsx',
       scopeId: 'mindmap',
       kind: 'mindmap',
     },
@@ -65,7 +62,6 @@ export const mindmapBridgeNodeFixture = {
         id: 'child-1',
         sourceMeta: {
           sourceId: 'child-1',
-          filePath: 'examples/mindmap.tsx',
           kind: 'mindmap',
         },
         relations: {

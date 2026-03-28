@@ -1,4 +1,3 @@
-import type { FileTreeNode } from '@/store/graph';
 import type { WorkspaceProbeResponse } from '@/components/editor/workspaceRegistry';
 import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
 import type { CreateWorkspaceCanvasResult } from '@/features/host/renderer/rpcClient';
@@ -34,21 +33,4 @@ export async function fetchWorkspaceCanvases(
   _fetchImpl: typeof fetch = fetch,
 ): Promise<WorkspaceProbeResponse> {
   return getHostRuntime().rpc.listWorkspaceCanvases(rootPath);
-}
-
-export async function fetchWorkspaceFileTree(
-  rootPath: string,
-  _fetchImpl: typeof fetch = fetch,
-): Promise<{ tree: FileTreeNode | null }> {
-  return getHostRuntime().rpc.getFileTree(rootPath);
-}
-
-export async function triggerWorkspaceFileBrowserAction(
-  input: {
-    rootPath: string;
-    action: 'open' | 'reveal';
-  },
-  _fetchImpl: typeof fetch = fetch,
-): Promise<void> {
-  await getHostRuntime().rpc.launchWorkspaceFileBrowser(input);
 }

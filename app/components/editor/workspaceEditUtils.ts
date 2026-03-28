@@ -108,13 +108,13 @@ export function resolveNodeEditContext(
 export function resolveNodeActionRoutingContext(
   node: Pick<Node, 'id' | 'data' | 'type'>,
   currentCanvasIdOrSelectedNodeIds: string | null,
-  currentFileOrSelectedNodeIds: string | null | string[],
+  canvasOrSelectedNodeIds: string | null | string[],
   maybeSelectedNodeIds?: string[],
 ): ActionRoutingResolvedContext {
-  const selectedNodeIds = Array.isArray(currentFileOrSelectedNodeIds)
-    ? currentFileOrSelectedNodeIds
+  const selectedNodeIds = Array.isArray(canvasOrSelectedNodeIds)
+    ? canvasOrSelectedNodeIds
     : (maybeSelectedNodeIds ?? []);
-  const currentCanvasId = Array.isArray(currentFileOrSelectedNodeIds)
+  const currentCanvasId = Array.isArray(canvasOrSelectedNodeIds)
     ? currentCanvasIdOrSelectedNodeIds
     : currentCanvasIdOrSelectedNodeIds;
   const target = resolveNodeEditTarget(node);

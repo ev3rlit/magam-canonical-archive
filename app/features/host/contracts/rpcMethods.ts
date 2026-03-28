@@ -1,7 +1,6 @@
 import type { HostMode } from './hostCapabilities';
 
 export const CORE_RPC_LOGICAL_METHODS = [
-  'files.list',
   'appState.workspaces.list',
   'appState.workspaces.upsert',
   'appState.workspaces.remove',
@@ -16,8 +15,6 @@ export const CORE_RPC_LOGICAL_METHODS = [
   'workspace.ensure',
   'workspace.canvases.list',
   'workspace.canvas.create',
-  'workspace.fileBrowser.launch',
-  'fileTree.list',
   'render.generate',
   'edit.apply',
   'sync.watch',

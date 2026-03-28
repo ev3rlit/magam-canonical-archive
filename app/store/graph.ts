@@ -177,16 +177,6 @@ export interface OpenTabResultBlocked {
 
 export type OpenTabResult = OpenTabResultActivated | OpenTabResultBlocked;
 
-/**
- * File tree node structure for folder tree view
- */
-export interface FileTreeNode {
-  name: string;
-  path: string;
-  type: 'file' | 'directory';
-  children?: FileTreeNode[];
-}
-
 export interface WorkspacePathHealthRecord {
   workspaceId: string;
   rootPath: string;
@@ -207,11 +197,8 @@ export interface WorkspaceRegistryStateSnapshot {
 export interface GraphState {
   nodes: Node[];
   edges: Edge[];
-  files: string[];
-  fileTree: FileTreeNode | null;
-  expandedFolders: Set<string>;
-  currentFile: string | null;
   currentCanvasId: string | null;
+  assetBasePath: string | null;
   // Workspace-canvas-shell migration anchor:
   // registry/session/path-health state is owned here so runtime scope follows the active workspace.
   registeredWorkspaces: RegisteredWorkspace[];
@@ -223,10 +210,8 @@ export interface GraphState {
   workspaceRootPath: string | null;
   workspaceSessionScopeVersion: number;
   lastActiveCanvasId: string | null;
-  draftCanvases: string[];
   graphId: string; // Unique ID for the current graph data version
   sourceVersion: string | null;
-  sourceVersions: Record<string, string>;
   canvasVersions: Record<string, string>;
   canvasRevisionsById: Record<string, number>;
   clientId: string;
@@ -260,11 +245,11 @@ export interface GraphState {
   hoveredNodeIdsByGroupId: Record<string, string[]>;
   pendingActionRoutingByKey: Record<string, ActionRoutingPendingRecord>;
   actionRoutingPendingByToken: Record<string, ActionOptimisticLifecycleEvent>;
-  setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null; sourceVersions?: Record<string, string>; canvasVersions?: Record<string, string>; canvasRevisionsById?: Record<string, number> }) => void;
+  setGraph: (graph: { nodes: Node[]; edges: Edge[]; needsAutoLayout?: boolean; layoutType?: 'tree' | 'bidirectional' | 'radial' | 'compact' | 'compact-bidir' | 'depth-hybrid' | 'treemap-pack' | 'quadrant-pack' | 'voronoi-pack'; mindMapGroups?: MindMapGroup[]; canvasBackground?: CanvasBackgroundStyle; canvasFontFamily?: FontFamilyPreset; sourceVersion?: string | null; canvasVersions?: Record<string, string>; canvasRevisionsById?: Record<string, number>; assetBasePath?: string | null }) => void;
   setSourceVersion: (version: string | null) => void;
-  setSourceVersionForFile: (filePath: string, version: string | null) => void;
   setCanvasVersion: (canvasId: string, version: string | null) => void;
   setCanvasRevision: (canvasId: string, revision: number | null) => void;
+  setAssetBasePath: (assetBasePath: string | null) => void;
   setLastAppliedCommandId: (commandId?: string) => void;
   hydrateWorkspaceRegistry: () => Promise<{
     workspaces: RegisteredWorkspace[];
@@ -294,11 +279,6 @@ export interface GraphState {
   }) => void;
   rememberLastActiveCanvasForWorkspace: (workspaceId: string, canvasId: string | null) => Promise<void>;
   rememberLastActiveCanvas: (canvasId: string | null) => Promise<void>;
-  registerDraftCanvas: (filePath: string) => void;
-  setFiles: (files: string[]) => void;
-  setFileTree: (tree: FileTreeNode | null) => void;
-  toggleFolder: (path: string) => void;
-  setCurrentFile: (file: string) => void;
   setCurrentCanvasId: (canvasId: string | null) => void;
   setStatus: (status: GraphState['status']) => void;
   setError: (error: AppError | null) => void;
@@ -530,158 +510,6 @@ async function persistLastActiveCanvasesToAppState(
   );
 }
 
-function normalizeWorkspaceAwareFilePath(
-  workspaceRootPath: string | null | undefined,
-  filePath: string,
-): string {
-  return normalizeWorkspaceCanvasPath(workspaceRootPath, filePath);
-}
-
-function normalizeWorkspaceAwareFileList(
-  workspaceRootPath: string | null | undefined,
-  files: string[],
-): string[] {
-  return [...new Set(
-    files
-      .map((filePath) => normalizeWorkspaceAwareFilePath(workspaceRootPath, filePath))
-      .filter((filePath) => filePath.length > 0),
-  )].sort((left, right) => left.localeCompare(right));
-}
-
-function normalizeWorkspaceAwareSourceVersions(
-  workspaceRootPath: string | null | undefined,
-  sourceVersions: Record<string, string>,
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(sourceVersions)
-      .map(([filePath, version]) => [
-        normalizeWorkspaceAwareFilePath(workspaceRootPath, filePath),
-        version,
-      ] as const)
-      .sort(([left], [right]) => left.localeCompare(right)),
-  );
-}
-
-function attachAbsoluteFilePathToNode(
-  node: Node,
-  workspaceRootPath: string | null | undefined,
-): Node {
-  const data = (node.data ?? {}) as Record<string, unknown>;
-  const sourceMeta = (
-    data.sourceMeta && typeof data.sourceMeta === 'object'
-      ? data.sourceMeta as Record<string, unknown>
-      : null
-  );
-  const sourceFilePath = typeof sourceMeta?.filePath === 'string'
-    ? sourceMeta.filePath
-    : null;
-  if (!workspaceRootPath || !sourceMeta || !sourceFilePath) {
-    return node;
-  }
-
-  const absoluteFilePath = normalizeWorkspaceAwareFilePath(workspaceRootPath, sourceFilePath);
-  if (sourceMeta.absoluteFilePath === absoluteFilePath) {
-    return node;
-  }
-
-  return {
-    ...node,
-    data: {
-      ...data,
-      sourceMeta: {
-        ...sourceMeta,
-        absoluteFilePath,
-      },
-    },
-  };
-}
-
-function attachAbsoluteFilePathsToNodes(
-  nodes: Node[],
-  workspaceRootPath: string | null | undefined,
-): Node[] {
-  if (!workspaceRootPath) {
-    return nodes;
-  }
-  return nodes.map((node) => attachAbsoluteFilePathToNode(node, workspaceRootPath));
-}
-
-function insertFileIntoTree(root: FileTreeNode | null, filePath: string): FileTreeNode | null {
-  const segments = filePath.split('/').filter(Boolean);
-  if (segments.length === 0) {
-    return root;
-  }
-
-  if (!root) {
-    root = {
-      name: 'root',
-      path: '',
-      type: 'directory',
-      children: [],
-    };
-  }
-
-  const cloneNode = (node: FileTreeNode): FileTreeNode => ({
-    ...node,
-    children: node.children ? node.children.map(cloneNode) : undefined,
-  });
-
-  const nextRoot = cloneNode(root);
-  let current = nextRoot;
-  let currentPath = '';
-
-  for (let index = 0; index < segments.length; index += 1) {
-    const segment = segments[index];
-    const nextPath = currentPath ? `${currentPath}/${segment}` : segment;
-    const isLeaf = index === segments.length - 1;
-    const children = current.children ? [...current.children] : [];
-    const existingIndex = children.findIndex((child) => child.path === nextPath);
-
-    if (isLeaf) {
-      if (existingIndex === -1) {
-        children.push({
-          name: segment,
-          path: nextPath,
-          type: 'file',
-        });
-        children.sort((left, right) => left.path.localeCompare(right.path));
-      }
-      current.children = children;
-      break;
-    }
-
-    let nextNode: FileTreeNode;
-    if (existingIndex === -1) {
-      nextNode = {
-        name: segment,
-        path: nextPath,
-        type: 'directory',
-        children: [],
-      };
-      children.push(nextNode);
-      children.sort((left, right) => left.path.localeCompare(right.path));
-      current.children = children;
-    } else {
-      const existing = children[existingIndex];
-      nextNode = existing.type === 'directory'
-        ? existing
-        : {
-            name: segment,
-            path: nextPath,
-            type: 'directory',
-            children: [],
-          };
-      children[existingIndex] = nextNode;
-      current.children = children;
-    }
-
-    current = nextNode;
-    currentPath = nextPath;
-  }
-
-  return nextRoot;
-}
-
 const normalizeMindMapGroup = (group: MindMapGroup): MindMapGroup => ({
   ...group,
   spacing: group.spacing ?? DEFAULT_MINDMAP_SPACING,
@@ -802,11 +630,8 @@ function reconcilePendingUiActionsAfterEdit(
 export const useGraphStore = create<GraphState>((set, get) => ({
   nodes: [],
   edges: [],
-  files: [],
-  fileTree: null,
-  expandedFolders: new Set<string>(),
-  currentFile: null,
   currentCanvasId: null,
+  assetBasePath: null,
   registeredWorkspaces: [],
   activeWorkspaceId: null,
   lastActiveCanvasesByWorkspaceId: {},
@@ -816,10 +641,8 @@ export const useGraphStore = create<GraphState>((set, get) => ({
   workspaceRootPath: null,
   workspaceSessionScopeVersion: 0,
   lastActiveCanvasId: null,
-  draftCanvases: [],
   graphId: uuidv4(),
   sourceVersion: null,
-  sourceVersions: {},
   canvasVersions: {},
   canvasRevisionsById: {},
   clientId: uuidv4(),
@@ -864,19 +687,16 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     canvasBackground,
     canvasFontFamily,
     sourceVersion,
-    sourceVersions,
     canvasVersions,
     canvasRevisionsById,
+    assetBasePath,
   }) => set((state) => {
-    const nextSourceVersions = sourceVersions
-      ? normalizeWorkspaceAwareSourceVersions(state.workspaceRootPath, sourceVersions)
-      : state.sourceVersions;
     const nextCanvasVersions = canvasVersions ?? state.canvasVersions;
     const nextCanvasRevisionsById = canvasRevisionsById ?? state.canvasRevisionsById;
     const normalizedMindMapGroups = mindMapGroups.map(normalizeMindMapGroup);
     const resolvedLayoutType = layoutType ?? normalizedMindMapGroups[0]?.layoutType ?? 'compact';
     return {
-      nodes: attachAbsoluteFilePathsToNodes(nodes, state.workspaceRootPath),
+      nodes,
       edges,
       needsAutoLayout,
       layoutType: resolvedLayoutType,
@@ -889,9 +709,9 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         : state.currentCanvasId
           ? { sourceVersion: nextCanvasVersions[state.currentCanvasId] ?? state.sourceVersion }
           : {}),
-      sourceVersions: nextSourceVersions,
       canvasVersions: nextCanvasVersions,
       canvasRevisionsById: nextCanvasRevisionsById,
+      ...(assetBasePath !== undefined ? { assetBasePath } : {}),
       activeGroupFocusGroupId: null,
       entrypointRuntime: resetEntrypointRuntimeState({
         current: state.entrypointRuntime,
@@ -915,34 +735,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
         }
       : {}),
   })),
-  setSourceVersionForFile: (filePath, version) => set((state) => {
-    const normalizedFilePath = filePath
-      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, filePath)
-      : '';
-    if (!normalizedFilePath) {
-      return state;
-    }
-
-    const nextSourceVersions = { ...state.sourceVersions };
-    if (version) {
-      nextSourceVersions[normalizedFilePath] = version;
-    } else {
-      delete nextSourceVersions[normalizedFilePath];
-    }
-
-    return {
-      sourceVersions: nextSourceVersions,
-      entrypointRuntime: {
-        ...state.entrypointRuntime,
-        hover: {
-          ...state.entrypointRuntime.hover,
-          nodeIdsByGroupId: {},
-          targetNodeId: null,
-        },
-      },
-      hoveredNodeIdsByGroupId: {},
-    };
-  }),
   setCanvasVersion: (canvasId, version) => set((state) => {
     if (!canvasId) {
       return state;
@@ -976,6 +768,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       canvasRevisionsById: nextCanvasRevisionsById,
     };
   }),
+  setAssetBasePath: (assetBasePath) => set({ assetBasePath }),
   setLastAppliedCommandId: (lastAppliedCommandId) => set({ lastAppliedCommandId }),
   hydrateWorkspaceRegistry: async () => {
     const { workspaces, activeWorkspaceId, lastActiveCanvases } =
@@ -1215,7 +1008,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
     const normalizedWorkspaceRootPath = workspaceRootPath && workspaceRootPath.length > 0
       ? workspaceRootPath
       : null;
-    const knownFiles = new Set([...state.files, ...state.draftCanvases]);
     const lastActiveCanvasId = (
       normalizedWorkspaceKey
       && typeof state.lastActiveCanvasesByWorkspaceId[normalizedWorkspaceKey] === 'string'
@@ -1258,6 +1050,7 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       sourceVersion: state.currentCanvasId
         ? (state.canvasVersions[state.currentCanvasId] ?? null)
         : null,
+      assetBasePath: null,
     };
   }),
   rememberLastActiveCanvasForWorkspace: async (workspaceId, canvasId) => {
@@ -1290,59 +1083,6 @@ export const useGraphStore = create<GraphState>((set, get) => ({
       lastActiveCanvasId: canvasId && canvasId.length > 0 ? canvasId : null,
     });
   },
-  registerDraftCanvas: (filePath) => set((state) => {
-    const normalizedFilePath = filePath
-      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, filePath)
-      : '';
-    if (!normalizedFilePath || state.files.includes(normalizedFilePath)) {
-      return state;
-    }
-
-    return {
-      draftCanvases: [...state.draftCanvases, normalizedFilePath],
-      files: [...state.files, normalizedFilePath].sort((left, right) => left.localeCompare(right)),
-      fileTree: insertFileIntoTree(state.fileTree, normalizedFilePath),
-    };
-  }),
-  setFiles: (files) => set((state) => ({
-    files: normalizeWorkspaceAwareFileList(
-      state.workspaceRootPath,
-      [...files, ...state.draftCanvases],
-    ),
-  })),
-  setFileTree: (fileTree) => set((state) => ({
-    fileTree: state.draftCanvases.reduce<FileTreeNode | null>(
-      (tree, draftPath) => insertFileIntoTree(tree, draftPath),
-      fileTree,
-    ),
-  })),
-  toggleFolder: (path) => set((state) => {
-    const newExpanded = new Set(state.expandedFolders);
-    if (newExpanded.has(path)) {
-      newExpanded.delete(path);
-    } else {
-      newExpanded.add(path);
-    }
-    return { expandedFolders: newExpanded };
-  }),
-  setCurrentFile: (currentFile) => set((state) => {
-    const normalizedCurrentFile = currentFile
-      ? normalizeWorkspaceAwareFilePath(state.workspaceRootPath, currentFile)
-      : null;
-    return {
-      currentFile: normalizedCurrentFile,
-      currentCanvasId: null,
-      sourceVersion: normalizedCurrentFile
-        ? (state.sourceVersions[normalizedCurrentFile] ?? state.sourceVersion)
-        : null,
-      activeGroupFocusGroupId: null,
-      entrypointRuntime: resetEntrypointRuntimeState({
-        current: state.entrypointRuntime,
-        preserveActiveTool: true,
-      }),
-      hoveredNodeIdsByGroupId: {},
-    };
-  }),
   setCurrentCanvasId: (currentCanvasId) => set((state) => {
     const normalizedCanvasId = currentCanvasId && currentCanvasId.length > 0 ? currentCanvasId : null;
     return {

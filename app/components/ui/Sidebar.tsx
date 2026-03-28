@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react';
 import { cn } from '@/utils/cn';
-import type { FileTreeNode } from '@/store/graph';
 import { Button } from './Button';
 import { Card } from './Card';
 
@@ -29,7 +28,6 @@ interface SidebarProps {
   workspaces: SidebarWorkspaceEntry[];
   canvases: SidebarCanvasEntry[];
   isTransientWorkspace?: boolean;
-  fileTree?: FileTreeNode | null;
   isLoading?: boolean;
   onRefresh?: () => void;
   onSelectWorkspace?: (workspaceId: string) => void;
@@ -42,7 +40,6 @@ interface SidebarProps {
   onRevealWorkspace?: () => void;
   onReconnectWorkspace?: () => void;
   onRemoveWorkspace?: () => void;
-  onOpenLegacyFile?: (filePath: string) => boolean | void;
 }
 
 function getWorkspaceTitle(input: {

@@ -102,16 +102,9 @@ export async function POST(request: Request) {
     }
 
     const workspace = await requireWorkspaceRoot(rawRootPath);
-    const rawTargetPath = typeof body.filePath === 'string'
-      ? body.filePath
-      : typeof body.targetPath === 'string'
-        ? body.targetPath
-        : null;
-
     const result = await openWorkspaceInFileBrowser({
       platform: process.platform,
       rootPath: workspace.rootPath,
-      targetPath: rawTargetPath,
       action: rawAction,
     });
     const { rootPath: _resultRootPath, ...resultPayload } = result;

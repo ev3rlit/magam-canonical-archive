@@ -8,10 +8,15 @@ import {
   createCanvasRuntimeServiceContext,
   createCanonicalPgliteDb,
   dispatchCanvasMutation,
+  executeMutationBatch,
+  isCanonicalCliError,
   type CanvasMutationBatchV1,
   type ContentBlock,
+  type MutationBatch,
+  type MutationOperation,
   type MutationResultEnvelopeV1,
 } from '../../../libs/shared/src';
+import { createCanvasSourceVersion } from '../../../libs/shared/src/lib/workspace-shell';
 import { RPC_ERRORS } from '../rpc';
 import {
   createIntentScopedDiagnostics,
@@ -33,6 +38,7 @@ import {
   type NodeProps,
   type RpcContext,
   type RpcMethodRegistry,
+  type UpdateCommandType,
 } from '../shared/params';
 import { notifyCanvasChanged } from '../shared/responses';
 import {
@@ -46,28 +52,18 @@ import {
   buildRuntimePresentationStylePatch,
   normalizeRuntimeContentKind,
 } from '../shared/runtimeTransforms';
-import {
-  applyNodeCreatePatch,
-  applyNodeDeletePatch,
-  applyNodeMovePatch,
-  applyNodeReparentPatch,
-  applyNodeUpdatePatch,
-  applyObjectBodyBlockInsertPatch,
-  applyRuntimeCompatibilityAdapter,
-  ensureCompatibilityParams,
-  type CompatibilityCommonParams,
-  withCompatibilityMutation,
-} from './compatibilityHandlers';
+
+type CanonicalContext = {
+  db: Awaited<ReturnType<typeof createCanonicalPgliteDb>>['db'];
+  repository: CanonicalPersistenceRepository;
+  targetDir: string;
+  dataDir: string | null;
+  workspaceId: string;
+};
 
 async function withCanonicalContext<T>(
   rootPath: string | undefined,
-  run: (context: {
-    db: Awaited<ReturnType<typeof createCanonicalPgliteDb>>['db'];
-    repository: CanonicalPersistenceRepository;
-    targetDir: string;
-    dataDir: string | null;
-    workspaceId: string;
-  }) => Promise<T>,
+  run: (context: CanonicalContext) => Promise<T>,
 ): Promise<T> {
   const targetDir = resolve(rootPath || process.env.MAGAM_TARGET_DIR || process.cwd());
   const workspaceId = process.env.MAGAM_WORKSPACE_ID?.trim() || sanitizeWorkspaceId(targetDir);
@@ -99,39 +95,16 @@ async function withCanonicalContext<T>(
   }
 }
 
-async function executeRuntimeMutation(
-  rootPath: string | undefined,
-  buildBatch: (
-    workspaceId: string,
-    runtimeContext: ReturnType<typeof createCanvasRuntimeServiceContext>,
-  ) => Promise<CanvasMutationBatchV1> | CanvasMutationBatchV1,
-): Promise<{
-  runtimeContext: ReturnType<typeof createCanvasRuntimeServiceContext>;
-  batch: CanvasMutationBatchV1;
-  mutation: Awaited<ReturnType<typeof dispatchCanvasMutation>>;
-}> {
-  return withCanonicalContext(rootPath, async ({
-    db,
-    repository,
-    targetDir,
-    dataDir,
-    workspaceId,
-  }) => {
-    const runtimeContext = createCanvasRuntimeServiceContext({
-      db,
-      repository,
-      targetDir,
-      dataDir,
-      defaultWorkspaceId: workspaceId,
-    });
-    const batch = await buildBatch(workspaceId, runtimeContext);
-    const mutation = await dispatchCanvasMutation(runtimeContext, batch);
-    return {
-      runtimeContext,
-      batch,
-      mutation,
-    };
-  });
+function createVersionToken(input: {
+  canvasId: string;
+  workspaceId: string;
+  canvasRevision: number | null;
+}): string {
+  return createCanvasSourceVersion(JSON.stringify({
+    canvasId: input.canvasId,
+    workspaceId: input.workspaceId,
+    latestRevision: input.canvasRevision,
+  }));
 }
 
 function ensureRuntimeCommonParams(params: Record<string, unknown>) {
@@ -139,7 +112,8 @@ function ensureRuntimeCommonParams(params: Record<string, unknown>) {
   const originId = ensureString(params.originId, 'originId');
   const commandId = ensureString(params.commandId, 'commandId');
   const rootPath = ensureOptionalRootPath(params.rootPath, 'rootPath');
-  return { canvasId, originId, commandId, rootPath };
+  const baseVersion = ensureOptionalString(params.baseVersion, 'baseVersion');
+  return { canvasId, originId, commandId, rootPath, baseVersion };
 }
 
 function ensureRuntimeMutationBatch(
@@ -202,15 +176,148 @@ function ensureRuntimeMutationBatch(
   };
 }
 
-async function mutateCanvasCompatibility<T>(
-  ctx: RpcContext,
-  common: CompatibilityCommonParams,
-  mutator: () => Promise<T>,
+function mapCanonicalError(
+  error: unknown,
+  diagnostics: Record<string, unknown>,
+): never {
+  if (isCanonicalCliError(error)) {
+    if (error.code === 'DOCUMENT_REVISION_CONFLICT') {
+      throw {
+        ...RPC_ERRORS.VERSION_CONFLICT,
+        data: withDiagnostics(error.details, diagnostics),
+      };
+    }
+    if (
+      error.code === 'NODE_NOT_FOUND'
+      || error.code === 'OBJECT_NOT_FOUND'
+      || error.code === 'DOCUMENT_NOT_FOUND'
+    ) {
+      throw {
+        ...RPC_ERRORS.NODE_NOT_FOUND,
+        data: withDiagnostics(error.details, diagnostics),
+      };
+    }
+    if (error.code === 'INVALID_ARGUMENT') {
+      throw {
+        ...RPC_ERRORS.INVALID_PARAMS,
+        data: withDiagnostics(error.details ?? { reason: error.message }, diagnostics),
+      };
+    }
+    throw {
+      ...RPC_ERRORS.PATCH_FAILED,
+      data: withDiagnostics(error.details ?? { reason: error.message }, diagnostics),
+    };
+  }
+
+  const typed = error as { code?: number; message?: string; data?: unknown } | Error;
+  if (typeof (typed as { code?: number }).code === 'number') {
+    throw {
+      code: (typed as { code: number }).code,
+      message: (typed as { message?: string }).message,
+      data: withDiagnostics((typed as { data?: unknown }).data, diagnostics),
+    };
+  }
+
+  throw {
+    ...RPC_ERRORS.PATCH_FAILED,
+    data: withDiagnostics({ reason: (typed as Error).message }, diagnostics),
+  };
+}
+
+async function executeRuntimeMutation(
+  rootPath: string | undefined,
+  buildBatch: (
+    workspaceId: string,
+    runtimeContext: ReturnType<typeof createCanvasRuntimeServiceContext>,
+  ) => Promise<CanvasMutationBatchV1> | CanvasMutationBatchV1,
 ): Promise<{
-  compatibilityResult: Awaited<ReturnType<typeof withCompatibilityMutation<T>>>;
+  runtimeContext: ReturnType<typeof createCanvasRuntimeServiceContext>;
+  batch: CanvasMutationBatchV1;
+  mutation: Awaited<ReturnType<typeof dispatchCanvasMutation>>;
 }> {
-  const compatibilityResult = await withCompatibilityMutation(ctx, common, mutator);
-  return { compatibilityResult };
+  return withCanonicalContext(rootPath, async ({
+    db,
+    repository,
+    targetDir,
+    dataDir,
+    workspaceId,
+  }) => {
+    const runtimeContext = createCanvasRuntimeServiceContext({
+      db,
+      repository,
+      targetDir,
+      dataDir,
+      defaultWorkspaceId: workspaceId,
+    });
+    const batch = await buildBatch(workspaceId, runtimeContext);
+    const mutation = await dispatchCanvasMutation(runtimeContext, batch);
+    return {
+      runtimeContext,
+      batch,
+      mutation,
+    };
+  });
+}
+
+async function executeDirectCanvasMutation(input: {
+  canvasId: string;
+  commandId: string;
+  originId: string;
+  rootPath?: string;
+  baseVersion?: string;
+  buildOperations: (context: CanonicalContext) => Promise<MutationOperation[]> | MutationOperation[];
+}, ctx: RpcContext): Promise<{
+  success: boolean;
+  newVersion: string;
+  commandId: string;
+  canvasId: string;
+  canvasRevision?: number;
+}> {
+  return withCanonicalContext(input.rootPath, async (context) => {
+    const batch: MutationBatch = {
+      workspaceRef: context.workspaceId,
+      canvasRef: input.canvasId,
+      actor: {
+        kind: 'user',
+        id: input.originId,
+      },
+      ...(input.baseVersion ? {} : {}),
+      operations: await input.buildOperations(context),
+    };
+    const result = await executeMutationBatch({
+      context: {
+        db: context.db,
+        repository: context.repository,
+        targetDir: context.targetDir,
+        dataDir: context.dataDir,
+        defaultWorkspaceId: context.workspaceId,
+      },
+      batch,
+    });
+    const newVersion = createVersionToken({
+      canvasId: input.canvasId,
+      workspaceId: context.workspaceId,
+      canvasRevision: result.canvasRevisionAfter,
+    });
+    if (typeof result.canvasRevisionAfter === 'number') {
+      notifyCanvasChanged(ctx, {
+        canvasId: input.canvasId,
+        canvasRevision: result.canvasRevisionAfter,
+        originId: input.originId,
+        commandId: input.commandId,
+        ...(input.rootPath ? { rootPath: input.rootPath } : {}),
+      });
+    }
+    return {
+      success: true,
+      newVersion,
+      commandId: input.commandId,
+      canvasId: input.canvasId,
+      ...(typeof result.canvasRevisionAfter === 'number'
+        ? { canvasRevision: result.canvasRevisionAfter }
+        : {}),
+    };
+  });
 }
 
 async function handleCanvasSubscribe(
@@ -244,9 +351,7 @@ async function handleCanvasRuntimeProjections(
   const surfaceId = ensureOptionalString(params.surfaceId, 'surfaceId');
   const workspaceIdParam = ensureOptionalString(params.workspaceId, 'workspaceId');
   const nodeIds = Array.isArray(params.nodeIds)
-    ? params.nodeIds.filter(
-        (value): value is string => typeof value === 'string' && value.length > 0,
-      )
+    ? params.nodeIds.filter((value): value is string => typeof value === 'string' && value.length > 0)
     : undefined;
 
   return withCanonicalContext(rootPath, async ({
@@ -307,7 +412,7 @@ async function handleCanvasRuntimeMutate(
   const initialBatch = ensureRuntimeMutationBatch(params.batch, common.canvasId);
 
   try {
-    const { runtimeContext, batch, mutation } = await executeRuntimeMutation(
+    const { batch, mutation } = await executeRuntimeMutation(
       common.rootPath,
       (workspaceId) => ({
         ...initialBatch,
@@ -321,16 +426,6 @@ async function handleCanvasRuntimeMutate(
 
     const canvasRevision = mutation.envelope.data.canvasRevisionAfter ?? undefined;
     if (!mutation.envelope.data.dryRun && typeof canvasRevision === 'number') {
-      await applyRuntimeCompatibilityAdapter({
-        ctx,
-        runtimeContext,
-        batch,
-        canvasId: common.canvasId,
-        originId: common.originId,
-        commandId: common.commandId,
-        ...(common.rootPath ? { rootPath: common.rootPath } : {}),
-        canvasRevision,
-      });
       notifyCanvasChanged(ctx, {
         canvasId: common.canvasId,
         canvasRevision,
@@ -340,33 +435,33 @@ async function handleCanvasRuntimeMutate(
       });
     }
 
+    const newVersion = createVersionToken({
+      canvasId: common.canvasId,
+      workspaceId: batch.workspaceId,
+      canvasRevision: mutation.envelope.ok ? mutation.envelope.data.canvasRevisionAfter : null,
+    });
+
     return {
       success: true,
       commandId: common.commandId,
       canvasId: common.canvasId,
       ...(typeof canvasRevision === 'number' ? { canvasRevision } : {}),
-      runtimeResult: mutation.envelope,
+      runtimeResult: mutation.envelope.ok
+        ? {
+            ...mutation.envelope,
+            data: {
+              ...mutation.envelope.data,
+              version: newVersion,
+            },
+          }
+        : mutation.envelope,
     };
   } catch (error) {
-    const diagnostics = createIntentScopedDiagnostics({
+    mapCanonicalError(error, createIntentScopedDiagnostics({
       failedAction: 'canvas.runtime.mutate',
       stage: 'ws.canvas.runtime.mutate',
-      details: {
-        canvasId: initialBatch.canvasId ?? common.canvasId ?? null,
-      },
-    });
-    const typed = error as { code?: number; message?: string; data?: unknown } | Error;
-    if (typeof (typed as { code?: number }).code === 'number') {
-      throw {
-        code: (typed as { code: number }).code,
-        message: (typed as { message?: string }).message,
-        data: withDiagnostics((typed as { data?: unknown }).data, diagnostics),
-      };
-    }
-    throw {
-      ...RPC_ERRORS.PATCH_FAILED,
-      data: withDiagnostics({ reason: (typed as Error).message }, diagnostics),
-    };
+      details: { canvasId: common.canvasId },
+    }));
   }
 }
 
@@ -377,152 +472,72 @@ async function handleNodeUpdate(
   success: boolean;
   newVersion: string;
   commandId: string;
-  filePath: string;
-  runtimeResult?: MutationResultEnvelopeV1;
+  canvasId: string;
+  canvasRevision?: number;
 }> {
-  const common = await ensureCompatibilityParams(params);
+  const common = ensureRuntimeCommonParams(params);
   const nodeId = ensureString(params.nodeId, 'nodeId');
-  const props = params.props as NodeProps | undefined;
-  const explicitCommandType = ensureOptionalUpdateCommandType(params.commandType);
-
-  if (!props || typeof props !== 'object') {
-    throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'props is required' };
-  }
-
-  const commandType = inferUpdateCommandType(props, explicitCommandType);
+  const props = ensureRecord(params.props, 'props');
+  const commandType = inferUpdateCommandType(props as NodeProps, ensureOptionalUpdateCommandType(params.commandType));
 
   try {
-    let runtimeResult: MutationResultEnvelopeV1 | undefined;
-    const { compatibilityResult } = await mutateCanvasCompatibility(ctx, common, async () => {
-      if (
-        common.canvasId
-        && commandType
-        && commandType !== 'node.move.relative'
-        && commandType !== 'node.group.update'
-        && commandType !== 'node.rename'
-      ) {
-        const { mutation } = await executeRuntimeMutation(
-          common.rootPath,
-          async (workspaceId, runtimeContext) => {
-            if (commandType === 'node.style.update') {
-              return {
-                workspaceId,
-                canvasId: common.canvasId!,
-                commands: [{
-                  name: 'canvas.node.presentation-style.update',
-                  canvasId: common.canvasId!,
-                  nodeId,
-                  presentationStyle: buildRuntimePresentationStylePatch(
-                    props as Record<string, unknown>,
-                  ),
-                }],
-              };
-            }
-
-            if (commandType === 'node.z-order.update') {
-              return {
-                workspaceId,
-                canvasId: common.canvasId!,
-                commands: [{
-                  name: 'canvas.node.z-order.update',
-                  canvasId: common.canvasId!,
-                  nodeId,
-                  zIndex: ensureNumber(props.zIndex, 'props.zIndex'),
-                }],
-              };
-            }
-
-            const nodeRecord = await runtimeContext.repository.getCanvasNode(
-              common.canvasId!,
-              nodeId,
-            );
-            if (!nodeRecord.ok) {
-              throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId } };
-            }
-            const objectId = nodeRecord.value.canonicalObjectId ?? nodeId;
-            const objectRecord = await runtimeContext.repository.getCanonicalObject(
-              workspaceId,
-              objectId,
-            );
-            if (!objectRecord.ok) {
-              throw { ...RPC_ERRORS.NODE_NOT_FOUND, data: { nodeId, objectId } };
-            }
-            const contentKind = normalizeRuntimeContentKind(
-              objectRecord.value.primaryContentKind,
-            );
-
-            return {
-              workspaceId,
-              canvasId: common.canvasId!,
-              commands: [buildRuntimeContentUpdateCommand({
-                objectId,
-                kind: contentKind,
-                content: typeof props.content === 'string' ? props.content : '',
-              })],
-            };
-          },
-        );
-
-        if (!mutation.envelope.ok) {
-          runtimeFailureToRpcError(mutation.envelope);
+    return await executeDirectCanvasMutation({
+      canvasId: common.canvasId,
+      commandId: common.commandId,
+      originId: common.originId,
+      rootPath: common.rootPath,
+      baseVersion: common.baseVersion,
+      buildOperations: async (context) => {
+        if (commandType === 'node.rename') {
+          return [{
+            op: 'canvas.node.rename',
+            nodeId,
+            nextNodeId: ensureString(props.id, 'props.id'),
+          }];
         }
-        runtimeResult = mutation.envelope;
-      }
-
-      await applyNodeUpdatePatch({
-        resolvedFilePath: common.resolvedFilePath,
-        nodeId,
-        props,
-        commandType,
-      });
-    });
-    return runtimeResult
-      ? { ...compatibilityResult, filePath: compatibilityResult.filePath, runtimeResult }
-      : compatibilityResult;
+        if (commandType === 'node.z-order.update') {
+          return [{
+            op: 'canvas.node.z-order.update',
+            nodeId,
+            zIndex: ensureNumber(props.zIndex, 'props.zIndex'),
+          }];
+        }
+        if (commandType === 'node.style.update') {
+          return [{
+            op: 'canvas.node.update',
+            nodeId,
+            stylePatch: props,
+          }];
+        }
+        if (commandType === 'node.content.update') {
+          const nodeRecord = await context.repository.getCanvasNode(common.canvasId, nodeId);
+          if (!nodeRecord.ok) {
+            throw nodeRecord;
+          }
+          const objectId = nodeRecord.value.canonicalObjectId ?? nodeId;
+          const objectRecord = await context.repository.getCanonicalObject(context.workspaceId, objectId);
+          if (!objectRecord.ok) {
+            throw objectRecord;
+          }
+          return [buildRuntimeContentUpdateCommand({
+            objectId,
+            kind: normalizeRuntimeContentKind(objectRecord.value.primaryContentKind),
+            content: typeof props.content === 'string' ? props.content : '',
+          }) as unknown as MutationOperation];
+        }
+        return [{
+          op: 'canvas.node.update',
+          nodeId,
+          propsPatch: props,
+        }];
+      },
+    }, ctx);
   } catch (error) {
-    const diagnostics = createIntentScopedDiagnostics({
+    mapCanonicalError(error, createIntentScopedDiagnostics({
       failedAction: commandType ?? 'node.update',
       stage: 'ws.node.update',
       details: { nodeId },
-    });
-    const typed = error as { code?: number; message?: string; data?: unknown } | Error;
-    if (typeof (typed as { code?: number }).code === 'number') {
-      throw {
-        code: (typed as { code: number }).code,
-        message: (typed as { message?: string }).message,
-        data: withDiagnostics((typed as { data?: unknown }).data, diagnostics),
-      };
-    }
-    const message = (typed as Error).message;
-    if (message === 'NODE_NOT_FOUND') {
-      throw {
-        ...RPC_ERRORS.NODE_NOT_FOUND,
-        data: withDiagnostics({ nodeId }, diagnostics),
-      };
-    }
-    if (message === 'EDIT_NOT_ALLOWED') {
-      throw {
-        ...RPC_ERRORS.EDIT_NOT_ALLOWED,
-        data: withDiagnostics({ nodeId, commandType }, diagnostics),
-      };
-    }
-    if (message === 'ID_COLLISION') {
-      const collisionId = typeof props.id === 'string' ? props.id : nodeId;
-      throw {
-        ...RPC_ERRORS.ID_COLLISION,
-        data: withDiagnostics({ collisionIds: [collisionId] }, diagnostics),
-      };
-    }
-    if (message === 'CONTENT_CONTRACT_VIOLATION') {
-      throw {
-        ...RPC_ERRORS.CONTENT_CONTRACT_VIOLATION,
-        data: withDiagnostics({ nodeId, path: 'capabilities.content' }, diagnostics),
-      };
-    }
-    throw {
-      ...RPC_ERRORS.PATCH_FAILED,
-      data: withDiagnostics({ reason: message }, diagnostics),
-    };
+    }));
   }
 }
 
@@ -533,275 +548,88 @@ async function handleNodeMove(
   success: boolean;
   newVersion: string;
   commandId: string;
-  filePath: string;
-  runtimeResult?: MutationResultEnvelopeV1;
+  canvasId: string;
+  canvasRevision?: number;
 }> {
-  const common = await ensureCompatibilityParams(params);
+  const common = ensureRuntimeCommonParams(params);
   const nodeId = ensureString(params.nodeId, 'nodeId');
   const x = ensureNumber(params.x, 'x');
   const y = ensureNumber(params.y, 'y');
 
   try {
-    let runtimeResult: MutationResultEnvelopeV1 | undefined;
-    const { compatibilityResult } = await mutateCanvasCompatibility(ctx, common, async () => {
-      if (common.canvasId) {
-        const { mutation } = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
-          workspaceId,
-          canvasId: common.canvasId!,
-          commands: [{
-            name: 'canvas.node.move',
-            canvasId: common.canvasId!,
-            nodeId,
-            x,
-            y,
-          }],
-        }));
-
-        if (!mutation.envelope.ok) {
-          runtimeFailureToRpcError(mutation.envelope);
-        }
-        runtimeResult = mutation.envelope;
-      }
-
-      await applyNodeMovePatch({
-        resolvedFilePath: common.resolvedFilePath,
+    return await executeDirectCanvasMutation({
+      canvasId: common.canvasId,
+      commandId: common.commandId,
+      originId: common.originId,
+      rootPath: common.rootPath,
+      baseVersion: common.baseVersion,
+      buildOperations: () => [{
+        op: 'canvas.node.move',
         nodeId,
-        x,
-        y,
-      });
-    });
-    return runtimeResult
-      ? { ...compatibilityResult, filePath: compatibilityResult.filePath, runtimeResult }
-      : compatibilityResult;
+        patch: { x, y },
+      }],
+    }, ctx);
   } catch (error) {
-    const diagnostics = createIntentScopedDiagnostics({
+    mapCanonicalError(error, createIntentScopedDiagnostics({
       failedAction: 'node.move',
       stage: 'ws.node.move',
       details: { nodeId },
-    });
-    const typed = error as { code?: number; message?: string; data?: unknown } | Error;
-    if (typeof (typed as { code?: number }).code === 'number') {
-      throw {
-        code: (typed as { code: number }).code,
-        message: (typed as { message?: string }).message,
-        data: withDiagnostics((typed as { data?: unknown }).data, diagnostics),
-      };
-    }
-    throw {
-      ...RPC_ERRORS.PATCH_FAILED,
-      data: withDiagnostics({ reason: (typed as Error).message }, diagnostics),
-    };
+    }));
+  }
+}
+
+async function handleNodeCreateBase(
+  params: Record<string, unknown>,
+  ctx: RpcContext,
+): Promise<{
+  success: boolean;
+  newVersion: string;
+  commandId: string;
+  canvasId: string;
+  canvasRevision?: number;
+}> {
+  const common = ensureRuntimeCommonParams(params);
+  const node = ensureRecord(params.node, 'node') as unknown as CreateNodeInput;
+  const nodeId = ensureString(node.id, 'node.id');
+  const nodeType = ensureString(node.type, 'node.type') as CreateNodeInput['type'];
+  const placement = ensureCreatePlacement(node.placement);
+
+  try {
+    return await executeDirectCanvasMutation({
+      canvasId: common.canvasId,
+      commandId: common.commandId,
+      originId: common.originId,
+      rootPath: common.rootPath,
+      baseVersion: common.baseVersion,
+      buildOperations: () => [{
+        op: 'canvas.node.create',
+        nodeId,
+        nodeType,
+        props: isRecord(node.props) ? node.props : undefined,
+        placement: placement ?? undefined,
+      } satisfies MutationOperation],
+    }, ctx);
+  } catch (error) {
+    mapCanonicalError(error, createIntentScopedDiagnostics({
+      failedAction: 'node.create',
+      stage: 'ws.node.create',
+      details: { nodeId },
+    }));
   }
 }
 
 async function handleNodeCreate(
   params: Record<string, unknown>,
   ctx: RpcContext,
-): Promise<{
-  success: boolean;
-  newVersion: string;
-  commandId: string;
-  filePath: string;
-  runtimeResult?: MutationResultEnvelopeV1;
-}> {
-  const common = await ensureCompatibilityParams(params);
-  const node = params.node as CreateNodeInput | undefined;
-
-  if (!node || typeof node !== 'object') {
-    throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node is required' };
-  }
-  if (!node.id || typeof node.id !== 'string') {
-    throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.id is required' };
-  }
-  if (
-    !node.type
-    || ![
-      'shape',
-      'rectangle',
-      'ellipse',
-      'diamond',
-      'line',
-      'text',
-      'markdown',
-      'mindmap',
-      'sticky',
-      'sticker',
-      'washi-tape',
-      'image',
-    ].includes(node.type)
-  ) {
-    throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.type is invalid' };
-  }
-
-  node.placement = ensureCreatePlacement(node.placement);
-
-  try {
-    let runtimeResult: MutationResultEnvelopeV1 | undefined;
-    const { compatibilityResult } = await mutateCanvasCompatibility(ctx, common, async () => {
-      if (common.canvasId) {
-        const { mutation } = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
-          workspaceId,
-          canvasId: common.canvasId,
-          commands: [buildCanvasNodeCreateCommand({
-            canvasId: common.canvasId!,
-            nodeId: node.id,
-            nodeType: node.type,
-            placement: node.placement,
-            fallbackMindmapId: `mindmap-${node.id}`,
-          })],
-        }));
-
-        if (!mutation.envelope.ok) {
-          runtimeFailureToRpcError(mutation.envelope);
-        }
-        runtimeResult = mutation.envelope;
-      }
-
-      await applyNodeCreatePatch({
-        resolvedFilePath: common.resolvedFilePath,
-        node,
-      });
-    });
-    return runtimeResult
-      ? { ...compatibilityResult, filePath: compatibilityResult.filePath, runtimeResult }
-      : compatibilityResult;
-  } catch (error) {
-    const diagnostics = createIntentScopedDiagnostics({
-      failedAction: 'node.create',
-      stage: 'ws.node.create',
-      details: { nodeId: node.id },
-    });
-    const typed = error as { code?: number; message?: string; data?: unknown } | Error;
-    if (typeof (typed as { code?: number }).code === 'number') {
-      throw {
-        code: (typed as { code: number }).code,
-        message: (typed as { message?: string }).message,
-        data: withDiagnostics((typed as { data?: unknown }).data, diagnostics),
-      };
-    }
-    const message = (typed as Error).message;
-    if (message === 'ID_COLLISION') {
-      throw {
-        ...RPC_ERRORS.ID_COLLISION,
-        data: withDiagnostics({ collisionIds: [node.id] }, diagnostics),
-      };
-    }
-    if (message === 'NODE_NOT_FOUND') {
-      throw {
-        ...RPC_ERRORS.NODE_NOT_FOUND,
-        data: withDiagnostics({ nodeId: node.id }, diagnostics),
-      };
-    }
-    throw {
-      ...RPC_ERRORS.PATCH_FAILED,
-      data: withDiagnostics({ reason: message }, diagnostics),
-    };
-  }
+) {
+  return handleNodeCreateBase(params, ctx);
 }
 
 async function handleCanvasNodeCreate(
   params: Record<string, unknown>,
   ctx: RpcContext,
-): Promise<{
-  success: boolean;
-  newVersion: string;
-  commandId: string;
-  filePath: string;
-  runtimeResult?: MutationResultEnvelopeV1;
-}> {
-  const common = await ensureCompatibilityParams(params);
-  const node = params.node as CreateNodeInput | undefined;
-
-  if (!node || typeof node !== 'object') {
-    throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node is required' };
-  }
-  if (!common.canvasId) {
-    throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
-  }
-
-  const nodeId = ensureString(node.id, 'node.id');
-  const nodeType = ensureString(node.type, 'node.type') as CreateNodeInput['type'];
-  const placement = ensureCreatePlacement(node.placement);
-
-  if (
-    ![
-      'shape',
-      'rectangle',
-      'ellipse',
-      'diamond',
-      'line',
-      'text',
-      'markdown',
-      'sticky',
-      'sticker',
-      'washi-tape',
-      'image',
-    ].includes(nodeType)
-  ) {
-    throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.type is invalid' };
-  }
-  if (!placement) {
-    throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.placement is required' };
-  }
-
-  try {
-    let runtimeResult: MutationResultEnvelopeV1 | undefined;
-    const { compatibilityResult } = await mutateCanvasCompatibility(ctx, common, async () => {
-      const { mutation } = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
-        workspaceId,
-        canvasId: common.canvasId!,
-        commands: [buildCanvasNodeCreateCommand({
-          canvasId: common.canvasId!,
-          nodeId,
-          nodeType,
-          props: node.props as Record<string, unknown> | undefined,
-          placement,
-          fallbackMindmapId: `mindmap-${nodeId}`,
-        })],
-      }));
-
-      if (!mutation.envelope.ok) {
-        runtimeFailureToRpcError(mutation.envelope);
-      }
-      runtimeResult = mutation.envelope;
-
-      await applyNodeCreatePatch({
-        resolvedFilePath: common.resolvedFilePath,
-        node: {
-          id: nodeId,
-          type: nodeType,
-          props: {
-            ...ensureRecord(node.props ?? {}, 'node.props'),
-            ...(typeof (node.props as Record<string, unknown> | undefined)?.content === 'string'
-              ? { content: (node.props as Record<string, unknown>).content }
-              : {}),
-          },
-          placement,
-        },
-      });
-    });
-    return runtimeResult
-      ? { ...compatibilityResult, filePath: compatibilityResult.filePath, runtimeResult }
-      : compatibilityResult;
-  } catch (error) {
-    const diagnostics = createIntentScopedDiagnostics({
-      failedAction: 'canvas.node.create',
-      stage: 'ws.canvas.node.create',
-      details: { nodeId },
-    });
-    const typed = error as { code?: number; message?: string; data?: unknown } | Error;
-    if (typeof (typed as { code?: number }).code === 'number') {
-      throw {
-        code: (typed as { code: number }).code,
-        message: (typed as { message?: string }).message,
-        data: withDiagnostics((typed as { data?: unknown }).data, diagnostics),
-      };
-    }
-    throw {
-      ...RPC_ERRORS.PATCH_FAILED,
-      data: withDiagnostics({ reason: (typed as Error).message }, diagnostics),
-    };
-  }
+) {
+  return handleNodeCreateBase(params, ctx);
 }
 
 async function handleObjectBodyBlockInsert(
@@ -811,77 +639,34 @@ async function handleObjectBodyBlockInsert(
   success: boolean;
   newVersion: string;
   commandId: string;
-  filePath: string;
-  runtimeResult?: MutationResultEnvelopeV1;
+  canvasId: string;
+  canvasRevision?: number;
 }> {
-  const common = await ensureCompatibilityParams(params);
-  if (!common.canvasId) {
-    throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'canvasId is required' };
-  }
-
+  const common = ensureRuntimeCommonParams(params);
   const objectId = ensureString(params.objectId, 'objectId');
   const block = ensureContentBlock(params.block);
   const afterBlockId = ensureOptionalString(params.afterBlockId, 'afterBlockId');
 
   try {
-    let runtimeResult: MutationResultEnvelopeV1 | undefined;
-    const { compatibilityResult } = await mutateCanvasCompatibility(ctx, common, async () => {
-      const { mutation } = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
-        workspaceId,
-        canvasId: common.canvasId!,
-        commands: [buildObjectBodyBlockInsertCommand({
-          objectId,
-          block: block as ContentBlock,
-          afterBlockId,
-        })],
-      }));
-
-      if (!mutation.envelope.ok) {
-        runtimeFailureToRpcError(mutation.envelope);
-      }
-      runtimeResult = mutation.envelope;
-
-      await applyObjectBodyBlockInsertPatch({
-        resolvedFilePath: common.resolvedFilePath,
+    return await executeDirectCanvasMutation({
+      canvasId: common.canvasId,
+      commandId: common.commandId,
+      originId: common.originId,
+      rootPath: common.rootPath,
+      baseVersion: common.baseVersion,
+      buildOperations: () => [buildObjectBodyBlockInsertCommand({
         objectId,
-        block,
+        block: block as ContentBlock,
         afterBlockId,
-      });
-    });
-    return runtimeResult
-      ? { ...compatibilityResult, filePath: compatibilityResult.filePath, runtimeResult }
-      : compatibilityResult;
+        generateId: crypto.randomUUID,
+      }) as unknown as MutationOperation],
+    }, ctx);
   } catch (error) {
-    const diagnostics = createIntentScopedDiagnostics({
+    mapCanonicalError(error, createIntentScopedDiagnostics({
       failedAction: 'object.body.block.insert',
       stage: 'ws.object.body.block.insert',
       details: { objectId, blockId: block.id },
-    });
-    const typed = error as { code?: number; message?: string; data?: unknown } | Error;
-    if (typeof (typed as { code?: number }).code === 'number') {
-      throw {
-        code: (typed as { code: number }).code,
-        message: (typed as { message?: string }).message,
-        data: withDiagnostics((typed as { data?: unknown }).data, diagnostics),
-      };
-    }
-    const message = (typed as Error).message;
-    if (message === 'ID_COLLISION') {
-      throw {
-        ...RPC_ERRORS.ID_COLLISION,
-        data: withDiagnostics({ collisionIds: [objectId] }, diagnostics),
-      };
-    }
-    if (message === 'NODE_NOT_FOUND') {
-      throw {
-        ...RPC_ERRORS.NODE_NOT_FOUND,
-        data: withDiagnostics({ objectId }, diagnostics),
-      };
-    }
-    throw {
-      ...RPC_ERRORS.PATCH_FAILED,
-      data: withDiagnostics({ reason: message }, diagnostics),
-    };
+    }));
   }
 }
 
@@ -892,65 +677,30 @@ async function handleNodeDelete(
   success: boolean;
   newVersion: string;
   commandId: string;
-  filePath: string;
-  runtimeResult?: MutationResultEnvelopeV1;
+  canvasId: string;
+  canvasRevision?: number;
 }> {
-  const common = await ensureCompatibilityParams(params);
+  const common = ensureRuntimeCommonParams(params);
   const nodeId = ensureString(params.nodeId, 'nodeId');
 
   try {
-    let runtimeResult: MutationResultEnvelopeV1 | undefined;
-    const { compatibilityResult } = await mutateCanvasCompatibility(ctx, common, async () => {
-      if (common.canvasId) {
-        const { mutation } = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
-          workspaceId,
-          canvasId: common.canvasId!,
-          commands: [{
-            name: 'canvas.node.delete',
-            canvasId: common.canvasId!,
-            nodeId,
-          }],
-        }));
-
-        if (!mutation.envelope.ok) {
-          runtimeFailureToRpcError(mutation.envelope);
-        }
-        runtimeResult = mutation.envelope;
-      }
-
-      await applyNodeDeletePatch({
-        resolvedFilePath: common.resolvedFilePath,
+    return await executeDirectCanvasMutation({
+      canvasId: common.canvasId,
+      commandId: common.commandId,
+      originId: common.originId,
+      rootPath: common.rootPath,
+      baseVersion: common.baseVersion,
+      buildOperations: () => [{
+        op: 'canvas.node.delete',
         nodeId,
-      });
-    });
-    return runtimeResult
-      ? { ...compatibilityResult, filePath: compatibilityResult.filePath, runtimeResult }
-      : compatibilityResult;
+      }],
+    }, ctx);
   } catch (error) {
-    const diagnostics = createIntentScopedDiagnostics({
+    mapCanonicalError(error, createIntentScopedDiagnostics({
       failedAction: 'node.delete',
       stage: 'ws.node.delete',
       details: { nodeId },
-    });
-    const typed = error as { code?: number; message?: string; data?: unknown } | Error;
-    if (typeof (typed as { code?: number }).code === 'number') {
-      throw {
-        code: (typed as { code: number }).code,
-        message: (typed as { message?: string }).message,
-        data: withDiagnostics((typed as { data?: unknown }).data, diagnostics),
-      };
-    }
-    const message = (typed as Error).message;
-    if (message === 'NODE_NOT_FOUND') {
-      throw {
-        ...RPC_ERRORS.NODE_NOT_FOUND,
-        data: withDiagnostics({ nodeId }, diagnostics),
-      };
-    }
-    throw {
-      ...RPC_ERRORS.PATCH_FAILED,
-      data: withDiagnostics({ reason: message }, diagnostics),
-    };
+    }));
   }
 }
 
@@ -961,80 +711,32 @@ async function handleNodeReparent(
   success: boolean;
   newVersion: string;
   commandId: string;
-  filePath: string;
-  runtimeResult?: MutationResultEnvelopeV1;
+  canvasId: string;
+  canvasRevision?: number;
 }> {
-  const common = await ensureCompatibilityParams(params);
+  const common = ensureRuntimeCommonParams(params);
   const nodeId = ensureString(params.nodeId, 'nodeId');
   const newParentId = ensureOptionalString(params.newParentId, 'newParentId');
 
   try {
-    let runtimeResult: MutationResultEnvelopeV1 | undefined;
-    const { compatibilityResult } = await mutateCanvasCompatibility(ctx, common, async () => {
-      if (common.canvasId) {
-        const { mutation } = await executeRuntimeMutation(common.rootPath, (workspaceId) => ({
-          workspaceId,
-          canvasId: common.canvasId!,
-          commands: [{
-            name: 'canvas.node.reparent',
-            canvasId: common.canvasId!,
-            nodeId,
-            parentNodeId: newParentId ?? null,
-          }],
-        }));
-
-        if (!mutation.envelope.ok) {
-          runtimeFailureToRpcError(mutation.envelope);
-        }
-        runtimeResult = mutation.envelope;
-      }
-
-      await applyNodeReparentPatch({
-        resolvedFilePath: common.resolvedFilePath,
+    return await executeDirectCanvasMutation({
+      canvasId: common.canvasId,
+      commandId: common.commandId,
+      originId: common.originId,
+      rootPath: common.rootPath,
+      baseVersion: common.baseVersion,
+      buildOperations: () => [{
+        op: 'canvas.node.reparent',
         nodeId,
-        newParentId,
-      });
-    });
-    return runtimeResult
-      ? { ...compatibilityResult, filePath: compatibilityResult.filePath, runtimeResult }
-      : compatibilityResult;
+        parentNodeId: newParentId ?? null,
+      }],
+    }, ctx);
   } catch (error) {
-    const diagnostics = createIntentScopedDiagnostics({
+    mapCanonicalError(error, createIntentScopedDiagnostics({
       failedAction: 'node.reparent',
       stage: 'ws.node.reparent',
       details: { nodeId, newParentId: newParentId ?? null },
-    });
-    const typed = error as { code?: number; message?: string; data?: unknown } | Error;
-    if (typeof (typed as { code?: number }).code === 'number') {
-      throw {
-        code: (typed as { code: number }).code,
-        message: (typed as { message?: string }).message,
-        data: withDiagnostics((typed as { data?: unknown }).data, diagnostics),
-      };
-    }
-    const message = (typed as Error).message;
-    if (message === 'NODE_NOT_FOUND') {
-      throw {
-        ...RPC_ERRORS.NODE_NOT_FOUND,
-        data: withDiagnostics({ nodeId }, diagnostics),
-      };
-    }
-    if (message === 'MINDMAP_CYCLE') {
-      throw {
-        ...RPC_ERRORS.MINDMAP_CYCLE,
-        data: withDiagnostics({ nodeId, newParentId }, diagnostics),
-      };
-    }
-    if (message === 'EDIT_NOT_ALLOWED') {
-      throw {
-        ...RPC_ERRORS.EDIT_NOT_ALLOWED,
-        data: withDiagnostics({ nodeId, newParentId }, diagnostics),
-      };
-    }
-    throw {
-      ...RPC_ERRORS.PATCH_FAILED,
-      data: withDiagnostics({ reason: message }, diagnostics),
-    };
+    }));
   }
 }
 

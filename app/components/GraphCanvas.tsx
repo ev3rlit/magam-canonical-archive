@@ -867,7 +867,6 @@ function GraphCanvasContent({
     setActiveGroupFocusGroupId,
     selectNodesByType,
     focusNextNodeByType,
-    currentFile,
     currentCanvasId,
     graphId,
     needsAutoLayout,
@@ -936,7 +935,6 @@ function GraphCanvasContent({
   const relayoutTimerRef = useRef<number | null>(null);
   const relayoutInFlightRef = useRef(false);
   const lastRelayoutAtRef = useRef<Map<string, number>>(new Map());
-  const previousFileRef = useRef<string | null>(currentFile);
   const previousCanvasIdRef = useRef<string | null>(currentCanvasId);
   const pendingViewportRestoreRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
   const clipboardHistory = useRef<{ past: GraphSnapshot[]; future: GraphSnapshot[] }>({
@@ -1281,7 +1279,7 @@ function GraphCanvasContent({
         node,
         selectedNodeIds: runtime.selectedNodeIds,
         resolveNodeFamily: (resolvedNode) => (
-          resolveNodeEditContext(resolvedNode, useGraphStore.getState().currentFile).editMeta?.family
+          resolveNodeEditContext(resolvedNode).editMeta?.family
         ),
         actions: contextMenuActions,
       }), {
@@ -1325,7 +1323,7 @@ function GraphCanvasContent({
       openMenu(createGraphCanvasPaneContextMenu({
         eventPosition: { x: event.clientX, y: event.clientY },
         selectedNodeIds: runtime.selectedNodeIds,
-        canCreateNode: typeof runtime.currentFile === 'string' && runtime.currentFile.length > 0,
+        canCreateNode: typeof runtime.currentCanvasId === 'string' && runtime.currentCanvasId.length > 0,
         actions: contextMenuActions,
       }), {
         triggerElement: event.currentTarget as HTMLElement,
@@ -1549,15 +1547,12 @@ function GraphCanvasContent({
         hasRenderedGraph: lastLayoutedGraphId.current !== null,
         previousCanvasId: previousCanvasIdRef.current,
         currentCanvasId,
-        previousFile: previousFileRef.current,
-        currentFile,
         currentViewport: getViewport(),
         savedViewport: null,
       });
       hasLayouted.current = false;
       setIsGraphVisible(false); // Hide graph=
       lastLayoutedGraphId.current = graphId;
-      previousFileRef.current = currentFile;
       previousCanvasIdRef.current = currentCanvasId;
       lastSizeSignaturesRef.current = new Map();
       relayoutCountRef.current = new Map();
@@ -1565,7 +1560,7 @@ function GraphCanvasContent({
       lastRelayoutAtRef.current = new Map();
       clearPendingRelayout();
     }
-  }, [clearPendingRelayout, currentCanvasId, currentFile, getViewport, graphId]);
+  }, [clearPendingRelayout, currentCanvasId, getViewport, graphId]);
 
   // Trigger Layout when all nodes are initialized (measured)
   useEffect(() => {

@@ -107,7 +107,6 @@ export function createSelectionStructuralIntentEnvelope(input: {
   intentId: 'selection.group' | 'selection.ungroup' | 'selection.z-order.bring-to-front' | 'selection.z-order.send-to-back';
   selectedNodeIds: string[];
   renderedNodeId?: string;
-  currentFile?: string;
   overrides?: Partial<UIIntentEnvelope>;
 }): UIIntentEnvelope {
   return {
