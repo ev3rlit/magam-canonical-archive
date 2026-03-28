@@ -10,7 +10,7 @@
 
 ## Decision 2: RPC logical contract는 유지하고 adapter만 분리한다
 
-- Decision: files/file-tree/render/edit/sync/chat logical method는 기존 경계를 유지하고 transport는 host adapter가 책임진다.
+- Decision: files/file-tree/render/edit/sync logical method는 기존 경계를 유지하고 transport는 host adapter가 책임진다.
 - Rationale: 이미 안정화된 backend surface를 재사용해 migration 리스크를 줄일 수 있다.
 - Alternatives considered:
   - in-process direct 호출로 전환: boundary/ownership 일관성이 깨지고 optional web 재사용성이 떨어진다.

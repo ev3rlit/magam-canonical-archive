@@ -60,13 +60,12 @@ app/
 │   └── api/file-tree/route.ts
 ├── components/
 │   ├── GraphCanvas.tsx
-│   ├── chat/ChatPanel.tsx
 │   ├── nodes/MarkdownNode.tsx
 │   └── ui/CodeBlock.tsx
 ├── hooks/useExportImage.ts
 └── store/
     ├── graph.ts
-    └── chat.ts
+    └── graph.ts
 
 libs/
 └── cli/src/server/http.ts
@@ -88,7 +87,7 @@ docs/features/compile-explorer-performance/README.md
 ## Implementation Status (2026-03-02)
 
 - `app/app/page.tsx`는 thin shell로 축소되었고 `WorkspaceClient` 경계로 분리됨.
-- optional panel 경계(`ChatPanel`, `SearchOverlay`, `StickerInspector`, `QuickOpenDialog`)를 lazy 모듈로 전환함.
+- optional panel 경계(`SearchOverlay`, `StickerInspector`, `QuickOpenDialog`)를 lazy 모듈로 전환함.
 - render parsing 로직을 `app/features/render/parseRenderGraph.ts`로 분리함.
 - `libs/cli/src/server/http.ts`에 render pipeline 계측 + sourceVersion 캐시 + in-flight dedupe를 적용함.
 - `cli.ts` warm-up 옵션/환경변수/strict 정책을 구현함.

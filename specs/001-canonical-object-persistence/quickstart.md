@@ -89,7 +89,7 @@ bun test libs/shared/src/lib/canonical-persistence
 
 ## 7) 실행 노트
 
-- 현재 repo에는 `libs/cli/src/chat/repository`에 SQLite + Drizzle 선례가 있다. 이번 slice는 그 모듈을 재사용하지 않고, canonical persistence 전용 shared module을 새로 둔다.
+- canonical persistence는 별도 shared module로 유지하며, app runtime이나 다른 저장 경로 구현과 직접 결합하지 않는다.
 - local embedded path는 `PGlite`, production path는 PostgreSQL/pgvector 호환 경로를 전제로 한다.
 - headless CLI, app-attached session, plugin runtime은 다음 slice에서 소비자 입장으로 붙는다.
 

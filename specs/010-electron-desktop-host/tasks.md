@@ -65,7 +65,7 @@
 
 **Goal**: renderer product logic을 host-neutral 경계로 분리하고 `/api/*` 직접 의존을 RPC interface 호출로 대체한다.
 
-**Independent Test**: renderer domain 코드에서 `/api/*` 직접 호출과 `electron` 직접 import 없이 동일 기능(files/file-tree/render/edit/sync/chat)을 수행할 수 있어야 한다.
+**Independent Test**: renderer domain 코드에서 `/api/*` 직접 호출과 `electron` 직접 import 없이 동일 기능(files/file-tree/render/edit/sync)을 수행할 수 있어야 한다.
 
 ### Implementation for User Story 2
 
@@ -73,7 +73,6 @@
 - [x] T019 [P] [US2] Introduce renderer-facing host capability interface in `app/features/host/renderer/hostCapabilities.ts`
 - [x] T020 [US2] Replace files/file-tree API usage with RPC client interface in `app/components/editor/WorkspaceClient.tsx`
 - [x] T021 [US2] Replace render API usage with RPC client interface in `app/components/editor/WorkspaceClient.tsx`
-- [x] T022 [P] [US2] Replace chat API usage with RPC client interface in `app/store/chat.ts`
 - [x] T023 [P] [US2] Replace sidebar file-tree API usage with RPC client interface in `app/components/ui/Sidebar.tsx`
 - [x] T024 [US2] Centralize renderer host adapter wiring (including `edit.apply` and `sync.watch` bindings) in `app/features/host/renderer/createHostRuntime.ts`
 - [x] T025 [US2] Convert `app/app/page.tsx` to thin host wrapper around renderer entry in `app/app/page.tsx`
@@ -179,7 +178,6 @@
 
 ```bash
 Task: "T019 [US2] Introduce renderer-facing host capability interface in app/features/host/renderer/hostCapabilities.ts"
-Task: "T022 [US2] Replace chat API usage with RPC client interface in app/store/chat.ts"
 Task: "T023 [US2] Replace sidebar file-tree API usage with RPC client interface in app/components/ui/Sidebar.tsx"
 ```
 
@@ -212,7 +210,7 @@ Task: "T028 [US3] Implement backend process lifecycle controller in app/features
 
 1. Worker A: `app/features/host/contracts/*` + `app/features/host/rpc/*`
 2. Worker B: `app/features/desktop-host/{main,preload,orchestrator}.ts`
-3. Worker C: `app/components/editor/WorkspaceClient.tsx` + `app/store/chat.ts`
+3. Worker C: `app/components/editor/WorkspaceClient.tsx`
 4. Worker D: `app/app/page.tsx` + `app/app/api/*/route.ts`
 5. Worker E: `scripts/dev/desktop-dev.ts` + verification/docs sync
 

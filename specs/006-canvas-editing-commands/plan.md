@@ -28,7 +28,7 @@
 - **I. Think Before Coding**: 기존 `sourceMeta`, `move/update/create/reparent` RPC, AST patcher, history store를 먼저 조사했고, 범위를 TSX-backed command layer로 한정했다.
 - **II. Structural Simplicity**: 신규 persistence layer를 만들지 않고 기존 WS/RPC/patcher를 재사용한다. 새 feature-level 모듈도 `commands.ts`, `editability.ts`, `createDefaults.ts`로 제한해 현재 재사용 이득이 있는 경계만 둔다.
 - **III. Dependency-Linear Design**: 의존성 방향은 `parseRenderGraph/editability -> UI orchestration -> transport -> ws patcher`로 선형화하고, patch helpers는 `filePatcher.ts` 내부 함수 분리까지만 허용한다.
-- **IV. Surgical Changes**: 변경 범위는 `parseRenderGraph`, editing UI, store history, ws patch surface에 집중한다. render engine, tabs, chat, search, layout core는 직접 변경 대상이 아니다.
+- **IV. Surgical Changes**: 변경 범위는 `parseRenderGraph`, editing UI, store history, ws patch surface에 집중한다. render engine, tabs, search, layout core는 직접 변경 대상이 아니다.
 - **V. Goal-Driven Execution**: 각 사용자 스토리는 독립 테스트 가능하도록 command별 acceptance와 회귀 조건을 가졌다. 성공 기준은 최소 diff, 생성 저장, 구조 편집, 롤백/undo 정확도로 측정 가능하다.
 - **Technical Constraints**: Zustand 단일 스토어, Bun 워크플로우, AST patch, path alias 규칙, custom reconciler 기반 렌더 모델을 유지한다.
 
