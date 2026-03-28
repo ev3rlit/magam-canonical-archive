@@ -7,7 +7,7 @@ import { createPaneCreateIntentEnvelope, createRenameIntentEnvelope } from '@/fe
 import { routeIntent } from '@/features/editing/actionRoutingBridge/routeIntent';
 import { makeActionRoutingContext, makeCanonicalNode } from '@/features/editing/actionRoutingBridge/testUtils';
 import type { MutationDispatchDescriptor } from '@/features/editing/actionRoutingBridge/types';
-import { methods } from './methods';
+import { routes, subscriptionRoutes } from './routes';
 
 const tempDirs: string[] = [];
 const originalMagamTargetDir = process.env.MAGAM_TARGET_DIR;
@@ -35,16 +35,23 @@ function sha(content: string): string {
 }
 
 describe('RPC editing methods', () => {
+  it('subscription routes are explicitly registered in the route table', () => {
+    expect(subscriptionRoutes['canvas.subscribe']).toBe(routes['canvas.subscribe']);
+    expect(subscriptionRoutes['canvas.unsubscribe']).toBe(routes['canvas.unsubscribe']);
+    expect(subscriptionRoutes['file.subscribe']).toBe(routes['file.subscribe']);
+    expect(subscriptionRoutes['file.unsubscribe']).toBe(routes['file.unsubscribe']);
+  });
+
   it('canvas.subscribe / canvas.unsubscribe: canvas subscription keys를 등록/해제한다', async () => {
     const subscriptions = new Set<string>();
     const ctx = { ws: {}, subscriptions };
 
-    await expect(methods['canvas.subscribe']({
+    await expect(routes['canvas.subscribe']({
       canvasId: 'doc-live-1',
     }, ctx)).resolves.toEqual({ success: true });
     expect(subscriptions.has('canvas:doc-live-1')).toBe(true);
 
-    await expect(methods['canvas.unsubscribe']({
+    await expect(routes['canvas.unsubscribe']({
       canvasId: 'doc-live-1',
     }, ctx)).resolves.toEqual({ success: true });
     expect(subscriptions.has('canvas:doc-live-1')).toBe(false);
@@ -55,7 +62,7 @@ describe('RPC editing methods', () => {
     const original = await readFile(filePath, 'utf-8');
     const notify = mock(() => { });
 
-    const result = await methods['node.move']({
+    const result = await routes['node.move']({
       filePath,
       nodeId: 'n1',
       x: 100,
@@ -81,7 +88,7 @@ describe('RPC editing methods', () => {
     const relativePath = basename(filePath);
     const notify = mock((_payload: { filePath: string }) => { });
 
-    const result = await methods['node.move']({
+    const result = await routes['node.move']({
       filePath: relativePath,
       nodeId: 'n1',
       x: 77,
@@ -102,7 +109,7 @@ describe('RPC editing methods', () => {
   it('node.update: baseVersion 불일치면 VERSION_CONFLICT', async () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Node id="n1" x={1} y={2} />; }`);
 
-    await expect(methods['node.update']({
+    await expect(routes['node.update']({
       filePath,
       nodeId: 'n1',
       props: { x: 99 },
@@ -118,7 +125,7 @@ describe('RPC editing methods', () => {
     `);
     const original = await readFile(filePath, 'utf-8');
 
-    await expect(methods['node.move']({
+    await expect(routes['node.move']({
       filePath,
       nodeId: 'dup',
       x: 111,
@@ -137,7 +144,7 @@ describe('RPC editing methods', () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }`);
     const original = await readFile(filePath, 'utf-8');
 
-    const result = await methods['node.create']({
+    const result = await routes['node.create']({
       filePath,
       node: { id: 'child', type: 'text', props: { from: 'root', content: 'new' } },
       baseVersion: sha(original),
@@ -165,7 +172,7 @@ describe('RPC editing methods', () => {
     const original = await readFile(filePath, 'utf-8');
     process.env.MAGAM_TARGET_DIR = dir;
 
-    const result = await methods['node.create']({
+    const result = await routes['node.create']({
       filePath: 'untitled-1.graph.tsx',
       node: {
         id: 'shape-1',
@@ -202,7 +209,7 @@ describe('RPC editing methods', () => {
     const original = await readFile(filePath, 'utf-8');
     process.env.MAGAM_TARGET_DIR = dir;
 
-    const result = await methods['node.create']({
+    const result = await routes['node.create']({
       filePath: 'documents/doc-1.graph.tsx',
       node: {
         id: 'shape-compat-1',
@@ -226,7 +233,7 @@ describe('RPC editing methods', () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }`);
     const original = await readFile(filePath, 'utf-8');
 
-    const result = await methods['node.create']({
+    const result = await routes['node.create']({
       filePath,
       node: {
         id: 'shape-1',
@@ -256,7 +263,7 @@ describe('RPC editing methods', () => {
     `);
     const original = await readFile(filePath, 'utf-8');
 
-    const result = await methods['node.create']({
+    const result = await routes['node.create']({
       filePath,
       node: {
         id: 'child-1',
@@ -291,7 +298,7 @@ describe('RPC editing methods', () => {
     const original = await readFile(filePath, 'utf-8');
     process.env.MAGAM_TARGET_DIR = dir;
 
-    const result = await methods['canvas.node.create']({
+    const result = await routes['canvas.node.create']({
       canvasId: 'doc-canonical-1',
       filePath: 'canvases/doc-canonical-1.graph.tsx',
       node: {
@@ -331,7 +338,7 @@ describe('RPC editing methods', () => {
     const original = await readFile(filePath, 'utf-8');
     process.env.MAGAM_TARGET_DIR = dir;
 
-    const result = await methods['canvas.node.create']({
+    const result = await routes['canvas.node.create']({
       canvasId: 'doc-mindmap-root',
       filePath: 'canvases/doc-mindmap-root.graph.tsx',
       node: {
@@ -376,7 +383,7 @@ describe('RPC editing methods', () => {
     const original = await readFile(filePath, 'utf-8');
     process.env.MAGAM_TARGET_DIR = dir;
 
-    await methods['canvas.node.create']({
+    await routes['canvas.node.create']({
       canvasId: 'doc-canonical-2',
       filePath: 'canvases/doc-canonical-2.graph.tsx',
       node: {
@@ -395,7 +402,7 @@ describe('RPC editing methods', () => {
 
     const versionAfterCreate = sha(await readFile(filePath, 'utf-8'));
 
-    await methods['object.body.block.insert']({
+    await routes['object.body.block.insert']({
       canvasId: 'doc-canonical-2',
       filePath: 'canvases/doc-canonical-2.graph.tsx',
       objectId: 'shape-1',
@@ -411,7 +418,7 @@ describe('RPC editing methods', () => {
     }, { ws: {}, subscriptions: new Set() });
 
     const nextVersion = sha(await readFile(filePath, 'utf-8'));
-    await methods['object.body.block.insert']({
+    await routes['object.body.block.insert']({
       canvasId: 'doc-canonical-2',
       filePath: 'canvases/doc-canonical-2.graph.tsx',
       objectId: 'shape-1',
@@ -444,7 +451,7 @@ describe('RPC editing methods', () => {
     `);
     const original = await readFile(filePath, 'utf-8');
 
-    const result = await methods['node.update']({
+    const result = await routes['node.update']({
       filePath,
       nodeId: 'n1',
       props: {
@@ -471,7 +478,7 @@ describe('RPC editing methods', () => {
     `);
     const original = await readFile(filePath, 'utf-8');
 
-    const result = await methods['node.update']({
+    const result = await routes['node.update']({
       filePath,
       nodeId: 'n1',
       props: { content: 'After' },
@@ -496,7 +503,7 @@ describe('RPC editing methods', () => {
 
     let error: unknown;
     try {
-      await methods['node.update']({
+      await routes['node.update']({
         filePath,
         nodeId: 'st-1',
         props: { anchor: 'other' },
@@ -529,7 +536,7 @@ describe('RPC editing methods', () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }`);
     const original = await readFile(filePath, 'utf-8');
 
-    const result = await methods['node.create']({
+    const result = await routes['node.create']({
       filePath,
       node: {
         id: 'st-1',
@@ -562,7 +569,7 @@ describe('RPC editing methods', () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }`);
     const original = await readFile(filePath, 'utf-8');
 
-    const result = await methods['node.create']({
+    const result = await routes['node.create']({
       filePath,
       node: {
         id: 'w-1',
@@ -599,7 +606,7 @@ describe('RPC editing methods', () => {
     `);
     const original = await readFile(filePath, 'utf-8');
 
-    await expect(methods['node.reparent']({
+    await expect(routes['node.reparent']({
       filePath,
       nodeId: 'a',
       newParentId: 'c',
@@ -621,7 +628,7 @@ describe('RPC editing methods', () => {
     `);
     const original = await readFile(filePath, 'utf-8');
 
-    const result = await methods['node.reparent']({
+    const result = await routes['node.reparent']({
       filePath,
       nodeId: 'b',
       newParentId: 'c',
@@ -653,7 +660,7 @@ describe('RPC editing methods', () => {
     `);
     const original = await readFile(filePath, 'utf-8');
 
-    await expect(methods['node.reparent']({
+    await expect(routes['node.reparent']({
       filePath,
       nodeId: 'a-child',
       newParentId: 'b-root',
@@ -670,7 +677,7 @@ describe('RPC editing methods', () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Canvas><Node id="root" /><Text id="temp">Temp</Text></Canvas>; }`);
     const original = await readFile(filePath, 'utf-8');
 
-    const result = await methods['node.delete']({
+    const result = await routes['node.delete']({
       filePath,
       nodeId: 'temp',
       baseVersion: sha(original),
@@ -695,7 +702,7 @@ describe('RPC editing methods', () => {
 
     let error: unknown;
     try {
-      await methods['node.update']({
+      await routes['node.update']({
         filePath,
         nodeId: 'img-mismatch',
         props: { content: '# mismatch' },
@@ -740,7 +747,7 @@ describe('RPC editing methods', () => {
     const nodeOriginal = await readFile(nodePath, 'utf-8');
     const shapeOriginal = await readFile(shapePath, 'utf-8');
 
-    const nodeResult = await methods['node.update']({
+    const nodeResult = await routes['node.update']({
       filePath: nodePath,
       nodeId: 'node-alias',
       props: { fill: '#22c55e' },
@@ -751,7 +758,7 @@ describe('RPC editing methods', () => {
     }, { ws: {}, subscriptions: new Set() }) as { success: boolean; newVersion: string };
 
     const nodePatched = await readFile(nodePath, 'utf-8');
-    const shapeResult = await methods['node.update']({
+    const shapeResult = await routes['node.update']({
       filePath: shapePath,
       nodeId: 'shape-alias',
       props: { fill: '#22c55e' },
@@ -781,7 +788,7 @@ describe('RPC editing methods', () => {
 
     let error: unknown;
     try {
-      await methods['node.update']({
+      await routes['node.update']({
         filePath,
         nodeId: 'node-invalid',
         props: { participants: ['A', 'B'] },
@@ -821,7 +828,7 @@ describe('RPC editing methods', () => {
 
     let error: unknown;
     try {
-      await methods['node.create']({
+      await routes['node.create']({
         filePath,
         node: {
           id: 'child-missing-parent',
@@ -888,7 +895,7 @@ describe('RPC editing methods', () => {
     const step = routed.value.steps[0] as MutationDispatchDescriptor;
     expect(step.kind).toBe('compatibility-mutation');
     if (step.kind !== 'compatibility-mutation') return;
-    const result = await methods[step.actionId]({
+    const result = await routes[step.actionId]({
       ...step.payload,
       baseVersion: sha(original),
       originId: 'client-bridge',
@@ -930,7 +937,7 @@ describe('RPC editing methods', () => {
     const createCommand = step.payload.commands.find((command) => command.name === 'canvas.node.create');
     expect(createCommand?.name).toBe('canvas.node.create');
     if (!createCommand || createCommand.name !== 'canvas.node.create') return;
-    const result = await methods['canvas.runtime.mutate']({
+    const result = await routes['canvas.runtime.mutate']({
       canvasId: step.payload.canvasId,
       batch: {
         workspaceId: 'workspace',
@@ -952,7 +959,7 @@ describe('RPC editing methods', () => {
     const compatibilitySource = await readFile(filePath, 'utf-8');
     expect(compatibilitySource).toBe(original);
 
-    const projections = await methods['canvas.runtime.projections']({
+    const projections = await routes['canvas.runtime.projections']({
       canvasId: step.payload.canvasId,
     }, { ws: {}, subscriptions: new Set() }) as {
       renderProjection: {
@@ -973,7 +980,7 @@ describe('RPC editing methods', () => {
       export default function Sample(){ return <Canvas><Node id="root" /></Canvas>; }
     `));
 
-    const mutate = await methods['canvas.runtime.mutate']({
+    const mutate = await routes['canvas.runtime.mutate']({
       canvasId: 'doc-runtime-history',
       batch: {
         workspaceId: 'workspace',
@@ -1005,7 +1012,7 @@ describe('RPC editing methods', () => {
       canvasRevision: 1,
     });
 
-    const afterCreate = await methods['canvas.runtime.projections']({
+    const afterCreate = await routes['canvas.runtime.projections']({
       canvasId: 'doc-runtime-history',
     }, { ws: {}, subscriptions: new Set() }) as {
       renderProjection: {
@@ -1019,7 +1026,7 @@ describe('RPC editing methods', () => {
       ]),
     );
 
-    const undone = await methods['canvas.runtime.undo']({
+    const undone = await routes['canvas.runtime.undo']({
       canvasId: 'doc-runtime-history',
       actorId: 'client-history',
       sessionId: 'session-history',
@@ -1036,7 +1043,7 @@ describe('RPC editing methods', () => {
       canvasRevision: 2,
     });
 
-    const afterUndo = await methods['canvas.runtime.projections']({
+    const afterUndo = await routes['canvas.runtime.projections']({
       canvasId: 'doc-runtime-history',
     }, { ws: {}, subscriptions: new Set() }) as {
       renderProjection: {
@@ -1051,7 +1058,7 @@ describe('RPC editing methods', () => {
       ]),
     );
 
-    const redone = await methods['canvas.runtime.redo']({
+    const redone = await routes['canvas.runtime.redo']({
       canvasId: 'doc-runtime-history',
       actorId: 'client-history',
       sessionId: 'session-history',
@@ -1068,7 +1075,7 @@ describe('RPC editing methods', () => {
       canvasRevision: 3,
     });
 
-    const afterRedo = await methods['canvas.runtime.projections']({
+    const afterRedo = await routes['canvas.runtime.projections']({
       canvasId: 'doc-runtime-history',
     }, { ws: {}, subscriptions: new Set() }) as {
       renderProjection: {

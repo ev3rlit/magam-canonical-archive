@@ -14,7 +14,7 @@
 | 8 | Canvas UI | `app/components/editor/workspaceRegistry.ts` | 불필요한 레이어 | component 영역 아래에서 app-state adapter 와 migration 을 처리한다. | workspace shell feature 또는 host adapter 로 이동한다. | Transitional |
 | 9 | Canvas UI | `app/features/canvas-ui-entrypoints/selection-floating-menu/contribution.ts` | 불필요한 레이어 | 선택 메뉴용 얇은 contribution wrapper 가 남아 있다. | 실질적 확장 포인트가 생길 때까지 축소한다. | Transitional |
 | 10 | Canvas UI | `app/processes/canvas-runtime/createCanvasRuntime.ts` | 오버엔지니어링 | 고정된 네 표면에 비해 slot/contribution runtime 이 상대적으로 크다. | 실제 확장 지점만 남기고 단순 runtime 으로 줄인다. | Hybrid |
-| 11 | Runtime/WS | `app/ws/methods.ts` | 과도한 전환 계층 | RPC parsing, runtime mutation, compatibility patch 를 같이 수행한다. | runtime adapter 와 compatibility adapter 로 분리한다. | Transitional |
+| 11 | Runtime/WS | `app/ws/routes.ts` + `app/ws/handlers/*` | 과도한 전환 계층 | route registry 는 얇아졌지만 canvas/history/compatibility handler 에 runtime mutation, projection, compatibility orchestration 이 남아 있다. | route registry 는 유지하고 runtime adapter 와 compatibility adapter 책임을 더 줄인다. | Transitional |
 | 12 | Runtime/WS | `app/ws/filePatcher.ts` | 과도한 전환 계층 | whole-file AST patch 가 핵심 write 경로로 남아 있다. | shrink-only compatibility adapter 로 바꾼다. | Transitional |
 | 13 | Runtime/WS | `app/hooks/useCanvasRuntime.ts` | 중복 오케스트레이션 | client 가 runtime command payload 와 source 해석을 다시 만든다. | shared codec 또는 server-native payload 를 소비한다. | Transitional |
 | 14 | Runtime/WS | `app/features/render/parseRenderGraph.ts` | 과도한 전환 계층 | legacy graph parse 와 runtime overlay 를 같이 담당한다. | thin render adapter 로 축소한다. | Transitional |
@@ -34,4 +34,3 @@
 | 28 | CLI/Bootstrap | `libs/cli/src/commands/new.ts` | 문서-코드 드리프트 | `@magam/core` 템플릿과 `init.ts` 스토리가 충돌한다. | 초기화와 생성 템플릿을 하나의 authoring story 로 합친다. | Transitional |
 | 29 | CLI/Bootstrap | `libs/cli/src/core/executor.ts` | 불필요한 레이어 | temp file + require shim 기반 실행 경로를 추가로 가진다. | module resolution 표면을 하나로 줄인다. | Transitional |
 | 30 | CLI/Bootstrap | `libs/core/src/index.ts` | 오버엔지니어링 | authoring DSL 과 internal/runtime helper 를 한 barrel 로 export 한다. | authoring-facing export 와 internal export 를 분리한다. | Hybrid |
-

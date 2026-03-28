@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, it } from 'bun:test';
-import { runWithOptionalFileMutex } from './methods';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { dirname, join } from 'path';
+import { tmpdir } from 'os';
+import {
+  compatibilitySubscriptionHandlers,
+  runWithOptionalFileMutex,
+} from './compatibilityHandlers';
 
 const originalMutexEnv = process.env.MAGAM_WS_ENABLE_FILE_MUTEX;
+const tempDirs: string[] = [];
 
 function createDeferred<T = void>() {
   let resolve: (value: T | PromiseLike<T>) => void = () => { };
@@ -25,7 +32,37 @@ afterEach(() => {
   }
 });
 
+afterEach(async () => {
+  await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  tempDirs.length = 0;
+});
+
 describe('runWithOptionalFileMutex', () => {
+  it('file.subscribe / file.unsubscribe resolve compatibility file paths through the dedicated handler', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'magam-compat-subscribe-'));
+    tempDirs.push(dir);
+    const documentsDir = join(dir, 'documents');
+    await mkdir(documentsDir, { recursive: true });
+    const filePath = join(documentsDir, 'doc-1.graph.tsx');
+    await writeFile(filePath, 'export default function Doc(){ return null; }', 'utf-8');
+
+    process.env.MAGAM_TARGET_DIR = dir;
+    const subscriptions = new Set<string>();
+    const ctx = { ws: {}, subscriptions };
+
+    await expect(compatibilitySubscriptionHandlers['file.subscribe']({
+      filePath: 'documents/doc-1.graph.tsx',
+      rootPath: dir,
+    }, ctx)).resolves.toEqual({ success: true });
+    expect(subscriptions.has(filePath)).toBe(true);
+
+    await expect(compatibilitySubscriptionHandlers['file.unsubscribe']({
+      filePath: 'documents/doc-1.graph.tsx',
+      rootPath: dir,
+    }, ctx)).resolves.toEqual({ success: true });
+    expect(subscriptions.has(filePath)).toBe(false);
+  });
+
   it('mutex OFF면 같은 파일 작업도 병렬로 시작될 수 있다', async () => {
     process.env.MAGAM_WS_ENABLE_FILE_MUTEX = '0';
 
@@ -116,5 +153,29 @@ describe('runWithOptionalFileMutex', () => {
       return 'ok';
     })).resolves.toBe('ok');
     expect(started).toBe(true);
+  });
+
+  it('compatibilityHandlers만 filePatcher를 직접 import한다', async () => {
+    const handlersDir = join(process.cwd(), 'app', 'ws', 'handlers');
+    const files = [
+      'canvasHandlers.ts',
+      'workspaceHandlers.ts',
+      'appStateHandlers.ts',
+      'compatibilityHandlers.ts',
+      'historyHandlers.ts',
+    ];
+
+    const contents = await Promise.all(
+      files.map(async (file) => ({
+        file,
+        source: await readFile(join(handlersDir, file), 'utf-8'),
+      })),
+    );
+
+    const importers = contents
+      .filter(({ source }) => source.includes("from '../filePatcher'"))
+      .map(({ file }) => file);
+
+    expect(importers).toEqual(['compatibilityHandlers.ts']);
   });
 });

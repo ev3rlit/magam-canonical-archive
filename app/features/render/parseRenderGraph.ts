@@ -31,7 +31,10 @@ import {
   createEditMetaFromRuntimeProjection,
   deriveEditMeta,
 } from '@/features/editing/editability';
-import { createCanonicalFromLegacyAliasInput } from '@/features/render/aliasNormalization';
+import {
+  createCanonicalFromLegacyAliasInput,
+  inferLegacyContentCapability,
+} from '@/features/render/aliasNormalization';
 import type {
   CapabilityBag,
   CanonicalObjectAlias,
@@ -717,66 +720,14 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
       explicit.ports = { ports: legacyProps.ports };
     }
 
-    const textContent =
-      readStringProp(legacyProps.text)
-      || readStringProp(legacyProps.label)
-      || readStringProp(legacyProps.value)
-      || readTextContentFromChildren(
-        legacyChildren,
-        alias === 'Node' ? '\n' : alias === 'Sticker' ? ' ' : '',
-      );
-    const markdownSource =
-      readStringProp(legacyProps.content)
-      || readStringProp(legacyProps.source)
-      || readMarkdownSourceFromChildren(legacyChildren);
-    const mediaSrc = readStringProp(legacyProps.src);
-
-    if (contentCapability) {
-      explicit.content = contentCapability as unknown as CapabilityBag['content'];
-      return explicit;
-    }
-
-    if (alias === 'Node' || alias === 'Shape' || alias === 'Sticky' || alias === 'Sticker') {
-      if (alias === 'Node' && markdownSource !== undefined) {
-        explicit.content = { kind: 'markdown', source: markdownSource };
-      } else if (textContent !== undefined) {
-        explicit.content = {
-          kind: 'text',
-          value: textContent,
-          ...(legacyProps.fontSize !== undefined ? { fontSize: legacyProps.fontSize as number | string } : {}),
-        };
-      }
-    }
-
-    if (alias === 'Markdown' && markdownSource !== undefined) {
-      explicit.content = {
-        kind: 'markdown',
-        source: markdownSource,
-        ...(legacyProps.size !== undefined ? { size: legacyProps.size } : {}),
-      };
-    }
-
-    if (alias === 'Image' && mediaSrc !== undefined) {
-      explicit.content = {
-        kind: 'media',
-        src: mediaSrc,
-        ...(readStringProp(legacyProps.alt) !== undefined ? { alt: readStringProp(legacyProps.alt) } : {}),
-        ...(readStringProp(legacyProps.fit) !== undefined ? { fit: readStringProp(legacyProps.fit) as any } : {}),
-        ...(readNumberProp(legacyProps.width) !== undefined ? { width: readNumberProp(legacyProps.width) } : {}),
-        ...(readNumberProp(legacyProps.height) !== undefined ? { height: readNumberProp(legacyProps.height) } : {}),
-      };
-    }
-
-    if (alias === 'Sequence') {
-      const participants = Array.isArray(legacyProps.participants) ? legacyProps.participants : undefined;
-      const messages = Array.isArray(legacyProps.messages) ? legacyProps.messages : undefined;
-      if (participants !== undefined || messages !== undefined) {
-        explicit.content = {
-          kind: 'sequence',
-          participants: participants ?? [],
-          messages: messages ?? [],
-        };
-      }
+    const explicitContent = inferLegacyContentCapability({
+      alias,
+      legacyProps,
+      legacyChildren,
+      explicitContent: contentCapability,
+    });
+    if (explicitContent) {
+      explicit.content = explicitContent as unknown as CapabilityBag['content'];
     }
 
     return explicit;

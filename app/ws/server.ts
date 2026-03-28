@@ -16,7 +16,17 @@ import {
     RPC_ERRORS,
     type JsonRpcRequest,
 } from './rpc';
-import { methods, type RpcContext } from './methods';
+import {
+    getRouteHandler,
+    isCompatibilitySubscriptionMethod,
+} from './routes';
+import type { RpcContext } from './shared/params';
+import {
+    createCanvasSubscriptionKey,
+    isCanvasSubscriptionKey,
+    matchesFileSubscription,
+    WS_NOTIFICATION_METHODS,
+} from './shared/subscriptions';
 import { WS_SERVER_MESSAGES } from './messages';
 
 const PORT = parseInt(process.env.MAGAM_WS_PORT || '3001', 10);
@@ -73,7 +83,7 @@ const server = Bun.serve({
             }
 
             // Find handler
-            const handler = methods[request.method];
+            const handler = getRouteHandler(request.method);
             if (!handler) {
                 ws.send(JSON.stringify(createErrorResponse(
                     request.id,
@@ -93,8 +103,11 @@ const server = Bun.serve({
 
             try {
                 const result = await handler(request.params || {}, ctx);
-                if (request.method === 'file.subscribe') {
+                if (isCompatibilitySubscriptionMethod(request.method)) {
                     ctx.subscriptions.forEach((subscriptionPath) => {
+                        if (isCanvasSubscriptionKey(subscriptionPath)) {
+                            return;
+                        }
                         ensureWatchedSubscriptionPath(subscriptionPath);
                     });
                 }
@@ -128,6 +141,50 @@ const watcher = watch(watchPath, {
     ignored: /(^|[\/\\])\../, // ignore dotfiles
 });
 
+function sendWsNotification(
+    ws: unknown,
+    method: string,
+    params: Record<string, unknown>,
+): void {
+    (ws as { send: (data: string) => void }).send(
+        JSON.stringify(createNotification(method, params))
+    );
+}
+
+function forEachCanvasSubscriber(
+    canvasId: string,
+    callback: (ws: unknown) => void,
+): void {
+    clients.forEach((subscriptions, ws) => {
+        if (!subscriptions.has(createCanvasSubscriptionKey(canvasId))) {
+            return;
+        }
+        callback(ws);
+    });
+}
+
+function forEachFileSubscriber(
+    resolvedFilePath: string,
+    callback: (ws: unknown) => void,
+): void {
+    clients.forEach((subscriptions, ws) => {
+        let matched = false;
+        for (const sub of subscriptions) {
+            if (isCanvasSubscriptionKey(sub)) {
+                continue;
+            }
+            if (matchesFileSubscription(resolvedFilePath, sub)) {
+                matched = true;
+                break;
+            }
+        }
+
+        if (matched) {
+            callback(ws);
+        }
+    });
+}
+
 function resolveCompatibilitySubscribedWatchPath(filePath: string, rootPath?: string): string {
     if (isAbsolute(filePath)) {
         return filePath;
@@ -155,16 +212,12 @@ function broadcastCompatibilityFileListUpdate(event: 'add' | 'unlink', filePath:
         ? filePath.replace(`${watchPath}/`, '')
         : filePath;
 
-    const notification = createNotification('files.changed', {
-        event,
-        filePath: relativePath,
-        timestamp: Date.now(),
-    });
-
-    const message = JSON.stringify(notification);
-
     clients.forEach((_, ws) => {
-        (ws as { send: (data: string) => void }).send(message);
+        sendWsNotification(ws, WS_NOTIFICATION_METHODS.filesChanged, {
+            event,
+            filePath: relativePath,
+            timestamp: Date.now(),
+        });
     });
 
     console.log(WS_SERVER_MESSAGES.broadcastCompatibilityFilesChanged(event, relativePath));
@@ -178,22 +231,15 @@ function broadcastCanvasChanged(payload: {
     rootPath?: string;
 }) {
     const now = Date.now();
-    const canvasNotification = createNotification('canvas.changed', {
-        canvasId: payload.canvasId,
-        canvasRevision: payload.canvasRevision,
-        originId: payload.originId,
-        commandId: payload.commandId,
-        timestamp: now,
-        ...(payload.rootPath ? { rootPath: payload.rootPath } : {}),
-    });
-    const canvasMessage = JSON.stringify(canvasNotification);
-
-    clients.forEach((subscriptions, ws) => {
-        if (!subscriptions.has(`canvas:${payload.canvasId}`)) {
-            return;
-        }
-
-        (ws as { send: (data: string) => void }).send(canvasMessage);
+    forEachCanvasSubscriber(payload.canvasId, (ws) => {
+        sendWsNotification(ws, WS_NOTIFICATION_METHODS.canvasChanged, {
+            canvasId: payload.canvasId,
+            canvasRevision: payload.canvasRevision,
+            originId: payload.originId,
+            commandId: payload.commandId,
+            timestamp: now,
+            ...(payload.rootPath ? { rootPath: payload.rootPath } : {}),
+        });
     });
     console.log(WS_SERVER_MESSAGES.broadcastCanvasChanged(payload.canvasId));
 }
@@ -211,58 +257,31 @@ function broadcastFileChanged(payload: {
     const now = Date.now();
     recentCommandEvents.set(payload.resolvedFilePath, now);
     if (payload.canvasId) {
-        const canvasNotification = createNotification('canvas.changed', {
-            canvasId: payload.canvasId,
-            newVersion: payload.newVersion,
-            ...(typeof payload.canvasRevision === 'number' ? { canvasRevision: payload.canvasRevision } : {}),
+        forEachCanvasSubscriber(payload.canvasId, (ws) => {
+            sendWsNotification(ws, WS_NOTIFICATION_METHODS.canvasChanged, {
+                canvasId: payload.canvasId,
+                newVersion: payload.newVersion,
+                ...(typeof payload.canvasRevision === 'number' ? { canvasRevision: payload.canvasRevision } : {}),
+                originId: payload.originId,
+                commandId: payload.commandId,
+                timestamp: now,
+                ...(payload.rootPath ? { rootPath: payload.rootPath } : {}),
+            });
+        });
+        console.log(WS_SERVER_MESSAGES.broadcastCanvasChanged(payload.canvasId));
+    }
+
+    forEachFileSubscriber(payload.resolvedFilePath, (ws) => {
+        sendWsNotification(ws, WS_NOTIFICATION_METHODS.fileChanged, {
+            ...(payload.canvasId ? { canvasId: payload.canvasId } : {}),
+            filePath: payload.filePath,
+            resolvedFilePath: payload.resolvedFilePath,
+            version: payload.newVersion,
             originId: payload.originId,
             commandId: payload.commandId,
             timestamp: now,
             ...(payload.rootPath ? { rootPath: payload.rootPath } : {}),
         });
-        const canvasMessage = JSON.stringify(canvasNotification);
-
-        clients.forEach((subscriptions, ws) => {
-            if (!subscriptions.has(`canvas:${payload.canvasId}`)) {
-                return;
-            }
-
-            (ws as { send: (data: string) => void }).send(canvasMessage);
-        });
-        console.log(WS_SERVER_MESSAGES.broadcastCanvasChanged(payload.canvasId));
-    }
-
-    const fileNotification = createNotification('file.changed', {
-        ...(payload.canvasId ? { canvasId: payload.canvasId } : {}),
-        filePath: payload.filePath,
-        resolvedFilePath: payload.resolvedFilePath,
-        version: payload.newVersion,
-        originId: payload.originId,
-        commandId: payload.commandId,
-        timestamp: now,
-        ...(payload.rootPath ? { rootPath: payload.rootPath } : {}),
-    });
-    const fileMessage = JSON.stringify(fileNotification);
-
-    clients.forEach((subscriptions, ws) => {
-        let matched = false;
-        for (const sub of subscriptions) {
-            if (sub.startsWith('canvas:')) {
-                continue;
-            }
-            if (
-                payload.resolvedFilePath === sub ||
-                payload.resolvedFilePath.endsWith(sub) ||
-                sub.endsWith(payload.resolvedFilePath)
-            ) {
-                matched = true;
-                break;
-            }
-        }
-
-        if (matched) {
-            (ws as { send: (data: string) => void }).send(fileMessage);
-        }
     });
 
     console.log(WS_SERVER_MESSAGES.broadcastFileChanged(payload.resolvedFilePath));
@@ -288,30 +307,16 @@ watcher.on('change', async (filePath) => {
     }
 
     // Broadcast to subscribed clients
-    clients.forEach((subscriptions, ws) => {
-        // Check if any subscription matches the changed file
-        // Support both full path and filename matching
-        let matchedSubscription: string | null = null;
-
-        for (const sub of subscriptions) {
-            if (filePath === sub || filePath.endsWith(sub) || sub.endsWith(filePath)) {
-                matchedSubscription = sub;
-                break;
-            }
-        }
-
-        if (matchedSubscription) {
-            const notification = createNotification('file.changed', {
-                filePath: matchedSubscription, // Send back the subscription path
-                resolvedFilePath: matchedSubscription,
-                version,
-                originId: 'external',
-                commandId: `watch:${now}`,
-                timestamp: now,
-            });
-            (ws as { send: (data: string) => void }).send(JSON.stringify(notification));
-            console.log(WS_SERVER_MESSAGES.notifiedClientAbout(matchedSubscription));
-        }
+    forEachFileSubscriber(filePath, (ws) => {
+        sendWsNotification(ws, WS_NOTIFICATION_METHODS.fileChanged, {
+            filePath,
+            resolvedFilePath: filePath,
+            version,
+            originId: 'external',
+            commandId: `watch:${now}`,
+            timestamp: now,
+        });
+        console.log(WS_SERVER_MESSAGES.notifiedClientAbout(filePath));
     });
 });
 

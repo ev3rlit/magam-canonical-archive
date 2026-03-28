@@ -28,7 +28,7 @@
 | 1 | `app/components/GraphCanvas.tsx` | Canvas UI | 대형 파일/과잉 책임 | 렌더, selection, context menu, drag/create, overlay, keyboard, runtime binding 이 한 파일에 모여 있다. |
 | 2 | `app/features/editor/pages/CanvasEditorPage.tsx` | Canvas UI | 중복 오케스트레이션 | 페이지 부트스트랩과 액션 핸들러가 `GraphCanvas` 및 action routing 과 역할이 겹친다. |
 | 3 | `app/store/graph.ts` | Canvas UI | 대형 파일/과잉 책임 | graph state, workspace registry, text edit, overlay, optimistic routing 까지 한 store 에 들어가 있다. |
-| 4 | `app/ws/methods.ts` | Runtime/WS | 과도한 전환 계층 | RPC 파싱, runtime command 생성, compatibility patch, 버전 락을 한곳에서 처리한다. |
+| 4 | `app/ws/routes.ts` + `app/ws/handlers/*` | Runtime/WS | 과도한 전환 계층 | route registry 는 얇아졌지만 domain handlers 가 runtime command 생성, compatibility patch orchestration, subscription 경계를 계속 안고 있다. |
 | 5 | `app/features/editing/actionRoutingBridge/registry.ts` | Canvas UI | 오버엔지니어링 | intent normalize, gating, dispatch plan, optimistic metadata 가 한 registry 에 과밀하다. |
 | 6 | `app/features/render/parseRenderGraph.ts` | Runtime/WS | 과도한 전환 계층 | legacy graph 파싱, canonical 보정, runtime projection overlay 를 동시에 수행한다. |
 | 7 | `app/ws/filePatcher.ts` | Runtime/WS | 과도한 전환 계층 | whole-file AST patch 기반 write owner 가 아직 크게 남아 있다. |
@@ -40,6 +40,7 @@
 
 - [Canvas UI 오케스트레이션](./canvas-ui-orchestration.md)
 - [Runtime / WS Read-Write 경계](./runtime-read-write-boundary.md)
+- [RuntimeWS 리팩터링 작업 문서](../features/m2/runtimews-refactoring/README.md)
 - [CLI Bootstrap / Surface Drift](./cli-bootstrap-and-surface-drift.md)
 - [전체 파일 인벤토리](./file-inventory.md)
 
@@ -95,7 +96,7 @@ flowchart LR
 ## 우선 감량 후보
 
 - `Canvas UI`: `GraphCanvas.tsx`, `CanvasEditorPage.tsx`, `graph.ts`
-- `Runtime/WS`: `methods.ts`, `filePatcher.ts`, `parseRenderGraph.ts`, `render-canvas.ts`
+- `Runtime/WS`: `routes.ts`, `handlers/*`, `filePatcher.ts`, `parseRenderGraph.ts`, `render-canvas.ts`
 - `CLI`: `bin.ts`, `cli.ts`, `scripts/dev/app-dev.ts`, `scripts/desktop/dev.ts`
 
 ## 보류해야 할 코어

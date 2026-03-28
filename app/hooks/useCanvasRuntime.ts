@@ -27,6 +27,19 @@ import {
   type VersionConflictMetricsSnapshot,
 } from './useFileSync.shared';
 import type { JsonRpcNotification, JsonRpcRequest, JsonRpcResponse } from '@/ws/rpc';
+import {
+  buildCanvasNodeCreateCommand,
+  buildObjectBodyBlockInsertCommand,
+  buildRuntimeContentUpdateCommand,
+  buildRuntimePresentationStylePatch,
+  resolveCanonicalObjectId,
+  resolveRuntimeContentKind,
+  resolveSourceNodeId,
+} from '@/ws/shared/runtimeTransforms';
+import {
+  WS_NOTIFICATION_METHODS,
+  WS_SUBSCRIPTION_METHODS,
+} from '@/ws/shared/subscriptions';
 
 export { RpcClientError } from './useFileSync.shared';
 
@@ -70,133 +83,40 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function resolveSourceNodeId(node: { id: string; data?: unknown }): string {
-  const data = isRecord(node.data) ? node.data : {};
-  const runtimeEditing = isRecord(data.runtimeEditing) ? data.runtimeEditing : null;
-  if (typeof runtimeEditing?.nodeId === 'string' && runtimeEditing.nodeId.length > 0) {
-    return runtimeEditing.nodeId;
-  }
-
-  const sourceMeta = isRecord(data.sourceMeta) ? data.sourceMeta : null;
-  if (typeof sourceMeta?.sourceId === 'string' && sourceMeta.sourceId.length > 0) {
-    return sourceMeta.sourceId;
-  }
-
-  return node.id;
-}
-
-function resolveCanonicalObjectId(node: { id: string; data?: unknown }): string | null {
-  const data = isRecord(node.data) ? node.data : {};
-  const runtimeEditing = isRecord(data.runtimeEditing) ? data.runtimeEditing : null;
-  if (typeof runtimeEditing?.canonicalObjectId === 'string' && runtimeEditing.canonicalObjectId.length > 0) {
-    return runtimeEditing.canonicalObjectId;
-  }
-
-  const canonicalObject = isRecord(data.canonicalObject) ? data.canonicalObject : null;
-  const core = canonicalObject && isRecord(canonicalObject.core) ? canonicalObject.core : null;
-  if (typeof core?.id === 'string' && core.id.length > 0) {
-    return core.id;
-  }
-
-  return null;
-}
-
-function resolveContentKind(node: { type?: string; data?: unknown }): 'text' | 'markdown' | 'media' | 'sequence' | 'document' {
-  const data = isRecord(node.data) ? node.data : {};
-  const canonicalObject = isRecord(data.canonicalObject) ? data.canonicalObject : null;
-  const capabilities = canonicalObject && isRecord(canonicalObject.capabilities)
-    ? canonicalObject.capabilities
-    : null;
-  const content = capabilities && isRecord(capabilities.content)
-    ? capabilities.content
-    : null;
-  const kind = typeof content?.kind === 'string' ? content.kind : null;
-  if (kind === 'text' || kind === 'markdown' || kind === 'media' || kind === 'sequence' || kind === 'document') {
-    return kind;
-  }
-  return node.type === 'text' ? 'text' : 'markdown';
-}
-
-function toRuntimeNodeKind(nodeType: string): Extract<CanvasRuntimeCommandV1, { name: 'canvas.node.create' }>['kind'] {
-  return nodeType === 'sticker' ? 'sticker' : 'node';
-}
-
-function toRuntimeNodeType(nodeType: string): string {
-  return nodeType === 'mindmap' ? 'shape' : nodeType;
-}
-
-function toRuntimeCreatePlacement(placement: Record<string, unknown>): Extract<CanvasRuntimeCommandV1, { name: 'canvas.node.create' }>['placement'] {
-  if (placement.mode === 'mindmap-child' && typeof placement.parentId === 'string') {
-    return {
-      mode: 'mindmap-child',
-      parentNodeId: placement.parentId,
-    };
-  }
-
-  if (placement.mode === 'mindmap-sibling' && typeof placement.siblingOf === 'string') {
-    return {
-      mode: 'mindmap-sibling',
-      siblingOfNodeId: placement.siblingOf,
-      parentNodeId: placement.parentId === null
-        ? null
-        : typeof placement.parentId === 'string'
-          ? placement.parentId
-          : null,
-    };
-  }
-
-  if (placement.mode === 'mindmap-root' && typeof placement.x === 'number' && typeof placement.y === 'number') {
-    return {
-      mode: 'mindmap-root',
-      x: placement.x,
-      y: placement.y,
-      mindmapId: typeof placement.mindmapId === 'string' && placement.mindmapId.length > 0
-        ? placement.mindmapId
-        : `mindmap-${crypto.randomUUID()}`,
-    };
-  }
-
-  if (typeof placement.x === 'number' && typeof placement.y === 'number') {
-    return {
-      mode: 'canvas-absolute',
-      x: placement.x,
-      y: placement.y,
-    };
-  }
-
-  throw new Error('INVALID_RUNTIME_CREATE_PLACEMENT');
-}
-
-function toRuntimeBodyBlock(block: Record<string, unknown>): Extract<CanvasRuntimeCommandV1, { name: 'object.body.block.insert' }>['block'] {
-  const blockId = typeof block.id === 'string' ? block.id : crypto.randomUUID();
-  if (block.blockType === 'text') {
-    return {
-      blockId,
-      kind: 'paragraph',
-      props: {
-        text: typeof block.text === 'string' ? block.text : '',
-      },
-    };
-  }
-
-  if (block.blockType === 'markdown') {
-    return {
-      blockId,
-      kind: 'callout',
-      props: {
-        source: typeof block.source === 'string' ? block.source : '',
-      },
-    };
-  }
-
-  return {
-    blockId,
-    kind: 'custom',
-    props: {
-      ...(isRecord(block.payload) ? block.payload : {}),
-      ...(typeof block.blockType === 'string' ? { blockType: block.blockType } : {}),
-    },
+export function buildCanvasSubscriptionRequests(input: {
+  canvasId: string;
+  workspaceRootPath?: string | null;
+  startingId: number;
+  subscribe: boolean;
+}): JsonRpcRequest[] {
+  const params = {
+    canvasId: input.canvasId,
+    ...(input.workspaceRootPath ? { rootPath: input.workspaceRootPath } : {}),
   };
+  const methods = input.subscribe
+    ? [
+        WS_SUBSCRIPTION_METHODS.canvasSubscribe,
+        WS_SUBSCRIPTION_METHODS.fileSubscribe,
+      ]
+    : [
+        WS_SUBSCRIPTION_METHODS.canvasUnsubscribe,
+        WS_SUBSCRIPTION_METHODS.fileUnsubscribe,
+      ];
+
+  return methods.map((method, index) => ({
+    jsonrpc: '2.0',
+    id: input.startingId + index,
+    method,
+    params,
+  }));
+}
+
+export function isSubscriptionNotificationMethod(method: string): boolean {
+  return (
+    method === WS_NOTIFICATION_METHODS.canvasChanged
+    || method === WS_NOTIFICATION_METHODS.fileChanged
+    || method === WS_NOTIFICATION_METHODS.filesChanged
+  );
 }
 
 export function useCanvasRuntime(
@@ -300,7 +220,7 @@ export function useCanvasRuntime(
       return;
     }
 
-    if ('method' in data && data.method === 'canvas.changed') {
+    if ('method' in data && data.method === WS_NOTIFICATION_METHODS.canvasChanged) {
       const incomingCanvasId = typeof data.params?.canvasId === 'string' ? data.params.canvasId : undefined;
       const incomingVersion = typeof data.params?.newVersion === 'string' ? data.params.newVersion : undefined;
       const incomingCanvasRevision = typeof data.params?.canvasRevision === 'number' ? data.params.canvasRevision : undefined;
@@ -334,7 +254,28 @@ export function useCanvasRuntime(
       return;
     }
 
-    if ('method' in data && data.method === 'files.changed') {
+    if ('method' in data && data.method === WS_NOTIFICATION_METHODS.fileChanged) {
+      const incomingCanvasId = typeof data.params?.canvasId === 'string' ? data.params.canvasId : undefined;
+      const incomingVersion = typeof data.params?.version === 'string' ? data.params.version : undefined;
+      const incomingOriginId = data.params?.originId;
+      const incomingCommandId = typeof data.params?.commandId === 'string' ? data.params.commandId : undefined;
+      const { clientId, setCanvasVersion } = useGraphStore.getState();
+      pruneExpiredOwnCommands(recentOwnCommandsRef.current, Date.now());
+
+      if (incomingCanvasId && incomingVersion) {
+        setCanvasVersion(incomingCanvasId, incomingVersion);
+      }
+
+      const isOwnCommand = typeof incomingCommandId === 'string'
+        && recentOwnCommandsRef.current.has(incomingCommandId)
+        && incomingOriginId === clientId;
+      if (!isOwnCommand) {
+        onCanvasInvalidated();
+      }
+      return;
+    }
+
+    if ('method' in data && data.method === WS_NOTIFICATION_METHODS.filesChanged) {
       onCanvasRegistryChanged?.();
     }
   }, [onCanvasInvalidated, onCanvasRegistryChanged]);
@@ -359,10 +300,17 @@ export function useCanvasRuntime(
 
     ws.onopen = () => {
       if (canvasId) {
-        sendRequest('canvas.subscribe', {
+        const requests = buildCanvasSubscriptionRequests({
           canvasId,
-          ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
-        }).catch((err) => console.error('[CanvasRuntime] Subscribe failed:', err));
+          workspaceRootPath,
+          startingId: requestIdCounter + 1,
+          subscribe: true,
+        });
+        requests.forEach((request) => {
+          sendRequest(request.method, request.params || {}).catch((err) => {
+            console.error('[CanvasRuntime] Subscribe failed:', err);
+          });
+        });
       }
     };
 
@@ -375,15 +323,19 @@ export function useCanvasRuntime(
     return () => {
       rejectPendingRequests('WebSocket connection was reset');
       if (ws.readyState === WebSocket.OPEN && canvasId) {
-        ws.send(JSON.stringify({
-          jsonrpc: '2.0',
-          id: ++requestIdCounter,
-          method: 'canvas.unsubscribe',
-          params: {
-            canvasId,
-            ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
-          },
-        } satisfies JsonRpcRequest));
+        const requests = buildCanvasSubscriptionRequests({
+          canvasId,
+          workspaceRootPath,
+          startingId: requestIdCounter + 1,
+          subscribe: false,
+        });
+        requests.forEach((request) => {
+          requestIdCounter = Math.max(
+            requestIdCounter,
+            typeof request.id === 'number' ? request.id : requestIdCounter,
+          );
+          ws.send(JSON.stringify(request));
+        });
       }
       ws.close();
       if (wsRef.current === ws) {
@@ -578,15 +530,7 @@ export function useCanvasRuntime(
           name: 'canvas.node.presentation-style.update',
           canvasId: resolvedCanvasId,
           nodeId,
-          presentationStyle: {
-            ...(typeof props.fill === 'string' ? { fillColor: props.fill } : {}),
-            ...(typeof props.stroke === 'string' ? { strokeColor: props.stroke } : {}),
-            ...(typeof props.strokeWidth === 'number' ? { strokeWidth: props.strokeWidth } : {}),
-            ...(typeof props.opacity === 'number' ? { opacity: props.opacity } : {}),
-            ...(typeof props.color === 'string' ? { textColor: props.color } : {}),
-            ...(typeof props.fontFamily === 'string' ? { fontFamily: props.fontFamily } : {}),
-            ...(typeof props.fontSize === 'number' ? { fontSize: props.fontSize } : {}),
-          },
+          presentationStyle: buildRuntimePresentationStylePatch(props),
         }],
       });
     }
@@ -597,20 +541,12 @@ export function useCanvasRuntime(
         throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId });
       }
       const objectId = resolveCanonicalObjectId(runtimeNode) ?? resolveSourceNodeId(runtimeNode);
-      const kind = resolveContentKind(runtimeNode);
+      const kind = resolveRuntimeContentKind(runtimeNode);
       const content = typeof props.content === 'string' ? props.content : '';
 
       return executeRuntimeMutation({
         canvasId: resolvedCanvasId,
-        commands: [{
-          name: 'object.content.update',
-          objectId,
-          kind,
-          patch: kind === 'text'
-            ? { text: content, value: content }
-            : { source: content, value: content },
-          expectedContentKind: kind,
-        }],
+        commands: [buildRuntimeContentUpdateCommand({ objectId, kind, content })],
       });
     }
 
@@ -669,39 +605,21 @@ export function useCanvasRuntime(
     const nodeId = typeof node.id === 'string' ? node.id : crypto.randomUUID();
     const nodeType = typeof node.type === 'string' ? node.type : 'shape';
     const props = isRecord(node.props) ? node.props : {};
-    const placement = toRuntimeCreatePlacement(isRecord(node.placement) ? node.placement : {});
-    const commands: CanvasRuntimeCommandV1[] = [{
-      name: 'canvas.node.create',
+    const commands: CanvasRuntimeCommandV1[] = [buildCanvasNodeCreateCommand({
       canvasId: resolvedCanvasId,
       nodeId,
-      kind: toRuntimeNodeKind(nodeType),
-      nodeType: toRuntimeNodeType(nodeType),
-      placement,
-      transform: {
-        ...(typeof props.width === 'number' ? { width: props.width } : {}),
-        ...(typeof props.height === 'number' ? { height: props.height } : {}),
-      },
-      presentationStyle: {
-        ...(typeof props.fill === 'string' ? { fillColor: props.fill } : {}),
-        ...(typeof props.stroke === 'string' ? { strokeColor: props.stroke } : {}),
-        ...(typeof props.strokeWidth === 'number' ? { strokeWidth: props.strokeWidth } : {}),
-        ...(typeof props.color === 'string' ? { textColor: props.color } : {}),
-        ...(typeof props.fontFamily === 'string' ? { fontFamily: props.fontFamily } : {}),
-        ...(typeof props.fontSize === 'number' ? { fontSize: props.fontSize } : {}),
-      },
-    }];
+      nodeType,
+      props,
+      placement: isRecord(node.placement) ? node.placement : undefined,
+      generateId: crypto.randomUUID,
+    })];
 
     if (typeof props.content === 'string' && props.content.length > 0) {
-      commands.push({
-        name: 'object.content.update',
+      commands.push(buildRuntimeContentUpdateCommand({
         objectId: nodeId,
         kind: 'markdown',
-        patch: {
-          source: props.content,
-          value: props.content,
-        },
-        expectedContentKind: 'markdown',
-      });
+        content: props.content,
+      }));
     }
 
     return executeRuntimeMutation({
@@ -733,14 +651,13 @@ export function useCanvasRuntime(
     const sourceNodeId = runtimeNode ? resolveSourceNodeId(runtimeNode) : input.objectId;
     return executeRuntimeMutation({
       canvasId: resolvedCanvasId,
-      commands: [{
-        name: 'object.body.block.insert',
+      commands: [buildObjectBodyBlockInsertCommand({
         objectId: input.objectId,
-        block: toRuntimeBodyBlock(input.block),
-        position: input.afterBlockId
-          ? { mode: 'anchor', anchorId: `node:${sourceNodeId}:body-after:${input.afterBlockId}` }
-          : { mode: 'end' },
-      }],
+        sourceNodeId,
+        block: input.block,
+        afterBlockId: input.afterBlockId,
+        generateId: crypto.randomUUID,
+      })],
     });
   }, [canvasId, executeRuntimeMutation, resolveRuntimeNode]);
 
