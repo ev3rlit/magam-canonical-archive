@@ -1,25 +1,272 @@
-export function InspectorPanel() {
+'use client';
+
+import clsx from 'clsx';
+import { useEffect, useRef, type Ref } from 'react';
+import { useEditorStore } from '@/core/editor/model/editor-store';
+import type { EditorCanvasObject, EditorFillPreset } from '@/core/editor/model/editor-types';
+import { WidgetBase } from '@/shared/ui/WidgetBase';
+
+const FILL_OPTIONS: EditorFillPreset[] = ['iris', 'sky', 'mint', 'amber', 'blush', 'slate'];
+
+function PropertyField({
+  label,
+  value,
+  onChange,
+  type = 'text',
+  inputRef,
+}: {
+  label: string;
+  value: string | number;
+  onChange: (value: string) => void;
+  type?: 'text' | 'number';
+  inputRef?: Ref<HTMLInputElement>;
+}) {
   return (
-    <aside
-      aria-label="Inspector"
-      className="editor-panel editor-panel--right"
-      data-testid="inspector-panel"
+    <label className="inspector-field">
+      <span className="inspector-field__label">{label}</span>
+      <input
+        className="inspector-field__input"
+        onChange={(event) => onChange(event.target.value)}
+        ref={inputRef}
+        type={type}
+        value={value}
+      />
+    </label>
+  );
+}
+
+function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
+  const focusRequest = useEditorStore((state) => state.overlays.focusRequest);
+  const clearFocusRequest = useEditorStore((state) => state.clearFocusRequest);
+  const updateObjectField = useEditorStore((state) => state.updateObjectField);
+  const updateObjectPatch = useEditorStore((state) => state.updateObjectPatch);
+  const ungroupSelection = useEditorStore((state) => state.ungroupSelection);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (
+      focusRequest &&
+      focusRequest.objectId === object.id &&
+      focusRequest.field === 'name' &&
+      nameInputRef.current
+    ) {
+      nameInputRef.current.focus();
+      nameInputRef.current.select();
+      clearFocusRequest();
+    }
+  }, [clearFocusRequest, focusRequest, object.id]);
+
+  return (
+    <div className="inspector-stack">
+      <section className="inspector-card">
+        <div className="inspector-card__header">
+          <h3>Selection</h3>
+        </div>
+        <PropertyField
+          inputRef={nameInputRef}
+          label="Name"
+          onChange={(value) => updateObjectField(object.id, 'name', value)}
+          value={object.name}
+        />
+        <div className="inspector-toggle-grid">
+          <button
+            className={clsx('inspector-toggle', {
+              'inspector-toggle--active': object.visible,
+            })}
+            onClick={() => updateObjectPatch(object.id, { visible: !object.visible })}
+            type="button"
+          >
+            {object.visible ? 'Visible' : 'Hidden'}
+          </button>
+          <button
+            className={clsx('inspector-toggle', {
+              'inspector-toggle--active': object.locked,
+            })}
+            onClick={() => updateObjectPatch(object.id, { locked: !object.locked })}
+            type="button"
+          >
+            {object.locked ? 'Locked' : 'Unlocked'}
+          </button>
+        </div>
+      </section>
+      <section className="inspector-card">
+        <div className="inspector-card__header">
+          <h3>Geometry</h3>
+        </div>
+        <div className="inspector-grid">
+          <PropertyField
+            label="X"
+            onChange={(value) => updateObjectField(object.id, 'x', value)}
+            type="number"
+            value={object.x}
+          />
+          <PropertyField
+            label="Y"
+            onChange={(value) => updateObjectField(object.id, 'y', value)}
+            type="number"
+            value={object.y}
+          />
+          <PropertyField
+            label="Width"
+            onChange={(value) => updateObjectField(object.id, 'width', value)}
+            type="number"
+            value={object.width}
+          />
+          <PropertyField
+            label="Height"
+            onChange={(value) => updateObjectField(object.id, 'height', value)}
+            type="number"
+            value={object.height}
+          />
+        </div>
+        <PropertyField
+          label="Z index"
+          onChange={(value) => updateObjectField(object.id, 'zIndex', value)}
+          type="number"
+          value={object.zIndex}
+        />
+      </section>
+      <section className="inspector-card">
+        <div className="inspector-card__header">
+          <h3>Details</h3>
+        </div>
+        {object.kind === 'text' || object.kind === 'sticky' ? (
+          <label className="inspector-field">
+            <span className="inspector-field__label">Content</span>
+            <textarea
+              className="inspector-field__input inspector-field__input--textarea"
+              onChange={(event) => updateObjectPatch(object.id, { text: event.target.value })}
+              value={object.text}
+            />
+          </label>
+        ) : null}
+        {object.kind === 'image' ? (
+          <label className="inspector-field">
+            <span className="inspector-field__label">Fit mode</span>
+            <select
+              className="inspector-field__input"
+              onChange={(event) => updateObjectPatch(object.id, { imageFit: event.target.value as 'cover' | 'contain' })}
+              value={object.imageFit ?? 'cover'}
+            >
+              <option value="cover">Cover</option>
+              <option value="contain">Contain</option>
+            </select>
+          </label>
+        ) : null}
+        {object.kind === 'shape' || object.kind === 'frame' ? (
+          <label className="inspector-field">
+            <span className="inspector-field__label">Fill preset</span>
+            <select
+              className="inspector-field__input"
+              onChange={(event) => updateObjectPatch(object.id, { fillPreset: event.target.value as EditorFillPreset })}
+              value={object.fillPreset}
+            >
+              {FILL_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {object.kind === 'group' ? (
+          <button
+            className="inspector-action"
+            onClick={() => ungroupSelection()}
+            type="button"
+          >
+            Ungroup children
+          </button>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+function MultiSelectionInspector({ objects }: { objects: EditorCanvasObject[] }) {
+  const updateSelectionPatch = useEditorStore((state) => state.updateSelectionPatch);
+  const groupSelection = useEditorStore((state) => state.groupSelection);
+  const ungroupSelection = useEditorStore((state) => state.ungroupSelection);
+  const bringSelectionToFront = useEditorStore((state) => state.bringSelectionToFront);
+  const sendSelectionToBack = useEditorStore((state) => state.sendSelectionToBack);
+  const deleteSelection = useEditorStore((state) => state.deleteSelection);
+
+  const allVisible = objects.every((object) => object.visible);
+  const allLocked = objects.every((object) => object.locked);
+  const kinds = [...new Set(objects.map((object) => object.kind))];
+
+  return (
+    <div className="inspector-stack">
+      <section className="inspector-card">
+        <div className="inspector-card__header">
+          <h3>Multi selection</h3>
+        </div>
+        <p className="inspector-copy">{objects.length} objects selected: {kinds.join(', ')}</p>
+        <div className="inspector-toggle-grid">
+          <button
+            className={clsx('inspector-toggle', {
+              'inspector-toggle--active': allVisible,
+            })}
+            onClick={() => updateSelectionPatch({ visible: !allVisible })}
+            type="button"
+          >
+            {allVisible ? 'Hide selection' : 'Show selection'}
+          </button>
+          <button
+            className={clsx('inspector-toggle', {
+              'inspector-toggle--active': allLocked,
+            })}
+            onClick={() => updateSelectionPatch({ locked: !allLocked })}
+            type="button"
+          >
+            {allLocked ? 'Unlock selection' : 'Lock selection'}
+          </button>
+        </div>
+      </section>
+      <section className="inspector-card">
+        <div className="inspector-actions">
+          <button className="inspector-action" onClick={() => groupSelection()} type="button">
+            Group
+          </button>
+          <button className="inspector-action" onClick={() => ungroupSelection()} type="button">
+            Ungroup
+          </button>
+          <button className="inspector-action" onClick={() => bringSelectionToFront()} type="button">
+            Bring front
+          </button>
+          <button className="inspector-action" onClick={() => sendSelectionToBack()} type="button">
+            Send back
+          </button>
+          <button className="inspector-action inspector-action--danger" onClick={() => deleteSelection()} type="button">
+            Delete
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+export function InspectorPanel() {
+  const selection = useEditorStore((state) => state.selection);
+  const objects = useEditorStore((state) => state.scene.objects);
+  const selectedObjects = objects.filter((object) => selection.ids.includes(object.id));
+  const primaryObject = selectedObjects.find((object) => object.id === selection.primaryId) ?? selectedObjects[0] ?? null;
+
+  return (
+    <WidgetBase
+      panelId="inspector"
+      side="right"
+      subtitle={selectedObjects.length > 0 ? 'Quick edits for the current selection' : undefined}
+      title="Inspector"
     >
-      <div className="editor-panel__header">
-        <h2 className="editor-panel__title">Inspector</h2>
+      <div data-testid="inspector-panel">
+        {selectedObjects.length === 1 && primaryObject ? (
+          <SingleSelectionInspector object={primaryObject} />
+        ) : null}
+        {selectedObjects.length > 1 ? (
+          <MultiSelectionInspector objects={selectedObjects} />
+        ) : null}
       </div>
-      <div className="editor-panel__body">
-        <ul className="placeholder-list">
-          <li className="placeholder-card">
-            <h3 className="placeholder-card__title">Selection</h3>
-            <p className="placeholder-card__copy">Selected object metadata will live here.</p>
-          </li>
-          <li className="placeholder-card">
-            <h3 className="placeholder-card__title">Properties</h3>
-            <p className="placeholder-card__copy">Style and layout controls are future feature slices.</p>
-          </li>
-        </ul>
-      </div>
-    </aside>
+    </WidgetBase>
   );
 }
