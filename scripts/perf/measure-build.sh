@@ -48,8 +48,8 @@ record_stage() {
   local command="$2"
   local run_mode="$3"
 
-  if [[ "$run_mode" == "cold" && ( "$stage" == "full" || "$stage" == "app" ) ]]; then
-    rm -rf "$REPO_ROOT/app/.next"
+  if [[ "$run_mode" == "cold" && ( "$stage" == "full" || "$stage" == "editor" ) ]]; then
+    rm -rf "$REPO_ROOT/editor/.next"
   fi
 
   echo "[measure-build] $run_mode:$stage -> $command"
@@ -88,7 +88,7 @@ commands=(
   "core|bun run --filter '@magam/core' build"
   "runtime|bun run --filter '@magam/runtime' build"
   "cli|bun run --filter '@magam/cli' build"
-  "app|bun run build:app"
+  "editor|bun run build:editor"
 )
 
 run_mode_block() {

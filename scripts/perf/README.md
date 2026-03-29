@@ -9,7 +9,7 @@
 bash scripts/perf/measure-build.sh --label current
 
 # dev route 요청 측정 (dev 서버 별도 실행 필요)
-bash scripts/perf/measure-dev-routes.sh --label current --base-url http://localhost:3000 --touch-file app/app/page.tsx
+bash scripts/perf/measure-dev-routes.sh --label current --base-url http://localhost:3000 --touch-file editor/src/app/page.tsx
 
 # API latency 측정 (Next + CLI 서버 실행 필요)
 bash scripts/perf/measure-api-latency.sh --label current --samples 20

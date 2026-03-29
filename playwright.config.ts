@@ -10,7 +10,6 @@ function resolvePort(name: string, fallback: string): string {
 }
 
 const appPort = resolvePort('PLAYWRIGHT_APP_PORT', '4173');
-const wsPort = resolvePort('PLAYWRIGHT_WS_PORT', '3001');
 const baseURL = `http://127.0.0.1:${appPort}`;
 
 export default defineConfig({
@@ -27,7 +26,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: `bash -lc 'MAGAM_WS_PORT=${wsPort} bun run ws:dev & trap "kill 0" EXIT; cd app && NEXT_PUBLIC_MAGAM_WS_PORT=${wsPort} bun run dev:next -- --hostname 127.0.0.1 --port ${appPort}'`,
+    command: `bash -lc 'cd editor && bun run dev -- --hostname 127.0.0.1 --port ${appPort}'`,
     url: baseURL,
     reuseExistingServer: process.env.PLAYWRIGHT_REUSE_SERVER === '1'
       ? true

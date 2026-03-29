@@ -1,0 +1,216 @@
+:root {
+  color-scheme: dark;
+  --editor-bg: #11141a;
+  --editor-panel: #171b22;
+  --editor-panel-border: #242c38;
+  --editor-canvas: #0d1015;
+  --editor-text: #eff3f8;
+  --editor-muted: #94a0b2;
+  --editor-accent: #52c1ff;
+  --editor-selection: rgba(82, 193, 255, 0.2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--editor-bg);
+  color: var(--editor-text);
+  font-family: Inter, "Segoe UI", sans-serif;
+}
+
+body {
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.editor-shell {
+  display: grid;
+  grid-template-rows: 56px minmax(0, 1fr);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top, rgba(82, 193, 255, 0.08), transparent 28%),
+    linear-gradient(180deg, #121720 0%, #0f1319 100%);
+}
+
+.editor-shell__body {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  gap: 0;
+  min-height: 0;
+}
+
+.editor-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--editor-panel);
+  border-color: var(--editor-panel-border);
+}
+
+.editor-panel--left {
+  border-right: 1px solid var(--editor-panel-border);
+}
+
+.editor-panel--right {
+  border-left: 1px solid var(--editor-panel-border);
+}
+
+.editor-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--editor-panel-border);
+}
+
+.editor-panel__title {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--editor-muted);
+}
+
+.editor-panel__body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+}
+
+.top-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--editor-panel-border);
+  background: rgba(14, 18, 24, 0.88);
+  backdrop-filter: blur(12px);
+}
+
+.top-toolbar__group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.top-toolbar__button {
+  border: 1px solid var(--editor-panel-border);
+  background: #1a2029;
+  color: var(--editor-text);
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: default;
+}
+
+.canvas-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  background: var(--editor-canvas);
+}
+
+.canvas-editor__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--editor-panel-border);
+  background: rgba(8, 11, 15, 0.75);
+}
+
+.canvas-editor__stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.canvas-viewport {
+  position: absolute;
+  inset: 0;
+  background-color: #0b0f14;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.canvas-overlay {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(82, 193, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(11, 15, 20, 0.86);
+  color: var(--editor-muted);
+}
+
+.canvas-selection-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.placeholder-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.placeholder-card {
+  padding: 14px;
+  border: 1px solid var(--editor-panel-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.placeholder-card__title {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.placeholder-card__copy {
+  margin: 0;
+  color: var(--editor-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1100px) {
+  .editor-shell__body {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .editor-panel--right {
+    display: none;
+  }
+}
+
+@media (max-width: 820px) {
+  .editor-shell__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .editor-panel--left {
+    display: none;
+  }
+}
