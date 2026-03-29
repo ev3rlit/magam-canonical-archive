@@ -113,6 +113,12 @@ No task is done until the outcome is verified.
 - Update local guidance when shared expectations change, and keep guidance files consistent with this document.
 - Make exceptions explicit, narrow, and documented instead of relying on informal precedent.
 
+## Design Guidance
+
+- For any design, layout, visual language, or UI styling decision, read `DESIGN.md` first and treat it as the primary design reference.
+- Do not introduce a visual direction that conflicts with `DESIGN.md` unless the task explicitly updates that document too.
+- When design guidance in code, docs, or prior implementation conflicts with `DESIGN.md`, prefer `DESIGN.md`.
+
 ## i18n Guidance
 
 - Editor UI strings should live under `editor/src/shared/config/` once locale-aware copy is introduced.
