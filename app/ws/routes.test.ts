@@ -7,7 +7,7 @@ import { createPaneCreateIntentEnvelope, createRenameIntentEnvelope } from '@/fe
 import { routeIntent } from '@/features/editing/actionRoutingBridge/routeIntent';
 import { makeActionRoutingContext, makeCanonicalNode } from '@/features/editing/actionRoutingBridge/testUtils';
 import type { MutationDispatchDescriptor } from '@/features/editing/actionRoutingBridge/types';
-import { routes, subscriptionRoutes } from './routes';
+import { routes } from './routes';
 
 const tempDirs: string[] = [];
 const originalMagamTargetDir = process.env.MAGAM_TARGET_DIR;
@@ -35,28 +35,6 @@ function sha(content: string): string {
 }
 
 describe('RPC editing methods', () => {
-  it('subscription routes are explicitly registered in the route table', () => {
-    expect(subscriptionRoutes['canvas.subscribe']).toBe(routes['canvas.subscribe']);
-    expect(subscriptionRoutes['canvas.unsubscribe']).toBe(routes['canvas.unsubscribe']);
-    expect(subscriptionRoutes['file.subscribe']).toBe(routes['file.subscribe']);
-    expect(subscriptionRoutes['file.unsubscribe']).toBe(routes['file.unsubscribe']);
-  });
-
-  it('canvas.subscribe / canvas.unsubscribe: canvas subscription keys를 등록/해제한다', async () => {
-    const subscriptions = new Set<string>();
-    const ctx = { ws: {}, subscriptions };
-
-    await expect(routes['canvas.subscribe']({
-      canvasId: 'doc-live-1',
-    }, ctx)).resolves.toEqual({ success: true });
-    expect(subscriptions.has('canvas:doc-live-1')).toBe(true);
-
-    await expect(routes['canvas.unsubscribe']({
-      canvasId: 'doc-live-1',
-    }, ctx)).resolves.toEqual({ success: true });
-    expect(subscriptions.has('canvas:doc-live-1')).toBe(false);
-  });
-
   it('node.move: 성공 시 저장 + notify + newVersion 반환', async () => {
     const filePath = await makeTempTsx(`export default function Sample(){ return <Node id="n1" x={1} y={2} />; }`);
     const original = await readFile(filePath, 'utf-8');

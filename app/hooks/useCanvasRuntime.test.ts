@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import {
-  buildCanvasSubscriptionRequests,
-  isSubscriptionNotificationMethod,
+  buildRuntimeReconciliationFingerprint,
 } from './useCanvasRuntime';
 import {
   buildCanvasNodeCreateCommand,
@@ -12,65 +11,26 @@ import {
 } from '@/ws/shared/runtimeTransforms';
 
 describe('useCanvasRuntime shared transform semantics', () => {
-  it('builds paired canvas/file subscribe and unsubscribe requests for the active canvas', () => {
-    expect(buildCanvasSubscriptionRequests({
+  it('creates a stable reconciliation fingerprint from workspace/canvas/node versions', () => {
+    expect(buildRuntimeReconciliationFingerprint({
       canvasId: 'canvas-1',
-      workspaceRootPath: '/tmp/workspace',
-      startingId: 10,
-      subscribe: true,
-    })).toEqual([
-      {
-        jsonrpc: '2.0',
-        id: 10,
-        method: 'canvas.subscribe',
-        params: {
-          canvasId: 'canvas-1',
-          rootPath: '/tmp/workspace',
-        },
-      },
-      {
-        jsonrpc: '2.0',
-        id: 11,
-        method: 'file.subscribe',
-        params: {
-          canvasId: 'canvas-1',
-          rootPath: '/tmp/workspace',
-        },
-      },
-    ]);
-
-    expect(buildCanvasSubscriptionRequests({
+      workspaceId: 'workspace-1',
+      workspaceRuntimeVersion: { versionToken: 'workspace-v1' },
+      canvasMetadataVersion: { metadataRevisionNo: 2, versionToken: 'canvas-v2' },
+      nodeVersions: [
+        { nodeId: 'node-b', headRevisionNo: 3, versionToken: 'node-b-v3' },
+        { nodeId: 'node-a', headRevisionNo: 1, versionToken: 'node-a-v1' },
+      ],
+    })).toBe(buildRuntimeReconciliationFingerprint({
       canvasId: 'canvas-1',
-      workspaceRootPath: '/tmp/workspace',
-      startingId: 20,
-      subscribe: false,
-    })).toEqual([
-      {
-        jsonrpc: '2.0',
-        id: 20,
-        method: 'canvas.unsubscribe',
-        params: {
-          canvasId: 'canvas-1',
-          rootPath: '/tmp/workspace',
-        },
-      },
-      {
-        jsonrpc: '2.0',
-        id: 21,
-        method: 'file.unsubscribe',
-        params: {
-          canvasId: 'canvas-1',
-          rootPath: '/tmp/workspace',
-        },
-      },
-    ]);
-  });
-
-  it('recognizes subscription notification methods only', () => {
-    expect(isSubscriptionNotificationMethod('canvas.changed')).toBe(true);
-    expect(isSubscriptionNotificationMethod('file.changed')).toBe(true);
-    expect(isSubscriptionNotificationMethod('files.changed')).toBe(true);
-    expect(isSubscriptionNotificationMethod('canvas.runtime.mutate')).toBe(false);
+      workspaceId: 'workspace-1',
+      workspaceRuntimeVersion: { versionToken: 'workspace-v1' },
+      canvasMetadataVersion: { metadataRevisionNo: 2, versionToken: 'canvas-v2' },
+      nodeVersions: [
+        { nodeId: 'node-a', headRevisionNo: 1, versionToken: 'node-a-v1' },
+        { nodeId: 'node-b', headRevisionNo: 3, versionToken: 'node-b-v3' },
+      ],
+    }));
   });
 
   it('resolves runtime ids from runtimeEditing first and falls back to sourceMeta/id', () => {

@@ -147,6 +147,21 @@ function resolveBaseVersion(
   });
 }
 
+function requireCanvasId(
+  canvasId: string | null | undefined,
+  input: { surface: EntryPointSurface; intent: ActionRoutingIntent; field: string },
+): string {
+  if (typeof canvasId === 'string' && canvasId.length > 0) {
+    return canvasId;
+  }
+  throw createActionRoutingBridgeError({
+    code: 'NORMALIZATION_FAILED',
+    surface: input.surface,
+    intent: input.intent,
+    details: { field: input.field },
+  });
+}
+
 function resolveTargetNode(
   runtime: ActionRoutingRuntimeSnapshot,
   renderedNodeId: string,
@@ -288,7 +303,12 @@ function normalizeRenameNode(
     runtime.currentCanvasId,
     request,
   );
-  const baseVersion = resolveBaseVersion(runtime, editTarget.canvasId ?? runtime.currentCanvasId ?? null, request);
+  const normalizedCanvasId = requireCanvasId(editTarget.canvasId ?? runtime.currentCanvasId, {
+    surface: request.surface,
+    intent: request.intent,
+    field: 'canvasId',
+  });
+  const baseVersion = resolveBaseVersion(runtime, normalizedCanvasId, request);
   const nextId = ensureString(request.uiPayload.nextId, {
     surface: request.surface,
     intent: request.intent,
@@ -327,7 +347,12 @@ function normalizeStyleUpdate(
     runtime.currentCanvasId,
     request,
   );
-  const baseVersion = resolveBaseVersion(runtime, editTarget.canvasId ?? runtime.currentCanvasId ?? null, request);
+  const normalizedCanvasId = requireCanvasId(editTarget.canvasId ?? runtime.currentCanvasId, {
+    surface: request.surface,
+    intent: request.intent,
+    field: 'canvasId',
+  });
+  const baseVersion = resolveBaseVersion(runtime, normalizedCanvasId, request);
   const renderedNodeId = ensureString(request.resolvedContext.target?.renderedNodeId, {
     surface: request.surface,
     intent: request.intent,

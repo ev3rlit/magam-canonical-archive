@@ -5,6 +5,7 @@ export type HostAppEvent =
   | { type: 'workspace-cleared' }
   | { type: 'backend-ready' }
   | { type: 'backend-failed'; code: string; message: string }
+  | { type: 'workspace-runtime-invalidated'; workspaceId: string; canvasId?: string | null }
   | { type: 'shutdown-requested' };
 
 export interface HostCapabilitySurface {
@@ -41,13 +42,16 @@ export interface DesktopBootstrapSession {
 
 export interface DesktopRuntimeConfig {
   mode: 'desktop-primary';
-  httpBaseUrl: string;
-  wsUrl: string;
   appStateDbPath: string | null;
   workspacePath: string | null;
   workspaceMode: 'transient' | 'persisted';
   storageBackend: 'memory' | 'file';
   transientCanvasId: string | null;
+}
+
+export interface DesktopRpcBridge {
+  healthCheck: () => Promise<boolean>;
+  invoke: <T = unknown>(method: string, payload?: unknown) => Promise<T>;
 }
 
 export interface HostBootstrapSurface {
@@ -61,4 +65,5 @@ export interface DesktopHostBridge {
   runtime: DesktopRuntimeConfig;
   capabilities: HostCapabilitySurface;
   bootstrap: HostBootstrapSurface;
+  rpc: DesktopRpcBridge;
 }

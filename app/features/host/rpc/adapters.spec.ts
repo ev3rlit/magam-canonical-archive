@@ -18,20 +18,65 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function createDesktopBridge() {
+  return {
+    runtime: {
+      mode: 'desktop-primary' as const,
+      appStateDbPath: '/tmp/app-state-pgdata',
+      workspacePath: null,
+      workspaceMode: 'transient' as const,
+      storageBackend: 'memory' as const,
+      transientCanvasId: 'transient-canvas-test',
+    },
+    capabilities: {
+      workspace: {
+        async selectWorkspace() {
+          return null;
+        },
+        async chooseSaveLocation() {
+          return null;
+        },
+        async revealInOs() {
+          return;
+        },
+      },
+      shell: {
+        async openExternal() {
+          return;
+        },
+      },
+      lifecycle: {
+        onAppEvent() {
+          return () => undefined;
+        },
+      },
+    },
+    bootstrap: {
+      async getSession() {
+        return null;
+      },
+      async markRendererLoading() {
+        return null;
+      },
+      async markRendererReady() {
+        return null;
+      },
+      async markRendererFailed() {
+        return null;
+      },
+    },
+    rpc: {
+      healthCheck: vi.fn(async () => true),
+      invoke: vi.fn(),
+    },
+  };
+}
+
 describe('host RPC adapters', () => {
   it('keeps desktop and web adapter parity in sync with the logical method inventory', () => {
     const web = createWebRpcAdapter();
     const desktop = createDesktopRpcAdapter({
-      runtimeConfig: {
-        mode: 'desktop-primary',
-        httpBaseUrl: 'http://127.0.0.1:3003',
-        wsUrl: 'ws://127.0.0.1:3004',
-        appStateDbPath: '/tmp/app-state-pgdata',
-        workspacePath: null,
-        workspaceMode: 'transient',
-        storageBackend: 'memory',
-        transientCanvasId: 'transient-canvas-test',
-      },
+      bridge: createDesktopBridge(),
     });
 
     expect(web.descriptor.methods).toEqual(CORE_RPC_LOGICAL_METHODS);
@@ -94,45 +139,28 @@ describe('host RPC adapters', () => {
     );
   });
 
-  it('uses the desktop runtime HTTP base URL for workspace shell requests without falling back to 3002', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({
+  it('routes desktop workspace shell requests through the IPC bridge', async () => {
+    const bridge = createDesktopBridge();
+    bridge.rpc.invoke = vi.fn()
+      .mockResolvedValueOnce({ ok: true, result: {
         rootPath: '/tmp/workspace',
         workspaceName: 'workspace',
         health: { state: 'ok' },
         canvasCount: 0,
         documents: [],
         lastModifiedAt: null,
-      }));
-    globalThis.fetch = fetchMock as typeof fetch;
+      }});
 
     const adapter = createDesktopRpcAdapter({
-      runtimeConfig: {
-        mode: 'desktop-primary',
-        httpBaseUrl: 'http://127.0.0.1:3003',
-        wsUrl: 'ws://127.0.0.1:3004',
-        appStateDbPath: '/tmp/app-state-pgdata',
-        workspacePath: null,
-        workspaceMode: 'transient',
-        storageBackend: 'memory',
-        transientCanvasId: 'transient-canvas-test',
-      },
+      bridge,
     });
 
     await adapter.ensureWorkspace('/tmp/workspace');
 
-    expect(fetchMock).toHaveBeenNthCalledWith(
+    expect(bridge.rpc.invoke).toHaveBeenNthCalledWith(
       1,
-      'http://127.0.0.1:3003/workspaces',
-      expect.objectContaining({
-        method: 'POST',
-        cache: 'no-store',
-        body: JSON.stringify({ rootPath: '/tmp/workspace', action: 'ensure' }),
-      }),
-    );
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      expect.stringContaining('127.0.0.1:3002'),
-      expect.anything(),
+      'workspace.ensure',
+      { rootPath: '/tmp/workspace' },
     );
   });
 
@@ -203,9 +231,10 @@ describe('host RPC adapters', () => {
     );
   });
 
-  it('uses the desktop runtime HTTP base URL for app-state requests without falling back to 3002', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse([
+  it('routes desktop app-state requests through the IPC bridge', async () => {
+    const bridge = createDesktopBridge();
+    bridge.rpc.invoke = vi.fn()
+      .mockResolvedValueOnce({ ok: true, result: [
         {
           id: 'ws-1',
           rootPath: '/tmp/workspace',
@@ -213,35 +242,25 @@ describe('host RPC adapters', () => {
           status: 'ok',
           isPinned: false,
         },
-      ]))
-      .mockResolvedValueOnce(jsonResponse({
+      ]})
+      .mockResolvedValueOnce({ ok: true, result: {
         singletonKey: 'global',
         activeWorkspaceId: 'ws-1',
-      }))
-      .mockResolvedValueOnce(jsonResponse([
+      }})
+      .mockResolvedValueOnce({ ok: true, result: [
         {
           workspaceId: 'ws-1',
           canvasId: 'canvas-alpha',
         },
-      ]))
-      .mockResolvedValueOnce(jsonResponse({
+      ]})
+      .mockResolvedValueOnce({ ok: true, result: {
         key: 'theme.mode',
         valueJson: 'dark',
-      }))
-      .mockResolvedValueOnce(jsonResponse({ deleted: true }));
-    globalThis.fetch = fetchMock as typeof fetch;
+      }})
+      .mockResolvedValueOnce({ ok: true, result: undefined });
 
     const adapter = createDesktopRpcAdapter({
-      runtimeConfig: {
-        mode: 'desktop-primary',
-        httpBaseUrl: 'http://127.0.0.1:3003',
-        wsUrl: 'ws://127.0.0.1:3004',
-        appStateDbPath: '/tmp/app-state-pgdata',
-        workspacePath: null,
-        workspaceMode: 'transient',
-        storageBackend: 'memory',
-        transientCanvasId: 'transient-canvas-test',
-      },
+      bridge,
     });
 
     await adapter.listAppStateWorkspaces();
@@ -250,34 +269,30 @@ describe('host RPC adapters', () => {
     await adapter.getAppStatePreference('theme.mode');
     await adapter.removeAppStateWorkspace('ws-1');
 
-    expect(fetchMock).toHaveBeenNthCalledWith(
+    expect(bridge.rpc.invoke).toHaveBeenNthCalledWith(
       1,
-      'http://127.0.0.1:3003/app-state/workspaces',
-      expect.objectContaining({ cache: 'no-store' }),
+      'appState.workspaces.list',
+      undefined,
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
+    expect(bridge.rpc.invoke).toHaveBeenNthCalledWith(
       2,
-      'http://127.0.0.1:3003/app-state/session',
-      expect.objectContaining({ cache: 'no-store' }),
+      'appState.session.get',
+      undefined,
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
+    expect(bridge.rpc.invoke).toHaveBeenNthCalledWith(
       3,
-      'http://127.0.0.1:3003/app-state/recent-canvases?workspaceId=ws-1',
-      expect.objectContaining({ cache: 'no-store' }),
+      'appState.recentCanvases.list',
+      { workspaceId: 'ws-1' },
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
+    expect(bridge.rpc.invoke).toHaveBeenNthCalledWith(
       4,
-      'http://127.0.0.1:3003/app-state/preferences?key=theme.mode',
-      expect.objectContaining({ cache: 'no-store' }),
+      'appState.preferences.get',
+      { key: 'theme.mode' },
     );
-    expect(fetchMock).toHaveBeenNthCalledWith(
+    expect(bridge.rpc.invoke).toHaveBeenNthCalledWith(
       5,
-      'http://127.0.0.1:3003/app-state/workspaces?workspaceId=ws-1',
-      expect.objectContaining({ method: 'DELETE', cache: 'no-store' }),
-    );
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      expect.stringContaining('127.0.0.1:3002'),
-      expect.anything(),
+      'appState.workspaces.remove',
+      { workspaceId: 'ws-1' },
     );
   });
 });

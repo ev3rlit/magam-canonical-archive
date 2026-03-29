@@ -40,11 +40,6 @@ import {
   type RpcMethodRegistry,
   type UpdateCommandType,
 } from '../shared/params';
-import { notifyCanvasChanged } from '../shared/responses';
-import {
-  createCanvasSubscriptionKey,
-  WS_SUBSCRIPTION_METHODS,
-} from '../shared/subscriptions';
 import {
   buildCanvasNodeCreateCommand,
   buildObjectBodyBlockInsertCommand,
@@ -299,15 +294,6 @@ async function executeDirectCanvasMutation(input: {
       workspaceId: context.workspaceId,
       canvasRevision: result.canvasRevisionAfter,
     });
-    if (typeof result.canvasRevisionAfter === 'number') {
-      notifyCanvasChanged(ctx, {
-        canvasId: input.canvasId,
-        canvasRevision: result.canvasRevisionAfter,
-        originId: input.originId,
-        commandId: input.commandId,
-        ...(input.rootPath ? { rootPath: input.rootPath } : {}),
-      });
-    }
     return {
       success: true,
       newVersion,
@@ -318,24 +304,6 @@ async function executeDirectCanvasMutation(input: {
         : {}),
     };
   });
-}
-
-async function handleCanvasSubscribe(
-  params: Record<string, unknown>,
-  ctx: RpcContext,
-): Promise<{ success: boolean }> {
-  const canvasId = ensureString(params.canvasId, 'canvasId');
-  ctx.subscriptions.add(createCanvasSubscriptionKey(canvasId));
-  return { success: true };
-}
-
-async function handleCanvasUnsubscribe(
-  params: Record<string, unknown>,
-  ctx: RpcContext,
-): Promise<{ success: boolean }> {
-  const canvasId = ensureString(params.canvasId, 'canvasId');
-  ctx.subscriptions.delete(createCanvasSubscriptionKey(canvasId));
-  return { success: true };
 }
 
 async function handleCanvasRuntimeProjections(
@@ -425,16 +393,6 @@ async function handleCanvasRuntimeMutate(
     }
 
     const canvasRevision = mutation.envelope.data.canvasRevisionAfter ?? undefined;
-    if (!mutation.envelope.data.dryRun && typeof canvasRevision === 'number') {
-      notifyCanvasChanged(ctx, {
-        canvasId: common.canvasId,
-        canvasRevision,
-        originId: common.originId,
-        commandId: common.commandId,
-        ...(common.rootPath ? { rootPath: common.rootPath } : {}),
-      });
-    }
-
     const newVersion = createVersionToken({
       canvasId: common.canvasId,
       workspaceId: batch.workspaceId,
@@ -446,15 +404,7 @@ async function handleCanvasRuntimeMutate(
       commandId: common.commandId,
       canvasId: common.canvasId,
       ...(typeof canvasRevision === 'number' ? { canvasRevision } : {}),
-      runtimeResult: mutation.envelope.ok
-        ? {
-            ...mutation.envelope,
-            data: {
-              ...mutation.envelope.data,
-              version: newVersion,
-            },
-          }
-        : mutation.envelope,
+      runtimeResult: mutation.envelope,
     };
   } catch (error) {
     mapCanonicalError(error, createIntentScopedDiagnostics({
@@ -593,6 +543,9 @@ async function handleNodeCreateBase(
   const nodeId = ensureString(node.id, 'node.id');
   const nodeType = ensureString(node.type, 'node.type') as CreateNodeInput['type'];
   const placement = ensureCreatePlacement(node.placement);
+  if (!placement) {
+    throw { ...RPC_ERRORS.INVALID_PARAMS, data: 'node.placement is required' };
+  }
 
   try {
     return await executeDirectCanvasMutation({
@@ -604,9 +557,11 @@ async function handleNodeCreateBase(
       buildOperations: () => [{
         op: 'canvas.node.create',
         nodeId,
-        nodeType,
-        props: isRecord(node.props) ? node.props : undefined,
-        placement: placement ?? undefined,
+        nodeType: nodeType === 'mindmap' ? 'shape' : nodeType,
+        props: typeof node.props === 'object' && node.props !== null && !Array.isArray(node.props)
+          ? node.props as Record<string, unknown>
+          : undefined,
+        placement,
       } satisfies MutationOperation],
     }, ctx);
   } catch (error) {
@@ -740,13 +695,7 @@ async function handleNodeReparent(
   }
 }
 
-export const canvasSubscriptionHandlers: RpcMethodRegistry = {
-  [WS_SUBSCRIPTION_METHODS.canvasSubscribe]: handleCanvasSubscribe,
-  [WS_SUBSCRIPTION_METHODS.canvasUnsubscribe]: handleCanvasUnsubscribe,
-};
-
 export const canvasHandlers: RpcMethodRegistry = {
-  ...canvasSubscriptionHandlers,
   'canvas.runtime.projections': handleCanvasRuntimeProjections,
   'canvas.runtime.mutate': handleCanvasRuntimeMutate,
   'canvas.node.create': handleCanvasNodeCreate,

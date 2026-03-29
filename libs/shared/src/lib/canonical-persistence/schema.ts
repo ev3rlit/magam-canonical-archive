@@ -148,6 +148,57 @@ export const canvasRevisions = pgTable(
   }),
 );
 
+export const workspaceRuntimeVersions = pgTable(
+  'workspace_runtime_versions',
+  {
+    workspaceId: text('workspace_id').primaryKey(),
+    versionToken: text('version_token').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+);
+
+export const canvasMetadataVersions = pgTable(
+  'canvas_metadata_versions',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    canvasId: text('canvas_id').notNull(),
+    metadataRevisionNo: integer('metadata_revision_no').notNull(),
+    versionToken: text('version_token').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.workspaceId, table.canvasId],
+      name: 'canvas_metadata_versions_workspace_canvas_pk',
+    }),
+    workspaceUpdatedIdx: index('idx_canvas_metadata_versions_workspace_updated').on(table.workspaceId, table.updatedAt),
+  }),
+);
+
+export const nodeVersions = pgTable(
+  'node_versions',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    canvasId: text('canvas_id').notNull(),
+    nodeId: text('node_id').notNull(),
+    objectId: text('object_id'),
+    headRevisionNo: integer('head_revision_no').notNull(),
+    versionToken: text('version_token').notNull(),
+    lastMutationBatchId: text('last_mutation_batch_id').notNull(),
+    lastMutationSource: text('last_mutation_source').notNull(),
+    lastAppliedById: text('last_applied_by_id').notNull(),
+    lastAppliedByKind: text('last_applied_by_kind').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.workspaceId, table.canvasId, table.nodeId],
+      name: 'node_versions_workspace_canvas_node_pk',
+    }),
+    canvasUpdatedIdx: index('idx_node_versions_canvas_updated').on(table.canvasId, table.updatedAt),
+  }),
+);
+
 export const canvasHistoryCursors = pgTable(
   'canvas_history_cursors',
   {

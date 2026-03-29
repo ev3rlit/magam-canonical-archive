@@ -14,7 +14,6 @@
     "desktop:build": "bun run scripts/desktop/build.ts",
     "desktop:dev": "bun run scripts/desktop/dev.ts",
     "web:dev": "bun run scripts/dev/app-dev.ts",
-    "ws:dev": "bun run app/ws/server.ts",
     "build": "bun run --filter '@magam/shared' build && bun run --filter '@magam/core' build && bun run --filter '@magam/runtime' build && bun run --filter '@magam/cli' build && bun run build:app",
     "lint:app": "bunx eslint app --cache --cache-location .eslintcache",
     "typecheck:app": "bunx tsc -p app/tsconfig.json --noEmit",

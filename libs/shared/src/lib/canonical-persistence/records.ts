@@ -72,6 +72,36 @@ export interface CanvasRevisionRecord {
   createdAt?: Date;
 }
 
+export type RuntimeMutationSource = 'ui' | 'cli' | 'system';
+
+export interface WorkspaceRuntimeVersionRecord {
+  workspaceId: string;
+  versionToken: string;
+  updatedAt?: Date;
+}
+
+export interface CanvasMetadataVersionRecord {
+  workspaceId: string;
+  canvasId: string;
+  metadataRevisionNo: number;
+  versionToken: string;
+  updatedAt?: Date;
+}
+
+export interface NodeVersionRecord {
+  workspaceId: string;
+  canvasId: string;
+  nodeId: string;
+  objectId?: string | null;
+  headRevisionNo: number;
+  versionToken: string;
+  lastMutationBatchId: string;
+  lastMutationSource: RuntimeMutationSource;
+  lastAppliedById: string;
+  lastAppliedByKind: string;
+  updatedAt?: Date;
+}
+
 export interface CanvasHistoryCursorRecord {
   canvasId: string;
   actorId: string;

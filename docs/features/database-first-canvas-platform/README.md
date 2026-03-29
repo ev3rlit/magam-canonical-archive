@@ -170,4 +170,5 @@ flowchart TD
 - `docs/features/database-first-canvas-platform/ai-cli-tooling.md`
 - `docs/features/database-first-canvas-platform/canvas-ui-entrypoints/README.md`
 - `docs/features/database-first-canvas-platform/db-mediated-ui-cli-runtime/README.md`
+- `docs/features/database-first-canvas-platform/db-runtime-owner-hardening/README.md`
 - `docs/adr/ADR-0005-database-first-canvas-platform.md`

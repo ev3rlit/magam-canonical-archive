@@ -10,9 +10,5 @@ export function resolveHostApiPath(path: string): string {
     return path;
   }
 
-  if (!runtime.runtimeConfig) {
-    throw new Error('Desktop runtime config is missing.');
-  }
-
-  return `${runtime.runtimeConfig.httpBaseUrl}${path}`;
+  return path;
 }

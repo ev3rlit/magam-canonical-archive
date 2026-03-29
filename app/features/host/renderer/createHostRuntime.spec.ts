@@ -5,8 +5,6 @@ function createDesktopHostBridge() {
   return {
     runtime: {
       mode: 'desktop-primary' as const,
-      httpBaseUrl: 'http://127.0.0.1:3003',
-      wsUrl: 'ws://127.0.0.1:3004',
       appStateDbPath: '/tmp/app-state-pgdata',
       workspacePath: '/tmp/workspace',
       workspaceMode: 'persisted' as const,
@@ -50,6 +48,14 @@ function createDesktopHostBridge() {
         return null;
       },
     },
+    rpc: {
+      async healthCheck() {
+        return true;
+      },
+      async invoke() {
+        return { ok: true, result: null };
+      },
+    },
   };
 }
 
@@ -79,8 +85,6 @@ describe('getHostRuntime', () => {
 
     expect(runtime.mode).toBe('desktop-primary');
     expect(runtime.runtimeConfig).toEqual(expect.objectContaining({
-      httpBaseUrl: 'http://127.0.0.1:3003',
-      wsUrl: 'ws://127.0.0.1:3004',
       appStateDbPath: '/tmp/app-state-pgdata',
       workspacePath: '/tmp/workspace',
       workspaceMode: 'persisted',

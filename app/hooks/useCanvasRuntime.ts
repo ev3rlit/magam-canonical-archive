@@ -1,8 +1,4 @@
-/**
- * useCanvasRuntime Hook - WebSocket client for canvas runtime synchronization
- */
-
-import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type {
   CanvasMutationBatchV1,
   CanvasEditingProjectionResponseV1,
@@ -12,21 +8,18 @@ import type {
   CanvasRedoRequestV1,
   CanvasUndoRequestV1,
 } from '../../libs/shared/src/lib/canvas-runtime';
+import { getDesktopHostBridge } from '@/features/host/renderer/hostCapabilities';
 import { useGraphStore } from '@/store/graph';
 import { editDebugLog, isEditDebugEnabled } from '@/utils/editDebug';
 import {
   createPerCanvasMutationExecutor,
-  pruneExpiredOwnCommands,
   rememberOwnCommand,
-  resolveFileSyncWsUrl,
   RpcClientError,
-  shouldReloadForCanvasChange,
   type MutationMethod,
   type RpcMutationResult,
   type UpdateNodeMutationOptions,
   type VersionConflictMetricsSnapshot,
 } from './useFileSync.shared';
-import type { JsonRpcNotification, JsonRpcRequest, JsonRpcResponse } from '@/ws/rpc';
 import {
   buildCanvasNodeCreateCommand,
   buildObjectBodyBlockInsertCommand,
@@ -36,14 +29,8 @@ import {
   resolveRuntimeContentKind,
   resolveSourceNodeId,
 } from '@/ws/shared/runtimeTransforms';
-import {
-  WS_NOTIFICATION_METHODS,
-  WS_SUBSCRIPTION_METHODS,
-} from '@/ws/shared/subscriptions';
 
 export { RpcClientError } from './useFileSync.shared';
-
-const REQUEST_TIMEOUT = 5000;
 
 export interface CanvasRuntimeProjectionQueryResult {
   canvasId: string;
@@ -52,17 +39,22 @@ export interface CanvasRuntimeProjectionQueryResult {
   editingProjection: CanvasEditingProjectionResponseV1;
 }
 
-type PendingRequestEntry = {
-  resolve: (result: unknown) => void;
-  reject: (error: Error) => void;
-  meta: {
-    method: string;
-    startedAt: number;
-    canvasId?: string;
-    nodeId?: string;
-    commandType?: string;
-  };
-};
+export interface RuntimeReconciliationSnapshot {
+  canvasId: string;
+  workspaceId: string;
+  workspaceRuntimeVersion: {
+    versionToken: string;
+  } | null;
+  canvasMetadataVersion: {
+    metadataRevisionNo: number;
+    versionToken: string;
+  } | null;
+  nodeVersions: Array<{
+    headRevisionNo: number;
+    nodeId: string;
+    versionToken: string;
+  }>;
+}
 
 declare global {
   interface Window {
@@ -73,40 +65,59 @@ declare global {
   }
 }
 
-let requestIdCounter = 0;
-
-function isClientOnlyDraftSourceVersion(version: string | null | undefined): boolean {
-  return typeof version === 'string' && version.startsWith('draft:');
-}
+type DesktopRpcEnvelope<T> =
+  | { ok: true; result: T }
+  | { ok: false; error: { code?: number | string; message: string; data?: unknown } };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function buildCanvasSubscriptionRequests(input: {
-  canvasId: string;
-  workspaceRootPath?: string | null;
-  startingId: number;
-  subscribe: boolean;
-}): JsonRpcRequest[] {
-  const params = {
-    canvasId: input.canvasId,
-    ...(input.workspaceRootPath ? { rootPath: input.workspaceRootPath } : {}),
-  };
-  const methods = input.subscribe
-    ? [WS_SUBSCRIPTION_METHODS.canvasSubscribe]
-    : [WS_SUBSCRIPTION_METHODS.canvasUnsubscribe];
-
-  return methods.map((method, index) => ({
-    jsonrpc: '2.0',
-    id: input.startingId + index,
-    method,
-    params,
-  }));
+function requireDesktopBridge() {
+  const bridge = getDesktopHostBridge();
+  if (!bridge) {
+    throw new Error('Desktop host bridge is not available.');
+  }
+  return bridge;
 }
 
-export function isSubscriptionNotificationMethod(method: string): boolean {
-  return method === WS_NOTIFICATION_METHODS.canvasChanged;
+function toRpcClientError(error: { code?: number | string; message: string; data?: unknown }): RpcClientError {
+  return new RpcClientError(
+    typeof error.code === 'number' ? error.code : 50000,
+    error.message,
+    error.data,
+  );
+}
+
+async function invokeDesktopRuntime<T>(method: string, payload?: unknown): Promise<T> {
+  const bridge = requireDesktopBridge();
+  const envelope = await bridge.rpc.invoke<DesktopRpcEnvelope<T>>(method, payload);
+  if (!envelope.ok) {
+    throw toRpcClientError(envelope.error);
+  }
+  return envelope.result;
+}
+
+export function buildRuntimeReconciliationFingerprint(
+  snapshot: RuntimeReconciliationSnapshot | null,
+): string {
+  if (!snapshot) {
+    return 'runtime:none';
+  }
+
+  return JSON.stringify({
+    canvasId: snapshot.canvasId,
+    workspaceId: snapshot.workspaceId,
+    workspaceRuntimeVersion: snapshot.workspaceRuntimeVersion?.versionToken ?? null,
+    canvasMetadataVersion: snapshot.canvasMetadataVersion?.versionToken ?? null,
+    nodeVersions: [...snapshot.nodeVersions]
+      .sort((left, right) => left.nodeId.localeCompare(right.nodeId))
+      .map((nodeVersion) => ({
+        nodeId: nodeVersion.nodeId,
+        headRevisionNo: nodeVersion.headRevisionNo,
+        versionToken: nodeVersion.versionToken,
+      })),
+  });
 }
 
 export function useCanvasRuntime(
@@ -116,199 +127,13 @@ export function useCanvasRuntime(
   onCanvasInvalidated: () => void,
   onCanvasRegistryChanged?: () => void,
 ) {
-  const wsRef = useRef<WebSocket | null>(null);
-  const pendingRequestsRef = useRef<Map<number | string, PendingRequestEntry>>(new Map());
   const currentCanvasIdRef = useRef<string | null>(null);
-  const wsUrlRef = useRef<string>(resolveFileSyncWsUrl());
   const recentOwnCommandsRef = useRef<Map<string, number>>(new Map());
-
-  const rejectPendingRequests = useCallback((reason: string) => {
-    if (pendingRequestsRef.current.size === 0) {
-      return;
-    }
-
-    const error = new Error(reason);
-    pendingRequestsRef.current.forEach((pending) => {
-      editDebugLog('rpc-request-aborted', error, {
-        method: pending.meta.method,
-        canvasId: pending.meta.canvasId ?? null,
-        nodeId: pending.meta.nodeId ?? null,
-        commandType: pending.meta.commandType ?? null,
-        durationMs: Date.now() - pending.meta.startedAt,
-        wsUrl: wsUrlRef.current,
-        readyState: wsRef.current?.readyState ?? null,
-      });
-      pending.reject(error);
-    });
-    pendingRequestsRef.current.clear();
-  }, []);
+  const reconciliationFingerprintRef = useRef<string>('runtime:none');
 
   const sendRequest = useCallback(async (method: string, params: Record<string, unknown>): Promise<unknown> => (
-    new Promise((resolve, reject) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        reject(new Error('WebSocket not connected'));
-        return;
-      }
-
-      const id = ++requestIdCounter;
-      const request: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
-      pendingRequestsRef.current.set(id, {
-        resolve,
-        reject,
-        meta: {
-          method,
-          startedAt: Date.now(),
-          canvasId: typeof params.canvasId === 'string' ? params.canvasId : undefined,
-          nodeId: typeof params.nodeId === 'string' ? params.nodeId : undefined,
-          commandType: typeof params.commandType === 'string' ? params.commandType : undefined,
-        },
-      });
-
-      setTimeout(() => {
-        const pending = pendingRequestsRef.current.get(id);
-        if (!pending) {
-          return;
-        }
-
-        pendingRequestsRef.current.delete(id);
-        const timeoutError = new Error(`Request timeout: ${method}`);
-        editDebugLog('rpc-request-timeout', timeoutError, {
-          method: pending.meta.method,
-          canvasId: pending.meta.canvasId ?? null,
-          nodeId: pending.meta.nodeId ?? null,
-          commandType: pending.meta.commandType ?? null,
-          durationMs: Date.now() - pending.meta.startedAt,
-          wsUrl: wsUrlRef.current,
-          readyState: wsRef.current?.readyState ?? null,
-        });
-        pending.reject(timeoutError);
-      }, REQUEST_TIMEOUT);
-
-      wsRef.current.send(JSON.stringify(request));
-    })
+    invokeDesktopRuntime(method, params)
   ), []);
-
-  const handleMessage = useCallback((event: MessageEvent) => {
-    let data: JsonRpcResponse | JsonRpcNotification;
-    try {
-      data = JSON.parse(event.data);
-    } catch {
-      console.error('[CanvasRuntime] Failed to parse message:', event.data);
-      return;
-    }
-
-    if ('id' in data && data.id !== undefined) {
-      const pending = pendingRequestsRef.current.get(data.id);
-      if (pending) {
-        pendingRequestsRef.current.delete(data.id);
-        if ('error' in data && data.error) {
-          pending.reject(new RpcClientError(data.error.code, data.error.message, data.error.data));
-        } else {
-          pending.resolve('result' in data ? data.result : undefined);
-        }
-      }
-      return;
-    }
-
-    if ('method' in data && data.method === WS_NOTIFICATION_METHODS.canvasChanged) {
-      const incomingCanvasId = typeof data.params?.canvasId === 'string' ? data.params.canvasId : undefined;
-      const incomingVersion = typeof data.params?.newVersion === 'string' ? data.params.newVersion : undefined;
-      const incomingCanvasRevision = typeof data.params?.canvasRevision === 'number' ? data.params.canvasRevision : undefined;
-      const incomingOriginId = data.params?.originId;
-      const incomingCommandId = data.params?.commandId;
-      const { clientId, lastAppliedCommandId, setCanvasRevision, setCanvasVersion } = useGraphStore.getState();
-      pruneExpiredOwnCommands(recentOwnCommandsRef.current, Date.now());
-
-      if (incomingCanvasId && incomingVersion) {
-        setCanvasVersion(incomingCanvasId, incomingVersion);
-      }
-      if (incomingCanvasId && incomingCanvasRevision !== undefined) {
-        setCanvasRevision(incomingCanvasId, incomingCanvasRevision);
-      }
-
-      const shouldReload = shouldReloadForCanvasChange({
-        changedCanvasId: incomingCanvasId,
-        currentCanvasId: currentCanvasIdRef.current,
-        incomingOriginId,
-        incomingCommandId,
-        clientId,
-        recentOwnCommandIds: new Set(recentOwnCommandsRef.current.keys()),
-        lastAppliedCommandId,
-      });
-
-      if (!shouldReload) {
-        return;
-      }
-
-      onCanvasInvalidated();
-      return;
-    }
-
-  }, [onCanvasInvalidated, onCanvasRegistryChanged]);
-
-  useEffect(() => {
-    if (!canvasId && !onCanvasRegistryChanged) {
-      return undefined;
-    }
-
-    currentCanvasIdRef.current = canvasId;
-    const wsUrl = resolveFileSyncWsUrl({
-      location: typeof window !== 'undefined'
-        ? {
-            protocol: window.location.protocol,
-            hostname: window.location.hostname,
-          }
-        : undefined,
-    });
-    wsUrlRef.current = wsUrl;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      if (canvasId) {
-        const requests = buildCanvasSubscriptionRequests({
-          canvasId,
-          workspaceRootPath,
-          startingId: requestIdCounter + 1,
-          subscribe: true,
-        });
-        requests.forEach((request) => {
-          sendRequest(request.method, request.params || {}).catch((err) => {
-            console.error('[CanvasRuntime] Subscribe failed:', err);
-          });
-        });
-      }
-    };
-
-    ws.onmessage = handleMessage;
-    ws.onerror = (error) => console.error('[CanvasRuntime] WebSocket error:', error);
-    ws.onclose = () => {
-      rejectPendingRequests('WebSocket disconnected before response');
-    };
-
-    return () => {
-      rejectPendingRequests('WebSocket connection was reset');
-      if (ws.readyState === WebSocket.OPEN && canvasId) {
-        const requests = buildCanvasSubscriptionRequests({
-          canvasId,
-          workspaceRootPath,
-          startingId: requestIdCounter + 1,
-          subscribe: false,
-        });
-        requests.forEach((request) => {
-          requestIdCounter = Math.max(
-            requestIdCounter,
-            typeof request.id === 'number' ? request.id : requestIdCounter,
-          );
-          ws.send(JSON.stringify(request));
-        });
-      }
-      ws.close();
-      if (wsRef.current === ws) {
-        wsRef.current = null;
-      }
-    };
-  }, [canvasId, handleMessage, onCanvasRegistryChanged, rejectPendingRequests, sendRequest, workspaceRootPath]);
 
   const withCommon = useCallback((method: MutationMethod, params: Record<string, unknown>) => {
     const targetCanvasId = typeof params.canvasId === 'string' ? params.canvasId : canvasId;
@@ -327,7 +152,7 @@ export function useCanvasRuntime(
       || method === 'node.reparent'
     );
     const baseVersion = canvasVersions[targetCanvasId] ?? null;
-    if (requiresCompatibilityVersion && (!baseVersion || isClientOnlyDraftSourceVersion(baseVersion))) {
+    if (requiresCompatibilityVersion && (!baseVersion || baseVersion.startsWith('draft:'))) {
       throw new Error('SOURCE_VERSION_NOT_READY');
     }
 
@@ -349,11 +174,6 @@ export function useCanvasRuntime(
     const typed = result as RpcMutationResult;
     if (typed?.newVersion && typed.canvasId) {
       useGraphStore.getState().setCanvasVersion(typed.canvasId, typed.newVersion);
-    }
-    const nextCanvasRevision = typed?.canvasRevision
-      ?? (typed?.runtimeResult?.ok ? typed.runtimeResult.data.canvasRevisionAfter ?? undefined : undefined);
-    if (typed?.canvasId && typeof nextCanvasRevision === 'number') {
-      useGraphStore.getState().setCanvasRevision(typed.canvasId, nextCanvasRevision);
     }
     if (typed?.commandId) {
       rememberOwnCommand(recentOwnCommandsRef.current, typed.commandId, Date.now());
@@ -382,17 +202,39 @@ export function useCanvasRuntime(
     return response as CanvasRuntimeProjectionQueryResult;
   }, [canvasId, sendRequest, workspaceRootPath]);
 
+  const readRuntimeReconciliationSnapshot = useCallback(async (): Promise<RuntimeReconciliationSnapshot | null> => {
+    if (!canvasId) {
+      return null;
+    }
+
+    return invokeDesktopRuntime<RuntimeReconciliationSnapshot>('sync.watch', {
+      canvasId,
+      ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
+    });
+  }, [canvasId, workspaceRootPath]);
+
+  const seedRuntimeReconciliationState = useCallback(async () => {
+    const snapshot = await readRuntimeReconciliationSnapshot();
+    reconciliationFingerprintRef.current = buildRuntimeReconciliationFingerprint(snapshot);
+  }, [readRuntimeReconciliationSnapshot]);
+
+  const reconcileRuntimeState = useCallback(async (): Promise<boolean> => {
+    const snapshot = await readRuntimeReconciliationSnapshot();
+    const nextFingerprint = buildRuntimeReconciliationFingerprint(snapshot);
+    if (nextFingerprint === reconciliationFingerprintRef.current) {
+      return false;
+    }
+
+    reconciliationFingerprintRef.current = nextFingerprint;
+    return true;
+  }, [readRuntimeReconciliationSnapshot]);
+
   const mutationExecutor = useMemo(() => createPerCanvasMutationExecutor({
     sendRequest: (method, params) => sendRequest(method, params),
     buildCommonParams: withCommon,
     applyResultVersion,
-    onVersionConflictActual: (actualVersion) => {
-      const activeCanvasId = currentCanvasIdRef.current;
-      if (activeCanvasId && typeof actualVersion === 'number') {
-        useGraphStore.getState().setCanvasRevision(activeCanvasId, actualVersion);
-      } else if (activeCanvasId && typeof actualVersion === 'string') {
-        useGraphStore.getState().setCanvasVersion(activeCanvasId, actualVersion);
-      }
+    onVersionConflictActual: () => {
+      onCanvasInvalidated();
     },
     onConflictRetry: (event) => {
       editDebugLog('mutation-version-conflict-retry', event.error, {
@@ -409,7 +251,7 @@ export function useCanvasRuntime(
         should_enable_server_mutex: event.metrics.shouldEnableServerMutex,
       });
     },
-  }), [applyResultVersion, sendRequest, withCommon]);
+  }), [applyResultVersion, onCanvasInvalidated, sendRequest, withCommon]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !isEditDebugEnabled()) {
@@ -429,6 +271,75 @@ export function useCanvasRuntime(
     };
   }, [mutationExecutor]);
 
+  useEffect(() => {
+    currentCanvasIdRef.current = canvasId;
+    if (!canvasId) {
+      reconciliationFingerprintRef.current = 'runtime:none';
+      return;
+    }
+
+    void seedRuntimeReconciliationState().catch((error) => {
+      console.error('[CanvasRuntime] Failed to seed reconciliation state', error);
+    });
+  }, [canvasId, seedRuntimeReconciliationState, workspaceRootPath]);
+
+  useEffect(() => {
+    if (!canvasId) {
+      return undefined;
+    }
+
+    const bridge = getDesktopHostBridge();
+    if (!bridge) {
+      return undefined;
+    }
+
+    const requestReconcile = () => {
+      void reconcileRuntimeState()
+        .then((changed) => {
+          if (!changed) {
+            return;
+          }
+          onCanvasRegistryChanged?.();
+          onCanvasInvalidated();
+        })
+        .catch((error) => {
+          console.error('[CanvasRuntime] Reconciliation failed', error);
+        });
+    };
+
+    const unsubscribe = bridge.capabilities.lifecycle.onAppEvent((event) => {
+      if (event.type === 'workspace-runtime-invalidated') {
+        if (workspaceId && event.workspaceId !== workspaceId) {
+          return;
+        }
+        requestReconcile();
+        return;
+      }
+
+      if (event.type === 'backend-ready') {
+        requestReconcile();
+      }
+    });
+
+    const handleFocus = () => {
+      requestReconcile();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestReconcile();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [canvasId, onCanvasInvalidated, onCanvasRegistryChanged, reconcileRuntimeState, workspaceId]);
+
   const executeRuntimeMutation = useCallback(async (input: {
     canvasId?: string | null;
     dryRun?: boolean;
@@ -441,7 +352,6 @@ export function useCanvasRuntime(
     }
 
     const state = useGraphStore.getState();
-    const canvasRevision = state.canvasRevisionsById[resolvedCanvasId];
     const sessionId = state.workspaceSessionKey ?? state.activeWorkspaceId ?? state.clientId;
 
     return mutationExecutor.enqueueMutation({
@@ -459,13 +369,6 @@ export function useCanvasRuntime(
           sessionId,
           ...(typeof input.dryRun === 'boolean' ? { dryRun: input.dryRun } : {}),
           ...(input.reason ? { reason: input.reason } : {}),
-          ...(typeof canvasRevision === 'number'
-            ? {
-                preconditions: {
-                  canvasRevision,
-                },
-              }
-            : {}),
           commands: input.commands,
         } satisfies CanvasMutationBatchV1,
       }),
@@ -597,9 +500,7 @@ export function useCanvasRuntime(
   const createNode = useCallback(async (
     node: Record<string, unknown>,
     targetCanvasId?: string | null,
-  ): Promise<RpcMutationResult> => {
-    return createCanvasNode(node, targetCanvasId);
-  }, [createCanvasNode]);
+  ): Promise<RpcMutationResult> => createCanvasNode(node, targetCanvasId), [createCanvasNode]);
 
   const insertObjectBodyBlock = useCallback(async (
     input: {
@@ -721,5 +622,6 @@ export function useCanvasRuntime(
     getRuntimeProjections,
     undoLastEdit,
     redoLastEdit,
+    reconcileRuntimeState,
   };
 }

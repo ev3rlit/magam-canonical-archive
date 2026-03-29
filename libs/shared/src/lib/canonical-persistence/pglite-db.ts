@@ -110,6 +110,30 @@ async function hasRuntimeHistorySchema(client: PGlite): Promise<boolean> {
   return columns.has('session_id') && columns.has('runtime_history') && hasCursorTable;
 }
 
+async function hasRuntimeCoordinationSchema(client: PGlite): Promise<boolean> {
+  const requiredTables = new Set([
+    'workspace_runtime_versions',
+    'canvas_metadata_versions',
+    'node_versions',
+  ]);
+
+  const result = await client.query(`
+    select tablename
+    from pg_tables
+    where schemaname = 'public'
+      and tablename in ('workspace_runtime_versions', 'canvas_metadata_versions', 'node_versions')
+  `);
+
+  for (const row of result.rows as Array<Record<string, unknown>>) {
+    const tablename = typeof row['tablename'] === 'string' ? row['tablename'] : null;
+    if (tablename) {
+      requiredTables.delete(tablename);
+    }
+  }
+
+  return requiredTables.size === 0;
+}
+
 async function ensurePluginRuntimeSchema(client: PGlite): Promise<void> {
   await client.query(`
     create table if not exists plugin_packages (
@@ -248,6 +272,52 @@ async function ensureRuntimeHistorySchema(client: PGlite): Promise<void> {
   `);
 }
 
+async function ensureRuntimeCoordinationSchema(client: PGlite): Promise<void> {
+  await client.query(`
+    create table if not exists workspace_runtime_versions (
+      workspace_id text primary key not null,
+      version_token text not null,
+      updated_at timestamp with time zone default now() not null
+    );
+  `);
+  await client.query(`
+    create table if not exists canvas_metadata_versions (
+      workspace_id text not null,
+      canvas_id text not null,
+      metadata_revision_no integer not null,
+      version_token text not null,
+      updated_at timestamp with time zone default now() not null,
+      constraint canvas_metadata_versions_workspace_canvas_pk
+        primary key (workspace_id, canvas_id)
+    );
+  `);
+  await client.query(`
+    create index if not exists idx_canvas_metadata_versions_workspace_updated
+    on canvas_metadata_versions (workspace_id, updated_at);
+  `);
+  await client.query(`
+    create table if not exists node_versions (
+      workspace_id text not null,
+      canvas_id text not null,
+      node_id text not null,
+      object_id text,
+      head_revision_no integer not null,
+      version_token text not null,
+      last_mutation_batch_id text not null,
+      last_mutation_source text not null,
+      last_applied_by_id text not null,
+      last_applied_by_kind text not null,
+      updated_at timestamp with time zone default now() not null,
+      constraint node_versions_workspace_canvas_node_pk
+        primary key (workspace_id, canvas_id, node_id)
+    );
+  `);
+  await client.query(`
+    create index if not exists idx_node_versions_canvas_updated
+    on node_versions (canvas_id, updated_at);
+  `);
+}
+
 export async function createCanonicalPgliteDb(
   targetDir: string,
   options?: {
@@ -297,6 +367,9 @@ export async function createCanonicalPgliteDb(
     }
     if (!(await hasRuntimeHistorySchema(client))) {
       await ensureRuntimeHistorySchema(client);
+    }
+    if (!(await hasRuntimeCoordinationSchema(client))) {
+      await ensureRuntimeCoordinationSchema(client);
     }
   }
 

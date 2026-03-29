@@ -12,7 +12,6 @@ export const WS_SERVER_MESSAGES = {
   notificationReceived: (method: string) => `[WS] Received notification: ${method}`,
   clientDisconnected: (count: number) => `[WS] Client disconnected. Total: ${count}`,
   runningAt: (port: number) => `[WS] Server running at ws://localhost:${port}`,
-  broadcastCanvasChanged: (canvasId: string) => `[WS] Broadcasted canvas.changed: ${canvasId}`,
   notifiedClientAbout: (subscription: string) => `[WS] Notified client about: ${subscription}`,
   shuttingDown: '\n[WS] Shutting down...',
 } as const;

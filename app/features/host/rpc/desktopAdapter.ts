@@ -4,6 +4,7 @@ import {
   WorkspaceCanvasCreateInput,
   isCreateWorkspaceCanvasResult,
 } from '@/features/host/renderer/rpcClient';
+import type { DesktopHostBridge } from '@/features/host/contracts';
 import type {
   AppPreferenceRecord,
   AppPreferenceUpsertInput,
@@ -16,178 +17,79 @@ import type {
 } from '../../../../libs/shared/src/lib/app-state-persistence/contracts/types';
 import {
   CORE_RPC_LOGICAL_METHODS,
-  type DesktopRuntimeConfig,
   type RpcAdapterDescriptor,
 } from '@/features/host/contracts';
 
-function requireHttpBaseUrl(runtimeConfig?: DesktopRuntimeConfig | null): string {
-  if (!runtimeConfig) {
-    throw new Error('Desktop runtime config is missing.');
+type DesktopRpcEnvelope<T> =
+  | { ok: true; result: T }
+  | { ok: false; error: { code?: number | string; message: string; data?: unknown } };
+
+function requireBridge(bridge?: DesktopHostBridge | null): DesktopHostBridge {
+  if (!bridge) {
+    throw new Error('Desktop host bridge is missing.');
   }
-
-  return runtimeConfig.httpBaseUrl;
+  return bridge;
 }
 
-function createJsonHeaders(extra?: HeadersInit): Headers {
-  const headers = new Headers(extra);
-  headers.set('Content-Type', 'application/json');
-  return headers;
-}
-
-async function parseJsonResponse<T>(response: Response): Promise<T> {
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message =
-      typeof (data as { error?: unknown }).error === 'string'
-        ? (data as { error: string }).error
-        : `Request failed (${response.status})`;
-    throw new Error(message);
-  }
-  return data as T;
-}
-
-async function requestRenderJson<T>(
-  baseUrl: string,
-  pathname: string,
-  init?: RequestInit,
+async function invokeDesktopRpc<T>(
+  bridge: DesktopHostBridge,
+  method: string,
+  payload?: unknown,
 ): Promise<T> {
-  const response = await fetch(`${baseUrl}${pathname}`, {
-    cache: 'no-store',
-    ...init,
-  });
-  return response.json() as Promise<T>;
-}
-
-async function requestWorkspaceCanvasCreate(
-  baseUrl: string,
-  pathname: string,
-  init?: RequestInit,
-): Promise<CreateWorkspaceCanvasResult> {
-  const data = await fetch(`${baseUrl}${pathname}`, {
-    cache: 'no-store',
-    ...init,
-  }).then(parseJsonResponse<unknown>);
-  if (!isCreateWorkspaceCanvasResult(data)) {
-    throw new Error('새 캔버스 생성 응답이 올바르지 않습니다.');
+  const envelope = await bridge.rpc.invoke<DesktopRpcEnvelope<T>>(method, payload);
+  if (!envelope.ok) {
+    throw new Error(envelope.error.message);
   }
-  return data;
+  return envelope.result;
 }
 
 export function createDesktopRpcAdapter(input?: {
-  runtimeConfig?: DesktopRuntimeConfig | null;
+  bridge?: DesktopHostBridge | null;
 }): RendererRpcClient {
+  const bridge = requireBridge(input?.bridge ?? null);
   const descriptor: RpcAdapterDescriptor = {
     hostMode: 'desktop-primary',
-    transport: 'http',
+    transport: 'ipc',
     methods: CORE_RPC_LOGICAL_METHODS,
-    async healthCheck() {
-      if (!input?.runtimeConfig) {
-        return false;
-      }
-
-      try {
-        const response = await fetch(`${input.runtimeConfig.httpBaseUrl}/health`, { cache: 'no-store' });
-        return response.ok;
-      } catch {
-        return false;
-      }
-    },
-  };
-
-  const getBaseUrl = () => requireHttpBaseUrl(input?.runtimeConfig);
-  const requestJson = <T,>(pathname: string, init?: RequestInit) =>
-    fetch(`${getBaseUrl()}${pathname}`, {
-      cache: 'no-store',
-      ...init,
-    }).then(parseJsonResponse<T>);
-  const buildRootPathQuery = (rootPath?: string | null) => (
-    rootPath ? `?rootPath=${encodeURIComponent(rootPath)}` : ''
-  );
-  const buildQuery = (input: Record<string, string | null | undefined>) => {
-    const params = new URLSearchParams();
-    Object.entries(input).forEach(([key, value]) => {
-      if (typeof value === 'string' && value.length > 0) {
-        params.set(key, value);
-      }
-    });
-    const serialized = params.toString();
-    return serialized ? `?${serialized}` : '';
+    healthCheck: () => bridge.rpc.healthCheck(),
   };
 
   return {
     descriptor,
     healthCheck: descriptor.healthCheck,
-    listAppStateWorkspaces: () => requestJson<AppWorkspaceRecord[]>('/app-state/workspaces'),
-    upsertAppStateWorkspace: (input: AppWorkspaceUpsertInput) =>
-      requestJson('/app-state/workspaces', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        headers: createJsonHeaders(),
-      }),
-    async removeAppStateWorkspace(workspaceId: string) {
-      await requestJson(`/app-state/workspaces${buildQuery({ workspaceId })}`, {
-        method: 'DELETE',
-      });
-    },
+    listAppStateWorkspaces: () => invokeDesktopRpc<AppWorkspaceRecord[]>(bridge, 'appState.workspaces.list'),
+    upsertAppStateWorkspace: (workspaceInput: AppWorkspaceUpsertInput) =>
+      invokeDesktopRpc(bridge, 'appState.workspaces.upsert', workspaceInput),
+    removeAppStateWorkspace: (workspaceId: string) =>
+      invokeDesktopRpc<void>(bridge, 'appState.workspaces.remove', { workspaceId }),
     getAppStateWorkspaceSession: () =>
-      requestJson<AppWorkspaceSessionRecord | null>('/app-state/session'),
-    setAppStateWorkspaceSession: (input: AppWorkspaceSessionUpdateInput) =>
-      requestJson('/app-state/session', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        headers: createJsonHeaders(),
-      }),
+      invokeDesktopRpc<AppWorkspaceSessionRecord | null>(bridge, 'appState.session.get'),
+    setAppStateWorkspaceSession: (sessionInput: AppWorkspaceSessionUpdateInput) =>
+      invokeDesktopRpc(bridge, 'appState.session.set', sessionInput),
     listAppStateRecentCanvases: (workspaceId: string) =>
-      requestJson<AppRecentCanvasRecord[]>(
-        `/app-state/recent-canvases${buildQuery({ workspaceId })}`,
-      ),
-    upsertAppStateRecentCanvas: (input: AppRecentCanvasUpsertInput) =>
-      requestJson('/app-state/recent-canvases', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        headers: createJsonHeaders(),
-      }),
-    async clearAppStateRecentCanvases(workspaceId: string) {
-      await requestJson(`/app-state/recent-canvases${buildQuery({ workspaceId })}`, {
-        method: 'DELETE',
-      });
-    },
+      invokeDesktopRpc<AppRecentCanvasRecord[]>(bridge, 'appState.recentCanvases.list', { workspaceId }),
+    upsertAppStateRecentCanvas: (recentCanvasInput: AppRecentCanvasUpsertInput) =>
+      invokeDesktopRpc(bridge, 'appState.recentCanvases.upsert', recentCanvasInput),
+    clearAppStateRecentCanvases: (workspaceId: string) =>
+      invokeDesktopRpc<void>(bridge, 'appState.recentCanvases.clear', { workspaceId }),
     getAppStatePreference: (key: string) =>
-      requestJson<AppPreferenceRecord | null>(`/app-state/preferences${buildQuery({ key })}`),
-    setAppStatePreference: (input: AppPreferenceUpsertInput) =>
-      requestJson('/app-state/preferences', {
-        method: 'POST',
-        body: JSON.stringify(input),
-        headers: createJsonHeaders(),
-      }),
+      invokeDesktopRpc<AppPreferenceRecord | null>(bridge, 'appState.preferences.get', { key }),
+    setAppStatePreference: (preferenceInput: AppPreferenceUpsertInput) =>
+      invokeDesktopRpc(bridge, 'appState.preferences.set', preferenceInput),
     probeWorkspace: (rootPath?: string | null) =>
-      requestJson(`/workspaces${buildRootPathQuery(rootPath)}`),
+      invokeDesktopRpc(bridge, 'workspace.probe', rootPath ? { rootPath } : {}),
     ensureWorkspace: (rootPath: string) =>
-      requestJson('/workspaces', {
-        method: 'POST',
-        body: JSON.stringify({ rootPath, action: 'ensure' }),
-        headers: createJsonHeaders(),
-      }),
+      invokeDesktopRpc(bridge, 'workspace.ensure', { rootPath }),
     listWorkspaceCanvases: (rootPath: string) =>
-      requestJson(`/canvases?rootPath=${encodeURIComponent(rootPath)}`),
-    createWorkspaceCanvas: (input: WorkspaceCanvasCreateInput) =>
-      requestWorkspaceCanvasCreate(getBaseUrl(), '/canvases', {
-        method: 'POST',
-        body: JSON.stringify({
-          rootPath: input.rootPath,
-          ...(typeof input.title === 'string' ? { title: input.title } : {}),
-          ...(typeof input.canvasId === 'string' ? { canvasId: input.canvasId } : {}),
-        }),
-        headers: createJsonHeaders(),
-      }),
-    renderCanvas: (input) =>
-      requestRenderJson(getBaseUrl(), '/render', {
-        method: 'POST',
-        body: JSON.stringify({
-          canvasId: input.canvasId,
-          ...(input.rootPath ? { rootPath: input.rootPath } : {}),
-        }),
-        headers: createJsonHeaders(),
-      }),
+      invokeDesktopRpc(bridge, 'workspace.canvases.list', { rootPath }),
+    async createWorkspaceCanvas(canvasInput: WorkspaceCanvasCreateInput) {
+      const data = await invokeDesktopRpc<unknown>(bridge, 'workspace.canvas.create', canvasInput);
+      if (!isCreateWorkspaceCanvasResult(data)) {
+        throw new Error('새 캔버스 생성 응답이 올바르지 않습니다.');
+      }
+      return data;
+    },
+    renderCanvas: (renderInput) =>
+      invokeDesktopRpc(bridge, 'render.generate', renderInput),
   };
 }

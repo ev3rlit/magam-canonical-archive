@@ -1,4 +1,5 @@
 import { resolveHostApiPath } from '@/features/host/renderer/resolveHostApiPath';
+import { getHostRuntime } from '@/features/host/renderer/createHostRuntime';
 
 export const IMAGE_API_PATH = '/api/assets/file';
 
@@ -60,6 +61,15 @@ export function toAssetApiUrl(assetBasePath: string | null, rawSrc: string): str
 
     if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
         return resolved;
+    }
+
+    if (typeof window !== 'undefined') {
+        const runtime = getHostRuntime();
+        if (runtime.mode === 'desktop-primary' && runtime.runtimeConfig?.workspacePath) {
+            const rootPath = runtime.runtimeConfig.workspacePath.replace(/\\/g, '/').replace(/\/+$/, '');
+            const relativePath = resolved.replace(/^\/+/, '');
+            return encodeURI(`file://${rootPath}/${relativePath}`);
+        }
     }
 
     return `${resolveHostApiPath(IMAGE_API_PATH)}?path=${encodeURIComponent(resolved)}`;

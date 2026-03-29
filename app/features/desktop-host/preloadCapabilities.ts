@@ -36,5 +36,9 @@ export function createPreloadCapabilities(
       markRendererFailed: (payload) =>
         ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.markRendererFailed, payload),
     },
+    rpc: {
+      healthCheck: () => ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.healthCheck),
+      invoke: (method, payload) => ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.invokeRpc, { method, payload }),
+    },
   };
 }

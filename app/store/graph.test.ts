@@ -333,8 +333,6 @@ describe('font hierarchy state', () => {
         __MAGAM_DESKTOP_HOST__: {
           runtime: {
             mode: 'desktop-primary',
-            httpBaseUrl: 'http://127.0.0.1:3003',
-            wsUrl: 'ws://127.0.0.1:3004',
             appStateDbPath: '/tmp/app-state-pgdata',
             workspacePath: null,
             workspaceMode: 'transient',
@@ -376,6 +374,14 @@ describe('font hierarchy state', () => {
             },
             async markRendererFailed() {
               return null;
+            },
+          },
+          rpc: {
+            async healthCheck() {
+              return true;
+            },
+            async invoke() {
+              return { ok: true, result: null };
             },
           },
         },

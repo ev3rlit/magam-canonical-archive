@@ -2,9 +2,11 @@ import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { CanonicalObjectRecord } from '../canonical-object-contract';
 import { cloneContentBlocks, isSemanticRole, readContentBlocks } from '../canonical-object-contract';
 import type {
+  CanvasMetadataVersionRecord,
   CanvasHistoryCursorRecord,
   CanvasBindingRecord,
   CanvasNodeRecord,
+  NodeVersionRecord,
   CloneEditableNoteInput,
   CreateCanonicalObjectInput,
   CanvasRevisionRecord,
@@ -15,21 +17,25 @@ import type {
   PluginPackageRecord,
   PluginPermissionRecord,
   PluginVersionRecord,
+  WorkspaceRuntimeVersionRecord,
 } from './records';
 import { errResult, okResult } from './records';
 import type { CanonicalDb } from './pglite-db';
 import {
   canonicalObjects,
+  canvasMetadataVersions,
   canvasBindings,
   canvasHistoryCursors,
   canvasNodes,
   canvasRevisions,
+  nodeVersions,
   objectRelations,
   pluginExports,
   pluginInstances,
   pluginPackages,
   pluginPermissions,
   pluginVersions,
+  workspaceRuntimeVersions,
 } from './schema';
 import {
   validateCanonicalObjectRecord,
@@ -50,6 +56,9 @@ type CanonicalObjectRow = typeof canonicalObjects.$inferSelect;
 type CanvasNodeRow = typeof canvasNodes.$inferSelect;
 type CanvasBindingRow = typeof canvasBindings.$inferSelect;
 type CanvasHistoryCursorRow = typeof canvasHistoryCursors.$inferSelect;
+type WorkspaceRuntimeVersionRow = typeof workspaceRuntimeVersions.$inferSelect;
+type CanvasMetadataVersionRow = typeof canvasMetadataVersions.$inferSelect;
+type NodeVersionRow = typeof nodeVersions.$inferSelect;
 type PluginPackageRow = typeof pluginPackages.$inferSelect;
 type PluginVersionRow = typeof pluginVersions.$inferSelect;
 type PluginExportRow = typeof pluginExports.$inferSelect;
@@ -142,6 +151,40 @@ function fromCanvasHistoryCursorRow(row: CanvasHistoryCursorRow): CanvasHistoryC
     sessionId: row.sessionId,
     undoRevisionNo: row.undoRevisionNo ?? null,
     redoRevisionNo: row.redoRevisionNo ?? null,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function fromWorkspaceRuntimeVersionRow(row: WorkspaceRuntimeVersionRow): WorkspaceRuntimeVersionRecord {
+  return {
+    workspaceId: row.workspaceId,
+    versionToken: row.versionToken,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function fromCanvasMetadataVersionRow(row: CanvasMetadataVersionRow): CanvasMetadataVersionRecord {
+  return {
+    workspaceId: row.workspaceId,
+    canvasId: row.canvasId,
+    metadataRevisionNo: row.metadataRevisionNo,
+    versionToken: row.versionToken,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function fromNodeVersionRow(row: NodeVersionRow): NodeVersionRecord {
+  return {
+    workspaceId: row.workspaceId,
+    canvasId: row.canvasId,
+    nodeId: row.nodeId,
+    objectId: row.objectId ?? null,
+    headRevisionNo: row.headRevisionNo,
+    versionToken: row.versionToken,
+    lastMutationBatchId: row.lastMutationBatchId,
+    lastMutationSource: row.lastMutationSource as NodeVersionRecord['lastMutationSource'],
+    lastAppliedById: row.lastAppliedById,
+    lastAppliedByKind: row.lastAppliedByKind,
     updatedAt: row.updatedAt,
   };
 }
@@ -1416,6 +1459,152 @@ export class CanonicalPersistenceRepository {
     });
 
     return latest?.revisionNo ?? 0;
+  }
+
+  async getWorkspaceRuntimeVersion(workspaceId: string): Promise<WorkspaceRuntimeVersionRecord | null> {
+    const row = await this.db.query.workspaceRuntimeVersions.findFirst({
+      where: eq(workspaceRuntimeVersions.workspaceId, workspaceId),
+    });
+    return row ? fromWorkspaceRuntimeVersionRow(row) : null;
+  }
+
+  async upsertWorkspaceRuntimeVersion(record: WorkspaceRuntimeVersionRecord): Promise<WorkspaceRuntimeVersionRecord> {
+    const rows = await this.db
+      .insert(workspaceRuntimeVersions)
+      .values({
+        workspaceId: record.workspaceId,
+        versionToken: record.versionToken,
+        updatedAt: record.updatedAt ?? new Date(),
+      })
+      .onConflictDoUpdate({
+        target: workspaceRuntimeVersions.workspaceId,
+        set: {
+          versionToken: record.versionToken,
+          updatedAt: record.updatedAt ?? new Date(),
+        },
+      })
+      .returning();
+
+    return fromWorkspaceRuntimeVersionRow(rows[0]!);
+  }
+
+  async getCanvasMetadataVersion(
+    workspaceId: string,
+    canvasId: string,
+  ): Promise<CanvasMetadataVersionRecord | null> {
+    const row = await this.db.query.canvasMetadataVersions.findFirst({
+      where: and(
+        eq(canvasMetadataVersions.workspaceId, workspaceId),
+        eq(canvasMetadataVersions.canvasId, canvasId),
+      ),
+    });
+    return row ? fromCanvasMetadataVersionRow(row) : null;
+  }
+
+  async upsertCanvasMetadataVersion(record: CanvasMetadataVersionRecord): Promise<CanvasMetadataVersionRecord> {
+    const rows = await this.db
+      .insert(canvasMetadataVersions)
+      .values({
+        workspaceId: record.workspaceId,
+        canvasId: record.canvasId,
+        metadataRevisionNo: record.metadataRevisionNo,
+        versionToken: record.versionToken,
+        updatedAt: record.updatedAt ?? new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [canvasMetadataVersions.workspaceId, canvasMetadataVersions.canvasId],
+        set: {
+          metadataRevisionNo: record.metadataRevisionNo,
+          versionToken: record.versionToken,
+          updatedAt: record.updatedAt ?? new Date(),
+        },
+      })
+      .returning();
+
+    return fromCanvasMetadataVersionRow(rows[0]!);
+  }
+
+  async getNodeVersion(
+    workspaceId: string,
+    canvasId: string,
+    nodeId: string,
+  ): Promise<NodeVersionRecord | null> {
+    const row = await this.db.query.nodeVersions.findFirst({
+      where: and(
+        eq(nodeVersions.workspaceId, workspaceId),
+        eq(nodeVersions.canvasId, canvasId),
+        eq(nodeVersions.nodeId, nodeId),
+      ),
+    });
+    return row ? fromNodeVersionRow(row) : null;
+  }
+
+  async listNodeVersions(
+    workspaceId: string,
+    canvasId: string,
+    input?: { nodeIds?: string[] },
+  ): Promise<NodeVersionRecord[]> {
+    const rows = await this.db.query.nodeVersions.findMany({
+      where: and(
+        eq(nodeVersions.workspaceId, workspaceId),
+        eq(nodeVersions.canvasId, canvasId),
+      ),
+      orderBy: [desc(nodeVersions.updatedAt)],
+    });
+
+    const filtered = input?.nodeIds?.length
+      ? rows.filter((row) => input.nodeIds?.includes(row.nodeId))
+      : rows;
+
+    return filtered.map(fromNodeVersionRow);
+  }
+
+  async upsertNodeVersion(record: NodeVersionRecord): Promise<NodeVersionRecord> {
+    const rows = await this.db
+      .insert(nodeVersions)
+      .values({
+        workspaceId: record.workspaceId,
+        canvasId: record.canvasId,
+        nodeId: record.nodeId,
+        objectId: record.objectId ?? null,
+        headRevisionNo: record.headRevisionNo,
+        versionToken: record.versionToken,
+        lastMutationBatchId: record.lastMutationBatchId,
+        lastMutationSource: record.lastMutationSource,
+        lastAppliedById: record.lastAppliedById,
+        lastAppliedByKind: record.lastAppliedByKind,
+        updatedAt: record.updatedAt ?? new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [nodeVersions.workspaceId, nodeVersions.canvasId, nodeVersions.nodeId],
+        set: {
+          objectId: record.objectId ?? null,
+          headRevisionNo: record.headRevisionNo,
+          versionToken: record.versionToken,
+          lastMutationBatchId: record.lastMutationBatchId,
+          lastMutationSource: record.lastMutationSource,
+          lastAppliedById: record.lastAppliedById,
+          lastAppliedByKind: record.lastAppliedByKind,
+          updatedAt: record.updatedAt ?? new Date(),
+        },
+      })
+      .returning();
+
+    return fromNodeVersionRow(rows[0]!);
+  }
+
+  async deleteNodeVersion(
+    workspaceId: string,
+    canvasId: string,
+    nodeId: string,
+  ): Promise<void> {
+    await this.db
+      .delete(nodeVersions)
+      .where(and(
+        eq(nodeVersions.workspaceId, workspaceId),
+        eq(nodeVersions.canvasId, canvasId),
+        eq(nodeVersions.nodeId, nodeId),
+      ));
   }
 
   async getCanvasHistoryCursor(

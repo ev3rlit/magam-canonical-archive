@@ -22,7 +22,6 @@ import {
   type RpcContext,
   type RpcMethodRegistry,
 } from '../shared/params';
-import { notifyCanvasChanged } from '../shared/responses';
 
 async function withCanonicalContext<T>(
   rootPath: string | undefined,
@@ -139,16 +138,6 @@ async function handleCanvasRuntimeUndo(
     const canvasRevision = runtimeMutation.envelope.ok
       ? runtimeMutation.envelope.data.canvasRevisionAfter ?? undefined
       : undefined;
-    if (runtimeMutation.envelope.ok && typeof canvasRevision === 'number') {
-      notifyCanvasChanged(ctx, {
-        canvasId: request.canvasId,
-        canvasRevision,
-        originId: common.originId,
-        commandId: common.commandId,
-        ...(common.rootPath ? { rootPath: common.rootPath } : {}),
-      });
-    }
-
     return {
       success: runtimeMutation.envelope.ok,
       commandId: common.commandId,
@@ -208,16 +197,6 @@ async function handleCanvasRuntimeRedo(
     const canvasRevision = runtimeMutation.envelope.ok
       ? runtimeMutation.envelope.data.canvasRevisionAfter ?? undefined
       : undefined;
-    if (runtimeMutation.envelope.ok && typeof canvasRevision === 'number') {
-      notifyCanvasChanged(ctx, {
-        canvasId: request.canvasId,
-        canvasRevision,
-        originId: common.originId,
-        commandId: common.commandId,
-        ...(common.rootPath ? { rootPath: common.rootPath } : {}),
-      });
-    }
-
     return {
       success: runtimeMutation.envelope.ok,
       commandId: common.commandId,
