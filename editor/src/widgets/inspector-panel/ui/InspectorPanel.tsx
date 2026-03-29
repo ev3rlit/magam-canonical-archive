@@ -254,6 +254,8 @@ export function InspectorPanel() {
 
   return (
     <WidgetBase
+      collapsible
+      entryDelayMs={220}
       panelId="inspector"
       side="right"
       subtitle={selectedObjects.length > 0 ? 'Quick edits for the current selection' : undefined}

@@ -75,6 +75,8 @@ export function OutlinerPanel() {
   return (
     <WidgetBase
       bodyClassName="editor-panel__body--compact"
+      collapsible
+      entryDelayMs={120}
       panelId="outliner"
       side="left"
       subtitle={sceneObjects.length > 0 ? `${sceneObjects.length} objects` : undefined}

@@ -19,6 +19,12 @@
   --editor-radius-sm: 10px;
   --editor-radius-md: 18px;
   --editor-radius-lg: 26px;
+  --motion-fast: 140ms;
+  --motion-medium: 240ms;
+  --motion-slow: 420ms;
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
@@ -75,6 +81,9 @@ button {
   align-items: center;
   gap: 16px;
   padding: 18px 24px;
+  opacity: 0;
+  transform: translateY(-10px);
+  animation: editor-enter-down 560ms var(--ease-out-expo) 40ms forwards;
 }
 
 .top-toolbar__identity {
@@ -108,12 +117,6 @@ button {
   background: var(--editor-panel);
   box-shadow: var(--editor-panel-shadow);
   backdrop-filter: blur(26px);
-}
-
-.editor-panel--drawer {
-  height: min(82vh, 720px);
-  width: min(100%, 420px);
-  border-radius: 28px 28px 0 0;
 }
 
 .editor-panel__header {
@@ -171,9 +174,15 @@ button {
   width: 100%;
   min-width: 0;
   height: 100%;
+  opacity: 0;
+  transform: translateY(12px);
+  animation: widget-panel-enter var(--motion-slow) var(--ease-out-quint) var(--widget-enter-delay, 0ms) forwards;
 }
 
 .widget-shell__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 36px;
   height: 36px;
   border-radius: 999px;
@@ -184,6 +193,17 @@ button {
 
 .widget-shell__peek {
   display: none;
+}
+
+.widget-shell__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.widget-shell__toggle-glyph {
+  display: block;
+  transition: transform var(--motion-fast) var(--ease-out-quart);
 }
 
 .widget-shell--collapsed .widget-shell__panel {
@@ -203,6 +223,30 @@ button {
   box-shadow: var(--editor-panel-shadow);
   color: var(--editor-primary);
   cursor: pointer;
+}
+
+.widget-shell--canvas .widget-shell__panel {
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.widget-shell--canvas .editor-panel__header {
+  padding: 14px 18px 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.22));
+}
+
+.widget-shell__title--canvas {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.widget-shell__body--canvas {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px;
 }
 
 .widget-shell__peek-label {
@@ -416,11 +460,14 @@ button {
 }
 
 .canvas-editor {
+  display: flex;
+  flex: 1;
   min-height: 0;
 }
 
 .canvas-editor__stage {
   position: relative;
+  flex: 1;
   min-height: 0;
   height: 100%;
   border: 1px solid rgba(88, 81, 255, 0.12);
@@ -434,6 +481,7 @@ button {
 }
 
 .floating-tool-menu {
+  --floating-tool-x: -50%;
   position: absolute;
   top: 24px;
   left: 50%;
@@ -447,8 +495,10 @@ button {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.88);
   box-shadow: 0 18px 60px rgba(23, 32, 51, 0.1);
-  transform: translateX(-50%);
+  transform: translate(var(--floating-tool-x), 0);
   overflow: auto hidden;
+  opacity: 0;
+  animation: floating-menu-enter 460ms var(--ease-out-expo) 160ms forwards;
 }
 
 .floating-tool-menu__cluster {
@@ -521,10 +571,18 @@ button {
   cursor: pointer;
   overflow: hidden;
   text-align: left;
+  transition:
+    box-shadow var(--motion-medium) var(--ease-out-quart),
+    border-color var(--motion-fast) var(--ease-out-quart),
+    background-color var(--motion-fast) var(--ease-out-quart);
 }
 
 .canvas-object--locked {
   cursor: not-allowed;
+}
+
+.canvas-object:hover {
+  box-shadow: 0 22px 56px rgba(23, 32, 51, 0.12);
 }
 
 .canvas-object--frame {
@@ -554,6 +612,15 @@ button {
   display: grid;
   gap: 8px;
   width: 100%;
+  transition: transform var(--motion-medium) var(--ease-out-quart);
+}
+
+.canvas-object:hover .canvas-object__body,
+.canvas-object:hover .canvas-object__group-label,
+.canvas-object:hover .canvas-object__frame-label,
+.canvas-object:hover .canvas-object__caption,
+.canvas-object:hover .canvas-object__text-block {
+  transform: translateY(-2px);
 }
 
 .canvas-object__body {
@@ -749,6 +816,8 @@ button {
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 18px 60px rgba(23, 32, 51, 0.12);
+  opacity: 0;
+  animation: overlay-enter 190ms var(--ease-out-quart) forwards;
 }
 
 .floating-object-menu__button,
@@ -780,6 +849,106 @@ button {
 
 .canvas-context-menu__button {
   width: 42px;
+}
+
+.widget-shell__toggle,
+.widget-shell__peek,
+.floating-tool-menu__button,
+.floating-object-menu__button,
+.canvas-context-menu__button,
+.canvas-overlay__button,
+.inspector-toggle,
+.inspector-action,
+.outliner-row__button {
+  transition:
+    transform var(--motion-fast) var(--ease-out-quart),
+    background-color var(--motion-fast) var(--ease-out-quart),
+    color var(--motion-fast) var(--ease-out-quart),
+    box-shadow var(--motion-fast) var(--ease-out-quart),
+    border-color var(--motion-fast) var(--ease-out-quart);
+}
+
+.widget-shell__toggle:hover,
+.widget-shell__peek:hover,
+.floating-tool-menu__button:hover,
+.floating-object-menu__button:hover,
+.canvas-context-menu__button:hover,
+.canvas-overlay__button:hover,
+.inspector-toggle:hover,
+.inspector-action:hover,
+.outliner-row__button:hover {
+  transform: translateY(-1px);
+}
+
+.widget-shell__toggle:active,
+.widget-shell__peek:active,
+.floating-tool-menu__button:active,
+.floating-object-menu__button:active,
+.canvas-context-menu__button:active,
+.canvas-overlay__button:active,
+.inspector-toggle:active,
+.inspector-action:active,
+.outliner-row__button:active {
+  transform: scale(0.96);
+}
+
+.inspector-field__input,
+.inspector-field__input--textarea {
+  transition:
+    border-color var(--motion-fast) var(--ease-out-quart),
+    box-shadow var(--motion-fast) var(--ease-out-quart),
+    background-color var(--motion-fast) var(--ease-out-quart);
+}
+
+.inspector-field__input:focus,
+.inspector-field__input--textarea:focus {
+  outline: none;
+  border-color: rgba(88, 81, 255, 0.28);
+  box-shadow: 0 0 0 4px rgba(88, 81, 255, 0.08);
+}
+
+@keyframes editor-enter-down {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes widget-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floating-menu-enter {
+  from {
+    opacity: 0;
+    transform: translate(var(--floating-tool-x), -8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(var(--floating-tool-x), 0) scale(1);
+  }
+}
+
+@keyframes overlay-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 @media (max-width: 1180px) {
@@ -826,6 +995,7 @@ button {
     display: block;
     background: rgba(23, 32, 51, 0.18);
     backdrop-filter: blur(8px);
+    animation: overlay-backdrop-enter var(--motion-medium) var(--ease-out-quart) forwards;
   }
 
   .widget-shell__peek {
@@ -854,6 +1024,7 @@ button {
 
   .widget-shell--mobile-active .widget-shell__panel {
     display: flex;
+    animation: widget-sheet-enter 320ms var(--ease-out-expo) forwards;
   }
 
   .widget-shell--left.widget-shell--mobile-active {
@@ -893,15 +1064,46 @@ button {
   }
 
   .floating-tool-menu {
+    --floating-tool-x: 0px;
     top: 18px;
     left: 16px;
     right: 16px;
     width: auto;
-    transform: none;
   }
 
   .floating-object-menu {
     max-width: calc(100% - 24px);
     overflow: auto hidden;
+  }
+}
+
+@keyframes widget-sheet-enter {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes overlay-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
