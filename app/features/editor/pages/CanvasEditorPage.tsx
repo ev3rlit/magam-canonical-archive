@@ -77,6 +77,7 @@ import {
   navigateToDashboard,
   navigateToWorkspaceCanvas,
 } from '@/features/host/renderer/navigation';
+import { resolveCreatedCanvasBootstrapGraph } from './createdCanvasBootstrap';
 import {
   copyTextWithDesktopBridge,
   pickWorkspaceRootPath,
@@ -519,7 +520,6 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
       const createdCanvas = await hostRpc.createWorkspaceCanvas({
         rootPath: activeWorkspace.rootPath,
       });
-      setCurrentCanvasId(createdCanvas.canvasId);
       registerWorkspaceCanvas(activeWorkspace.id, {
         canvasId: createdCanvas.canvasId,
         workspaceId: createdCanvas.workspaceId,
@@ -529,17 +529,15 @@ export function CanvasEditorPage({ canvasId }: { canvasId: string }) {
 
       const opened = openTabByPath(createdCanvas.canvasId);
       if (opened) {
-        setGraph({
-          nodes: [],
-          edges: [],
-          sourceVersion: null,
-          canvasVersions: {},
-          canvasRevisionsById: {},
-          assetBasePath: null,
-        });
+        setGraph(resolveCreatedCanvasBootstrapGraph({
+          canvasId: createdCanvas.canvasId,
+          sourceVersion: createdCanvas.sourceVersion,
+          latestRevision: createdCanvas.latestRevision,
+        }));
         setGraphError(null);
       }
 
+      setCurrentCanvasId(createdCanvas.canvasId);
       await loadActiveWorkspaceCanvases(activeWorkspace);
       navigateToWorkspaceCanvas(createdCanvas.canvasId);
       return opened;

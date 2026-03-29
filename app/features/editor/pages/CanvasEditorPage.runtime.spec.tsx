@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'bun:test';
 import { parseRenderGraph } from '@/features/render/parseRenderGraph';
+import { resolveCreatedCanvasBootstrapGraph } from './createdCanvasBootstrap';
 
 describe('CanvasEditorPage runtime projection bridge', () => {
+  it('seeds new canvas state from the create RPC source version', () => {
+    expect(resolveCreatedCanvasBootstrapGraph({
+      canvasId: 'doc-new',
+      sourceVersion: 'sha256:doc-new',
+      latestRevision: 1,
+    })).toEqual({
+      nodes: [],
+      edges: [],
+      sourceVersion: 'sha256:doc-new',
+      canvasVersions: {
+        'doc-new': 'sha256:doc-new',
+      },
+      canvasRevisionsById: {
+        'doc-new': 1,
+      },
+      assetBasePath: null,
+    });
+  });
+
   it('overlays shared editing projection metadata onto parsed nodes', () => {
     const parsed = parseRenderGraph({
       graph: {
