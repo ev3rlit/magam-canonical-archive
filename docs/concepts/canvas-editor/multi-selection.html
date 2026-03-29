@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Precision Canvas - Editor</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@600;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "tertiary-fixed": "#fd8bcc",
+                        "on-primary-fixed-variant": "#18009a",
+                        "tertiary-dim": "#892a66",
+                        "primary-container": "#9695ff",
+                        "error-container": "#f74b6d",
+                        "on-secondary": "#f7f0ff",
+                        "inverse-primary": "#8482ff",
+                        "background": "#f5f6f7",
+                        "primary-fixed-dim": "#8785ff",
+                        "on-secondary-fixed-variant": "#563da6",
+                        "on-primary-fixed": "#000000",
+                        "tertiary": "#973773",
+                        "surface-variant": "#dadddf",
+                        "surface-dim": "#d1d5d7",
+                        "on-surface": "#2c2f30",
+                        "on-error-container": "#510017",
+                        "on-background": "#2c2f30",
+                        "secondary-fixed": "#d7caff",
+                        "error-dim": "#a70138",
+                        "error": "#b41340",
+                        "on-tertiary-container": "#610245",
+                        "tertiary-fixed-dim": "#ed7ebe",
+                        "outline": "#757778",
+                        "secondary": "#6149b2",
+                        "primary": "#453bed",
+                        "surface": "#f5f6f7",
+                        "on-tertiary-fixed-variant": "#6c104f",
+                        "on-secondary-fixed": "#391b88",
+                        "surface-container-highest": "#dadddf",
+                        "on-tertiary-fixed": "#360025",
+                        "surface-container": "#e6e8ea",
+                        "on-secondary-container": "#4d339c",
+                        "on-primary": "#f4f1ff",
+                        "on-tertiary": "#ffeff4",
+                        "surface-container-high": "#e0e3e4",
+                        "tertiary-container": "#fd8bcc",
+                        "inverse-surface": "#0c0f10",
+                        "secondary-dim": "#553ca5",
+                        "surface-container-low": "#eff1f2",
+                        "surface-bright": "#f5f6f7",
+                        "secondary-fixed-dim": "#cabaff",
+                        "primary-dim": "#3829e2",
+                        "on-surface-variant": "#595c5d",
+                        "on-primary-container": "#12007f",
+                        "on-error": "#ffefef",
+                        "primary-fixed": "#9695ff",
+                        "inverse-on-surface": "#9b9d9e",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-tint": "#453bed",
+                        "secondary-container": "#d7caff",
+                        "outline-variant": "#abadae"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            display: inline-block;
+            line-height: 1;
+            font-size: 20px;
+        }
+        .canvas-grid {
+            background-size: 40px 40px;
+            background-image: radial-gradient(circle, #dadddf 1px, transparent 1px);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface overflow-hidden">
+<!-- Top Navigation Shell -->
+<header class="fixed top-0 left-0 right-0 h-14 bg-slate-50/80 backdrop-blur-xl flex justify-between items-center px-6 z-50">
+<div class="flex items-center gap-4">
+<button class="text-slate-500 hover:bg-slate-200/50 p-2 rounded-full transition-colors">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<div class="flex items-center gap-2 border-l border-slate-200 pl-4">
+<span class="material-symbols-outlined text-slate-400">arrow_back</span>
+<h1 class="font-headline font-extrabold text-[#5851FF] tracking-tighter text-lg">Precision Canvas</h1>
+<span class="text-slate-300 mx-1">/</span>
+<span class="font-label font-semibold text-sm text-slate-500">Brainstorm Session 01</span>
+</div>
+</div>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-[#5851FF] font-bold border-b-2 border-[#5851FF] text-sm font-headline tracking-tight py-1" href="#">File</a>
+<a class="text-slate-500 font-medium hover:bg-slate-200/50 transition-colors text-sm font-headline tracking-tight py-1" href="#">Edit</a>
+<a class="text-slate-500 font-medium hover:bg-slate-200/50 transition-colors text-sm font-headline tracking-tight py-1" href="#">View</a>
+<a class="text-slate-500 font-medium hover:bg-slate-200/50 transition-colors text-sm font-headline tracking-tight py-1" href="#">History</a>
+</nav>
+<div class="flex items-center gap-3">
+<button class="p-2 text-slate-500 hover:bg-slate-200/50 rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="cloud_done">cloud_done</span>
+</button>
+<button class="p-2 text-slate-500 hover:bg-slate-200/50 rounded-full transition-colors">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+</button>
+</div>
+</header>
+<!-- Side Tool Dock (Anchored Blueprint) -->
+<aside class="fixed left-4 top-20 rounded-full py-4 w-16 bg-white/80 backdrop-blur-2xl shadow-[0_8px_32px_rgba(44,47,48,0.06)] flex flex-col items-center gap-4 z-40">
+<button class="text-slate-400 p-3 hover:bg-slate-100 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="near_me">near_me</span>
+</button>
+<button class="bg-[#5851FF] text-white rounded-full p-3 active:scale-110 duration-200 ease-out">
+<span class="material-symbols-outlined" data-icon="category">category</span>
+</button>
+<button class="text-slate-400 p-3 hover:bg-slate-100 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="title">title</span>
+</button>
+<button class="text-slate-400 p-3 hover:bg-slate-100 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="edit">edit</span>
+</button>
+<button class="text-slate-400 p-3 hover:bg-slate-100 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="layers">layers</span>
+</button>
+<button class="text-slate-400 p-3 hover:bg-slate-100 rounded-full transition-all">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+</button>
+</aside>
+<!-- Canvas Area -->
+<main class="w-screen h-screen canvas-grid relative pt-14 flex items-center justify-center overflow-auto">
+<!-- Selection Wrapper -->
+<div class="relative">
+<!-- Floating Edit Menu (Miro-style) -->
+<div class="absolute -top-20 left-1/2 -translate-x-1/2 flex items-center bg-surface-container-lowest/80 backdrop-blur-xl rounded-full p-1.5 shadow-[0_8px_32px_rgba(44,47,48,0.06)] gap-1 z-50 whitespace-nowrap border border-outline-variant/15">
+<!-- Color Picker -->
+<button class="flex items-center justify-center w-8 h-8 rounded-full bg-tertiary-container hover:scale-105 transition-transform">
+<div class="w-4 h-4 rounded-full border border-white/20"></div>
+</button>
+<div class="w-px h-6 bg-outline-variant/30 mx-1"></div>
+<!-- Shape Change -->
+<button class="p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors flex items-center gap-1">
+<span class="material-symbols-outlined text-[18px]">rectangle</span>
+<span class="material-symbols-outlined text-[14px]">expand_more</span>
+</button>
+<div class="w-px h-6 bg-outline-variant/30 mx-1"></div>
+<!-- Typography -->
+<button class="px-3 py-1 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors text-xs font-medium font-body flex items-center gap-2">
+                    Inter
+                    <span class="material-symbols-outlined text-[14px]">expand_more</span>
+</button>
+<div class="flex items-center gap-0.5 bg-surface-container-low rounded-lg px-1">
+<button class="p-1 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">remove</span>
+</button>
+<span class="text-[11px] font-bold px-1 w-6 text-center">14</span>
+<button class="p-1 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[18px]">add</span>
+</button>
+</div>
+<div class="w-px h-6 bg-outline-variant/30 mx-1"></div>
+<!-- Formatting -->
+<div class="flex items-center gap-0.5">
+<button class="p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors">
+<span class="material-symbols-outlined text-[18px]">format_bold</span>
+</button>
+<button class="p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors">
+<span class="material-symbols-outlined text-[18px]">format_italic</span>
+</button>
+<button class="p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors">
+<span class="material-symbols-outlined text-[18px]">format_underlined</span>
+</button>
+<button class="p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors">
+<span class="material-symbols-outlined text-[18px]">strikethrough_s</span>
+</button>
+</div>
+<div class="w-px h-6 bg-outline-variant/30 mx-1"></div>
+<!-- Alignment -->
+<button class="p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors">
+<span class="material-symbols-outlined text-[18px]">format_align_center</span>
+</button>
+<div class="w-px h-6 bg-outline-variant/30 mx-1"></div>
+<!-- Actions -->
+<button class="p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors">
+<span class="material-symbols-outlined text-[18px]">lock_open</span>
+</button>
+<button class="p-2 text-on-surface hover:bg-surface-container-high rounded-lg transition-colors">
+<span class="material-symbols-outlined text-[18px]">more_horiz</span>
+</button>
+</div>
+<!-- Sticky Notes Group -->
+<div class="relative p-6 flex gap-8 border-2 border-primary rounded-xl bg-primary/5 shadow-[0_0_24px_rgba(69,59,237,0.15)]">
+<!-- Sticky Note 1 -->
+<div class="w-48 h-48 bg-[#FFF9C4] shadow-[4px_4px_12px_rgba(0,0,0,0.05)] p-4 flex flex-col justify-between rotate-[-1deg] hover:scale-105 transition-transform duration-300">
+<p class="text-sm font-medium leading-relaxed text-slate-800">Review project requirements for the ethereal workspace design.</p>
+<div class="flex justify-end opacity-20">
+<span class="material-symbols-outlined text-[16px]">push_pin</span>
+</div>
+</div>
+<!-- Sticky Note 2 -->
+<div class="w-48 h-48 bg-[#E1F5FE] shadow-[4px_4px_12px_rgba(0,0,0,0.05)] p-4 flex flex-col justify-between rotate-[2deg] hover:scale-105 transition-transform duration-300">
+<p class="text-sm font-medium leading-relaxed text-slate-800">Implement glassmorphism on floating navigation bars.</p>
+<div class="flex justify-end opacity-20">
+<span class="material-symbols-outlined text-[16px]">push_pin</span>
+</div>
+</div>
+<!-- Sticky Note 3 -->
+<div class="w-48 h-48 bg-[#F8BBD0] shadow-[4px_4px_12px_rgba(0,0,0,0.05)] p-4 flex flex-col justify-between rotate-[-1.5deg] hover:scale-105 transition-transform duration-300">
+<p class="text-sm font-medium leading-relaxed text-slate-800">User feedback session scheduled for Friday at 3PM.</p>
+<div class="flex justify-end opacity-20">
+<span class="material-symbols-outlined text-[16px]">push_pin</span>
+</div>
+</div>
+<!-- Selection Handles -->
+<div class="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm"></div>
+<div class="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm"></div>
+<div class="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm"></div>
+<div class="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-primary rounded-sm"></div>
+<div class="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-1 bg-white border border-primary"></div>
+<div class="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-1 bg-white border border-primary"></div>
+</div>
+<!-- Selection Label -->
+<div class="absolute -bottom-8 left-0 bg-primary text-white text-[10px] font-bold px-2 py-0.5 rounded-sm uppercase tracking-widest">
+                3 Sticky Notes Selected
+            </div>
+</div>
+</main>
+<!-- Canvas Controls (Bottom Right) -->
+<div class="fixed bottom-6 right-6 flex items-center gap-2 z-40">
+<div class="flex items-center bg-surface-container-lowest/80 backdrop-blur-xl rounded-full p-1 shadow-lg border border-outline-variant/15">
+<button class="p-2 text-slate-500 hover:bg-slate-100 rounded-full">
+<span class="material-symbols-outlined">zoom_out</span>
+</button>
+<span class="text-xs font-bold px-2 text-slate-600">82%</span>
+<button class="p-2 text-slate-500 hover:bg-slate-100 rounded-full">
+<span class="material-symbols-outlined">zoom_in</span>
+</button>
+</div>
+<button class="w-10 h-10 bg-surface-container-lowest/80 backdrop-blur-xl rounded-full flex items-center justify-center text-slate-500 shadow-lg border border-outline-variant/15">
+<span class="material-symbols-outlined">question_mark</span>
+</button>
+</div>
+</body></html>

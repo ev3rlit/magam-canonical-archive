@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "on-primary": "#f4f1ff",
+            "on-secondary-container": "#4d339c",
+            "error": "#b41340",
+            "surface-container-high": "#e0e3e4",
+            "on-secondary-fixed-variant": "#563da6",
+            "primary-dim": "#3829e2",
+            "on-secondary": "#f7f0ff",
+            "surface-container-highest": "#dadddf",
+            "on-error-container": "#510017",
+            "surface-container-low": "#eff1f2",
+            "tertiary-fixed": "#fd8bcc",
+            "error-dim": "#a70138",
+            "tertiary-container": "#fd8bcc",
+            "outline": "#757778",
+            "tertiary-fixed-dim": "#ed7ebe",
+            "surface-container": "#e6e8ea",
+            "secondary-fixed-dim": "#cabaff",
+            "primary-fixed": "#9695ff",
+            "surface-variant": "#dadddf",
+            "on-tertiary-fixed-variant": "#6c104f",
+            "surface-dim": "#d1d5d7",
+            "inverse-primary": "#8482ff",
+            "primary-fixed-dim": "#8785ff",
+            "surface-tint": "#453bed",
+            "inverse-on-surface": "#9b9d9e",
+            "on-primary-container": "#12007f",
+            "on-primary-fixed-variant": "#18009a",
+            "primary": "#453bed",
+            "surface-bright": "#f5f6f7",
+            "on-error": "#ffefef",
+            "on-background": "#2c2f30",
+            "surface": "#f5f6f7",
+            "on-tertiary-container": "#610245",
+            "on-surface-variant": "#595c5d",
+            "error-container": "#f74b6d",
+            "on-tertiary-fixed": "#360025",
+            "inverse-surface": "#0c0f10",
+            "secondary-fixed": "#d7caff",
+            "on-tertiary": "#ffeff4",
+            "on-secondary-fixed": "#391b88",
+            "background": "#f5f6f7",
+            "secondary": "#6149b2",
+            "tertiary": "#973773",
+            "outline-variant": "#abadae",
+            "on-primary-fixed": "#000000",
+            "surface-container-lowest": "#ffffff",
+            "on-surface": "#2c2f30",
+            "tertiary-dim": "#892a66",
+            "secondary-dim": "#553ca5",
+            "secondary-container": "#d7caff",
+            "primary-container": "#9695ff"
+          },
+          fontFamily: {
+            "headline": ["Manrope"],
+            "body": ["Inter"],
+            "label": ["Inter"]
+          },
+          borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+        },
+      },
+    }
+  </script>
+<style>
+    .dot-grid {
+      background-image: radial-gradient(circle, #abadae 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .canvas-object-selected {
+      outline: 2px solid #453bed;
+      outline-offset: 4px;
+    }
+  </style>
+</head>
+<body class="bg-surface font-body text-on-surface overflow-hidden h-screen w-screen flex flex-col">
+<!-- TopAppBar Component -->
+<header class="bg-[#f5f6f7]/80 dark:bg-[#1a1c1e]/80 backdrop-blur-xl flex justify-between items-center w-full px-6 h-16 fixed top-0 z-40 border-b border-outline-variant/10">
+<div class="flex items-center gap-4 min-w-[300px]">
+<button class="p-2 hover:bg-surface-container-low rounded-lg transition-colors flex items-center justify-center text-on-surface" title="Back to Workspaces">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<div class="h-6 w-[1px] bg-outline-variant/30"></div>
+<button class="flex items-center gap-2 px-3 py-1.5 hover:bg-surface-container-low transition-colors rounded-lg group" title="File Menu">
+<span class="material-symbols-outlined text-on-surface-variant">menu</span>
+<span class="font-inter text-sm font-medium text-on-surface">Menu</span>
+</button>
+<div class="h-6 w-[1px] bg-outline-variant/30"></div>
+<span class="font-manrope font-extrabold text-[#2c2f30] dark:text-[#f5f6f7] tracking-tight text-sm truncate max-w-[180px]">Untitled Design</span>
+</div>
+<div class="flex items-center gap-2 min-w-[300px] justify-end">
+<div class="flex items-center bg-surface-container-low p-1 rounded-xl">
+<button class="p-2 hover:bg-surface-container-high rounded-lg transition-colors text-on-surface-variant disabled:opacity-30" title="Undo">
+<span class="material-symbols-outlined text-[20px]">undo</span>
+</button>
+<button class="p-2 hover:bg-surface-container-high rounded-lg transition-colors text-on-surface-variant disabled:opacity-30" title="Redo">
+<span class="material-symbols-outlined text-[20px]">redo</span>
+</button>
+</div>
+<div class="h-6 w-[1px] bg-outline-variant/30 mx-2"></div>
+<button class="flex items-center gap-2 px-3 py-2 hover:bg-surface-container-low transition-colors rounded-lg text-on-surface-variant" title="Version History">
+<span class="material-symbols-outlined text-sm">history</span>
+<span class="text-sm font-medium">History</span>
+</button>
+</div>
+</header>
+<!-- Floating Top Toolbar -->
+<div class="fixed top-20 left-1/2 -translate-x-1/2 z-50">
+<div class="flex items-center bg-surface-container-lowest/90 backdrop-blur-xl p-1.5 rounded-2xl shadow-[0_8px_32px_rgba(44,47,48,0.12)] border border-outline-variant/20">
+<div class="flex items-center gap-1">
+<button class="p-2.5 bg-primary text-white rounded-xl shadow-lg shadow-primary/20 transition-all" title="Select">
+<span class="material-symbols-outlined text-[22px]" style="font-variation-settings: 'FILL' 1;">near_me</span>
+</button>
+<button class="p-2.5 hover:bg-surface-container-low rounded-xl transition-colors text-on-surface-variant" title="Shapes">
+<span class="material-symbols-outlined text-[22px]">category</span>
+</button>
+<button class="p-2.5 hover:bg-surface-container-low rounded-xl transition-colors text-on-surface-variant" title="Text">
+<span class="material-symbols-outlined text-[22px]">title</span>
+</button>
+<button class="p-2.5 hover:bg-surface-container-low rounded-xl transition-colors text-on-surface-variant" title="Pen">
+<span class="material-symbols-outlined text-[22px]">gesture</span>
+</button>
+<button class="p-2.5 hover:bg-surface-container-low rounded-xl transition-colors text-on-surface-variant" title="Sticky Note">
+<span class="material-symbols-outlined text-[22px]">sticky_note_2</span>
+</button>
+<button class="p-2.5 hover:bg-surface-container-low rounded-xl transition-colors text-on-surface-variant" title="Image">
+<span class="material-symbols-outlined text-[22px]">image</span>
+</button>
+</div>
+</div>
+</div>
+<main class="flex-1 flex pt-16 relative overflow-hidden">
+<!-- Canvas Workspace -->
+<section class="flex-1 relative overflow-auto dot-grid bg-surface">
+<!-- Infinite Content Samples -->
+<div class="absolute top-20 left-20">
+<!-- Sticky Note -->
+<div class="w-48 h-48 bg-tertiary-container shadow-[0_8px_32px_rgba(44,47,48,0.06)] p-6 rotate-[-2deg] flex flex-col justify-between">
+<p class="font-body text-on-tertiary-container font-medium leading-tight">Define the core user flow for the ethereal workspace journey.</p>
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-surface-container-lowest overflow-hidden">
+<img alt="Avatar" class="w-full h-full object-cover" data-alt="Small avatar of a team member" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDTlZEiOVGta6bL3q_eMecNpk0Vp0bcMT-RFm2SSlvlN_BX0bLvGOPcPrlirNzfsYYIq2IhGA4IkDudexssN6i2AXmWepHRkEYWWkGrnrBsqi9Es2XFQ-QFicmPDAkXIOjn4Y0oXdy-j-WbmTVcGpv0FIo2pdKLi_P3i1hev9Rr70IHm4TNWTWHY3PtzhsXflsnd5SHzZNgYII_hmc4EKj1VmDoLHo8r34QrWVYEuc_tp0G-l0oyq-XWd-23Vkg8KMxNvyY84lyvin9"/>
+</div>
+<span class="text-[10px] text-on-tertiary-container/60 uppercase tracking-widest font-bold">Draft</span>
+</div>
+</div>
+</div>
+<div class="absolute top-40 left-80 group/object">
+<!-- Object Floating Edit Menu -->
+<div class="absolute -top-12 left-1/2 -translate-x-1/2 bg-surface-container-lowest border border-outline-variant/20 rounded-xl shadow-xl p-1 flex items-center gap-0.5 z-10">
+<button class="p-1.5 hover:bg-surface-container-low rounded-lg text-on-surface-variant" title="Color">
+<span class="material-symbols-outlined text-[18px]">palette</span>
+</button>
+<button class="p-1.5 hover:bg-surface-container-low rounded-lg text-on-surface-variant" title="Text Style">
+<span class="material-symbols-outlined text-[18px]">format_bold</span>
+</button>
+<div class="w-[1px] h-4 bg-outline-variant/30 mx-0.5"></div>
+<button class="p-1.5 hover:bg-surface-container-low rounded-lg text-on-surface-variant" title="Lock">
+<span class="material-symbols-outlined text-[18px]">lock</span>
+</button>
+<button class="p-1.5 hover:bg-error/10 text-error rounded-lg" title="Delete">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+</div>
+<!-- Shape & Connection Sample -->
+<div class="flex flex-col items-center gap-4 canvas-object-selected">
+<div class="w-40 h-24 bg-surface-container-lowest border-2 border-primary/20 rounded-xl flex items-center justify-center p-4 shadow-sm">
+<span class="text-sm font-semibold text-on-surface">Ideation Phase</span>
+</div>
+<div class="h-12 w-0.5 bg-primary-fixed"></div>
+<div class="w-32 h-32 bg-primary rounded-full flex items-center justify-center text-white font-bold p-4 text-center text-sm shadow-xl">
+            Concept Prototype
+          </div>
+</div>
+</div>
+<div class="absolute top-80 left-40">
+<!-- Image Card -->
+<div class="p-2 bg-surface-container-lowest shadow-lg rounded-xl max-w-xs">
+<img alt="Inspiration" class="rounded-lg mb-2" data-alt="Abstract gradient art for inspiration" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDjb5ZHu434Lxk4WiFkIYX0RMT9XZey6wLkZPDhdb0NQIgqgl9cNqF9xIrOLJaxNRD4tbwbNABGeFoAHdcbtoyvspVesGNq3sqrVRAIb1NJK9ZaPChUhFQxNzOh8KDYHUaRNO9gWrsTBgzrN_srPmizHv2Wlkbfbu7taH6O_AeUi-JLQAFr3PtKtiI6cTyHU0Dnv8tmy0NiHTBYMFIT8zXR0P2_NmfWgRmTs58TNKbijlNOsXdU8bAZpd5ceBwlJF6ZTh0pp5KlXfLq"/>
+<div class="px-2 pb-2">
+<h4 class="text-sm font-bold text-on-surface">Visual Direction</h4>
+<p class="text-xs text-on-surface-variant">Ethereal Minimalism reference</p>
+</div>
+</div>
+</div>
+<!-- Right-Click Context Menu Visual -->
+<div class="absolute top-[450px] left-[600px] z-50">
+<div class="w-2 h-2 bg-on-surface rounded-full absolute -top-1 -left-1 opacity-0"></div> <!-- Cursor indicator -->
+<div class="bg-surface-container-lowest border border-outline-variant/30 rounded-xl shadow-2xl py-2 w-48 animate-in fade-in zoom-in duration-200">
+<button class="w-full flex items-center justify-between px-4 py-2 hover:bg-surface-container-low text-sm">
+<span class="flex items-center gap-3"><span class="material-symbols-outlined text-[18px]">content_copy</span>Copy</span>
+<span class="text-xs text-on-surface-variant">⌘C</span>
+</button>
+<button class="w-full flex items-center justify-between px-4 py-2 hover:bg-surface-container-low text-sm">
+<span class="flex items-center gap-3"><span class="material-symbols-outlined text-[18px]">content_paste</span>Paste</span>
+<span class="text-xs text-on-surface-variant">⌘V</span>
+</button>
+<div class="h-[1px] bg-outline-variant/20 my-1"></div>
+<button class="w-full flex items-center gap-3 px-4 py-2 hover:bg-surface-container-low text-sm text-on-surface">
+<span class="material-symbols-outlined text-[18px]">flip_to_front</span>Bring to Front
+</button>
+<button class="w-full flex items-center gap-3 px-4 py-2 hover:bg-surface-container-low text-sm text-on-surface">
+<span class="material-symbols-outlined text-[18px]">flip_to_back</span>Send to Back
+</button>
+<div class="h-[1px] bg-outline-variant/20 my-1"></div>
+<button class="w-full flex items-center justify-between px-4 py-2 hover:bg-surface-container-low text-sm">
+<span class="flex items-center gap-3"><span class="material-symbols-outlined text-[18px]">layers</span>Group</span>
+<span class="text-xs text-on-surface-variant">⌘G</span>
+</button>
+</div>
+</div>
+<!-- Floating UI Elements -->
+<div class="fixed bottom-6 right-6 flex items-center gap-3">
+<!-- Viewport Controls -->
+<div class="bg-surface-container-lowest/90 backdrop-blur-xl border border-outline-variant/20 p-1.5 rounded-2xl flex items-center shadow-2xl">
+<button class="p-2 hover:bg-surface-container-low rounded-xl transition-colors text-on-surface-variant" title="Zoom Out">
+<span class="material-symbols-outlined">remove</span>
+</button>
+<div class="px-3 min-w-[64px] text-center">
+<span class="text-sm font-bold text-on-surface">100%</span>
+</div>
+<button class="p-2 hover:bg-surface-container-low rounded-xl transition-colors text-on-surface-variant" title="Zoom In">
+<span class="material-symbols-outlined">add</span>
+</button>
+<div class="w-[1px] h-6 bg-outline-variant/20 mx-1.5"></div>
+<button class="p-2 hover:bg-surface-container-low rounded-xl transition-colors text-on-surface-variant" title="Fullscreen">
+<span class="material-symbols-outlined">fullscreen</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+</body></html>
