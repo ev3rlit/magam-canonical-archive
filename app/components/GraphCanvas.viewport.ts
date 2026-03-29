@@ -18,8 +18,6 @@ export function resolveViewportToRestore(input: {
   hasRenderedGraph: boolean;
   previousCanvasId?: string | null;
   currentCanvasId?: string | null;
-  previousFile: string | null;
-  currentFile: string | null;
   currentViewport: FlowViewportLike;
   savedViewport: TabViewportState | null | undefined;
 }): TabViewportState | null {
@@ -29,17 +27,7 @@ export function resolveViewportToRestore(input: {
     && input.previousCanvasId === input.currentCanvasId
   );
 
-  if (
-    input.hasRenderedGraph
-    && (
-      isSameDocument
-      || (
-        input.previousFile
-        && input.currentFile
-        && input.previousFile === input.currentFile
-      )
-    )
-  ) {
+  if (input.hasRenderedGraph && isSameDocument) {
     return toTabViewportState(input.currentViewport);
   }
 

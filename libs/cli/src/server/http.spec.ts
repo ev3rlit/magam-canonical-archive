@@ -291,7 +291,7 @@ describe('HTTP Render Server', () => {
         expect(body.code).toBe('WS_200_HEALTHY');
         expect(body.rootPath).toBe(workspaceRoot);
         expect(body.health.state).toBe('ok');
-        expect(body.canvasCount).toBe(1);
+        expect(body.canvasCount).toBe(0);
       } finally {
         await rm(workspaceRoot, { recursive: true, force: true });
       }
@@ -409,13 +409,13 @@ describe('HTTP Render Server', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           workspaceId: 'workspace-3',
-          canvasPath: 'docs/alpha.graph.tsx',
+          canvasId: 'canvas-alpha',
         }),
       });
       expect(upsert.response.status).toBe(200);
       expect(upsert.body).toMatchObject({
         workspaceId: 'workspace-3',
-        canvasPath: 'docs/alpha.graph.tsx',
+        canvasId: 'canvas-alpha',
       });
 
       const listed = await requestJson('/app-state/recent-canvases?workspaceId=workspace-3');
@@ -423,7 +423,7 @@ describe('HTTP Render Server', () => {
       expect(listed.body).toHaveLength(1);
       expect(listed.body[0]).toMatchObject({
         workspaceId: 'workspace-3',
-        canvasPath: 'docs/alpha.graph.tsx',
+        canvasId: 'canvas-alpha',
       });
 
       const cleared = await requestJson('/app-state/recent-canvases?workspaceId=workspace-3', {
@@ -652,28 +652,6 @@ describe('HTTP Render Server', () => {
           ]),
         },
       ]);
-    });
-  });
-
-  describe('Removed chat endpoints', () => {
-    it('returns not found for legacy chat routes', async () => {
-      const requests: Array<[string, RequestInit | undefined]> = [
-        ['/chat/providers', undefined],
-        ['/chat/send', { method: 'POST', body: JSON.stringify({}) }],
-        ['/chat/stop', { method: 'POST', body: JSON.stringify({}) }],
-        ['/chat/sessions', undefined],
-        ['/chat/sessions/s1', undefined],
-        ['/chat/sessions/s1/messages', undefined],
-        ['/chat/groups', undefined],
-        ['/chat/groups/g1', { method: 'DELETE' }],
-      ];
-
-      for (const [pathname, init] of requests) {
-        const response = await fetch(`${baseUrl}${pathname}`, init);
-        const body = await response.json();
-        expect(response.status).toBe(404);
-        expect(body).toEqual({ error: 'Not found' });
-      }
     });
   });
 

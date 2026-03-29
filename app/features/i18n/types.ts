@@ -166,6 +166,7 @@ export interface AppMessages {
         pan: string;
       };
       create: {
+        mindmap: string;
         rectangle: string;
         ellipse: string;
         diamond: string;
@@ -173,6 +174,9 @@ export interface AppMessages {
         markdown: string;
         line: string;
         sticky: string;
+        image: string;
+        sticker: string;
+        'washi-tape': string;
       };
       viewport: {
         zoomIn: string;
@@ -193,6 +197,7 @@ export interface AppMessages {
       activePresetLabel: (label: string) => string;
     };
     paneMenu: {
+      createMindmap: string;
       createRectangle: string;
       createEllipse: string;
       createDiamond: string;
@@ -200,6 +205,9 @@ export interface AppMessages {
       createMarkdown: string;
       createLine: string;
       createSticky: string;
+      createImage: string;
+      createSticker: string;
+      createWashiTape: string;
       exportAll: string;
       fitView: string;
     };
@@ -209,6 +217,7 @@ export interface AppMessages {
       renameNode: string;
       addMindmapChild: string;
       addMindmapSibling: string;
+      mindmapTemplate: string;
       selectGroup: string;
       enterGroup: string;
       groupSelection: string;

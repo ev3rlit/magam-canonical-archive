@@ -1,13 +1,14 @@
 import { defineConfig } from 'drizzle-kit';
 
-const dbPath = process.env.MAGAM_CHAT_DB_PATH || './examples/.magam/chat.db';
+const canonicalDbUrl = process.env.MAGAM_CANONICAL_DB_URL?.trim()
+  || 'postgres://postgres:postgres@localhost:5432/magam_canonical';
 
 export default defineConfig({
-  dialect: 'sqlite',
-  schema: './libs/cli/src/chat/repository/schema.ts',
-  out: './libs/cli/src/chat/repository/drizzle',
+  dialect: 'postgresql',
+  schema: './libs/shared/src/lib/canonical-persistence/schema.ts',
+  out: './libs/shared/src/lib/canonical-persistence/drizzle',
   dbCredentials: {
-    url: dbPath,
+    url: canonicalDbUrl,
   },
   strict: true,
   verbose: true,

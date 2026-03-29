@@ -99,7 +99,7 @@ export async function POST(request: Request) {
     const body = await readJsonBody(request);
     const canvas = await repository.upsertRecentCanvas({
       workspaceId: requireString(body.workspaceId, 'workspaceId'),
-      canvasPath: requireString(body.canvasPath, 'canvasPath'),
+      canvasId: requireString(body.canvasId, 'canvasId'),
       lastOpenedAt: parseOptionalDate(body.lastOpenedAt),
     });
 

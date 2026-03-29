@@ -35,7 +35,7 @@ bun install
 
 - Checkpoint A: desktop renderer가 Next.js route handler 없이 workspace를 연다.
 - Checkpoint B: renderer 필수 경로에 `/api/*` 직접 fetch 의존이 없다.
-- Checkpoint C: files/file-tree/render/edit/sync/chat 경로가 RPC adapter 경유로 동작한다.
+- Checkpoint C: files/file-tree/render/edit/sync 경로가 RPC adapter 경유로 동작한다.
 - Checkpoint D: desktop startup critical path에서 Next.js route compile 의존이 없다.
 - Checkpoint E: preload bridge가 최소 권한 capability만 노출한다.
 - Checkpoint F: optional web adapter가 logical RPC method parity를 유지한다.
@@ -49,7 +49,7 @@ bun dev
 bun run web:dev
 
 # 단위/통합 회귀
-bun test app/components/editor/WorkspaceClient.test.tsx app/store/chat.spec.ts app/hooks/useFileSync.test.ts scripts/dev/app-dev.test.ts scripts/dev/desktop-dev.test.ts
+bun test app/components/editor/WorkspaceClient.test.tsx app/hooks/useFileSync.test.ts scripts/dev/app-dev.test.ts scripts/dev/desktop-dev.test.ts
 
 # 타입 검증
 bun run typecheck:app
@@ -64,7 +64,7 @@ bun run desktop:dev -- --headless
 ## 5) 수동 검증 시나리오
 
 1. desktop cold start로 workspace를 열어 authoring 진입이 Next.js route compile 없이 가능한지 확인한다.
-2. 파일 목록/트리/렌더/편집/동기화/채팅의 주요 경로가 adapter를 통해 정상 동작하는지 확인한다.
+2. 파일 목록/트리/렌더/편집/동기화의 주요 경로가 adapter를 통해 정상 동작하는지 확인한다.
 3. preload bridge 노출 API를 점검해 raw Node/Electron primitive 누출이 없는지 확인한다.
 4. Next.js surface를 중단한 상태에서도 desktop authoring flow가 유지되는지 확인한다.
 5. optional web surface 실행 시 desktop과 같은 logical RPC method set을 사용하는지 확인한다.
@@ -81,8 +81,8 @@ bun run desktop:dev -- --headless
 ## 7) Verification Snapshot
 
 - `bun run typecheck:app`: 통과
-- `bun test app/components/editor/WorkspaceClient.test.tsx app/store/chat.spec.ts app/hooks/useFileSync.test.ts scripts/dev/app-dev.test.ts scripts/dev/desktop-dev.test.ts`: `63 pass`, `0 fail`, 기존 `todo 6`
-- desktop/web parity check: `desktopOnly=[]`, `webOnly=[]`, shared method set은 `files.list`, `fileTree.list`, `render.generate`, `edit.apply`, `sync.watch`, `chat.send`, `chat.stop`, `chat.sessions.list`
+- `bun test app/components/editor/WorkspaceClient.test.tsx app/hooks/useFileSync.test.ts scripts/dev/app-dev.test.ts scripts/dev/desktop-dev.test.ts`: verification target
+- desktop/web parity check: `desktopOnly=[]`, `webOnly=[]`, shared method set은 `files.list`, `fileTree.list`, `render.generate`, `edit.apply`, `sync.watch`
 - 기본 dev entry: `bun dev` -> `scripts/dev/desktop-dev.ts`
 - web bootstrap fallback: `bun run web:dev` -> `scripts/dev/app-dev.ts`
 - `bun run desktop:dev -- --headless`: 통과

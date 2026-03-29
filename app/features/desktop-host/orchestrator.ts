@@ -9,10 +9,6 @@ import {
   mergeDesktopBootstrapSession,
 } from './bootstrapSession';
 import {
-  startDesktopBackend,
-  type DesktopBackendHandle,
-} from './backendLifecycle';
-import {
   createLifecycleEventBridge,
   type HostAppEventListener,
 } from './lifecycleEvents';
@@ -22,7 +18,7 @@ export interface DesktopHostOrchestrator {
   getSession: () => DesktopBootstrapSession;
   markRendererFailed: (payload: DesktopBootstrapFailure) => DesktopBootstrapSession;
   markRendererLoading: () => DesktopBootstrapSession;
-  markRendererReady: (payload?: { currentFile?: string | null }) => DesktopBootstrapSession;
+  markRendererReady: () => DesktopBootstrapSession;
   selectWorkspace: (workspacePath: string) => Promise<DesktopBootstrapSession>;
   start: () => Promise<DesktopBootstrapSession>;
   stop: () => Promise<void>;
@@ -31,11 +27,7 @@ export interface DesktopHostOrchestrator {
 
 export interface DesktopHostOrchestratorConfig {
   appStateDbPath: string;
-  bunBin: string;
-  httpPort: number;
-  repoRoot: string;
-  workspacePath: string;
-  wsPort: number;
+  workspacePath: string | null;
 }
 
 export function createDesktopHostOrchestrator(
@@ -44,13 +36,13 @@ export function createDesktopHostOrchestrator(
   const events = createLifecycleEventBridge();
   let workspacePath = config.workspacePath;
   let session = createDesktopBootstrapSession(workspacePath);
-  let backend: DesktopBackendHandle | null = null;
   let runtimeConfig: DesktopRuntimeConfig = {
     mode: 'desktop-primary',
-    httpBaseUrl: `http://127.0.0.1:${config.httpPort}`,
-    wsUrl: `ws://127.0.0.1:${config.wsPort}`,
     appStateDbPath: config.appStateDbPath,
     workspacePath,
+    workspaceMode: workspacePath ? 'persisted' : 'transient',
+    storageBackend: workspacePath ? 'file' : 'memory',
+    transientCanvasId: session.transientCanvasId,
   };
 
   function updateSession(
@@ -60,7 +52,7 @@ export function createDesktopHostOrchestrator(
     return session;
   }
 
-  async function restartBackend(nextWorkspacePath: string): Promise<DesktopBootstrapSession> {
+  async function activateRuntime(nextWorkspacePath: string | null): Promise<DesktopBootstrapSession> {
     updateSession({
       backendState: 'starting',
       lastError: undefined,
@@ -68,34 +60,25 @@ export function createDesktopHostOrchestrator(
       workspacePath: nextWorkspacePath,
     });
 
-    if (backend) {
-      updateSession({ backendState: 'stopping' });
-      await backend.stop();
-      backend = null;
-    }
-
     try {
-      backend = await startDesktopBackend({
-        appStateDbPath: config.appStateDbPath,
-        bunBin: config.bunBin,
-        httpPort: config.httpPort,
-        repoRoot: config.repoRoot,
-        workspacePath: nextWorkspacePath,
-        wsPort: config.wsPort,
-      });
       workspacePath = nextWorkspacePath;
       runtimeConfig = {
         mode: 'desktop-primary',
-        httpBaseUrl: backend.httpBaseUrl,
-        wsUrl: backend.wsUrl,
         appStateDbPath: config.appStateDbPath,
         workspacePath,
+        workspaceMode: nextWorkspacePath ? 'persisted' : 'transient',
+        storageBackend: nextWorkspacePath ? 'file' : 'memory',
+        transientCanvasId: nextWorkspacePath ? null : session.transientCanvasId,
       };
       updateSession({
         backendState: 'ready',
         workspacePath,
       });
-      events.emit({ type: 'workspace-selected', path: workspacePath });
+      if (workspacePath) {
+        events.emit({ type: 'workspace-selected', path: workspacePath });
+      } else {
+        events.emit({ type: 'workspace-cleared' });
+      }
       events.emit({ type: 'backend-ready' });
       return session;
     } catch (error) {
@@ -140,18 +123,14 @@ export function createDesktopHostOrchestrator(
       });
     },
     async selectWorkspace(nextWorkspacePath: string) {
-      return restartBackend(nextWorkspacePath);
+      return activateRuntime(nextWorkspacePath);
     },
     async start() {
-      return restartBackend(workspacePath);
+      return activateRuntime(workspacePath);
     },
     async stop() {
       events.emit({ type: 'shutdown-requested' });
       updateSession({ backendState: 'stopping' });
-      if (backend) {
-        await backend.stop();
-        backend = null;
-      }
       updateSession({ backendState: 'idle' });
     },
     subscribe(listener) {

@@ -4,10 +4,12 @@ import { resolve, join } from 'node:path';
 import {
   assertAbsolutePath,
   assertAllowedExternalUrl,
+  type HostAppEvent,
 } from '@/features/host/contracts';
 import { createDesktopHostLogger } from './diagnostics';
 import { createDesktopHostOrchestrator } from './orchestrator';
 import { DESKTOP_HOST_CHANNELS } from './rendererBootstrap';
+import { DesktopRuntimeService, serializeDesktopRpcError } from './runtimeService';
 
 const logger = createDesktopHostLogger('DesktopHost');
 
@@ -15,8 +17,9 @@ function resolveRepoRoot(): string {
   return process.env.MAGAM_REPO_ROOT || resolve(__dirname, '../../..');
 }
 
-function resolveWorkspacePath(repoRoot: string): string {
-  return process.env.MAGAM_TARGET_DIR || resolve(repoRoot, 'examples');
+function resolveWorkspacePath(_repoRoot: string): string | null {
+  const explicit = process.env.MAGAM_TARGET_DIR?.trim();
+  return explicit && explicit.length > 0 ? explicit : null;
 }
 
 function resolveHtmlPath(): string {
@@ -55,17 +58,22 @@ async function main(): Promise<void> {
   const repoRoot = resolveRepoRoot();
   const headless = process.env.MAGAM_DESKTOP_HEADLESS === '1';
   const appStateDbPath = resolveAppStateDbPath();
+  const initialWorkspacePath = resolveWorkspacePath(repoRoot);
   process.env.MAGAM_APP_STATE_DB_PATH = appStateDbPath;
+  let mainWindow: BrowserWindow | null = null;
+  const emitAppEvent = (event: HostAppEvent) => {
+    mainWindow?.webContents.send(DESKTOP_HOST_CHANNELS.appEvent, event);
+  };
+  const runtimeService = await DesktopRuntimeService.create({
+    appStateDbPath,
+    repoRoot,
+    eventSink: emitAppEvent,
+  });
   const orchestrator = createDesktopHostOrchestrator({
     appStateDbPath,
-    bunBin: process.env.MAGAM_BUN_BIN || 'bun',
-    httpPort: parseInt(process.env.MAGAM_HTTP_PORT || '3002', 10),
-    repoRoot,
-    workspacePath: resolveWorkspacePath(repoRoot),
-    wsPort: parseInt(process.env.MAGAM_WS_PORT || '3001', 10),
+    workspacePath: initialWorkspacePath,
   });
 
-  let mainWindow: BrowserWindow | null = null;
   let isQuitting = false;
   let headlessTimeout: ReturnType<typeof setTimeout> | null = null;
   let reloadWatcher: ReturnType<typeof watch> | null = null;
@@ -79,6 +87,10 @@ async function main(): Promise<void> {
       mainWindow.webContents.send(DESKTOP_HOST_CHANNELS.appEvent, {
         type: 'workspace-selected',
         path: session.workspacePath,
+      });
+    } else {
+      mainWindow.webContents.send(DESKTOP_HOST_CHANNELS.appEvent, {
+        type: 'workspace-cleared',
       });
     }
     if (session.backendState === 'ready') {
@@ -214,6 +226,7 @@ async function main(): Promise<void> {
       reloadWatcher = null;
     }
     await orchestrator.stop();
+    await runtimeService.close();
     app.exit(exitCode);
   };
 
@@ -227,8 +240,20 @@ async function main(): Promise<void> {
     }
 
     const selectedPath = assertAbsolutePath(result.filePaths[0]);
+    await runtimeService.setActiveWorkspace(selectedPath);
     await orchestrator.selectWorkspace(selectedPath);
     return { path: selectedPath };
+  });
+  ipcMain.handle(DESKTOP_HOST_CHANNELS.chooseSaveLocation, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return { path: assertAbsolutePath(result.filePaths[0]) };
   });
   ipcMain.handle(DESKTOP_HOST_CHANNELS.revealInOs, async (_event, rawPath: string) => {
     shell.showItemInFolder(assertAbsolutePath(rawPath));
@@ -236,6 +261,19 @@ async function main(): Promise<void> {
   ipcMain.handle(DESKTOP_HOST_CHANNELS.openExternal, async (_event, rawUrl: string) => {
     const url = assertAllowedExternalUrl(rawUrl);
     await shell.openExternal(url.toString());
+  });
+  ipcMain.handle(DESKTOP_HOST_CHANNELS.healthCheck, async () => runtimeService.healthCheck());
+  ipcMain.handle(DESKTOP_HOST_CHANNELS.invokeRpc, async (_event, input: unknown) => {
+    const payload = typeof input === 'object' && input !== null ? input as { method?: unknown; payload?: unknown } : {};
+    try {
+      const result = await runtimeService.invoke(
+        typeof payload.method === 'string' ? payload.method : '',
+        payload.payload,
+      );
+      return { ok: true, result };
+    } catch (error) {
+      return { ok: false, error: serializeDesktopRpcError(error) };
+    }
   });
   ipcMain.handle(DESKTOP_HOST_CHANNELS.getSession, async () => orchestrator.getSession());
   ipcMain.handle(DESKTOP_HOST_CHANNELS.markRendererLoading, async () => orchestrator.markRendererLoading());
@@ -281,6 +319,7 @@ async function main(): Promise<void> {
     void shutdown(0);
   });
 
+  await runtimeService.setActiveWorkspace(initialWorkspacePath);
   await orchestrator.start();
   await createWindow();
   if (headless) {

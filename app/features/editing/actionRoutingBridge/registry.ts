@@ -1,13 +1,10 @@
 import {
   buildContentDraftPatch,
   buildContentUpdateCommand,
-  buildCreateCommand,
   buildGroupMembershipUpdateCommand,
   buildRenameCommand,
-  shouldUseCanonicalCanvasNodeCreate,
   buildStyleUpdateCommand,
   buildZOrderUpdateCommand,
-  toCreateNodeInput,
   toUpdateNodeProps,
   type CreatePayload,
 } from '@/features/editing/commands';
@@ -28,20 +25,24 @@ import {
   fail,
   ok,
   type ActionRoutingContext,
-  type DispatchDescriptor,
   type ActionRoutingResult,
   type ActionRoutingRegistryEntry,
-  type MutationActionPayloadMap,
+  type CompatibilityMutationActionPayloadMap,
+  type DispatchDescriptor,
   type OrderedDispatchPlan,
   type UIIntentEnvelope,
 } from '@/features/editing/actionRoutingBridge/types';
 import type { Node } from 'reactflow';
+import type {
+  CanvasNodeKindV1,
+  CanvasRuntimeCommandV1,
+  CanonicalObjectContentKindV1,
+} from '../../../../libs/shared/src/lib/canvas-runtime';
 
 type ResolvedTarget = {
   renderedNodeId: string;
   sourceId: string;
   canvasId?: string;
-  filePath: string;
   scopeId?: string;
   frameScope?: string;
   editMeta?: EditMeta;
@@ -73,13 +74,17 @@ type RenameNormalized = {
 
 type CreateNormalized = {
   canvasId?: string;
-  targetFile: string;
   sourceId: string;
   scopeId?: string;
   frameScope?: string;
   nodeType: CreatePayload['nodeType'];
   placement: CreatePayload['placement'];
-  createInput: ReturnType<typeof toCreateNodeInput>;
+  createInput: {
+    id: string;
+    type: CreatePayload['nodeType'];
+    props: Record<string, unknown>;
+    placement: CreatePayload['placement'];
+  };
   useCanonicalCreate: boolean;
   baseVersion: string;
   renderedId: string;
@@ -87,18 +92,17 @@ type CreateNormalized = {
 
 type DuplicateNormalized = {
   target: ResolvedTarget;
-  targetFile: string;
   sourceId: string;
   scopeId?: string;
   frameScope?: string;
-  createInput: MutationActionPayloadMap['node.create']['node'];
+  createInput: CompatibilityMutationActionPayloadMap['node.create']['node'];
   baseVersion: string;
   renderedId: string;
 };
 
 type DeleteNormalized = {
   target: ResolvedTarget;
-  recreateInput: MutationActionPayloadMap['node.create']['node'];
+  recreateInput: CompatibilityMutationActionPayloadMap['node.create']['node'];
   baseVersion: string;
 };
 
@@ -125,13 +129,11 @@ type GroupSelectionNormalized = {
   targets: SelectionStructuralTarget[];
   nextGroupId: string;
   baseVersion: string;
-  filePath: string;
 };
 
 type UngroupSelectionNormalized = {
   targets: SelectionStructuralTarget[];
   baseVersion: string;
-  filePath: string;
 };
 
 type ZOrderDirection = 'bring-to-front' | 'send-to-back';
@@ -140,7 +142,6 @@ type ZOrderSelectionNormalized = {
   targets: Array<SelectionStructuralTarget & { nextZIndex: number }>;
   direction: ZOrderDirection;
   baseVersion: string;
-  filePath: string;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -178,11 +179,7 @@ function resolveTarget(
     ? sourceMeta.sourceId
     : deriveLocalSourceId(node.id, sourceMeta.frameScope);
   const canvasId = envelope.targetRef?.canvasId ?? context.currentCanvasId ?? undefined;
-  const filePath = typeof sourceMeta.filePath === 'string' && sourceMeta.filePath.length > 0
-    ? sourceMeta.filePath
-    : envelope.targetRef?.compatibilityFilePath ?? context.currentCompatibilityFilePath;
-
-  if (!filePath) {
+  if (!canvasId) {
     return null;
   }
 
@@ -190,7 +187,6 @@ function resolveTarget(
     renderedNodeId: node.id,
     sourceId,
     canvasId,
-    filePath,
     scopeId: typeof sourceMeta.scopeId === 'string' ? sourceMeta.scopeId : undefined,
     frameScope: typeof sourceMeta.frameScope === 'string' ? sourceMeta.frameScope : undefined,
     editMeta: getNodeEditMeta(node),
@@ -427,7 +423,7 @@ function buildCreateInputFromNode(input: {
   target: ResolvedTarget;
   sourceId: string;
   placement: CreatePayload['placement'];
-}): MutationActionPayloadMap['node.create']['node'] | null {
+}): CompatibilityMutationActionPayloadMap['node.create']['node'] | null {
   if (!isSupportedCreateNodeType(input.target.node.type)) {
     return null;
   }
@@ -519,6 +515,150 @@ function resolveNodeZIndex(node: Node): number | null {
     : null;
 }
 
+function resolveRuntimeNodeKind(nodeType: CreatePayload['nodeType']): CanvasNodeKindV1 {
+  return nodeType === 'sticker' ? 'sticker' : 'node';
+}
+
+function resolveRuntimeCreatePlacement(
+  placement: CreatePayload['placement'],
+): Extract<CanvasRuntimeCommandV1, { name: 'canvas.node.create' }>['placement'] {
+  if (placement.mode === 'mindmap-child') {
+    return {
+      mode: 'mindmap-child',
+      parentNodeId: placement.parentId,
+    };
+  }
+
+  if (placement.mode === 'mindmap-sibling') {
+    return {
+      mode: 'mindmap-sibling',
+      siblingOfNodeId: placement.siblingOf,
+      parentNodeId: placement.parentId,
+    };
+  }
+
+  if (placement.mode === 'mindmap-root') {
+    return {
+      mode: 'mindmap-root',
+      x: placement.x,
+      y: placement.y,
+      mindmapId: placement.mindmapId ?? `mindmap-${crypto.randomUUID()}`,
+    };
+  }
+
+  return {
+    mode: 'canvas-absolute',
+    x: placement.x,
+    y: placement.y,
+  };
+}
+
+function resolveRuntimeObjectId(node: Node, target: ResolvedTarget): string {
+  const data = (node.data || {}) as Record<string, unknown>;
+  const runtimeEditing = isRecord(data.runtimeEditing) ? data.runtimeEditing : null;
+  if (typeof runtimeEditing?.canonicalObjectId === 'string' && runtimeEditing.canonicalObjectId.length > 0) {
+    return runtimeEditing.canonicalObjectId;
+  }
+
+  const canonicalObject = isRecord(data.canonicalObject) ? data.canonicalObject : null;
+  const core = canonicalObject && isRecord(canonicalObject.core) ? canonicalObject.core : null;
+  if (typeof core?.id === 'string' && core.id.length > 0) {
+    return core.id;
+  }
+
+  return target.sourceId;
+}
+
+function resolveRuntimeContentKind(node: Node): CanonicalObjectContentKindV1 {
+  const data = (node.data || {}) as Record<string, unknown>;
+  const canonicalObject = isRecord(data.canonicalObject) ? data.canonicalObject : null;
+  const capabilities = canonicalObject && isRecord(canonicalObject.capabilities)
+    ? canonicalObject.capabilities
+    : null;
+  const contentCapability = capabilities && isRecord(capabilities.content)
+    ? capabilities.content
+    : null;
+  const kind = typeof contentCapability?.kind === 'string' ? contentCapability.kind : null;
+
+  if (kind === 'text' || kind === 'markdown' || kind === 'media' || kind === 'sequence' || kind === 'document') {
+    return kind;
+  }
+
+  if (node.type === 'text') {
+    return 'text';
+  }
+
+  return 'markdown';
+}
+
+function createRuntimeContentUpdateCommand(input: {
+  objectId: string;
+  kind: CanonicalObjectContentKindV1;
+  nextContent: string;
+}): Extract<CanvasRuntimeCommandV1, { name: 'object.content.update' }> {
+  const patch = input.kind === 'text'
+    ? {
+        text: input.nextContent,
+        value: input.nextContent,
+      }
+    : {
+        source: input.nextContent,
+        value: input.nextContent,
+      };
+
+  return {
+    name: 'object.content.update',
+    objectId: input.objectId,
+    kind: input.kind,
+    patch,
+    expectedContentKind: input.kind,
+  };
+}
+
+function createRuntimeCreateCommands(input: {
+  canvasId: string;
+  sourceId: string;
+  nodeType: CreatePayload['nodeType'];
+  placement: CreatePayload['placement'];
+  createInput: CompatibilityMutationActionPayloadMap['node.create']['node'];
+}): CanvasRuntimeCommandV1[] {
+  const props = input.createInput.props ?? {};
+  const commands: CanvasRuntimeCommandV1[] = [{
+    name: 'canvas.node.create',
+    canvasId: input.canvasId,
+    nodeId: input.sourceId,
+    kind: resolveRuntimeNodeKind(input.nodeType),
+    nodeType: input.nodeType,
+    placement: resolveRuntimeCreatePlacement(input.placement),
+    transform: {
+      ...(typeof props.width === 'number' ? { width: props.width } : {}),
+      ...(typeof props.height === 'number' ? { height: props.height } : {}),
+    },
+    presentationStyle: {
+      ...(typeof props.fill === 'string' ? { fillColor: props.fill } : {}),
+      ...(typeof props.stroke === 'string' ? { strokeColor: props.stroke } : {}),
+      ...(typeof props.strokeWidth === 'number' ? { strokeWidth: props.strokeWidth } : {}),
+      ...(typeof props.color === 'string' ? { textColor: props.color } : {}),
+      ...(typeof props.fontFamily === 'string' ? { fontFamily: props.fontFamily } : {}),
+      ...(typeof props.fontSize === 'number' ? { fontSize: props.fontSize } : {}),
+    },
+    renderProfile: {
+      ...(typeof props.inkProfile === 'string' ? { inkProfile: props.inkProfile as Extract<CanvasRuntimeCommandV1, { name: 'canvas.node.render-profile.update' }>['renderProfile']['inkProfile'] } : {}),
+      ...(typeof props.paperBlend === 'string' ? { paperBlend: props.paperBlend as Extract<CanvasRuntimeCommandV1, { name: 'canvas.node.render-profile.update' }>['renderProfile']['paperBlend'] } : {}),
+    },
+  }];
+
+  if (typeof props.content === 'string' && props.content.length > 0) {
+    commands.push(createRuntimeContentUpdateCommand({
+      objectId: input.sourceId,
+      kind: 'markdown',
+      nextContent: props.content,
+    }));
+  }
+
+  return commands;
+}
+
 function createUniqueGroupId(nodes: Node[]): string {
   const taken = new Set(
     nodes
@@ -538,7 +678,6 @@ function resolveSelectionTargets(
   envelope: UIIntentEnvelope,
 ): ActionRoutingResult<{
   targets: SelectionStructuralTarget[];
-  filePath: string;
   baseVersion: string;
 }> {
   const selectedNodeIds = envelope.selectionRef.selectedNodeIds;
@@ -582,18 +721,17 @@ function resolveSelectionTargets(
     return fail('INTENT_GATING_DENIED', 'selection is required');
   }
 
-  if (targets.some(({ target }) => target.filePath !== firstTarget.target.filePath)) {
-    return fail('INTENT_GATING_DENIED', 'selection must belong to a single file');
+  if (targets.some(({ target }) => target.canvasId !== firstTarget.target.canvasId)) {
+    return fail('INTENT_GATING_DENIED', 'selection must belong to a single canvas');
   }
 
-  const versionResult = requireBaseVersion(context, firstTarget.target.filePath);
+  const versionResult = requireBaseVersion(context, firstTarget.target.canvasId ?? null);
   if (!versionResult.ok) {
     return versionResult;
   }
 
   return ok({
     targets,
-    filePath: firstTarget.target.filePath,
     baseVersion: versionResult.value,
   });
 }
@@ -605,7 +743,7 @@ function buildStylePlan(input: {
   const command = buildStyleUpdateCommand({
     target: {
       sourceId: input.normalized.target.sourceId,
-      filePath: input.normalized.target.filePath,
+      canvasId: input.normalized.target.canvasId,
       renderedId: input.normalized.target.renderedNodeId,
       editMeta: input.normalized.target.editMeta,
     },
@@ -622,7 +760,7 @@ function buildStylePlan(input: {
     intentId: input.envelope.intentId,
     surfaceId: input.envelope.surfaceId,
     baseVersion: input.normalized.baseVersion,
-    filePath: input.normalized.target.filePath,
+    canvasId: input.normalized.target.canvasId,
     nodeId: input.normalized.target.sourceId,
     rollbackSteps,
   });
@@ -634,25 +772,57 @@ function buildStylePlan(input: {
         nodeId: input.normalized.target.renderedNodeId,
         patch: input.normalized.patch,
       }),
-      {
-        kind: 'canonical-mutation',
-        actionId: 'node.update',
-        payload: {
-          nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
-          props: toUpdateNodeProps(command),
-          commandType: command.type,
-        },
-        optimisticMeta,
-        historyEffect: {
-          eventType: 'STYLE_UPDATED',
-          nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
-          baseVersion: input.normalized.baseVersion,
-          before: command.payload.previous,
-          after: command.payload.patch,
-        },
-      },
+      (
+        input.normalized.target.canvasId
+          ? {
+              kind: 'runtime-mutation' as const,
+              payload: {
+                canvasId: input.normalized.target.canvasId,
+                commands: [{
+                  name: 'canvas.node.presentation-style.update',
+                  canvasId: input.normalized.target.canvasId,
+                  nodeId: command.target.sourceId,
+                  presentationStyle: {
+                    ...(typeof input.normalized.patch.fill === 'string' ? { fillColor: input.normalized.patch.fill } : {}),
+                    ...(typeof input.normalized.patch.stroke === 'string' ? { strokeColor: input.normalized.patch.stroke } : {}),
+                    ...(typeof input.normalized.patch.strokeWidth === 'number' ? { strokeWidth: input.normalized.patch.strokeWidth } : {}),
+                    ...(typeof input.normalized.patch.opacity === 'number' ? { opacity: input.normalized.patch.opacity } : {}),
+                    ...(typeof input.normalized.patch.color === 'string' ? { textColor: input.normalized.patch.color } : {}),
+                    ...(typeof input.normalized.patch.fontFamily === 'string' ? { fontFamily: input.normalized.patch.fontFamily } : {}),
+                    ...(typeof input.normalized.patch.fontSize === 'number' ? { fontSize: input.normalized.patch.fontSize } : {}),
+                  },
+                }],
+              },
+              optimisticMeta,
+              historyEffect: {
+                eventType: 'STYLE_UPDATED',
+                nodeId: command.target.sourceId,
+                canvasId: command.target.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: command.payload.previous,
+                after: command.payload.patch,
+              },
+            }
+          : {
+              kind: 'compatibility-mutation' as const,
+              actionId: 'node.update' as const,
+              payload: {
+                nodeId: command.target.sourceId,
+                canvasId: command.target.canvasId,
+                props: toUpdateNodeProps(command),
+                commandType: command.type,
+              },
+              optimisticMeta,
+              historyEffect: {
+                eventType: 'STYLE_UPDATED',
+                nodeId: command.target.sourceId,
+                canvasId: command.target.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: command.payload.previous,
+                after: command.payload.patch,
+              },
+            }
+      ),
     ],
     rollbackSteps,
   };
@@ -666,7 +836,7 @@ function buildContentPlan(input: {
   const command = buildContentUpdateCommand({
     target: {
       sourceId: input.normalized.target.sourceId,
-      filePath: input.normalized.target.filePath,
+      canvasId: input.normalized.target.canvasId,
       renderedId: input.normalized.target.renderedNodeId,
       editMeta: input.normalized.target.editMeta,
     },
@@ -685,7 +855,7 @@ function buildContentPlan(input: {
     intentId: input.envelope.intentId,
     surfaceId: input.envelope.surfaceId,
     baseVersion: input.normalized.baseVersion,
-    filePath: input.normalized.target.filePath,
+    canvasId: input.normalized.target.canvasId,
     nodeId: input.normalized.target.sourceId,
     rollbackSteps,
   });
@@ -700,25 +870,48 @@ function buildContentPlan(input: {
           input.normalized.nextContent,
         ),
       }),
-      {
-        kind: 'canonical-mutation',
-        actionId: 'node.update',
-        payload: {
-          nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
-          props: toUpdateNodeProps(command),
-          commandType: command.type,
-        },
-        optimisticMeta,
-        historyEffect: {
-          eventType: 'CONTENT_UPDATED',
-          nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
-          baseVersion: input.normalized.baseVersion,
-          before: command.payload.previous,
-          after: command.payload.next,
-        },
-      },
+      (
+        input.normalized.target.canvasId
+          ? {
+              kind: 'runtime-mutation' as const,
+              payload: {
+                canvasId: input.normalized.target.canvasId,
+                commands: [createRuntimeContentUpdateCommand({
+                  objectId: resolveRuntimeObjectId(targetNode, input.normalized.target),
+                  kind: resolveRuntimeContentKind(targetNode),
+                  nextContent: input.normalized.nextContent,
+                })],
+              },
+              optimisticMeta,
+              historyEffect: {
+                eventType: 'CONTENT_UPDATED',
+                nodeId: command.target.sourceId,
+                canvasId: command.target.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: command.payload.previous,
+                after: command.payload.next,
+              },
+            }
+          : {
+              kind: 'compatibility-mutation' as const,
+              actionId: 'node.update' as const,
+              payload: {
+                nodeId: command.target.sourceId,
+                canvasId: command.target.canvasId,
+                props: toUpdateNodeProps(command),
+                commandType: command.type,
+              },
+              optimisticMeta,
+              historyEffect: {
+                eventType: 'CONTENT_UPDATED',
+                nodeId: command.target.sourceId,
+                canvasId: command.target.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: command.payload.previous,
+                after: command.payload.next,
+              },
+            }
+      ),
     ],
     rollbackSteps,
   };
@@ -731,7 +924,7 @@ function buildRenamePlan(input: {
   const command = buildRenameCommand({
     target: {
       sourceId: input.normalized.target.sourceId,
-      filePath: input.normalized.target.filePath,
+      canvasId: input.normalized.target.canvasId,
       renderedId: input.normalized.target.renderedNodeId,
       editMeta: input.normalized.target.editMeta,
     },
@@ -743,18 +936,18 @@ function buildRenamePlan(input: {
     intentId: input.envelope.intentId,
     steps: [
       {
-        kind: 'canonical-mutation',
+        kind: 'compatibility-mutation',
         actionId: 'node.update',
         payload: {
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           props: toUpdateNodeProps(command),
           commandType: command.type,
         },
         historyEffect: {
           eventType: 'NODE_RENAMED',
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           baseVersion: input.normalized.baseVersion,
           before: command.payload.previous,
           after: command.payload.next,
@@ -773,32 +966,61 @@ function buildCreatePlan(input: {
   const createActionId = input.normalized.useCanonicalCreate
     ? 'canvas.node.create'
     : 'node.create';
+  const runtimeHistoryEffect = {
+    eventType: 'NODE_CREATED' as const,
+    nodeId: input.normalized.sourceId,
+    baseVersion: input.normalized.baseVersion,
+    before: { created: false },
+    after: {
+      actionId: 'canvas.node.create',
+      create: input.normalized.createInput,
+      renderedId: input.normalized.renderedId,
+    },
+    reloadGraphOnSuccess: true,
+    pendingSelectionRenderedId: input.normalized.renderedId,
+  };
   return {
     intentId: input.intentId,
     steps: [
-      {
-        kind: 'canonical-mutation',
-        actionId: createActionId,
-        payload: {
-          ...(input.normalized.canvasId ? { canvasId: input.normalized.canvasId } : {}),
-          filePath: input.normalized.targetFile,
-          node: input.normalized.createInput,
-        },
-        historyEffect: {
-          eventType: 'NODE_CREATED',
-          nodeId: input.normalized.sourceId,
-          filePath: input.normalized.targetFile,
-          baseVersion: input.normalized.baseVersion,
-          before: { created: false },
-          after: {
-            actionId: createActionId,
-            create: input.normalized.createInput,
-            renderedId: input.normalized.renderedId,
-          },
-          reloadGraphOnSuccess: true,
-          pendingSelectionRenderedId: input.normalized.renderedId,
-        },
-      },
+      (
+        input.normalized.canvasId
+          ? {
+              kind: 'runtime-mutation' as const,
+              payload: {
+                canvasId: input.normalized.canvasId,
+                commands: createRuntimeCreateCommands({
+                  canvasId: input.normalized.canvasId,
+                  sourceId: input.normalized.sourceId,
+                  nodeType: input.normalized.nodeType,
+                  placement: input.normalized.placement,
+                  createInput: input.normalized.createInput,
+                }),
+              },
+              historyEffect: runtimeHistoryEffect,
+            }
+          : {
+              kind: 'compatibility-mutation' as const,
+              actionId: createActionId as 'canvas.node.create' | 'node.create',
+              payload: {
+                ...(input.normalized.canvasId ? { canvasId: input.normalized.canvasId } : {}),
+                node: input.normalized.createInput,
+              },
+              historyEffect: {
+                eventType: 'NODE_CREATED',
+                nodeId: input.normalized.sourceId,
+                canvasId: input.normalized.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: { created: false },
+                after: {
+                  actionId: createActionId,
+                  create: input.normalized.createInput,
+                  renderedId: input.normalized.renderedId,
+                },
+                reloadGraphOnSuccess: true,
+                pendingSelectionRenderedId: input.normalized.renderedId,
+              },
+            }
+      ),
     ],
     rollbackSteps: [],
   };
@@ -811,27 +1033,56 @@ function buildDuplicatePlan(input: {
   return {
     intentId: input.envelope.intentId,
     steps: [
-      {
-        kind: 'canonical-mutation',
-        actionId: 'node.create',
-        payload: {
-          filePath: input.normalized.targetFile,
-          node: input.normalized.createInput,
-        },
-        historyEffect: {
-          eventType: 'NODE_CREATED',
-          nodeId: input.normalized.sourceId,
-          filePath: input.normalized.targetFile,
-          baseVersion: input.normalized.baseVersion,
-          before: { created: false },
-          after: {
-            create: input.normalized.createInput,
-            renderedId: input.normalized.renderedId,
-          },
-          reloadGraphOnSuccess: true,
-          pendingSelectionRenderedId: input.normalized.renderedId,
-        },
-      },
+      (
+        input.normalized.target.canvasId
+          ? {
+              kind: 'runtime-mutation' as const,
+              payload: {
+                canvasId: input.normalized.target.canvasId,
+                commands: createRuntimeCreateCommands({
+                  canvasId: input.normalized.target.canvasId,
+                  sourceId: input.normalized.sourceId,
+                  nodeType: input.normalized.createInput.type,
+                  placement: input.normalized.createInput.placement,
+                  createInput: input.normalized.createInput,
+                }),
+              },
+              historyEffect: {
+                eventType: 'NODE_CREATED',
+                nodeId: input.normalized.sourceId,
+                canvasId: input.normalized.target.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: { created: false },
+                after: {
+                  create: input.normalized.createInput,
+                  renderedId: input.normalized.renderedId,
+                },
+                reloadGraphOnSuccess: true,
+                pendingSelectionRenderedId: input.normalized.renderedId,
+              },
+            }
+          : {
+              kind: 'compatibility-mutation' as const,
+              actionId: 'node.create' as const,
+              payload: {
+                canvasId: input.normalized.target.canvasId,
+                node: input.normalized.createInput,
+              },
+              historyEffect: {
+                eventType: 'NODE_CREATED',
+                nodeId: input.normalized.sourceId,
+                canvasId: input.normalized.target.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: { created: false },
+                after: {
+                  create: input.normalized.createInput,
+                  renderedId: input.normalized.renderedId,
+                },
+                reloadGraphOnSuccess: true,
+                pendingSelectionRenderedId: input.normalized.renderedId,
+              },
+            }
+      ),
     ],
     rollbackSteps: [],
   };
@@ -844,27 +1095,54 @@ function buildDeletePlan(input: {
   return {
     intentId: input.envelope.intentId,
     steps: [
-      {
-        kind: 'canonical-mutation',
-        actionId: 'node.delete',
-        payload: {
-          nodeId: input.normalized.target.sourceId,
-          filePath: input.normalized.target.filePath,
-        },
-        historyEffect: {
-          eventType: 'NODE_DELETED',
-          nodeId: input.normalized.target.sourceId,
-          filePath: input.normalized.target.filePath,
-          baseVersion: input.normalized.baseVersion,
-          before: {
-            create: input.normalized.recreateInput,
-          },
-          after: {
-            deleted: true,
-          },
-          reloadGraphOnSuccess: true,
-        },
-      },
+      (
+        input.normalized.target.canvasId
+          ? {
+              kind: 'runtime-mutation' as const,
+              payload: {
+                canvasId: input.normalized.target.canvasId,
+                commands: [{
+                  name: 'canvas.node.delete',
+                  canvasId: input.normalized.target.canvasId,
+                  nodeId: input.normalized.target.sourceId,
+                }],
+              },
+              historyEffect: {
+                eventType: 'NODE_DELETED',
+                nodeId: input.normalized.target.sourceId,
+                canvasId: input.normalized.target.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: {
+                  create: input.normalized.recreateInput,
+                },
+                after: {
+                  deleted: true,
+                },
+                reloadGraphOnSuccess: true,
+              },
+            }
+          : {
+              kind: 'compatibility-mutation' as const,
+              actionId: 'node.delete' as const,
+              payload: {
+                nodeId: input.normalized.target.sourceId,
+                canvasId: input.normalized.target.canvasId,
+              },
+              historyEffect: {
+                eventType: 'NODE_DELETED',
+                nodeId: input.normalized.target.sourceId,
+                canvasId: input.normalized.target.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: {
+                  create: input.normalized.recreateInput,
+                },
+                after: {
+                  deleted: true,
+                },
+                reloadGraphOnSuccess: true,
+              },
+            }
+      ),
     ],
     rollbackSteps: [],
   };
@@ -878,11 +1156,11 @@ function buildLockTogglePlan(input: {
     intentId: input.envelope.intentId,
     steps: [
       {
-        kind: 'canonical-mutation',
+        kind: 'compatibility-mutation',
         actionId: 'node.update',
         payload: {
           nodeId: input.normalized.target.sourceId,
-          filePath: input.normalized.target.filePath,
+          canvasId: input.normalized.target.canvasId,
           props: {
             locked: input.normalized.nextLocked,
           },
@@ -890,7 +1168,7 @@ function buildLockTogglePlan(input: {
         historyEffect: {
           eventType: 'NODE_LOCK_TOGGLED',
           nodeId: input.normalized.target.sourceId,
-          filePath: input.normalized.target.filePath,
+          canvasId: input.normalized.target.canvasId,
           baseVersion: input.normalized.baseVersion,
           before: {
             locked: input.normalized.previousLocked,
@@ -941,7 +1219,7 @@ function buildGroupSelectionPlan(input: {
     const command = buildGroupMembershipUpdateCommand({
       target: {
         sourceId: target.sourceId,
-        filePath: target.filePath,
+        canvasId: target.canvasId,
         renderedId: target.renderedNodeId,
         editMeta: target.editMeta,
       },
@@ -957,17 +1235,17 @@ function buildGroupSelectionPlan(input: {
         },
       }),
       {
-        kind: 'canonical-mutation' as const,
+        kind: 'compatibility-mutation' as const,
         actionId: 'node.group-membership.update' as const,
         payload: {
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           groupId: command.payload.next.groupId,
         },
         historyEffect: {
           eventType: 'NODE_GROUP_MEMBERSHIP_UPDATED' as const,
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           baseVersion: input.normalized.baseVersion,
           before: command.payload.previous,
           after: command.payload.next,
@@ -1010,7 +1288,7 @@ function buildUngroupSelectionPlan(input: {
     const command = buildGroupMembershipUpdateCommand({
       target: {
         sourceId: target.sourceId,
-        filePath: target.filePath,
+        canvasId: target.canvasId,
         renderedId: target.renderedNodeId,
         editMeta: target.editMeta,
       },
@@ -1026,17 +1304,17 @@ function buildUngroupSelectionPlan(input: {
         },
       }),
       {
-        kind: 'canonical-mutation' as const,
+        kind: 'compatibility-mutation' as const,
         actionId: 'node.group-membership.update' as const,
         payload: {
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           groupId: command.payload.next.groupId,
         },
         historyEffect: {
           eventType: 'NODE_GROUP_MEMBERSHIP_UPDATED' as const,
           nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
+          canvasId: command.target.canvasId,
           baseVersion: input.normalized.baseVersion,
           before: command.payload.previous,
           after: command.payload.next,
@@ -1067,7 +1345,7 @@ function buildZOrderSelectionPlan(input: {
     const command = buildZOrderUpdateCommand({
       target: {
         sourceId: target.sourceId,
-        filePath: target.filePath,
+        canvasId: target.canvasId,
         renderedId: target.renderedNodeId,
         editMeta: target.editMeta,
       },
@@ -1082,23 +1360,46 @@ function buildZOrderSelectionPlan(input: {
           zIndex: nextZIndex,
         },
       }),
-      {
-        kind: 'canonical-mutation' as const,
-        actionId: 'node.z-order.update' as const,
-        payload: {
-          nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
-          zIndex: command.payload.next.zIndex,
-        },
-        historyEffect: {
-          eventType: 'NODE_Z_ORDER_UPDATED' as const,
-          nodeId: command.target.sourceId,
-          filePath: command.target.filePath,
-          baseVersion: input.normalized.baseVersion,
-          before: command.payload.previous,
-          after: command.payload.next,
-        },
-      },
+      (
+        target.canvasId
+          ? {
+              kind: 'runtime-mutation' as const,
+              payload: {
+                canvasId: target.canvasId,
+                commands: [{
+                  name: 'canvas.node.z-order.update' as const,
+                  canvasId: target.canvasId,
+                  nodeId: command.target.sourceId,
+                  zIndex: command.payload.next.zIndex ?? 0,
+                }],
+              },
+              historyEffect: {
+                eventType: 'NODE_Z_ORDER_UPDATED' as const,
+                nodeId: command.target.sourceId,
+                canvasId: command.target.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: command.payload.previous,
+                after: command.payload.next,
+              },
+            }
+          : {
+              kind: 'compatibility-mutation' as const,
+              actionId: 'node.z-order.update' as const,
+              payload: {
+                nodeId: command.target.sourceId,
+                canvasId: command.target.canvasId,
+                zIndex: command.payload.next.zIndex,
+              },
+              historyEffect: {
+                eventType: 'NODE_Z_ORDER_UPDATED' as const,
+                nodeId: command.target.sourceId,
+                canvasId: command.target.canvasId,
+                baseVersion: input.normalized.baseVersion,
+                before: command.payload.previous,
+                after: command.payload.next,
+              },
+            }
+      ),
     ];
   });
 
@@ -1149,7 +1450,7 @@ const styleUpdateEntry: ActionRoutingRegistryEntry<StyleNormalized> = {
       }
       return acc;
     }, {});
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1190,7 +1491,7 @@ const contentUpdateEntry: ActionRoutingRegistryEntry<ContentNormalized> = {
     }
     const previousData = ((target.node.data || {}) as Record<string, unknown>);
     const previousContent = typeof previousData.label === 'string' ? previousData.label : '';
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1232,7 +1533,7 @@ const renameEntry: ActionRoutingRegistryEntry<RenameNormalized> = {
     if (nextIdResult.value === target.sourceId) {
       return fail('INTENT_PAYLOAD_INVALID', 'nextId must differ from the current id');
     }
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1281,13 +1582,21 @@ const createEntry: ActionRoutingRegistryEntry<CreateNormalized> = {
       return createResult;
     }
     const target = resolveTarget(context, envelope);
-    const targetFile = envelope.targetRef?.compatibilityFilePath
-      ?? target?.filePath
-      ?? context.currentCompatibilityFilePath;
-    if (!targetFile) {
-      return fail('INTENT_PAYLOAD_INVALID', 'target file is required');
+    const canvasId = context.currentCanvasId ?? target?.canvasId ?? envelope.targetRef?.canvasId;
+    const useCanonicalCreate = (
+      createResult.value.placement.mode === 'mindmap-root'
+      || createResult.value.placement.mode === 'mindmap-child'
+      || createResult.value.placement.mode === 'mindmap-sibling'
+      || createResult.value.nodeType === 'shape'
+      || createResult.value.nodeType === 'text'
+      || createResult.value.nodeType === 'markdown'
+      || createResult.value.nodeType === 'sticky'
+      || Boolean(canvasId)
+    );
+    if (!canvasId) {
+      return fail('INTENT_PAYLOAD_INVALID', 'canvasId is required');
     }
-    const versionResult = requireBaseVersion(context, targetFile);
+    const versionResult = requireBaseVersion(context, canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1305,44 +1614,38 @@ const createEntry: ActionRoutingRegistryEntry<CreateNormalized> = {
           mindmapId: mindmapScopeId,
         }
       : createResult.value.placement;
-    const command = buildCreateCommand({
-      type: createResult.value.placement.mode === 'canvas-absolute' || createResult.value.placement.mode === 'mindmap-root'
-        ? 'node.create'
-        : createResult.value.placement.mode === 'mindmap-child'
-          ? 'mindmap.child.create'
-          : 'mindmap.sibling.create',
-      target: {
-        sourceId: nextId,
-        filePath: targetFile,
-        scopeId: envelope.targetRef?.scopeId ?? target?.scopeId,
-        frameScope: envelope.targetRef?.frameScope ?? target?.frameScope,
+    const createInput = {
+      id: nextId,
+      type: createResult.value.nodeType,
+      props: {
+        ...defaults.initialProps,
+        ...(createResult.value.initialProps ?? {}),
+        ...(defaults.initialContent ? { content: defaults.initialContent } : {}),
+        ...(normalizedPlacement.mode === 'canvas-absolute'
+          ? { x: normalizedPlacement.x, y: normalizedPlacement.y }
+          : normalizedPlacement.mode === 'mindmap-child'
+            ? { from: normalizedPlacement.parentId }
+            : normalizedPlacement.mode === 'mindmap-sibling'
+              ? {
+                  ...(normalizedPlacement.parentId ? { from: normalizedPlacement.parentId } : {}),
+                }
+              : {}),
       },
-      payload: {
-        nodeType: createResult.value.nodeType,
-        id: nextId,
-        initialProps: {
-          ...defaults.initialProps,
-          ...(createResult.value.initialProps ?? {}),
-        },
-        initialContent: defaults.initialContent,
-        placement: normalizedPlacement,
-      },
-    });
-    const useCanonicalCreate = shouldUseCanonicalCanvasNodeCreate(command);
+      placement: normalizedPlacement,
+    };
     const renderedId = buildRenderedNodeId({
       sourceId: nextId,
       scopeId: mindmapScopeId ?? envelope.targetRef?.scopeId ?? target?.scopeId,
       frameScope: envelope.targetRef?.frameScope ?? target?.frameScope,
     });
     return ok({
-      canvasId: context.currentCanvasId ?? target?.canvasId,
-      targetFile,
+      ...(canvasId ? { canvasId } : {}),
       sourceId: nextId,
       scopeId: mindmapScopeId ?? envelope.targetRef?.scopeId ?? target?.scopeId,
       frameScope: envelope.targetRef?.frameScope ?? target?.frameScope,
       nodeType: createResult.value.nodeType,
       placement: normalizedPlacement,
-      createInput: toCreateNodeInput(command),
+      createInput,
       useCanonicalCreate,
       baseVersion: versionResult.value,
       renderedId,
@@ -1399,7 +1702,7 @@ const duplicateEntry: ActionRoutingRegistryEntry<DuplicateNormalized> = {
     if (!target) {
       return fail('INTENT_PAYLOAD_INVALID', 'target node is required');
     }
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1426,7 +1729,6 @@ const duplicateEntry: ActionRoutingRegistryEntry<DuplicateNormalized> = {
     });
     return ok({
       target,
-      targetFile: target.filePath,
       sourceId: nextId,
       scopeId: target.scopeId,
       frameScope: target.frameScope,
@@ -1464,7 +1766,7 @@ const deleteEntry: ActionRoutingRegistryEntry<DeleteNormalized> = {
     if (!target) {
       return fail('INTENT_PAYLOAD_INVALID', 'target node is required');
     }
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1514,7 +1816,7 @@ const lockToggleEntry: ActionRoutingRegistryEntry<LockToggleNormalized> = {
     if (!target) {
       return fail('INTENT_PAYLOAD_INVALID', 'target node is required');
     }
-    const versionResult = requireBaseVersion(context, target.filePath);
+    const versionResult = requireBaseVersion(context, target.canvasId ?? null);
     if (!versionResult.ok) {
       return versionResult;
     }
@@ -1595,7 +1897,6 @@ const groupSelectionEntry: ActionRoutingRegistryEntry<GroupSelectionNormalized> 
       targets: selectionResult.value.targets,
       nextGroupId: createUniqueGroupId(context.nodes),
       baseVersion: selectionResult.value.baseVersion,
-      filePath: selectionResult.value.filePath,
     });
   },
   buildDispatch: ({ envelope, normalized }) => ok(buildGroupSelectionPlan({ envelope, normalized })),
@@ -1631,7 +1932,6 @@ const ungroupSelectionEntry: ActionRoutingRegistryEntry<UngroupSelectionNormaliz
     return ok({
       targets,
       baseVersion: selectionResult.value.baseVersion,
-      filePath: selectionResult.value.filePath,
     });
   },
   buildDispatch: ({ envelope, normalized }) => ok(buildUngroupSelectionPlan({ envelope, normalized })),
@@ -1691,7 +1991,6 @@ function createZOrderEntry(direction: ZOrderDirection): ActionRoutingRegistryEnt
         }),
         direction,
         baseVersion: selectionResult.value.baseVersion,
-        filePath: selectionResult.value.filePath,
       });
     },
     buildDispatch: ({ envelope, normalized }) => ok(buildZOrderSelectionPlan({ envelope, normalized })),

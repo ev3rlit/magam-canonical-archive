@@ -4,7 +4,7 @@ export const API_SHARED_MESSAGES = {
   validDateFields: 'Date fields must be valid date values.',
   keyRequired: 'key is required.',
   workspaceIdRequired: 'workspaceId is required.',
-  canvasPathRequired: 'canvasPath is required.',
+  canvasIdRequired: 'canvasId is required.',
   idRequired: 'id is required.',
   rootPathRequired: 'rootPath is required',
   rootPathAbsolute: 'rootPath must be an absolute path',

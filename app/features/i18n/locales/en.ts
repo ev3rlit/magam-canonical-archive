@@ -36,7 +36,7 @@ export const en = {
       searchTitle: 'Search · ⌘K',
     },
     quickOpen: {
-      placeholder: 'Search files/commands... (commands start with >)',
+      placeholder: 'Search canvases/commands... (commands start with >)',
       noResults: 'No results found.',
       commandHint: 'command',
       footer: {
@@ -46,7 +46,7 @@ export const en = {
     },
     searchOverlay: {
       dialogLabel: 'Search',
-      placeholder: 'Search nodes or files...',
+      placeholder: 'Search nodes...',
       inputLabel: 'Search query',
       closeLabel: 'Close search',
       modeLabels: {
@@ -54,14 +54,13 @@ export const en = {
         page: 'Page',
       },
       emptyHint: {
-        global: 'Type to search files and nodes.',
+        global: 'Type to search nodes across the canvas.',
         page: 'Type to search nodes on the current page.',
       },
       noResults: 'No search results',
       resultCount: (count: number) => `${count} result${count === 1 ? '' : 's'}`,
       resultTypeLabels: {
         element: 'Node',
-        file: 'File',
       },
       footer: {
         move: '↑↓: Move',

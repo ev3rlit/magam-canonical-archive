@@ -10,6 +10,7 @@ export function createPreloadCapabilities(
     capabilities: {
       workspace: {
         selectWorkspace: () => ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.selectWorkspace),
+        chooseSaveLocation: () => ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.chooseSaveLocation),
         revealInOs: (path: string) => ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.revealInOs, path),
       },
       shell: {
@@ -34,6 +35,10 @@ export function createPreloadCapabilities(
         ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.markRendererReady, payload),
       markRendererFailed: (payload) =>
         ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.markRendererFailed, payload),
+    },
+    rpc: {
+      healthCheck: () => ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.healthCheck),
+      invoke: (method, payload) => ipcRenderer.invoke(DESKTOP_HOST_CHANNELS.invokeRpc, { method, payload }),
     },
   };
 }

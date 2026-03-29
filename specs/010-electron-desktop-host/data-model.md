@@ -47,10 +47,7 @@ type RpcLogicalMethod =
   | 'fileTree.list'
   | 'render.generate'
   | 'edit.apply'
-  | 'sync.watch'
-  | 'chat.send'
-  | 'chat.stop'
-  | 'chat.sessions.list';
+  | 'sync.watch';
 ```
 
 ### Validation

@@ -53,8 +53,6 @@ export function createOptimisticMeta(input: {
   surfaceId: ActionRoutingSurfaceId;
   baseVersion: string;
   canvasId?: string;
-  filePath: string;
-  compatibilityFilePath?: string | null;
   nodeId?: string;
   rollbackSteps: DispatchDescriptor[];
   startedAt?: number;
@@ -70,8 +68,6 @@ export function createOptimisticMeta(input: {
     intentId: input.intentId,
     surfaceId: input.surfaceId,
     canvasId: input.canvasId,
-    filePath: input.filePath,
-    compatibilityFilePath: input.compatibilityFilePath ?? input.filePath,
     nodeId: input.nodeId,
     rollbackSteps: input.rollbackSteps,
     startedAt: input.startedAt ?? Date.now(),

@@ -140,11 +140,13 @@ export async function POST(request: Request) {
 
     const workspace = await requireWorkspaceRoot(rootPath);
     const rawTitle = typeof body.title === 'string' ? body.title : null;
+    const rawCanvasId = typeof body.canvasId === 'string' ? body.canvasId : null;
 
     let created: CanonicalCanvasShellRecord;
     try {
       created = await createCanonicalCanvas({
         targetDir: workspace.rootPath,
+        ...(rawCanvasId ? { canvasId: rawCanvasId } : {}),
         title: rawTitle,
         actor: {
           kind: 'system',

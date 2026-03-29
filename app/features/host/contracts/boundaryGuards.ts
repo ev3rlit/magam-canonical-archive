@@ -29,15 +29,6 @@ export function assertDesktopRuntimeConfig(config: DesktopRuntimeConfig): Deskto
     throw new Error('Desktop runtime must use desktop-primary mode.');
   }
 
-  const httpUrl = new URL(config.httpBaseUrl);
-  const wsUrl = new URL(config.wsUrl);
-  if (httpUrl.protocol !== 'http:' && httpUrl.protocol !== 'https:') {
-    throw new Error('Desktop runtime httpBaseUrl must use http or https.');
-  }
-  if (wsUrl.protocol !== 'ws:' && wsUrl.protocol !== 'wss:') {
-    throw new Error('Desktop runtime wsUrl must use ws or wss.');
-  }
-
   if (config.workspacePath) {
     assertAbsolutePath(config.workspacePath, 'workspacePath');
   }
@@ -54,6 +45,7 @@ export function assertHostCapabilitySurface(surface: HostCapabilitySurface): Hos
   }
 
   assertFunction(surface.workspace?.selectWorkspace, 'workspace.selectWorkspace');
+  assertFunction(surface.workspace?.chooseSaveLocation, 'workspace.chooseSaveLocation');
   assertFunction(surface.workspace?.revealInOs, 'workspace.revealInOs');
   assertFunction(surface.shell?.openExternal, 'shell.openExternal');
   assertFunction(surface.lifecycle?.onAppEvent, 'lifecycle.onAppEvent');

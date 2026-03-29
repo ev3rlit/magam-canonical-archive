@@ -347,6 +347,76 @@ function buildSequencePayloadFromLegacy(
   };
 }
 
+export function inferLegacyContentCapability(input: {
+  alias: CanonicalObjectAlias;
+  legacyProps?: UnknownRecord;
+  legacyChildren?: readonly unknown[];
+  explicitContent?: unknown;
+}): ContentCapability | undefined {
+  const legacyProps = input.legacyProps ?? {};
+  const legacyChildren = asLegacyChildren(input.legacyChildren);
+
+  if (input.explicitContent && isRecord(input.explicitContent)) {
+    return input.explicitContent as unknown as ContentCapability;
+  }
+
+  const textContent =
+    readString(legacyProps.text)
+    || readString(legacyProps.label)
+    || readString(legacyProps.value)
+    || extractTextFromLegacyChildren(
+      legacyChildren,
+      input.alias === 'Node' ? '\n' : input.alias === 'Sticker' ? ' ' : '',
+    );
+  const markdownSource =
+    readString(legacyProps.content)
+    || readString(legacyProps.source)
+    || extractMarkdownFromLegacyChildren(legacyChildren);
+
+  if (
+    input.alias === 'Node'
+    || input.alias === 'Shape'
+    || input.alias === 'Sticky'
+    || input.alias === 'Sticker'
+  ) {
+    if (input.alias === 'Node' && markdownSource !== undefined) {
+      return buildMarkdownContent(markdownSource);
+    }
+    if (textContent !== undefined) {
+      return {
+        ...buildTextContent(textContent),
+        ...(legacyProps.fontSize !== undefined
+          ? { fontSize: legacyProps.fontSize as number | string }
+          : {}),
+      };
+    }
+  }
+
+  if (input.alias === 'Markdown' && markdownSource !== undefined) {
+    return {
+      ...buildMarkdownContent(markdownSource),
+      ...(legacyProps.size !== undefined ? { size: legacyProps.size } : {}),
+    };
+  }
+
+  if (input.alias === 'Image') {
+    return buildMediaContentFromLegacy(legacyProps);
+  }
+
+  if (input.alias === 'Sequence') {
+    const sequencePayload = buildSequencePayloadFromLegacy(legacyProps, legacyChildren);
+    if (sequencePayload !== null) {
+      return {
+        kind: 'sequence',
+        participants: sequencePayload.participants,
+        messages: sequencePayload.messages,
+      };
+    }
+  }
+
+  return undefined;
+}
+
 function inferAliasDefaults(alias: CanonicalObjectAlias): Partial<CanonicalObject['capabilities']> {
   return {
     ...ALIAS_DEFAULT_CAPABILITIES[alias],

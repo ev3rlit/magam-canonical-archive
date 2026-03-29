@@ -20,7 +20,7 @@ import {
 export interface RendererBootstrapController {
   getSession: () => Promise<DesktopBootstrapSession | null>;
   markLoading: () => Promise<DesktopBootstrapSession | null>;
-  markReady: (payload?: { currentFile?: string | null }) => Promise<DesktopBootstrapSession | null>;
+  markReady: () => Promise<DesktopBootstrapSession | null>;
   markFailed: (payload: DesktopBootstrapFailure) => Promise<DesktopBootstrapSession | null>;
 }
 
@@ -72,12 +72,7 @@ function resolveRuntimeMode(): HostMode {
 function buildRuntime(): RendererHostRuntime {
   const mode = resolveRuntimeMode();
   const runtimeConfig = getDesktopRuntimeConfig();
-  const desktopRpc = createDesktopRpcAdapter({ runtimeConfig });
   const webRpc = createWebRpcAdapter();
-  validateAdapterParity({
-    desktop: desktopRpc.descriptor,
-    web: webRpc.descriptor,
-  });
 
   if (mode === 'desktop-primary') {
     if (!runtimeConfig) {
@@ -91,6 +86,11 @@ function buildRuntime(): RendererHostRuntime {
 
     assertDesktopRuntimeConfig(runtimeConfig);
     const capabilities = assertHostCapabilitySurface(bridge.capabilities);
+    const desktopRpc = createDesktopRpcAdapter({ bridge });
+    validateAdapterParity({
+      desktop: desktopRpc.descriptor,
+      web: webRpc.descriptor,
+    });
     return {
       bootstrap: createDesktopBootstrap(),
       capabilities,

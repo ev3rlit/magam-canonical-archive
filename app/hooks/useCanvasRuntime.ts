@@ -1,55 +1,60 @@
-/**
- * useCanvasRuntime Hook - WebSocket client for canvas runtime synchronization
- */
-
-import { useEffect, useRef, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import type {
+  CanvasMutationBatchV1,
+  CanvasEditingProjectionResponseV1,
+  CanvasHierarchyProjectionResponseV1,
+  CanvasRenderProjectionResponseV1,
+  CanvasRuntimeCommandV1,
+  CanvasRedoRequestV1,
+  CanvasUndoRequestV1,
+} from '../../libs/shared/src/lib/canvas-runtime';
+import { getDesktopHostBridge } from '@/features/host/renderer/hostCapabilities';
 import { useGraphStore } from '@/store/graph';
 import { editDebugLog, isEditDebugEnabled } from '@/utils/editDebug';
 import {
-  applyEditCompletionSnapshot,
   createPerCanvasMutationExecutor,
-  pruneExpiredOwnCommands,
   rememberOwnCommand,
-  resolveFileSyncWsUrl,
   RpcClientError,
-  shouldReloadAfterHistoryReplay,
-  shouldReloadForCanvasChange,
+  type MutationMethod,
   type RpcMutationResult,
   type UpdateNodeMutationOptions,
   type VersionConflictMetricsSnapshot,
 } from './useFileSync.shared';
+import {
+  buildCanvasNodeCreateCommand,
+  buildObjectBodyBlockInsertCommand,
+  buildRuntimeContentUpdateCommand,
+  buildRuntimePresentationStylePatch,
+  resolveCanonicalObjectId,
+  resolveRuntimeContentKind,
+  resolveSourceNodeId,
+} from '@/ws/shared/runtimeTransforms';
 
 export { RpcClientError } from './useFileSync.shared';
 
-const REQUEST_TIMEOUT = 5000;
-
-interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id: number;
-  method: string;
-  params?: Record<string, unknown>;
+export interface CanvasRuntimeProjectionQueryResult {
+  canvasId: string;
+  hierarchyProjection: CanvasHierarchyProjectionResponseV1;
+  renderProjection: CanvasRenderProjectionResponseV1;
+  editingProjection: CanvasEditingProjectionResponseV1;
 }
 
-interface JsonRpcResponse {
-  jsonrpc: '2.0';
-  id?: number;
-  method?: string;
-  result?: unknown;
-  error?: { code: number; message: string; data?: unknown };
-  params?: Record<string, unknown>;
+export interface RuntimeReconciliationSnapshot {
+  canvasId: string;
+  workspaceId: string;
+  workspaceRuntimeVersion: {
+    versionToken: string;
+  } | null;
+  canvasMetadataVersion: {
+    metadataRevisionNo: number;
+    versionToken: string;
+  } | null;
+  nodeVersions: Array<{
+    headRevisionNo: number;
+    nodeId: string;
+    versionToken: string;
+  }>;
 }
-
-type PendingRequestEntry = {
-  resolve: (result: unknown) => void;
-  reject: (error: Error) => void;
-  meta: {
-    method: string;
-    startedAt: number;
-    canvasId?: string;
-    nodeId?: string;
-    commandType?: string;
-  };
-};
 
 declare global {
   interface Window {
@@ -60,209 +65,94 @@ declare global {
   }
 }
 
-let requestIdCounter = 0;
+type DesktopRpcEnvelope<T> =
+  | { ok: true; result: T }
+  | { ok: false; error: { code?: number | string; message: string; data?: unknown } };
 
-function isClientOnlyDraftSourceVersion(version: string | null | undefined): boolean {
-  return typeof version === 'string' && version.startsWith('draft:');
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function requireDesktopBridge() {
+  const bridge = getDesktopHostBridge();
+  if (!bridge) {
+    throw new Error('Desktop host bridge is not available.');
+  }
+  return bridge;
+}
+
+function toRpcClientError(error: { code?: number | string; message: string; data?: unknown }): RpcClientError {
+  return new RpcClientError(
+    typeof error.code === 'number' ? error.code : 50000,
+    error.message,
+    error.data,
+  );
+}
+
+async function invokeDesktopRuntime<T>(method: string, payload?: unknown): Promise<T> {
+  const bridge = requireDesktopBridge();
+  const envelope = await bridge.rpc.invoke<DesktopRpcEnvelope<T>>(method, payload);
+  if (!envelope.ok) {
+    throw toRpcClientError(envelope.error);
+  }
+  return envelope.result;
+}
+
+export function buildRuntimeReconciliationFingerprint(
+  snapshot: RuntimeReconciliationSnapshot | null,
+): string {
+  if (!snapshot) {
+    return 'runtime:none';
+  }
+
+  return JSON.stringify({
+    canvasId: snapshot.canvasId,
+    workspaceId: snapshot.workspaceId,
+    workspaceRuntimeVersion: snapshot.workspaceRuntimeVersion?.versionToken ?? null,
+    canvasMetadataVersion: snapshot.canvasMetadataVersion?.versionToken ?? null,
+    nodeVersions: [...snapshot.nodeVersions]
+      .sort((left, right) => left.nodeId.localeCompare(right.nodeId))
+      .map((nodeVersion) => ({
+        nodeId: nodeVersion.nodeId,
+        headRevisionNo: nodeVersion.headRevisionNo,
+        versionToken: nodeVersion.versionToken,
+      })),
+  });
 }
 
 export function useCanvasRuntime(
   canvasId: string | null,
+  workspaceId: string | null,
   workspaceRootPath: string | null,
   onCanvasInvalidated: () => void,
   onCanvasRegistryChanged?: () => void,
 ) {
-  const wsRef = useRef<WebSocket | null>(null);
-  const pendingRequestsRef = useRef<Map<number, PendingRequestEntry>>(new Map());
   const currentCanvasIdRef = useRef<string | null>(null);
-  const wsUrlRef = useRef<string>(resolveFileSyncWsUrl());
   const recentOwnCommandsRef = useRef<Map<string, number>>(new Map());
-
-  const rejectPendingRequests = useCallback((reason: string) => {
-    if (pendingRequestsRef.current.size === 0) {
-      return;
-    }
-
-    const error = new Error(reason);
-    pendingRequestsRef.current.forEach((pending) => {
-      editDebugLog('rpc-request-aborted', error, {
-        method: pending.meta.method,
-        canvasId: pending.meta.canvasId ?? null,
-        nodeId: pending.meta.nodeId ?? null,
-        commandType: pending.meta.commandType ?? null,
-        durationMs: Date.now() - pending.meta.startedAt,
-        wsUrl: wsUrlRef.current,
-        readyState: wsRef.current?.readyState ?? null,
-      });
-      pending.reject(error);
-    });
-    pendingRequestsRef.current.clear();
-  }, []);
+  const reconciliationFingerprintRef = useRef<string>('runtime:none');
 
   const sendRequest = useCallback(async (method: string, params: Record<string, unknown>): Promise<unknown> => (
-    new Promise((resolve, reject) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        reject(new Error('WebSocket not connected'));
-        return;
-      }
-
-      const id = ++requestIdCounter;
-      const request: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
-      pendingRequestsRef.current.set(id, {
-        resolve,
-        reject,
-        meta: {
-          method,
-          startedAt: Date.now(),
-          canvasId: typeof params.canvasId === 'string' ? params.canvasId : undefined,
-          nodeId: typeof params.nodeId === 'string' ? params.nodeId : undefined,
-          commandType: typeof params.commandType === 'string' ? params.commandType : undefined,
-        },
-      });
-
-      setTimeout(() => {
-        const pending = pendingRequestsRef.current.get(id);
-        if (!pending) {
-          return;
-        }
-
-        pendingRequestsRef.current.delete(id);
-        const timeoutError = new Error(`Request timeout: ${method}`);
-        editDebugLog('rpc-request-timeout', timeoutError, {
-          method: pending.meta.method,
-          canvasId: pending.meta.canvasId ?? null,
-          nodeId: pending.meta.nodeId ?? null,
-          commandType: pending.meta.commandType ?? null,
-          durationMs: Date.now() - pending.meta.startedAt,
-          wsUrl: wsUrlRef.current,
-          readyState: wsRef.current?.readyState ?? null,
-        });
-        pending.reject(timeoutError);
-      }, REQUEST_TIMEOUT);
-
-      wsRef.current.send(JSON.stringify(request));
-    })
+    invokeDesktopRuntime(method, params)
   ), []);
 
-  const handleMessage = useCallback((event: MessageEvent) => {
-    let data: JsonRpcResponse;
-    try {
-      data = JSON.parse(event.data);
-    } catch {
-      console.error('[CanvasRuntime] Failed to parse message:', event.data);
-      return;
-    }
-
-    if (data.id !== undefined) {
-      const pending = pendingRequestsRef.current.get(data.id);
-      if (pending) {
-        pendingRequestsRef.current.delete(data.id);
-        if (data.error) {
-          pending.reject(new RpcClientError(data.error.code, data.error.message, data.error.data));
-        } else {
-          pending.resolve(data.result);
-        }
-      }
-      return;
-    }
-
-    if (data.method === 'canvas.changed') {
-      const incomingCanvasId = typeof data.params?.canvasId === 'string' ? data.params.canvasId : undefined;
-      const incomingVersion = typeof data.params?.newVersion === 'string' ? data.params.newVersion : undefined;
-      const incomingOriginId = data.params?.originId;
-      const incomingCommandId = data.params?.commandId;
-      const { clientId, lastAppliedCommandId, setCanvasVersion } = useGraphStore.getState();
-      pruneExpiredOwnCommands(recentOwnCommandsRef.current, Date.now());
-
-      if (incomingCanvasId && incomingVersion) {
-        setCanvasVersion(incomingCanvasId, incomingVersion);
-      }
-
-      const shouldReload = shouldReloadForCanvasChange({
-        changedCanvasId: incomingCanvasId,
-        currentCanvasId: currentCanvasIdRef.current,
-        incomingOriginId,
-        incomingCommandId,
-        clientId,
-        recentOwnCommandIds: new Set(recentOwnCommandsRef.current.keys()),
-        lastAppliedCommandId,
-      });
-
-      if (!shouldReload) {
-        return;
-      }
-
-      onCanvasInvalidated();
-      return;
-    }
-
-    if (data.method === 'files.changed') {
-      onCanvasRegistryChanged?.();
-    }
-  }, [onCanvasInvalidated, onCanvasRegistryChanged]);
-
-  useEffect(() => {
-    if (!canvasId && !onCanvasRegistryChanged) {
-      return undefined;
-    }
-
-    currentCanvasIdRef.current = canvasId;
-    const wsUrl = resolveFileSyncWsUrl({
-      location: typeof window !== 'undefined'
-        ? {
-            protocol: window.location.protocol,
-            hostname: window.location.hostname,
-          }
-        : undefined,
-    });
-    wsUrlRef.current = wsUrl;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      if (canvasId) {
-        sendRequest('canvas.subscribe', {
-          canvasId,
-          ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
-        }).catch((err) => console.error('[CanvasRuntime] Subscribe failed:', err));
-      }
-    };
-
-    ws.onmessage = handleMessage;
-    ws.onerror = (error) => console.error('[CanvasRuntime] WebSocket error:', error);
-    ws.onclose = () => {
-      rejectPendingRequests('WebSocket disconnected before response');
-    };
-
-    return () => {
-      rejectPendingRequests('WebSocket connection was reset');
-      if (ws.readyState === WebSocket.OPEN && canvasId) {
-        ws.send(JSON.stringify({
-          jsonrpc: '2.0',
-          id: ++requestIdCounter,
-          method: 'canvas.unsubscribe',
-          params: {
-            canvasId,
-            ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
-          },
-        } satisfies JsonRpcRequest));
-      }
-      ws.close();
-      if (wsRef.current === ws) {
-        wsRef.current = null;
-      }
-    };
-  }, [canvasId, handleMessage, onCanvasRegistryChanged, rejectPendingRequests, sendRequest, workspaceRootPath]);
-
-  const withCommon = useCallback((params: Record<string, unknown>) => {
+  const withCommon = useCallback((method: MutationMethod, params: Record<string, unknown>) => {
     const targetCanvasId = typeof params.canvasId === 'string' ? params.canvasId : canvasId;
     if (!targetCanvasId) {
       throw new Error('CANVAS_ID_NOT_READY');
     }
 
     const { canvasVersions, clientId } = useGraphStore.getState();
+    const requiresCompatibilityVersion = (
+      method === 'canvas.node.create'
+      || method === 'object.body.block.insert'
+      || method === 'node.update'
+      || method === 'node.move'
+      || method === 'node.create'
+      || method === 'node.delete'
+      || method === 'node.reparent'
+    );
     const baseVersion = canvasVersions[targetCanvasId] ?? null;
-    if (!baseVersion || isClientOnlyDraftSourceVersion(baseVersion)) {
+    if (requiresCompatibilityVersion && (!baseVersion || baseVersion.startsWith('draft:'))) {
       throw new Error('SOURCE_VERSION_NOT_READY');
     }
 
@@ -272,10 +162,10 @@ export function useCanvasRuntime(
 
     return {
       ...params,
-      baseVersion,
       canvasId: targetCanvasId,
       originId: clientId,
       commandId,
+      ...(requiresCompatibilityVersion && baseVersion ? { baseVersion } : {}),
       ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
     };
   }, [canvasId, workspaceRootPath]);
@@ -292,15 +182,59 @@ export function useCanvasRuntime(
     return typed;
   }, []);
 
+  const getRuntimeProjections = useCallback(async (input?: {
+    surfaceId?: string;
+    nodeIds?: string[];
+    workspaceId?: string;
+  }): Promise<CanvasRuntimeProjectionQueryResult> => {
+    if (!canvasId) {
+      throw new Error('CANVAS_ID_NOT_READY');
+    }
+
+    const response = await sendRequest('canvas.runtime.projections', {
+      canvasId,
+      ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
+      ...(input?.surfaceId ? { surfaceId: input.surfaceId } : {}),
+      ...(input?.workspaceId ? { workspaceId: input.workspaceId } : {}),
+      ...(input?.nodeIds && input.nodeIds.length > 0 ? { nodeIds: input.nodeIds } : {}),
+    });
+
+    return response as CanvasRuntimeProjectionQueryResult;
+  }, [canvasId, sendRequest, workspaceRootPath]);
+
+  const readRuntimeReconciliationSnapshot = useCallback(async (): Promise<RuntimeReconciliationSnapshot | null> => {
+    if (!canvasId) {
+      return null;
+    }
+
+    return invokeDesktopRuntime<RuntimeReconciliationSnapshot>('sync.watch', {
+      canvasId,
+      ...(workspaceRootPath ? { rootPath: workspaceRootPath } : {}),
+    });
+  }, [canvasId, workspaceRootPath]);
+
+  const seedRuntimeReconciliationState = useCallback(async () => {
+    const snapshot = await readRuntimeReconciliationSnapshot();
+    reconciliationFingerprintRef.current = buildRuntimeReconciliationFingerprint(snapshot);
+  }, [readRuntimeReconciliationSnapshot]);
+
+  const reconcileRuntimeState = useCallback(async (): Promise<boolean> => {
+    const snapshot = await readRuntimeReconciliationSnapshot();
+    const nextFingerprint = buildRuntimeReconciliationFingerprint(snapshot);
+    if (nextFingerprint === reconciliationFingerprintRef.current) {
+      return false;
+    }
+
+    reconciliationFingerprintRef.current = nextFingerprint;
+    return true;
+  }, [readRuntimeReconciliationSnapshot]);
+
   const mutationExecutor = useMemo(() => createPerCanvasMutationExecutor({
     sendRequest: (method, params) => sendRequest(method, params),
     buildCommonParams: withCommon,
     applyResultVersion,
-    onVersionConflictActual: (actualVersion) => {
-      const activeCanvasId = currentCanvasIdRef.current;
-      if (activeCanvasId) {
-        useGraphStore.getState().setCanvasVersion(activeCanvasId, actualVersion);
-      }
+    onVersionConflictActual: () => {
+      onCanvasInvalidated();
     },
     onConflictRetry: (event) => {
       editDebugLog('mutation-version-conflict-retry', event.error, {
@@ -317,7 +251,7 @@ export function useCanvasRuntime(
         should_enable_server_mutex: event.metrics.shouldEnableServerMutex,
       });
     },
-  }), [applyResultVersion, sendRequest, withCommon]);
+  }), [applyResultVersion, onCanvasInvalidated, sendRequest, withCommon]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !isEditDebugEnabled()) {
@@ -337,6 +271,118 @@ export function useCanvasRuntime(
     };
   }, [mutationExecutor]);
 
+  useEffect(() => {
+    currentCanvasIdRef.current = canvasId;
+    if (!canvasId) {
+      reconciliationFingerprintRef.current = 'runtime:none';
+      return;
+    }
+
+    void seedRuntimeReconciliationState().catch((error) => {
+      console.error('[CanvasRuntime] Failed to seed reconciliation state', error);
+    });
+  }, [canvasId, seedRuntimeReconciliationState, workspaceRootPath]);
+
+  useEffect(() => {
+    if (!canvasId) {
+      return undefined;
+    }
+
+    const bridge = getDesktopHostBridge();
+    if (!bridge) {
+      return undefined;
+    }
+
+    const requestReconcile = () => {
+      void reconcileRuntimeState()
+        .then((changed) => {
+          if (!changed) {
+            return;
+          }
+          onCanvasRegistryChanged?.();
+          onCanvasInvalidated();
+        })
+        .catch((error) => {
+          console.error('[CanvasRuntime] Reconciliation failed', error);
+        });
+    };
+
+    const unsubscribe = bridge.capabilities.lifecycle.onAppEvent((event) => {
+      if (event.type === 'workspace-runtime-invalidated') {
+        if (workspaceId && event.workspaceId !== workspaceId) {
+          return;
+        }
+        requestReconcile();
+        return;
+      }
+
+      if (event.type === 'backend-ready') {
+        requestReconcile();
+      }
+    });
+
+    const handleFocus = () => {
+      requestReconcile();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestReconcile();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [canvasId, onCanvasInvalidated, onCanvasRegistryChanged, reconcileRuntimeState, workspaceId]);
+
+  const executeRuntimeMutation = useCallback(async (input: {
+    canvasId?: string | null;
+    dryRun?: boolean;
+    reason?: string;
+    commands: CanvasRuntimeCommandV1[];
+  }): Promise<RpcMutationResult> => {
+    const resolvedCanvasId = input.canvasId ?? canvasId;
+    if (!resolvedCanvasId) {
+      throw new Error('SOURCE_VERSION_NOT_READY');
+    }
+
+    const state = useGraphStore.getState();
+    const sessionId = state.workspaceSessionKey ?? state.activeWorkspaceId ?? state.clientId;
+
+    return mutationExecutor.enqueueMutation({
+      method: 'canvas.runtime.mutate',
+      canvasId: resolvedCanvasId,
+      buildParams: () => ({
+        canvasId: resolvedCanvasId,
+        batch: {
+          workspaceId: workspaceId ?? 'workspace',
+          canvasId: resolvedCanvasId,
+          actor: {
+            kind: 'user',
+            id: state.clientId,
+          },
+          sessionId,
+          ...(typeof input.dryRun === 'boolean' ? { dryRun: input.dryRun } : {}),
+          ...(input.reason ? { reason: input.reason } : {}),
+          commands: input.commands,
+        } satisfies CanvasMutationBatchV1,
+      }),
+    });
+  }, [canvasId, mutationExecutor, workspaceId]);
+
+  const resolveRuntimeNode = useCallback((nodeId: string) => {
+    const state = useGraphStore.getState();
+    return state.nodes.find((node) => (
+      node.id === nodeId
+      || resolveSourceNodeId(node) === nodeId
+    )) ?? null;
+  }, []);
+
   const updateNode = useCallback(async (
     nodeId: string,
     props: Record<string, unknown>,
@@ -345,6 +391,46 @@ export function useCanvasRuntime(
   ): Promise<RpcMutationResult> => {
     const resolvedCanvasId = targetCanvasId ?? canvasId;
     if (!resolvedCanvasId) return {};
+
+    if (options?.commandType === 'node.style.update') {
+      return executeRuntimeMutation({
+        canvasId: resolvedCanvasId,
+        commands: [{
+          name: 'canvas.node.presentation-style.update',
+          canvasId: resolvedCanvasId,
+          nodeId,
+          presentationStyle: buildRuntimePresentationStylePatch(props),
+        }],
+      });
+    }
+
+    if (options?.commandType === 'node.content.update') {
+      const runtimeNode = resolveRuntimeNode(nodeId);
+      if (!runtimeNode) {
+        throw new RpcClientError(40401, 'NODE_NOT_FOUND', { nodeId });
+      }
+      const objectId = resolveCanonicalObjectId(runtimeNode) ?? resolveSourceNodeId(runtimeNode);
+      const kind = resolveRuntimeContentKind(runtimeNode);
+      const content = typeof props.content === 'string' ? props.content : '';
+
+      return executeRuntimeMutation({
+        canvasId: resolvedCanvasId,
+        commands: [buildRuntimeContentUpdateCommand({ objectId, kind, content })],
+      });
+    }
+
+    if (options?.commandType === 'node.z-order.update' && typeof props.zIndex === 'number') {
+      return executeRuntimeMutation({
+        canvasId: resolvedCanvasId,
+        commands: [{
+          name: 'canvas.node.z-order.update',
+          canvasId: resolvedCanvasId,
+          nodeId,
+          zIndex: props.zIndex,
+        }],
+      });
+    }
+
     return mutationExecutor.enqueueMutation({
       method: 'node.update',
       canvasId: resolvedCanvasId,
@@ -355,7 +441,7 @@ export function useCanvasRuntime(
         ...(options?.commandType ? { commandType: options.commandType } : {}),
       }),
     });
-  }, [canvasId, mutationExecutor]);
+  }, [canvasId, executeRuntimeMutation, mutationExecutor, resolveRuntimeNode]);
 
   const moveNode = useCallback(async (
     nodeId: string,
@@ -365,27 +451,17 @@ export function useCanvasRuntime(
   ): Promise<RpcMutationResult> => {
     const resolvedCanvasId = targetCanvasId ?? canvasId;
     if (!resolvedCanvasId) return {};
-    return mutationExecutor.enqueueMutation({
-      method: 'node.move',
+    return executeRuntimeMutation({
       canvasId: resolvedCanvasId,
-      buildParams: () => ({ canvasId: resolvedCanvasId, nodeId, x, y }),
+      commands: [{
+        name: 'canvas.node.move',
+        canvasId: resolvedCanvasId,
+        nodeId,
+        x,
+        y,
+      }],
     });
-  }, [canvasId, mutationExecutor]);
-
-  const createNode = useCallback(async (
-    node: Record<string, unknown>,
-    targetCanvasId?: string | null,
-  ): Promise<RpcMutationResult> => {
-    const resolvedCanvasId = targetCanvasId ?? canvasId;
-    if (!resolvedCanvasId) {
-      throw new Error('SOURCE_VERSION_NOT_READY');
-    }
-    return mutationExecutor.enqueueMutation({
-      method: 'node.create',
-      canvasId: resolvedCanvasId,
-      buildParams: () => ({ canvasId: resolvedCanvasId, node }),
-    });
-  }, [canvasId, mutationExecutor]);
+  }, [canvasId, executeRuntimeMutation]);
 
   const createCanvasNode = useCallback(async (
     node: Record<string, unknown>,
@@ -395,12 +471,36 @@ export function useCanvasRuntime(
     if (!resolvedCanvasId) {
       throw new Error('SOURCE_VERSION_NOT_READY');
     }
-    return mutationExecutor.enqueueMutation({
-      method: 'canvas.node.create',
+    const nodeId = typeof node.id === 'string' ? node.id : crypto.randomUUID();
+    const nodeType = typeof node.type === 'string' ? node.type : 'shape';
+    const props = isRecord(node.props) ? node.props : {};
+    const commands: CanvasRuntimeCommandV1[] = [buildCanvasNodeCreateCommand({
       canvasId: resolvedCanvasId,
-      buildParams: () => ({ canvasId: resolvedCanvasId, node }),
+      nodeId,
+      nodeType,
+      props,
+      placement: isRecord(node.placement) ? node.placement : undefined,
+      generateId: crypto.randomUUID,
+    })];
+
+    if (typeof props.content === 'string' && props.content.length > 0) {
+      commands.push(buildRuntimeContentUpdateCommand({
+        objectId: nodeId,
+        kind: 'markdown',
+        content: props.content,
+      }));
+    }
+
+    return executeRuntimeMutation({
+      canvasId: resolvedCanvasId,
+      commands,
     });
-  }, [canvasId, mutationExecutor]);
+  }, [canvasId, executeRuntimeMutation]);
+
+  const createNode = useCallback(async (
+    node: Record<string, unknown>,
+    targetCanvasId?: string | null,
+  ): Promise<RpcMutationResult> => createCanvasNode(node, targetCanvasId), [createCanvasNode]);
 
   const insertObjectBodyBlock = useCallback(async (
     input: {
@@ -414,17 +514,19 @@ export function useCanvasRuntime(
     if (!resolvedCanvasId) {
       throw new Error('SOURCE_VERSION_NOT_READY');
     }
-    return mutationExecutor.enqueueMutation({
-      method: 'object.body.block.insert',
+    const runtimeNode = resolveRuntimeNode(input.objectId);
+    const sourceNodeId = runtimeNode ? resolveSourceNodeId(runtimeNode) : input.objectId;
+    return executeRuntimeMutation({
       canvasId: resolvedCanvasId,
-      buildParams: () => ({
-        canvasId: resolvedCanvasId,
+      commands: [buildObjectBodyBlockInsertCommand({
         objectId: input.objectId,
+        sourceNodeId,
         block: input.block,
-        ...(input.afterBlockId ? { afterBlockId: input.afterBlockId } : {}),
-      }),
+        afterBlockId: input.afterBlockId,
+        generateId: crypto.randomUUID,
+      })],
     });
-  }, [canvasId, mutationExecutor]);
+  }, [canvasId, executeRuntimeMutation, resolveRuntimeNode]);
 
   const deleteNode = useCallback(async (
     nodeId: string,
@@ -432,12 +534,15 @@ export function useCanvasRuntime(
   ): Promise<RpcMutationResult> => {
     const resolvedCanvasId = targetCanvasId ?? canvasId;
     if (!resolvedCanvasId) return {};
-    return mutationExecutor.enqueueMutation({
-      method: 'node.delete',
+    return executeRuntimeMutation({
       canvasId: resolvedCanvasId,
-      buildParams: () => ({ canvasId: resolvedCanvasId, nodeId }),
+      commands: [{
+        name: 'canvas.node.delete',
+        canvasId: resolvedCanvasId,
+        nodeId,
+      }],
     });
-  }, [canvasId, mutationExecutor]);
+  }, [canvasId, executeRuntimeMutation]);
 
   const reparentNode = useCallback(async (
     nodeId: string,
@@ -446,58 +551,67 @@ export function useCanvasRuntime(
   ): Promise<RpcMutationResult> => {
     const resolvedCanvasId = targetCanvasId ?? canvasId;
     if (!resolvedCanvasId) return {};
-    return mutationExecutor.enqueueMutation({
-      method: 'node.reparent',
+    return executeRuntimeMutation({
       canvasId: resolvedCanvasId,
-      buildParams: () => ({
+      commands: [{
+        name: 'canvas.node.reparent',
         canvasId: resolvedCanvasId,
         nodeId,
-        ...(newParentId ? { newParentId } : {}),
-      }),
+        parentNodeId: newParentId ?? null,
+      }],
     });
-  }, [canvasId, mutationExecutor]);
-
-  const applyEventSnapshot = useCallback(async (event: Parameters<typeof applyEditCompletionSnapshot>[0], direction: 'before' | 'after'): Promise<void> => {
-    await applyEditCompletionSnapshot(event, direction, {
-      moveNode,
-      updateNode,
-      createNode,
-      createCanvasNode,
-      insertObjectBodyBlock,
-      deleteNode,
-      reparentNode,
-    });
-  }, [createCanvasNode, createNode, deleteNode, insertObjectBodyBlock, moveNode, reparentNode, updateNode]);
+  }, [canvasId, executeRuntimeMutation]);
 
   const undoLastEdit = useCallback(async (): Promise<boolean> => {
-    const state = useGraphStore.getState();
-    const event = state.peekUndoEditEvent();
-    if (!event) {
+    if (!canvasId) {
       return false;
     }
-    await applyEventSnapshot(event, 'before');
-    useGraphStore.getState().commitUndoEventSuccess(event.eventId);
-    if (shouldReloadAfterHistoryReplay(event)) {
-      onCanvasInvalidated();
+
+    const state = useGraphStore.getState();
+    const request: CanvasUndoRequestV1 = {
+      canvasId,
+      actorId: state.clientId,
+      sessionId: state.workspaceSessionKey ?? state.activeWorkspaceId ?? state.clientId,
+    };
+
+    const result = applyResultVersion(await sendRequest(
+      'canvas.runtime.undo',
+      withCommon('canvas.runtime.undo', request as unknown as Record<string, unknown>),
+    ));
+    if (!result.success || !result.runtimeResult?.ok) {
+      return false;
     }
+
+    onCanvasInvalidated();
     return true;
-  }, [applyEventSnapshot, onCanvasInvalidated]);
+  }, [applyResultVersion, canvasId, onCanvasInvalidated, sendRequest, withCommon]);
 
   const redoLastEdit = useCallback(async (): Promise<boolean> => {
-    const state = useGraphStore.getState();
-    const event = state.peekRedoEditEvent();
-    if (!event) {
+    if (!canvasId) {
       return false;
     }
-    await applyEventSnapshot(event, 'after');
-    useGraphStore.getState().commitRedoEventSuccess(event.eventId);
-    if (shouldReloadAfterHistoryReplay(event)) {
-      onCanvasInvalidated();
+
+    const state = useGraphStore.getState();
+    const request: CanvasRedoRequestV1 = {
+      canvasId,
+      actorId: state.clientId,
+      sessionId: state.workspaceSessionKey ?? state.activeWorkspaceId ?? state.clientId,
+    };
+
+    const result = applyResultVersion(await sendRequest(
+      'canvas.runtime.redo',
+      withCommon('canvas.runtime.redo', request as unknown as Record<string, unknown>),
+    ));
+    if (!result.success || !result.runtimeResult?.ok) {
+      return false;
     }
+
+    onCanvasInvalidated();
     return true;
-  }, [applyEventSnapshot, onCanvasInvalidated]);
+  }, [applyResultVersion, canvasId, onCanvasInvalidated, sendRequest, withCommon]);
 
   return {
+    dispatchRuntimeMutation: executeRuntimeMutation,
     updateNode,
     moveNode,
     createNode,
@@ -505,7 +619,9 @@ export function useCanvasRuntime(
     insertObjectBodyBlock,
     deleteNode,
     reparentNode,
+    getRuntimeProjections,
     undoLastEdit,
     redoLastEdit,
+    reconcileRuntimeState,
   };
 }

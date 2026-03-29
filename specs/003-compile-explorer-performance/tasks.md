@@ -49,7 +49,6 @@
 - [X] T014 [US1] Wire extracted parsing module into workspace flow in `app/components/editor/WorkspaceClient.tsx`
 - [X] T015 [P] [US1] Introduce lazy optional panel loader module in `app/components/editor/LazyPanels.tsx`
 - [X] T016 [US1] Replace static optional panel imports with lazy boundaries in `app/components/editor/WorkspaceClient.tsx`
-- [X] T017 [US1] Split lightweight chat UI toggle state from heavy chat store in `app/store/chatUi.ts`, `app/components/ui/Header.tsx`, `app/components/chat/ChatPanel.tsx`
 - [X] T018 [US1] Record first-load route compile/request improvements in `docs/features/compile-explorer-performance/README.md`
 
 **Checkpoint**: US1 단독으로 초기 진입 성능 개선 검증 가능(MVP)

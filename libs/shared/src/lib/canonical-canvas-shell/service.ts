@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import * as path from 'node:path';
 import { cliError, persistenceFailureToCliError } from '../canonical-cli';
-import { createCanonicalPgliteDb, CanonicalPersistenceRepository } from '../canonical-persistence';
+import {
+  createCanonicalPgliteDb,
+  CanonicalPersistenceRepository,
+  resolveCanonicalMigrationsFolder,
+} from '../canonical-persistence';
 import type { HeadlessServiceContext } from '../canonical-cli';
 import {
   getCurrentCanvasRevision,
   getWorkspaceCanvas,
-  getWorkspaceCanvasCompatibilityFilePath,
   listWorkspaceCanvases,
 } from '../canonical-query/workspace-canvas';
 import type {
@@ -32,12 +34,7 @@ function resolveWorkspaceId(targetDir: string, workspaceId?: string): string {
 }
 
 function resolveMigrationsFolder(): string {
-  return fileURLToPath(new URL('../canonical-persistence/drizzle/', import.meta.url));
-}
-
-function createCompatibilityFilePath(canvasId: string): string {
-  const fallback = `canvases/${canvasId}.graph.tsx`;
-  return fallback;
+  return resolveCanonicalMigrationsFolder(process.cwd());
 }
 
 async function withCanonicalCanvasContext<T>(
@@ -83,18 +80,11 @@ export async function getCanonicalCanvas(
   ));
 }
 
-export async function resolveCanonicalCanvasCompatibilityFilePath(input: GetCanonicalCanvasShellInput): Promise<string | null> {
-  return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context) => (
-    getWorkspaceCanvasCompatibilityFilePath(context, input.canvasId)
-  ));
-}
-
 export async function createCanonicalCanvas(
   input: CreateCanonicalCanvasShellInput,
 ): Promise<CanonicalCanvasShellRecord> {
   return withCanonicalCanvasContext(input.targetDir, input.workspaceId, async (context, workspaceId) => {
     const canvasId = input.canvasId?.trim() || `doc-${randomUUID()}`;
-    const compatibilityFilePath = createCompatibilityFilePath(canvasId);
     const title = typeof input.title === 'string' && input.title.trim().length > 0
       ? input.title.trim()
       : null;
@@ -111,7 +101,6 @@ export async function createCanonicalCanvas(
         canvasShell: {
           workspaceId,
           title,
-          filePath: compatibilityFilePath,
           createdAt: createdAt.toISOString(),
         },
       },

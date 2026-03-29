@@ -292,3 +292,5 @@ flowchart TD
 - `docs/adr/ADR-0004-unified-dev-bootstrap-and-dynamic-port-injection.md`
 - `docs/features/database-first-canvas-platform/README.md`
 - `docs/features/technical-design/README.md`
+- `docs/reports/app-cli-runtime-models/README.md`
+- `docs/features/database-first-canvas-platform/db-mediated-ui-cli-runtime/README.md`

@@ -142,7 +142,7 @@ export class AppStatePersistenceRepository implements AppStateRepository {
       .select()
       .from(appRecentCanvases)
       .where(eq(appRecentCanvases.workspaceId, workspaceId))
-      .orderBy(desc(appRecentCanvases.lastOpenedAt), asc(appRecentCanvases.canvasPath));
+      .orderBy(desc(appRecentCanvases.lastOpenedAt), asc(appRecentCanvases.canvasId));
   }
 
   async upsertRecentCanvas(input: AppRecentCanvasUpsertInput): Promise<AppRecentCanvasRecord> {
@@ -150,11 +150,11 @@ export class AppStatePersistenceRepository implements AppStateRepository {
       .insert(appRecentCanvases)
       .values({
         workspaceId: input.workspaceId,
-        canvasPath: input.canvasPath,
+        canvasId: input.canvasId,
         lastOpenedAt: input.lastOpenedAt ?? null,
       })
       .onConflictDoUpdate({
-        target: [appRecentCanvases.workspaceId, appRecentCanvases.canvasPath],
+        target: [appRecentCanvases.workspaceId, appRecentCanvases.canvasId],
         set: {
           lastOpenedAt: input.lastOpenedAt ?? null,
           updatedAt: new Date(),

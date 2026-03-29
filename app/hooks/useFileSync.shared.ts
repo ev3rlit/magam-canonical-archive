@@ -1,4 +1,5 @@
 import type { EditCompletionEvent } from '@/store/graph';
+import type { MutationResultEnvelopeV1 } from '../../libs/shared/src/lib/canvas-runtime';
 
 const OWN_COMMAND_TTL_MS = 60_000;
 
@@ -7,6 +8,9 @@ export const VERSION_CONFLICT_METRIC_WINDOW_MS = 10 * 60 * 1000;
 export const VERSION_CONFLICT_RATE_THRESHOLD = 0.02;
 
 export type MutationMethod =
+  | 'canvas.runtime.mutate'
+  | 'canvas.runtime.undo'
+  | 'canvas.runtime.redo'
   | 'canvas.node.create'
   | 'object.body.block.insert'
   | 'node.update'
@@ -26,8 +30,10 @@ export type UpdateNodeCommandType =
 export interface RpcMutationResult {
   success?: boolean;
   newVersion?: string;
+  canvasRevision?: number;
   commandId?: string;
   canvasId?: string;
+  runtimeResult?: MutationResultEnvelopeV1;
 }
 
 export interface UpdateNodeMutationOptions {
@@ -107,17 +113,17 @@ type RetryEvent = {
   canvasId: string;
   attempt: number;
   maxRetry: number;
-  expected?: string;
-  actual?: string;
+  expected?: string | number;
+  actual?: string | number;
   metrics: VersionConflictMetricsSnapshot;
   error: unknown;
 };
 
 type CreateMutationExecutorInput = {
   sendRequest: (method: MutationMethod, params: Record<string, unknown>) => Promise<unknown>;
-  buildCommonParams: (params: Record<string, unknown>) => Record<string, unknown>;
+  buildCommonParams: (method: MutationMethod, params: Record<string, unknown>) => Record<string, unknown>;
   applyResultVersion: (result: unknown) => RpcMutationResult;
-  onVersionConflictActual?: (actualVersion: string) => void;
+  onVersionConflictActual?: (actualVersion: string | number) => void;
   onConflictRetry?: (event: RetryEvent) => void;
   metricsTracker?: VersionConflictMetricsTracker;
 };
@@ -140,26 +146,6 @@ export class RpcClientError extends Error {
   }
 }
 
-function resolveDesktopBridgeWsUrl(): string | undefined {
-  if (typeof window === 'undefined') {
-    return undefined;
-  }
-
-  const candidate = (
-    window as Window & {
-      __MAGAM_DESKTOP_HOST__?: {
-        runtime?: {
-          wsUrl?: unknown;
-        };
-      };
-    }
-  ).__MAGAM_DESKTOP_HOST__?.runtime?.wsUrl;
-
-  return typeof candidate === 'string' && candidate.length > 0
-    ? candidate
-    : undefined;
-}
-
 export function resolveFileSyncWsUrl(input?: {
   port?: string;
   location?: {
@@ -167,11 +153,6 @@ export function resolveFileSyncWsUrl(input?: {
     hostname?: string;
   };
 }): string {
-  const desktopWsUrl = resolveDesktopBridgeWsUrl();
-  if (desktopWsUrl) {
-    return desktopWsUrl;
-  }
-
   const port = input?.port ?? process.env.NEXT_PUBLIC_MAGAM_WS_PORT ?? '3001';
   const protocol = input?.location?.protocol === 'https:' ? 'wss' : 'ws';
   const hostname = input?.location?.hostname || 'localhost';
@@ -197,15 +178,15 @@ function pruneExpiredTimestamps(timestamps: number[], now: number, windowMs: num
   }
 }
 
-function toOptionalString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
+function toOptionalVersionValue(value: unknown): string | number | undefined {
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined;
 }
 
-function extractVersionConflictVersions(error: unknown): { expected?: string; actual?: string } {
+function extractVersionConflictVersions(error: unknown): { expected?: string | number; actual?: string | number } {
   const data = (error as VersionConflictErrorLike)?.data as VersionConflictData | undefined;
   return {
-    expected: toOptionalString(data?.expected),
-    actual: toOptionalString(data?.actual),
+    expected: toOptionalVersionValue(data?.expected),
+    actual: toOptionalVersionValue(data?.actual),
   };
 }
 
@@ -277,7 +258,7 @@ export function createPerCanvasMutationExecutor(input: CreateMutationExecutorInp
     let retryAttempt = 0;
     while (true) {
       try {
-        const params = input.buildCommonParams(mutation.buildParams());
+        const params = input.buildCommonParams(mutation.method, mutation.buildParams());
         const result = await input.sendRequest(mutation.method, params);
         return input.applyResultVersion(result);
       } catch (error) {

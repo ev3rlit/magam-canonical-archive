@@ -38,6 +38,7 @@ function flattenIntents(contributions: CanvasRuntimeContribution[]): CanvasInten
 }
 
 export function createCanvasRuntime(input: CreateCanvasRuntimeInput = {}): CanvasRuntime {
+  // This is the app-side composition runtime for menus, shortcuts, and intent bindings, not the shared canvas core runtime.
   const contributions = resolveContributionSet(input.contributions);
   const orderedContributions = [
     contributions.canvasToolbar,

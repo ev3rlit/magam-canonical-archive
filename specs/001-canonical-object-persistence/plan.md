@@ -38,7 +38,7 @@
 - **III. Feature-Oriented Modular Monolith**: persistence contract는 shared 모듈 소유, app/editor는 소비자 역할로 제한.
 - **IV. Dependency-Linear Design**: canonical contract -> persistence module -> app/CLI consumer의 단방향 의존을 유지.
 - **V. Promptable Modules**: schema/validator/mapper/repository/bootstrap/test 경계를 분리해 slice 단위 작업이 가능함.
-- **VI. Surgical Changes**: 기존 chat SQLite 경로는 건드리지 않고 canonical path를 분리 추가함.
+- **VI. Surgical Changes**: 기존 canonical path와 app runtime 경계는 유지하고 canonical persistence 전용 shared path만 분리 추가함.
 - **VII. Goal-Driven Verification**: projection, clone-on-create, boundary, tombstone, migration, relation integrity를 각각 검증 가능한 체크포인트로 정의함.
 
 Result: **PASS**
@@ -105,8 +105,6 @@ app/features/render/
 
 ## Migration Command Strategy
 
-- `drizzle.config.ts`
-  - 기존 기본 경로를 유지한다.
 - `drizzle.canonical.config.ts`
   - canonical persistence schema 전용 migration artifact를 생성한다.
   - output: `libs/shared/src/lib/canonical-persistence/drizzle/`

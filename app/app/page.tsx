@@ -1,5 +1,5 @@
-import { WorkspaceDashboardPage } from '@/features/workspace/pages/WorkspaceDashboardPage';
+import { RendererAppShell } from '@/features/host/renderer/RendererAppShell';
 
 export default function HomePage() {
-  return <WorkspaceDashboardPage />;
+  return <RendererAppShell />;
 }

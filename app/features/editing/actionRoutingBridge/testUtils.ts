@@ -5,7 +5,6 @@ import type { CanonicalObject } from '@/features/render/canonicalObject';
 export function makeCanonicalNode(input: {
   id: string;
   type: string;
-  filePath?: string;
   sourceId?: string;
   groupId?: string;
   sourceKind?: 'canvas' | 'mindmap';
@@ -18,7 +17,6 @@ export function makeCanonicalNode(input: {
       id: input.sourceId ?? input.id,
       sourceMeta: {
         sourceId: input.sourceId ?? input.id,
-        filePath: input.filePath ?? 'examples/bridge.tsx',
         kind: sourceKind,
       },
       relations: input.groupId && sourceKind === 'mindmap' ? { from: 'map.root' } : undefined,
@@ -58,7 +56,6 @@ export function makeCanonicalNode(input: {
       groupId: input.groupId,
       sourceMeta: {
         sourceId: input.sourceId ?? input.id,
-        filePath: input.filePath ?? 'examples/bridge.tsx',
         kind: sourceKind,
       },
       canonicalObject: canonical,
@@ -91,20 +88,11 @@ export function makeActionRoutingContext(input?: {
   nodes?: Node[];
   edges?: Edge[];
   currentCanvasId?: string | null;
-  currentCompatibilityFilePath?: string | null;
   canvasVersions?: Record<string, string>;
-  currentFile?: string | null;
-  sourceVersions?: Record<string, string>;
   now?: number;
 }): ActionRoutingContext {
   const currentCanvasId = input?.currentCanvasId ?? 'canvas-bridge';
-  const currentCompatibilityFilePath = input?.currentCompatibilityFilePath
-    ?? input?.currentFile
-    ?? 'examples/bridge.tsx';
-  const sourceVersions = input?.sourceVersions ?? {
-    [currentCompatibilityFilePath]: 'sha256:bridge-v1',
-  };
-  const fallbackVersion = Object.values(input?.sourceVersions ?? {})[0] ?? 'sha256:bridge-v1';
+  const fallbackVersion = 'sha256:bridge-v1';
   const canvasVersions = input?.canvasVersions
     ?? (currentCanvasId ? { [currentCanvasId]: fallbackVersion } : {});
 
@@ -112,10 +100,7 @@ export function makeActionRoutingContext(input?: {
     nodes: input?.nodes ?? [],
     edges: input?.edges ?? [],
     currentCanvasId,
-    currentCompatibilityFilePath,
     canvasVersions,
-    currentFile: currentCompatibilityFilePath,
-    sourceVersions,
     now: input?.now ?? 1_710_000_000_000,
   } as ActionRoutingContext;
 }

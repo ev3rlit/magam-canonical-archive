@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   createCanonicalPgliteDb,
   resolveCanonicalMigrationsFolder,
@@ -169,7 +169,7 @@ describe('render-canvas', () => {
         },
       ],
     });
-    expect(rendered.graph.children[0]?.props.sourceMeta).not.toHaveProperty('filePath');
+    expect(rendered.graph.children[0]?.props['sourceMeta']).not.toHaveProperty('filePath');
   });
 
   it('groups mindmap trees into graph-mindmap containers', () => {

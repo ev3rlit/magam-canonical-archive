@@ -58,6 +58,82 @@ async function hasPluginRuntimeSchema(client: PGlite): Promise<boolean> {
   return requiredTables.size === 0;
 }
 
+async function hasCorePersistenceSchema(client: PGlite): Promise<boolean> {
+  const requiredTables = new Set([
+    'objects',
+    'object_relations',
+    'canvas_nodes',
+    'canvas_bindings',
+    'document_revisions',
+  ]);
+
+  const result = await client.query(`
+    select tablename
+    from pg_tables
+    where schemaname = 'public'
+      and tablename in ('objects', 'object_relations', 'canvas_nodes', 'canvas_bindings', 'document_revisions')
+  `);
+
+  for (const row of result.rows as Array<Record<string, unknown>>) {
+    const tablename = typeof row['tablename'] === 'string' ? row['tablename'] : null;
+    if (tablename) {
+      requiredTables.delete(tablename);
+    }
+  }
+
+  return requiredTables.size === 0;
+}
+
+async function hasRuntimeHistorySchema(client: PGlite): Promise<boolean> {
+  const columnResult = await client.query(`
+    select column_name
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'document_revisions'
+      and column_name in ('session_id', 'runtime_history')
+  `);
+  const cursorResult = await client.query(`
+    select tablename
+    from pg_tables
+    where schemaname = 'public'
+      and tablename = 'canvas_history_cursors'
+  `);
+
+  const columns = new Set(
+    (columnResult.rows as Array<Record<string, unknown>>)
+      .map((row) => typeof row['column_name'] === 'string' ? row['column_name'] : null)
+      .filter((value): value is string => value !== null),
+  );
+  const hasCursorTable = (cursorResult.rows as Array<Record<string, unknown>>)
+    .some((row) => row['tablename'] === 'canvas_history_cursors');
+
+  return columns.has('session_id') && columns.has('runtime_history') && hasCursorTable;
+}
+
+async function hasRuntimeCoordinationSchema(client: PGlite): Promise<boolean> {
+  const requiredTables = new Set([
+    'workspace_runtime_versions',
+    'canvas_metadata_versions',
+    'node_versions',
+  ]);
+
+  const result = await client.query(`
+    select tablename
+    from pg_tables
+    where schemaname = 'public'
+      and tablename in ('workspace_runtime_versions', 'canvas_metadata_versions', 'node_versions')
+  `);
+
+  for (const row of result.rows as Array<Record<string, unknown>>) {
+    const tablename = typeof row['tablename'] === 'string' ? row['tablename'] : null;
+    if (tablename) {
+      requiredTables.delete(tablename);
+    }
+  }
+
+  return requiredTables.size === 0;
+}
+
 async function ensurePluginRuntimeSchema(client: PGlite): Promise<void> {
   await client.query(`
     create table if not exists plugin_packages (
@@ -165,6 +241,83 @@ async function ensurePluginRuntimeSchema(client: PGlite): Promise<void> {
   `);
 }
 
+async function ensureRuntimeHistorySchema(client: PGlite): Promise<void> {
+  await client.query(`
+    alter table document_revisions
+      add column if not exists session_id text;
+  `);
+  await client.query(`
+    alter table document_revisions
+      add column if not exists runtime_history jsonb;
+  `);
+  await client.query(`
+    create index if not exists idx_document_revisions_document_author_session
+    on document_revisions (document_id, author_id, session_id, revision_no);
+  `);
+  await client.query(`
+    create table if not exists canvas_history_cursors (
+      document_id text not null,
+      actor_id text not null,
+      session_id text not null,
+      undo_revision_no integer,
+      redo_revision_no integer,
+      updated_at timestamp with time zone default now() not null,
+      constraint canvas_history_cursors_document_actor_session_pk
+        primary key (document_id, actor_id, session_id)
+    );
+  `);
+  await client.query(`
+    create index if not exists idx_canvas_history_cursors_document
+    on canvas_history_cursors (document_id, updated_at);
+  `);
+}
+
+async function ensureRuntimeCoordinationSchema(client: PGlite): Promise<void> {
+  await client.query(`
+    create table if not exists workspace_runtime_versions (
+      workspace_id text primary key not null,
+      version_token text not null,
+      updated_at timestamp with time zone default now() not null
+    );
+  `);
+  await client.query(`
+    create table if not exists canvas_metadata_versions (
+      workspace_id text not null,
+      canvas_id text not null,
+      metadata_revision_no integer not null,
+      version_token text not null,
+      updated_at timestamp with time zone default now() not null,
+      constraint canvas_metadata_versions_workspace_canvas_pk
+        primary key (workspace_id, canvas_id)
+    );
+  `);
+  await client.query(`
+    create index if not exists idx_canvas_metadata_versions_workspace_updated
+    on canvas_metadata_versions (workspace_id, updated_at);
+  `);
+  await client.query(`
+    create table if not exists node_versions (
+      workspace_id text not null,
+      canvas_id text not null,
+      node_id text not null,
+      object_id text,
+      head_revision_no integer not null,
+      version_token text not null,
+      last_mutation_batch_id text not null,
+      last_mutation_source text not null,
+      last_applied_by_id text not null,
+      last_applied_by_kind text not null,
+      updated_at timestamp with time zone default now() not null,
+      constraint node_versions_workspace_canvas_node_pk
+        primary key (workspace_id, canvas_id, node_id)
+    );
+  `);
+  await client.query(`
+    create index if not exists idx_node_versions_canvas_updated
+    on node_versions (canvas_id, updated_at);
+  `);
+}
+
 export async function createCanonicalPgliteDb(
   targetDir: string,
   options?: {
@@ -186,13 +339,37 @@ export async function createCanonicalPgliteDb(
   const db = drizzle(client, { schema });
 
   if (options?.runMigrations !== false) {
-    await migrate(db, {
-      migrationsFolder,
-    });
+    const hasCoreSchema = await hasCorePersistenceSchema(client);
+    try {
+      await migrate(db, {
+        migrationsFolder,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const looksLikeExistingSchemaConflict = (
+        message.includes('already exists')
+        || message.includes('duplicate')
+        || message.includes('plugin_packages')
+        || message.includes('plugin_versions')
+        || message.includes('plugin_exports')
+        || message.includes('plugin_permissions')
+        || message.includes('plugin_instances')
+      );
+
+      if (!hasCoreSchema || !looksLikeExistingSchemaConflict) {
+        throw error;
+      }
+    }
     // Compatibility guard: when migration journal metadata lags behind the new SQL file,
     // plugin runtime tables can be absent even after migrate(). Bootstrap only if missing.
     if (!(await hasPluginRuntimeSchema(client))) {
       await ensurePluginRuntimeSchema(client);
+    }
+    if (!(await hasRuntimeHistorySchema(client))) {
+      await ensureRuntimeHistorySchema(client);
+    }
+    if (!(await hasRuntimeCoordinationSchema(client))) {
+      await ensureRuntimeCoordinationSchema(client);
     }
   }
 

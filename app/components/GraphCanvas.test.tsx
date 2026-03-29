@@ -5,6 +5,7 @@ import { canDismissOverlay } from '@/features/overlay-host/lifecycle';
 import { initialOverlayHostState } from '@/features/overlay-host/state';
 import { createSlotContribution, resolveToolbarAnchor, updateSelectionFloatingAnchor } from '@/features/overlay-host/slots';
 import type { CanonicalObject } from '@/features/render/canonicalObject';
+import { createEditMetaFromRuntimeProjection } from '@/features/editing/editability';
 import { useGraphStore } from '@/store/graph';
 import { shouldDismissContextMenuForSelectionChange } from '@/hooks/useContextMenu.helpers';
 import { createContextMenuOverlayContribution } from './ContextMenu';
@@ -637,6 +638,72 @@ describe('GraphCanvas direct manipulation baseline', () => {
         top: 30,
         width: 250,
         height: 80,
+      },
+    });
+  });
+
+  it('accepts runtime-derived style capabilities for single-node shell handles', () => {
+    const runtimeEditMeta = createEditMetaFromRuntimeProjection({
+      nodeType: 'shape',
+      runtimeNode: {
+        nodeId: 'shape-runtime',
+        surfaceId: 'main',
+        canonicalObjectId: 'shape-runtime',
+        selectionKey: 'node:shape-runtime',
+        allowedCommands: [
+          'canvas.node.move',
+          'canvas.node.resize',
+          'canvas.node.rotate',
+          'canvas.node.presentation-style.update',
+        ],
+        interactionCapabilities: {
+          selectable: true,
+          movable: true,
+          reparentable: false,
+          renamable: true,
+          deletable: true,
+          zOrderEditable: true,
+          objectContentEditable: false,
+          objectCapabilityPatchable: false,
+          bodyEntrySupported: false,
+        },
+        bodyEntry: {
+          supported: false,
+          mode: null,
+          preferredCommandName: null,
+          targetObjectId: null,
+        },
+        anchors: [],
+        bodyBlocks: [],
+        selectedBodyBlockId: null,
+      },
+    });
+
+    expect(resolveSelectionShellState({
+      selectedNodes: [
+        {
+          id: 'shape-runtime',
+          type: 'shape',
+          position: { x: 10, y: 20 },
+          width: 180,
+          height: 100,
+          data: {
+            editMeta: runtimeEditMeta,
+            rotation: 24,
+          },
+        },
+      ],
+      viewport: { x: 0, y: 0, zoom: 1 },
+    })).toEqual({
+      visible: true,
+      canResize: true,
+      canRotate: true,
+      activeGesture: null,
+      screenBounds: {
+        left: 10,
+        top: 20,
+        width: 180,
+        height: 100,
       },
     });
   });

@@ -1,6 +1,6 @@
 import { mkdtemp, rm } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createAppStatePgliteDb } from './pglite-db';
 import { AppStatePersistenceRepository } from './repository';
@@ -34,7 +34,7 @@ describe('AppStatePersistenceRepository', () => {
     });
     const recentCanvas = await repository.upsertRecentCanvas({
       workspaceId: pinnedWorkspace.id,
-      canvasPath: '/tmp/ws-pinned/doc-1.tsx',
+      canvasId: 'canvas-1',
       lastOpenedAt: new Date('2026-03-23T00:00:00Z'),
     });
     await repository.setPreference({
@@ -45,7 +45,7 @@ describe('AppStatePersistenceRepository', () => {
       key: 'workspace.lastActiveCanvasSession',
       valueJson: {
         workspaceId: pinnedWorkspace.id,
-        canvasPath: recentCanvas.canvasPath,
+        canvasId: recentCanvas.canvasId,
       },
     });
 
@@ -63,7 +63,7 @@ describe('AppStatePersistenceRepository', () => {
     expect(recentCanvases).toEqual([
       expect.objectContaining({
         workspaceId: 'ws-pinned',
-        canvasPath: '/tmp/ws-pinned/doc-1.tsx',
+        canvasId: 'canvas-1',
       }),
     ]);
     expect(themePreference).toEqual(expect.objectContaining({
@@ -74,7 +74,7 @@ describe('AppStatePersistenceRepository', () => {
       key: 'workspace.lastActiveCanvasSession',
       valueJson: {
         workspaceId: 'ws-pinned',
-        canvasPath: '/tmp/ws-pinned/doc-1.tsx',
+        canvasId: 'canvas-1',
       },
     }));
 
@@ -100,12 +100,12 @@ describe('AppStatePersistenceRepository', () => {
     });
     await repository.upsertRecentCanvas({
       workspaceId: workspace.id,
-      canvasPath: '/tmp/ws-remove/doc-a.tsx',
+      canvasId: 'canvas-a',
       lastOpenedAt: new Date('2026-03-23T01:00:00Z'),
     });
     await repository.upsertRecentCanvas({
       workspaceId: workspace.id,
-      canvasPath: '/tmp/ws-remove/doc-b.tsx',
+      canvasId: 'canvas-b',
       lastOpenedAt: new Date('2026-03-23T02:00:00Z'),
     });
 
@@ -149,13 +149,13 @@ describe('AppStatePersistenceRepository', () => {
     });
     await firstRepository.upsertRecentCanvas({
       workspaceId: 'ws-import-2',
-      canvasPath: 'docs/imported.graph.tsx',
+      canvasId: 'canvas-imported',
       lastOpenedAt: new Date('2026-03-24T00:30:00Z'),
     });
     await firstRepository.setPreference({
       key: 'workspace.lastActiveCanvasSession',
       valueJson: {
-        'ws-import-2': 'docs/imported.graph.tsx',
+        'ws-import-2': 'canvas-imported',
       },
     });
     await firstHandle.close();
@@ -171,12 +171,12 @@ describe('AppStatePersistenceRepository', () => {
       expect.objectContaining({ activeWorkspaceId: 'ws-import-2' }),
     );
     expect(await secondRepository.listRecentCanvases('ws-import-2')).toEqual([
-      expect.objectContaining({ canvasPath: 'docs/imported.graph.tsx' }),
+      expect.objectContaining({ canvasId: 'canvas-imported' }),
     ]);
     expect(await secondRepository.getPreference('workspace.lastActiveCanvasSession')).toEqual(
       expect.objectContaining({
         valueJson: {
-          'ws-import-2': 'docs/imported.graph.tsx',
+          'ws-import-2': 'canvas-imported',
         },
       }),
     );

@@ -10,7 +10,7 @@
 
 ## Decision 2: optional UI를 `next/dynamic` 경계로 지연 로딩
 
-- Decision: `ChatPanel`, `SearchOverlay`, `QuickOpenDialog`, `StickerInspector`를 초기 route 필수 경로에서 분리해 필요한 시점에 로딩한다.
+- Decision: `SearchOverlay`, `QuickOpenDialog`, `StickerInspector`를 초기 route 필수 경로에서 분리해 필요한 시점에 로딩한다.
 - Rationale: 현재는 닫힌 상태에서도 static import로 route compile 영향이 발생한다.
 - Alternatives considered:
   - static import 유지: 구현은 단순하나 첫 컴파일 지연이 유지된다.

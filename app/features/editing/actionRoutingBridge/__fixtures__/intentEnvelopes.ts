@@ -5,8 +5,8 @@ export function createStyleIntentEnvelope(overrides?: Partial<UIIntentEnvelope>)
     surfaceId: 'selection-floating-menu',
     intentId: 'selection.style.update',
     selectionRef: {
-      currentFile: 'examples/bridge.tsx',
       selectedNodeIds: ['shape-1'],
+      currentCanvasId: 'canvas-bridge',
     },
     targetRef: {
       renderedNodeId: 'shape-1',
@@ -26,8 +26,8 @@ export function createRenameIntentEnvelope(overrides?: Partial<UIIntentEnvelope>
     surfaceId: 'node-context-menu',
     intentId: 'node.rename',
     selectionRef: {
-      currentFile: 'examples/bridge.tsx',
       selectedNodeIds: ['shape-1'],
+      currentCanvasId: 'canvas-bridge',
     },
     targetRef: {
       renderedNodeId: 'shape-1',
@@ -45,8 +45,8 @@ export function createPaneCreateIntentEnvelope(overrides?: Partial<UIIntentEnvel
     surfaceId: 'pane-context-menu',
     intentId: 'node.create',
     selectionRef: {
-      currentFile: 'examples/bridge.tsx',
       selectedNodeIds: [],
+      currentCanvasId: 'canvas-bridge',
     },
     rawPayload: {
       nodeType: 'shape',
@@ -66,12 +66,11 @@ export function createNodeChildIntentEnvelope(overrides?: Partial<UIIntentEnvelo
     surfaceId: 'node-context-menu',
     intentId: 'node.create',
     selectionRef: {
-      currentFile: 'examples/bridge.tsx',
       selectedNodeIds: ['mind-1'],
+      currentCanvasId: 'canvas-bridge',
     },
     targetRef: {
       renderedNodeId: 'mind-1',
-      filePath: 'examples/bridge.tsx',
     },
     rawPayload: {
       nodeType: 'shape',
@@ -90,8 +89,8 @@ export function createContentIntentEnvelope(overrides?: Partial<UIIntentEnvelope
     surfaceId: 'selection-floating-menu',
     intentId: 'selection.content.update',
     selectionRef: {
-      currentFile: 'examples/bridge.tsx',
       selectedNodeIds: ['text-1'],
+      currentCanvasId: 'canvas-bridge',
     },
     targetRef: {
       renderedNodeId: 'text-1',
@@ -108,15 +107,14 @@ export function createSelectionStructuralIntentEnvelope(input: {
   intentId: 'selection.group' | 'selection.ungroup' | 'selection.z-order.bring-to-front' | 'selection.z-order.send-to-back';
   selectedNodeIds: string[];
   renderedNodeId?: string;
-  currentFile?: string;
   overrides?: Partial<UIIntentEnvelope>;
 }): UIIntentEnvelope {
   return {
     surfaceId: 'node-context-menu',
     intentId: input.intentId,
     selectionRef: {
-      currentFile: input.currentFile ?? 'examples/bridge.tsx',
       selectedNodeIds: input.selectedNodeIds,
+      currentCanvasId: 'canvas-bridge',
     },
     ...(input.renderedNodeId ? {
       targetRef: {

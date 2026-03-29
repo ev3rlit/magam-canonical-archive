@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdir, readdir, stat, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
+import * as path from 'node:path';
 
-const COMPATIBILITY_DOCUMENT_EXTENSIONS = new Set(['.tsx']);
 const COMPATIBILITY_DOCUMENT_SOURCE = [
   "import { Canvas } from '@magam/core';",
   '',
@@ -13,8 +12,6 @@ const COMPATIBILITY_DOCUMENT_SOURCE = [
   '',
 ].join('\n');
 
-const SKIPPED_DIR_NAMES = new Set(['node_modules']);
-
 export type WorkspaceHealthStatus = 'ok' | 'missing' | 'not-directory' | 'unreadable';
 
 export type WorkspaceHealth = {
@@ -22,20 +19,20 @@ export type WorkspaceHealth = {
   message?: string;
 };
 
-export type CompatibilityWorkspaceCanvasSummary = {
-  filePath: string;
-  size: number;
-  modifiedAt: number;
+export type WorkspaceCanvasSummary = {
+  canvasId?: string;
+  workspaceId?: string;
+  title?: string | null;
+  latestRevision?: number | null;
+  modifiedAt?: number | null;
 };
-
-export type WorkspaceCanvasSummary = CompatibilityWorkspaceCanvasSummary;
 
 export type WorkspaceProbeResult = {
   rootPath: string;
   workspaceName: string;
   health: WorkspaceHealth;
   canvasCount: number;
-  canvases: CompatibilityWorkspaceCanvasSummary[];
+  canvases: WorkspaceCanvasSummary[];
   lastModifiedAt: number | null;
 };
 
@@ -91,7 +88,7 @@ function normalizeAbsolutePath(rawPath: string, fieldName: string): string {
 }
 
 export function resolveDefaultWorkspaceRootPath(): string {
-  return path.resolve(process.env.MAGAM_TARGET_DIR || process.cwd());
+  return path.resolve(process.env['MAGAM_TARGET_DIR'] || process.cwd());
 }
 
 function isWithinRoot(rootPath: string, candidatePath: string): boolean {
@@ -122,51 +119,6 @@ function toWorkspaceRelativePath(rootPath: string, absolutePath: string): string
 
 function createCanvasSourceVersion(content: string): string {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
-}
-
-function shouldSkipEntry(name: string): boolean {
-  return name.startsWith('.') || SKIPPED_DIR_NAMES.has(name);
-}
-
-async function readWorkspaceCanvases(rootPath: string): Promise<CompatibilityWorkspaceCanvasSummary[]> {
-  const results: CompatibilityWorkspaceCanvasSummary[] = [];
-
-  async function walk(currentDir: string): Promise<void> {
-    const entries = await readdir(currentDir, { withFileTypes: true });
-    entries.sort((left, right) => left.name.localeCompare(right.name));
-
-    for (const entry of entries) {
-      if (shouldSkipEntry(entry.name)) {
-        continue;
-      }
-
-      if (entry.isDirectory()) {
-        await walk(path.join(currentDir, entry.name));
-        continue;
-      }
-
-      if (!entry.isFile()) {
-        continue;
-      }
-
-      if (!COMPATIBILITY_DOCUMENT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
-        continue;
-      }
-
-      const absolutePath = path.join(currentDir, entry.name);
-      const info = await stat(absolutePath);
-      results.push({
-        filePath: toWorkspaceRelativePath(rootPath, absolutePath),
-        size: info.size,
-        modifiedAt: info.mtimeMs,
-      });
-    }
-  }
-
-  await walk(rootPath);
-
-  results.sort((left, right) => left.filePath.localeCompare(right.filePath));
-  return results;
 }
 
 export function createCompatibilityCanvasSource(): string {
@@ -234,34 +186,14 @@ export async function probeWorkspace(rootPathInput: string): Promise<WorkspacePr
       };
     }
 
-    try {
-      const canvases = await readWorkspaceCanvases(rootPath);
-      const lastModifiedAt = canvases.length > 0
-        ? Math.max(...canvases.map((canvas) => canvas.modifiedAt))
-        : null;
-
-      return {
-        rootPath,
-        workspaceName,
-        health: { status: 'ok' },
-        canvasCount: canvases.length,
-        canvases,
-        lastModifiedAt,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return {
-        rootPath,
-        workspaceName,
-        health: {
-          status: 'unreadable',
-          message: `Failed to read workspace canvases: ${message}`,
-        },
-        canvasCount: 0,
-        canvases: [],
-        lastModifiedAt: null,
-      };
-    }
+    return {
+      rootPath,
+      workspaceName,
+      health: { status: 'ok' },
+      canvasCount: 0,
+      canvases: [],
+      lastModifiedAt: info.mtimeMs,
+    };
   } catch (error) {
     if (isMissingPathError(error)) {
       return {
@@ -438,7 +370,7 @@ export async function createCompatibilityWorkspaceCanvas(input: {
   const probe = await ensureWorkspaceRoot(input.rootPath);
   const relativeFilePath = input.filePath && input.filePath.trim().length > 0
     ? input.filePath.trim()
-    : createCompatibilityGeneratedCanvasPath(probe.canvases.map((canvas) => canvas.filePath));
+    : createCompatibilityGeneratedCanvasPath([]);
   const absoluteFilePath = resolveCompatibilityCanvasPath(probe.rootPath, relativeFilePath);
 
   try {

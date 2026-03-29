@@ -65,9 +65,50 @@ export interface CanvasRevisionRecord {
   revisionNo: number;
   authorKind: 'user' | 'agent' | 'system';
   authorId: string;
+  sessionId?: string | null;
   mutationBatch: Record<string, unknown>;
+  runtimeHistory?: Record<string, unknown> | null;
   snapshotRef?: string | null;
   createdAt?: Date;
+}
+
+export type RuntimeMutationSource = 'ui' | 'cli' | 'system';
+
+export interface WorkspaceRuntimeVersionRecord {
+  workspaceId: string;
+  versionToken: string;
+  updatedAt?: Date;
+}
+
+export interface CanvasMetadataVersionRecord {
+  workspaceId: string;
+  canvasId: string;
+  metadataRevisionNo: number;
+  versionToken: string;
+  updatedAt?: Date;
+}
+
+export interface NodeVersionRecord {
+  workspaceId: string;
+  canvasId: string;
+  nodeId: string;
+  objectId?: string | null;
+  headRevisionNo: number;
+  versionToken: string;
+  lastMutationBatchId: string;
+  lastMutationSource: RuntimeMutationSource;
+  lastAppliedById: string;
+  lastAppliedByKind: string;
+  updatedAt?: Date;
+}
+
+export interface CanvasHistoryCursorRecord {
+  canvasId: string;
+  actorId: string;
+  sessionId: string;
+  undoRevisionNo?: number | null;
+  redoRevisionNo?: number | null;
+  updatedAt?: Date;
 }
 
 export interface PluginPackageRecord {

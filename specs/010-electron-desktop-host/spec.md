@@ -62,7 +62,7 @@
 
 **Acceptance Scenarios**:
 
-1. **Given** Next.js surface가 비활성 상태일 때, **When** desktop authoring flow를 실행하면, **Then** 파일 목록/트리/렌더/편집/동기화/채팅의 핵심 기능은 계속 동작한다.
+1. **Given** Next.js surface가 비활성 상태일 때, **When** desktop authoring flow를 실행하면, **Then** 파일 목록/트리/렌더/편집/동기화의 핵심 기능은 계속 동작한다.
 2. **Given** optional web surface를 실행할 때, **When** 기능 호출을 수행하면, **Then** desktop과 동일한 logical RPC method를 사용한다.
 
 ### Edge Cases
@@ -79,7 +79,7 @@
 
 - **FR-001**: 시스템은 Electron을 primary application host로 사용해야 한다.
 - **FR-002**: 시스템은 desktop renderer가 Next.js route handler 없이 workspace를 열 수 있어야 한다.
-- **FR-003**: 시스템은 renderer의 필수 데이터 경로(files, file-tree, render, edit, sync, chat)를 transport-independent RPC adapter를 통해 호출해야 한다.
+- **FR-003**: 시스템은 renderer의 필수 데이터 경로(files, file-tree, render, edit, sync)를 transport-independent RPC adapter를 통해 호출해야 한다.
 - **FR-004**: 시스템은 renderer 코드에서 필수 `/api/*` fetch dependency를 제거해야 한다.
 - **FR-005**: 시스템은 renderer product logic이 host-neutral app 구조로 분리되어야 한다.
 - **FR-006**: 시스템은 renderer가 host capability interface와 RPC client interface만 직접 참조하도록 보장해야 한다.
@@ -102,7 +102,7 @@
 
 - **Renderer App**: `WorkspaceClient`, `GraphCanvas`, store/process/runtime을 포함하는 host-neutral product runtime.
 - **Host Capability Interface**: renderer가 host-specific 기능(예: native dialog, OS integration)에 접근하는 최소 권한 계약.
-- **RPC Client Interface**: renderer가 files/file-tree/render/edit/sync/chat logical method를 호출하는 transport-independent 계약.
+- **RPC Client Interface**: renderer가 files/file-tree/render/edit/sync logical method를 호출하는 transport-independent 계약.
 - **Electron Main Host**: window lifecycle, bootstrap, backend orchestration를 담당하는 desktop host owner.
 - **Electron Preload Bridge**: renderer와 main/backend 사이 capability 노출 경계를 담당하는 보안 bridge 계층.
 - **Host Adapters**: Electron adapter와 optional web adapter로 구성되며 동일 logical RPC contract를 구현하는 계층.
@@ -113,14 +113,14 @@
 
 - **SC-001**: desktop cold start 회귀 검증에서 workspace authoring 진입 경로가 100% Next.js route handler 미경유로 동작한다.
 - **SC-002**: renderer 코드 정적 검증에서 필수 `/api/*` 직접 의존이 0건이다.
-- **SC-003**: files/file-tree/render/edit/sync/chat 핵심 경로 회귀 시나리오의 100%가 RPC adapter 경유로 통과한다.
+- **SC-003**: files/file-tree/render/edit/sync 핵심 경로 회귀 시나리오의 100%가 RPC adapter 경유로 통과한다.
 - **SC-004**: desktop primary dev loop에서 Next.js route compile이 startup critical path에 나타나는 케이스가 0건이다.
 - **SC-005**: optional web surface가 있을 때 desktop과 web 간 logical RPC method parity 회귀 시나리오의 100%를 통과한다.
 - **SC-006**: host capability 보안 점검에서 preload 노출 API가 정의된 최소 권한 surface만 포함하고, 직접 Node/Electron 권한 누수가 0건이다.
 
 ## Assumptions
 
-- 기존 local backend(files/file-tree/render/edit/sync/chat) 자산은 유지하며 host 전환 중 재사용 가능하다.
+- 기존 local backend(files/file-tree/render/edit/sync) 자산은 유지하며 host 전환 중 재사용 가능하다.
 - renderer domain 로직은 host adapter 경계 정리만으로 단계적 전환이 가능하다.
 - optional web surface는 제품 핵심 authoring ownership을 가지지 않는 보조 용도로 유지 가능하다.
 

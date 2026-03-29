@@ -309,4 +309,140 @@ describe('CanonicalPersistenceRepository', () => {
 
     await handle.close();
   });
+
+  it('lists canvas revisions newest-first and resolves the latest revision number', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const repository = new CanonicalPersistenceRepository(handle.db);
+
+    await repository.appendCanvasRevision({
+      id: 'rev-1',
+      canvasId: 'doc-1',
+      revisionNo: 1,
+      authorKind: 'system',
+      authorId: 'seed',
+      mutationBatch: { op: 'seed-1' },
+    });
+    await repository.appendCanvasRevision({
+      id: 'rev-2',
+      canvasId: 'doc-1',
+      revisionNo: 2,
+      authorKind: 'system',
+      authorId: 'seed',
+      mutationBatch: { op: 'seed-2' },
+    });
+
+    await expect(repository.getLatestCanvasRevision('doc-1')).resolves.toBe(2);
+    await expect(repository.listCanvasRevisions('doc-1')).resolves.toEqual([
+      expect.objectContaining({ id: 'rev-2', revisionNo: 2 }),
+      expect.objectContaining({ id: 'rev-1', revisionNo: 1 }),
+    ]);
+
+    await handle.close();
+  });
+
+  it('persists runtime history payloads with session cursors', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const repository = new CanonicalPersistenceRepository(handle.db);
+
+    await repository.appendCanvasRevision({
+      id: 'rev-runtime-1',
+      canvasId: 'doc-history',
+      revisionNo: 1,
+      authorKind: 'user',
+      authorId: 'client-1',
+      sessionId: 'session-1',
+      mutationBatch: {
+        workspaceId: 'ws-1',
+        canvasId: 'doc-history',
+        commands: [{
+          name: 'object.content.update',
+          objectId: 'note-1',
+          kind: 'markdown',
+          patch: { source: '# after', value: '# after' },
+        }],
+      },
+      runtimeHistory: {
+        kind: 'mutation',
+        entry: {
+          historyEntryId: 'history-1',
+          canvasId: 'doc-history',
+          actor: { kind: 'user', id: 'client-1' },
+          sessionId: 'session-1',
+          mutationId: 'mutation-1',
+          forwardMutation: {
+            workspaceId: 'ws-1',
+            canvasId: 'doc-history',
+            actor: { kind: 'user', id: 'client-1' },
+            sessionId: 'session-1',
+            commands: [],
+            normalization: {
+              source: 'resolved-before-commit',
+              resolvedAgainstRevision: 1,
+            },
+          },
+          inverseMutation: {
+            workspaceId: 'ws-1',
+            canvasId: 'doc-history',
+            actor: { kind: 'user', id: 'client-1' },
+            sessionId: 'session-1',
+            commands: [],
+            normalization: {
+              source: 'resolved-before-commit',
+              resolvedAgainstRevision: 1,
+            },
+          },
+          revisionBefore: 0,
+          revisionAfter: 1,
+          changed: {
+            canvases: ['doc-history'],
+            nodes: [],
+            objects: ['note-1'],
+            bodyBlocks: [],
+            edges: [],
+            pluginInstances: [],
+          },
+          undoable: true,
+        },
+      },
+    });
+
+    const revisions = await repository.listCanvasRevisions('doc-history');
+    expect(revisions).toEqual([
+      expect.objectContaining({
+        id: 'rev-runtime-1',
+        revisionNo: 1,
+        sessionId: 'session-1',
+        runtimeHistory: expect.objectContaining({
+          kind: 'mutation',
+          entry: expect.objectContaining({
+            historyEntryId: 'history-1',
+            sessionId: 'session-1',
+          }),
+        }),
+      }),
+    ]);
+
+    const cursor = await repository.upsertCanvasHistoryCursor({
+      canvasId: 'doc-history',
+      actorId: 'client-1',
+      sessionId: 'session-1',
+      undoRevisionNo: 1,
+      redoRevisionNo: null,
+    });
+    expect(cursor.ok).toBe(true);
+
+    const fetchedCursor = await repository.getCanvasHistoryCursor('doc-history', 'client-1', 'session-1');
+    expect(fetchedCursor).toEqual({
+      ok: true,
+      value: expect.objectContaining({
+        canvasId: 'doc-history',
+        actorId: 'client-1',
+        sessionId: 'session-1',
+        undoRevisionNo: 1,
+        redoRevisionNo: null,
+      }),
+    });
+
+    await handle.close();
+  });
 });

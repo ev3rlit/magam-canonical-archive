@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
@@ -21,8 +20,6 @@ export interface CreateAppStatePgliteOptions {
   runMigrations?: boolean;
 }
 
-const APP_STATE_MODULE_DIR = dirname(fileURLToPath(import.meta.url));
-
 export function resolveAppStateDbLocation(targetDir: string): string {
   const explicit = process.env['MAGAM_APP_STATE_DB_PATH']?.trim();
   if (explicit) {
@@ -33,7 +30,7 @@ export function resolveAppStateDbLocation(targetDir: string): string {
 }
 
 export function resolveAppStateMigrationsFolder(_targetDir: string): string {
-  return join(APP_STATE_MODULE_DIR, 'drizzle');
+  return join(process.cwd(), 'libs', 'shared', 'src', 'lib', 'app-state-persistence', 'drizzle');
 }
 
 function isDirectCliInvocation(): boolean {

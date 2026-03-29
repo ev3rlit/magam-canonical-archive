@@ -32,21 +32,28 @@ export interface WorkspaceCanvasShellSummary {
   updatedAt: Date | null;
 }
 
+export interface RuntimeWorkspaceCanvasShell {
+  canvasId: string;
+  workspaceId: string;
+  title: string | null;
+  latestRevision: number | null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function readCanvasShellMetadata(
   mutationBatch: Record<string, unknown> | null | undefined,
-): { workspaceId?: string; title?: string | null; filePath?: string | null } | null {
+): { workspaceId?: string; title?: string | null } | null {
   if (!isRecord(mutationBatch)) {
     return null;
   }
 
-  const shell = isRecord(mutationBatch.canvasShell)
-    ? mutationBatch.canvasShell
-    : isRecord(mutationBatch.meta) && isRecord(mutationBatch.meta.canvasShell)
-      ? mutationBatch.meta.canvasShell
+  const shell = isRecord(mutationBatch['canvasShell'])
+    ? mutationBatch['canvasShell']
+    : isRecord(mutationBatch['meta']) && isRecord(mutationBatch['meta']['canvasShell'])
+      ? mutationBatch['meta']['canvasShell']
       : null;
 
   if (!shell) {
@@ -54,9 +61,8 @@ function readCanvasShellMetadata(
   }
 
   return {
-    ...(typeof shell.workspaceId === 'string' ? { workspaceId: shell.workspaceId } : {}),
-    ...(typeof shell.title === 'string' ? { title: shell.title } : { title: null }),
-    ...(typeof shell.filePath === 'string' ? { filePath: shell.filePath } : { filePath: null }),
+    ...(typeof shell['workspaceId'] === 'string' ? { workspaceId: shell['workspaceId'] } : {}),
+    ...(typeof shell['title'] === 'string' ? { title: shell['title'] } : { title: null }),
   };
 }
 
@@ -76,7 +82,7 @@ export async function listWorkspaceIds(context: HeadlessServiceContext): Promise
   return uniqueStrings([
     context.defaultWorkspaceId,
     ...fallbackIds,
-    ...allObjects.map((row) => row.workspaceId),
+    ...allObjects.map((row) => row['workspaceId']),
   ]);
 }
 
@@ -242,23 +248,18 @@ export async function getWorkspaceCanvas(
   };
 }
 
-export async function getWorkspaceCanvasCompatibilityFilePath(
+export async function getRuntimeWorkspaceCanvasShell(
   context: HeadlessServiceContext,
   canvasId: string,
-): Promise<string | null> {
-  const revisions = await context.db.query.canvasRevisions.findMany({
-    where: eq(canvasRevisions.canvasId, canvasId),
-    columns: {
-      mutationBatch: true,
-    },
-    orderBy: [desc(canvasRevisions.revisionNo)],
-  });
-
-  const latestMetadata = revisions
-    .map((revision) => readCanvasShellMetadata(revision.mutationBatch))
-    .find((metadata) => metadata !== null) ?? null;
-
-  return latestMetadata?.filePath ?? null;
+  workspaceId = context.defaultWorkspaceId,
+): Promise<RuntimeWorkspaceCanvasShell> {
+  const shell = await getWorkspaceCanvas(context, canvasId, workspaceId);
+  return {
+    canvasId: shell.canvasId,
+    workspaceId: shell.workspaceId,
+    title: shell.title,
+    latestRevision: shell.latestRevision,
+  };
 }
 
 export async function listWorkspaceCanvases(

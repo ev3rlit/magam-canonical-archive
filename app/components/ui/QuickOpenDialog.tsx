@@ -11,19 +11,24 @@ export interface QuickOpenCommand {
   disabled?: boolean;
 }
 
+export interface QuickOpenCanvas {
+  canvasId: string;
+  title: string;
+}
+
 export interface QuickOpenDialogProps {
   isOpen: boolean;
-  files: string[];
+  canvases: QuickOpenCanvas[];
   onClose: () => void;
-  onOpenFile: (filePath: string) => boolean | void;
+  onOpenCanvas: (canvasId: string) => boolean | void;
   commands?: QuickOpenCommand[];
   onRunCommand?: (commandId: string) => boolean | void | Promise<boolean | void>;
 }
 
-interface FileEntry {
-  kind: 'file';
+interface CanvasEntry {
+  kind: 'canvas';
   key: string;
-  filePath: string;
+  canvas: QuickOpenCanvas;
 }
 
 interface CommandEntry {
@@ -32,7 +37,7 @@ interface CommandEntry {
   command: QuickOpenCommand;
 }
 
-type QuickOpenEntry = FileEntry | CommandEntry;
+type QuickOpenEntry = CanvasEntry | CommandEntry;
 
 function matchesQuery(value: string, query: string): boolean {
   if (!query) return true;
@@ -40,7 +45,7 @@ function matchesQuery(value: string, query: string): boolean {
 }
 
 export function buildQuickOpenEntries(
-  files: string[],
+  canvases: QuickOpenCanvas[],
   commands: QuickOpenCommand[],
   query: string,
 ): QuickOpenEntry[] {
@@ -48,14 +53,14 @@ export function buildQuickOpenEntries(
   const commandMode = normalized.startsWith('>');
   const actualQuery = commandMode ? normalized.slice(1).trim() : normalized;
 
-  const fileEntries: QuickOpenEntry[] = commandMode
+  const canvasEntries: QuickOpenEntry[] = commandMode
     ? []
-    : files
-      .filter((file) => matchesQuery(file, actualQuery))
-      .map((filePath) => ({
-        kind: 'file',
-        key: `file:${filePath}`,
-        filePath,
+    : canvases
+      .filter((canvas) => matchesQuery(`${canvas.title} ${canvas.canvasId}`, actualQuery))
+      .map((canvas) => ({
+        kind: 'canvas',
+        key: `canvas:${canvas.canvasId}`,
+        canvas,
       }));
 
   const commandEntries: QuickOpenEntry[] = commands
@@ -73,14 +78,14 @@ export function buildQuickOpenEntries(
       command,
     }));
 
-  return [...fileEntries, ...commandEntries];
+  return [...canvasEntries, ...commandEntries];
 }
 
 export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
   isOpen,
-  files,
+  canvases,
   commands = [],
-  onOpenFile,
+  onOpenCanvas,
   onRunCommand,
   onClose,
 }) => {
@@ -89,8 +94,8 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
   const [focusedIndex, setFocusedIndex] = useState(0);
 
   const filteredEntries = useMemo(
-    () => buildQuickOpenEntries(files, commands, query),
-    [files, commands, query],
+    () => buildQuickOpenEntries(canvases, commands, query),
+    [canvases, commands, query],
   );
 
   useEffect(() => {
@@ -110,8 +115,8 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
   }
 
   const handleSubmit = async (entry: QuickOpenEntry) => {
-    if (entry.kind === 'file') {
-      const shouldClose = onOpenFile(entry.filePath);
+    if (entry.kind === 'canvas') {
+      const shouldClose = onOpenCanvas(entry.canvas.canvasId);
       if (shouldClose !== false) {
         onClose();
       }
@@ -201,8 +206,8 @@ export const QuickOpenDialog: React.FC<QuickOpenDialogProps> = ({
                     : 'hover:bg-card text-foreground/82',
                 )}
               >
-                {entry.kind === 'file' ? (
-                  <span className="truncate">{entry.filePath}</span>
+                {entry.kind === 'canvas' ? (
+                  <span className="truncate">{entry.canvas.title || entry.canvas.canvasId}</span>
                 ) : (
                   <>
                     <span className="truncate">{entry.command.label}</span>

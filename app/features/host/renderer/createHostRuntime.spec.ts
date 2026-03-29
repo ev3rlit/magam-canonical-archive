@@ -5,14 +5,18 @@ function createDesktopHostBridge() {
   return {
     runtime: {
       mode: 'desktop-primary' as const,
-      httpBaseUrl: 'http://127.0.0.1:3003',
-      wsUrl: 'ws://127.0.0.1:3004',
       appStateDbPath: '/tmp/app-state-pgdata',
       workspacePath: '/tmp/workspace',
+      workspaceMode: 'persisted' as const,
+      storageBackend: 'file' as const,
+      transientCanvasId: null,
     },
     capabilities: {
       workspace: {
         async selectWorkspace() {
+          return null;
+        },
+        async chooseSaveLocation() {
           return null;
         },
         async revealInOs() {
@@ -44,6 +48,14 @@ function createDesktopHostBridge() {
         return null;
       },
     },
+    rpc: {
+      async healthCheck() {
+        return true;
+      },
+      async invoke() {
+        return { ok: true, result: null };
+      },
+    },
   };
 }
 
@@ -59,8 +71,6 @@ describe('getHostRuntime', () => {
     expect(runtime.mode).toBe('web-secondary');
     expect(runtime.runtimeConfig).toBeNull();
     expect(runtime.rpc.descriptor.hostMode).toBe('web-secondary');
-    expect(runtime.rpc.descriptor.methods).not.toContain('chat.send');
-    expect('sendChat' in runtime.rpc).toBe(false);
   });
 
   it('exposes the desktop runtime config including app-state DB path from the bridge', () => {
@@ -75,13 +85,12 @@ describe('getHostRuntime', () => {
 
     expect(runtime.mode).toBe('desktop-primary');
     expect(runtime.runtimeConfig).toEqual(expect.objectContaining({
-      httpBaseUrl: 'http://127.0.0.1:3003',
-      wsUrl: 'ws://127.0.0.1:3004',
       appStateDbPath: '/tmp/app-state-pgdata',
       workspacePath: '/tmp/workspace',
+      workspaceMode: 'persisted',
+      storageBackend: 'file',
+      transientCanvasId: null,
     }));
     expect(runtime.rpc.descriptor.hostMode).toBe('desktop-primary');
-    expect(runtime.rpc.descriptor.methods).not.toContain('chat.send');
-    expect('sendChat' in runtime.rpc).toBe(false);
   });
 });

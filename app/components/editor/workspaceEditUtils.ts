@@ -23,8 +23,6 @@ type RpcLikeError = {
 
 type NodeSourceMeta = {
   sourceId?: unknown;
-  filePath?: unknown;
-  absoluteFilePath?: unknown;
   kind?: unknown;
   frameScope?: unknown;
 };
@@ -35,25 +33,9 @@ export function resolveImmediateCreateEditMode(
   return (isImmediateEditCreateNodeType(nodeType) || nodeType === 'shape') ? 'markdown-wysiwyg' : null;
 }
 
-export function resolveActionRoutingFilePath(
-  currentCompatibilityFilePath: string | null,
-  currentFile: string | null,
-): string | null {
-  if (typeof currentCompatibilityFilePath === 'string' && currentCompatibilityFilePath.length > 0) {
-    return currentCompatibilityFilePath;
-  }
-
-  if (typeof currentFile === 'string' && currentFile.length > 0) {
-    return currentFile;
-  }
-
-  return null;
-}
-
 export interface ResolvedNodeEditContext {
   target: {
     nodeId: string;
-    filePath: string | null;
   };
   editMeta?: EditMeta;
   readOnlyReason?: string;
@@ -101,29 +83,20 @@ function deriveLocalSourceId(nodeId: string, frameScope: unknown): string {
 
 export function resolveNodeEditTarget(
   node: Pick<Node, 'id' | 'data'>,
-  currentFile: string | null,
-): { nodeId: string; filePath: string | null } {
+): { nodeId: string } {
   const sourceMeta = ((node.data || {}) as { sourceMeta?: NodeSourceMeta }).sourceMeta;
   const sourceId = typeof sourceMeta?.sourceId === 'string' && sourceMeta.sourceId.length > 0
     ? sourceMeta.sourceId
     : deriveLocalSourceId(node.id, sourceMeta?.frameScope);
-  const filePath = typeof sourceMeta?.absoluteFilePath === 'string' && sourceMeta.absoluteFilePath.length > 0
-    ? sourceMeta.absoluteFilePath
-    : typeof sourceMeta?.filePath === 'string' && sourceMeta.filePath.length > 0
-      ? sourceMeta.filePath
-    : currentFile;
-
   return {
     nodeId: sourceId,
-    filePath,
   };
 }
 
 export function resolveNodeEditContext(
   node: Pick<Node, 'id' | 'data'>,
-  currentFile: string | null,
 ): ResolvedNodeEditContext {
-  const target = resolveNodeEditTarget(node, currentFile);
+  const target = resolveNodeEditTarget(node);
   const editMeta = getNodeEditMeta(node);
   return {
     target,
@@ -134,20 +107,17 @@ export function resolveNodeEditContext(
 
 export function resolveNodeActionRoutingContext(
   node: Pick<Node, 'id' | 'data' | 'type'>,
-  currentCanvasIdOrCurrentFile: string | null,
-  currentFileOrSelectedNodeIds: string | null | string[],
+  currentCanvasIdOrSelectedNodeIds: string | null,
+  canvasOrSelectedNodeIds: string | null | string[],
   maybeSelectedNodeIds?: string[],
 ): ActionRoutingResolvedContext {
-  const selectedNodeIds = Array.isArray(currentFileOrSelectedNodeIds)
-    ? currentFileOrSelectedNodeIds
+  const selectedNodeIds = Array.isArray(canvasOrSelectedNodeIds)
+    ? canvasOrSelectedNodeIds
     : (maybeSelectedNodeIds ?? []);
-  const currentCanvasId = Array.isArray(currentFileOrSelectedNodeIds)
-    ? null
-    : currentCanvasIdOrCurrentFile;
-  const currentFile = Array.isArray(currentFileOrSelectedNodeIds)
-    ? currentCanvasIdOrCurrentFile
-    : currentFileOrSelectedNodeIds;
-  const target = resolveNodeEditTarget(node, currentFile);
+  const currentCanvasId = Array.isArray(canvasOrSelectedNodeIds)
+    ? currentCanvasIdOrSelectedNodeIds
+    : currentCanvasIdOrSelectedNodeIds;
+  const target = resolveNodeEditTarget(node);
   const editMeta = getNodeEditMeta(node);
   const data = (node.data || {}) as Record<string, unknown>;
   const sourceMeta = (data.sourceMeta || {}) as {
@@ -166,7 +136,7 @@ export function resolveNodeActionRoutingContext(
     : undefined;
 
   return {
-    surfaceId: currentFile ?? undefined,
+    surfaceId: currentCanvasId ?? undefined,
     selection: {
       nodeIds: selectedNodeIds,
       homogeneous: selectedNodeIds.length <= 1 || selectedNodeIds.every((nodeId) => nodeId === node.id),
@@ -175,7 +145,6 @@ export function resolveNodeActionRoutingContext(
       renderedNodeId: node.id,
       sourceId: target.nodeId,
       canvasId: currentCanvasId,
-      compatibilityFilePath: target.filePath,
       nodeType: node.type,
       ...(typeof sourceMeta.scopeId === 'string' ? { scopeId: sourceMeta.scopeId } : {}),
       ...(typeof sourceMeta.frameScope === 'string' ? { frameScope: sourceMeta.frameScope } : {}),
@@ -207,12 +176,11 @@ export function resolveNodeActionRoutingContext(
 
 export function createPaneActionRoutingContext(input: {
   currentCanvasId: string | null;
-  currentFile: string | null;
   selectedNodeIds: string[];
 }): ActionRoutingResolvedContext {
-  const hasFile = typeof input.currentFile === 'string' && input.currentFile.length > 0;
+  const hasMutableTarget = typeof input.currentCanvasId === 'string' && input.currentCanvasId.length > 0;
   return {
-    surfaceId: input.currentFile ?? undefined,
+    surfaceId: input.currentCanvasId ?? undefined,
     selection: {
       nodeIds: input.selectedNodeIds,
       homogeneous: input.selectedNodeIds.length <= 1,
@@ -224,7 +192,6 @@ export function createPaneActionRoutingContext(input: {
       ? {
           target: {
             canvasId: input.currentCanvasId,
-            compatibilityFilePath: input.currentFile,
           },
         }
       : {}),
@@ -235,10 +202,10 @@ export function createPaneActionRoutingContext(input: {
       isFrameScoped: false,
     },
     editability: {
-      canMutate: hasFile,
-      allowedCommands: hasFile ? ['node.create'] : [],
+      canMutate: hasMutableTarget,
+      allowedCommands: hasMutableTarget ? ['node.create'] : [],
       styleEditableKeys: [],
-      ...(hasFile ? {} : { reason: 'SOURCE_VERSION_NOT_READY' }),
+      ...(hasMutableTarget ? {} : { reason: 'SOURCE_VERSION_NOT_READY' }),
     },
   };
 }

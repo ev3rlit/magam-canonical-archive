@@ -9,8 +9,8 @@ describe('actionDispatch runtime contribution intents', () => {
       getRuntime: () => ({
         nodes: [],
         edges: [],
-        currentFile: 'examples/bridge.tsx',
-        sourceVersions: { 'examples/bridge.tsx': 'sha256:v1' },
+        currentCanvasId: 'canvas-bridge',
+        canvasVersions: { 'canvas-bridge': 'sha256:v1' },
         selectedNodeIds: [],
       }),
       applyRuntimeAction: (descriptor) => {
@@ -47,7 +47,7 @@ describe('actionDispatch runtime contribution intents', () => {
       intentId: 'selection.debug.runtime-action',
       selectionRef: {
         selectedNodeIds: [],
-        currentFile: 'examples/bridge.tsx',
+        currentCanvasId: 'canvas-bridge',
       },
       rawPayload: {},
       optimistic: false,
@@ -56,19 +56,16 @@ describe('actionDispatch runtime contribution intents', () => {
     expect(appliedActions).toEqual(['fit-view']);
   });
 
-  it('routes canvas-toolbar create intents with compatibility file context', async () => {
+  it('routes canvas-toolbar create intents without requiring compatibility file context', async () => {
     const executeMutationDescriptor = mock(async () => ({}));
     const binding = createCanvasActionDispatchBinding({
       getRuntime: () => ({
         nodes: [],
         edges: [],
         currentCanvasId: 'canvas-bridge',
-        currentCompatibilityFilePath: 'examples/bridge.tsx',
         canvasVersions: {
           'canvas-bridge': 'sha256:v1',
         },
-        currentFile: 'examples/bridge.tsx',
-        sourceVersions: { 'examples/bridge.tsx': 'sha256:v1' },
         selectedNodeIds: [],
       }),
       applyRuntimeAction: () => {},
@@ -83,7 +80,6 @@ describe('actionDispatch runtime contribution intents', () => {
       intent: 'create-node',
       resolvedContext: createPaneActionRoutingContext({
         currentCanvasId: 'canvas-bridge',
-        currentFile: 'examples/bridge.tsx',
         selectedNodeIds: [],
       }),
       uiPayload: {
@@ -94,10 +90,9 @@ describe('actionDispatch runtime contribution intents', () => {
     })).resolves.toBeUndefined();
 
     expect(executeMutationDescriptor).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'canonical-mutation',
-      actionId: 'canvas.node.create',
+      kind: 'runtime-mutation',
       payload: expect.objectContaining({
-        filePath: 'examples/bridge.tsx',
+        canvasId: 'canvas-bridge',
       }),
     }));
   });

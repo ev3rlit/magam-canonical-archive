@@ -27,13 +27,23 @@ import {
   resolveNodeId,
   type FromProp,
 } from '@/app/mindmapParser';
-import { deriveEditMeta } from '@/features/editing/editability';
-import { createCanonicalFromLegacyAliasInput } from '@/features/render/aliasNormalization';
+import {
+  createEditMetaFromRuntimeProjection,
+  deriveEditMeta,
+} from '@/features/editing/editability';
+import {
+  createCanonicalFromLegacyAliasInput,
+  inferLegacyContentCapability,
+} from '@/features/render/aliasNormalization';
 import type {
   CapabilityBag,
   CanonicalObjectAlias,
   ObjectCore,
 } from '@/features/render/canonicalObject';
+import type {
+  CanvasEditingProjectionResponseV1,
+  CanvasRenderProjectionResponseV1,
+} from '../../../libs/shared/src/lib/canvas-runtime';
 
 const DEFAULT_MINDMAP_SPACING = 50;
 
@@ -115,7 +125,6 @@ export interface RenderNode {
     messageSpacing?: number;
     sourceMeta?: {
       sourceId: string;
-      filePath?: string;
       kind: 'canvas' | 'mindmap';
       scopeId?: string;
       renderedId?: string;
@@ -151,7 +160,99 @@ interface RenderGraphResponse {
     };
   };
   sourceVersion?: string | null;
-  sourceVersions?: Record<string, string>;
+  assetBasePath?: string | null;
+  renderProjection?: CanvasRenderProjectionResponseV1;
+  editingProjection?: CanvasEditingProjectionResponseV1;
+}
+
+function applyRuntimeRenderProjection(input: {
+  nodes: any[];
+  renderProjection?: CanvasRenderProjectionResponseV1;
+}): any[] {
+  // Shared runtime projections own the read semantics; this adapter only maps them into graph-store payloads.
+  if (!input.renderProjection) {
+    return input.nodes;
+  }
+
+  const runtimeByNodeId = new Map(
+    input.renderProjection.nodes.map((node) => [node.nodeId, node]),
+  );
+
+  return input.nodes.map((node) => {
+    const data = (node.data || {}) as Record<string, unknown>;
+    const sourceMeta = (data.sourceMeta || {}) as { sourceId?: unknown };
+    const sourceId = typeof sourceMeta.sourceId === 'string' && sourceMeta.sourceId.length > 0
+      ? sourceMeta.sourceId
+      : node.id;
+    const runtimeNode = runtimeByNodeId.get(sourceId);
+
+    if (!runtimeNode) {
+      return node;
+    }
+
+    return {
+      ...node,
+      position: {
+        x: runtimeNode.transform.x,
+        y: runtimeNode.transform.y,
+      },
+      data: {
+        ...data,
+        ...(runtimeNode.summary?.title ? { label: runtimeNode.summary.title } : {}),
+        ...(runtimeNode.summary?.canonicalTextPreview ? { runtimeTextPreview: runtimeNode.summary.canonicalTextPreview } : {}),
+        ...(runtimeNode.presentationStyle?.fillColor ? { fill: runtimeNode.presentationStyle.fillColor } : {}),
+        ...(runtimeNode.presentationStyle?.strokeColor ? { stroke: runtimeNode.presentationStyle.strokeColor } : {}),
+        ...(runtimeNode.presentationStyle?.strokeWidth !== undefined ? { strokeWidth: runtimeNode.presentationStyle.strokeWidth } : {}),
+        ...(runtimeNode.presentationStyle?.textColor ? { color: runtimeNode.presentationStyle.textColor } : {}),
+        ...(runtimeNode.presentationStyle?.fontSize !== undefined ? { fontSize: runtimeNode.presentationStyle.fontSize } : {}),
+        ...(runtimeNode.presentationStyle?.fontFamily ? { fontFamily: runtimeNode.presentationStyle.fontFamily } : {}),
+        ...(runtimeNode.renderProfile?.inkProfile ? { inkProfile: runtimeNode.renderProfile.inkProfile } : {}),
+        ...(runtimeNode.renderProfile?.paperBlend ? { paperBlend: runtimeNode.renderProfile.paperBlend } : {}),
+        width: runtimeNode.transform.width,
+        height: runtimeNode.transform.height,
+        rotation: runtimeNode.transform.rotation,
+      },
+    };
+  });
+}
+
+function applyRuntimeEditingProjection(input: {
+  nodes: any[];
+  editingProjection?: CanvasEditingProjectionResponseV1;
+}): any[] {
+  // Runtime editing metadata is the authoritative command surface once the projection is present.
+  if (!input.editingProjection) {
+    return input.nodes;
+  }
+
+  const runtimeByNodeId = new Map(
+    input.editingProjection.nodes.map((node) => [node.nodeId, node]),
+  );
+
+  return input.nodes.map((node) => {
+    const data = (node.data || {}) as Record<string, unknown>;
+    const sourceMeta = (data.sourceMeta || {}) as { sourceId?: unknown };
+    const sourceId = typeof sourceMeta.sourceId === 'string' && sourceMeta.sourceId.length > 0
+      ? sourceMeta.sourceId
+      : node.id;
+    const runtimeNode = runtimeByNodeId.get(sourceId);
+
+    if (!runtimeNode) {
+      return node;
+    }
+
+    return {
+      ...node,
+      data: {
+        ...data,
+        runtimeEditing: runtimeNode,
+        editMeta: createEditMetaFromRuntimeProjection({
+          nodeType: node.type,
+          runtimeNode,
+        }),
+      },
+    };
+  });
 }
 
 export interface ParsedRenderGraph {
@@ -163,7 +264,7 @@ export interface ParsedRenderGraph {
   canvasBackground?: CanvasBackgroundStyle;
   canvasFontFamily?: FontFamilyPreset;
   sourceVersion?: string | null;
-  sourceVersions?: Record<string, string>;
+  assetBasePath?: string | null;
 }
 
 export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph | null {
@@ -618,66 +719,14 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
       explicit.ports = { ports: legacyProps.ports };
     }
 
-    const textContent =
-      readStringProp(legacyProps.text)
-      || readStringProp(legacyProps.label)
-      || readStringProp(legacyProps.value)
-      || readTextContentFromChildren(
-        legacyChildren,
-        alias === 'Node' ? '\n' : alias === 'Sticker' ? ' ' : '',
-      );
-    const markdownSource =
-      readStringProp(legacyProps.content)
-      || readStringProp(legacyProps.source)
-      || readMarkdownSourceFromChildren(legacyChildren);
-    const mediaSrc = readStringProp(legacyProps.src);
-
-    if (contentCapability) {
-      explicit.content = contentCapability as unknown as CapabilityBag['content'];
-      return explicit;
-    }
-
-    if (alias === 'Node' || alias === 'Shape' || alias === 'Sticky' || alias === 'Sticker') {
-      if (alias === 'Node' && markdownSource !== undefined) {
-        explicit.content = { kind: 'markdown', source: markdownSource };
-      } else if (textContent !== undefined) {
-        explicit.content = {
-          kind: 'text',
-          value: textContent,
-          ...(legacyProps.fontSize !== undefined ? { fontSize: legacyProps.fontSize as number | string } : {}),
-        };
-      }
-    }
-
-    if (alias === 'Markdown' && markdownSource !== undefined) {
-      explicit.content = {
-        kind: 'markdown',
-        source: markdownSource,
-        ...(legacyProps.size !== undefined ? { size: legacyProps.size } : {}),
-      };
-    }
-
-    if (alias === 'Image' && mediaSrc !== undefined) {
-      explicit.content = {
-        kind: 'media',
-        src: mediaSrc,
-        ...(readStringProp(legacyProps.alt) !== undefined ? { alt: readStringProp(legacyProps.alt) } : {}),
-        ...(readStringProp(legacyProps.fit) !== undefined ? { fit: readStringProp(legacyProps.fit) as any } : {}),
-        ...(readNumberProp(legacyProps.width) !== undefined ? { width: readNumberProp(legacyProps.width) } : {}),
-        ...(readNumberProp(legacyProps.height) !== undefined ? { height: readNumberProp(legacyProps.height) } : {}),
-      };
-    }
-
-    if (alias === 'Sequence') {
-      const participants = Array.isArray(legacyProps.participants) ? legacyProps.participants : undefined;
-      const messages = Array.isArray(legacyProps.messages) ? legacyProps.messages : undefined;
-      if (participants !== undefined || messages !== undefined) {
-        explicit.content = {
-          kind: 'sequence',
-          participants: participants ?? [],
-          messages: messages ?? [],
-        };
-      }
+    const explicitContent = inferLegacyContentCapability({
+      alias,
+      legacyProps,
+      legacyChildren,
+      explicitContent: contentCapability,
+    });
+    if (explicitContent) {
+      explicit.content = explicitContent as unknown as CapabilityBag['content'];
     }
 
     return explicit;
@@ -1535,8 +1584,18 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
   const rawCanvasFontFamily = data.graph.meta?.fontFamily;
   const canvasFontFamily = normalizeFontFamily(rawCanvasFontFamily);
 
-  return {
+  const runtimeRenderAlignedNodes = applyRuntimeRenderProjection({
     nodes: finalizedNodes,
+    renderProjection: data.renderProjection,
+  });
+
+  const runtimeAlignedNodes = applyRuntimeEditingProjection({
+    nodes: runtimeRenderAlignedNodes,
+    editingProjection: data.editingProjection,
+  });
+
+  return {
+    nodes: runtimeAlignedNodes,
     edges,
     needsAutoLayout: hasMindMap,
     layoutType,
@@ -1544,6 +1603,6 @@ export function parseRenderGraph(data: RenderGraphResponse): ParsedRenderGraph |
     canvasBackground,
     canvasFontFamily,
     sourceVersion: data.sourceVersion ?? null,
-    sourceVersions: data.sourceVersions,
+    assetBasePath: typeof data.assetBasePath === 'string' ? data.assetBasePath : null,
   };
 }

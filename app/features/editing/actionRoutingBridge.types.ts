@@ -45,7 +45,6 @@ export interface ActionRoutingTargetSnapshot {
   renderedNodeId?: string;
   sourceId?: string;
   canvasId?: string | null;
-  compatibilityFilePath?: string | null;
   nodeType?: string;
   scopeId?: string;
   frameScope?: string;
@@ -191,10 +190,7 @@ export interface ActionRoutingBridgeResponse {
 
 export interface ActionRoutingRuntimeSnapshot {
   currentCanvasId: string | null;
-  currentCompatibilityFilePath: string | null;
   canvasVersions: Record<string, string>;
-  currentFile?: string | null;
-  sourceVersions?: Record<string, string>;
   nodes: Node[];
   selectedNodeIds: string[];
 }
@@ -204,14 +200,12 @@ export interface ActionRoutingBridgeDependencies {
   updateNode: (
     nodeId: string,
     props: Record<string, unknown>,
-    targetCanvasId?: string | null,
-    targetCompatibilityFilePath?: string | null,
     options?: UpdateNodeMutationOptions,
+    targetCanvasId?: string | null,
   ) => Promise<RpcMutationResult>;
   createNode: (
     node: Record<string, unknown>,
     targetCanvasId?: string | null,
-    targetCompatibilityFilePath?: string | null,
   ) => Promise<RpcMutationResult>;
   updateNodeData?: (nodeId: string, partialData: Record<string, unknown>) => void;
   restoreNodeData?: (nodeId: string, previousData: Record<string, unknown>) => void;

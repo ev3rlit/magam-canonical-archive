@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import type { CanonicalObjectRecord, MediaContentCapability } from '../canonical-object-contract';
 import { readContentBlocks } from '../canonical-object-contract';
 import type { HeadlessServiceContext } from '../canonical-cli';
@@ -10,11 +9,16 @@ import {
   type CanvasNodeRecord,
   type PluginInstanceResolution,
 } from '../canonical-persistence';
+import {
+  buildEditingProjection,
+  buildRenderProjection,
+  createCanvasRuntimeServiceContext,
+  type CanvasEditingProjectionResponseV1,
+  type CanvasRenderProjectionResponseV1,
+} from '../canvas-runtime';
 import { getWorkspaceCanvas } from './workspace-canvas';
 
-const CANONICAL_MIGRATIONS_FOLDER = fileURLToPath(
-  new URL('../canonical-persistence/drizzle/', import.meta.url),
-);
+const CANONICAL_MIGRATIONS_FOLDER = resolveCanonicalMigrationsFolder(process.cwd());
 
 type RenderNode = {
   type: string;
@@ -27,8 +31,22 @@ export interface CanonicalRenderGraphResponse {
     children: RenderNode[];
   };
   canvasId: string;
+  canvasRevision: number;
   title: string | null;
   sourceVersion: string;
+  assetBasePath: string;
+  renderProjection?: CanvasRenderProjectionResponseV1;
+  editingProjection?: CanvasEditingProjectionResponseV1;
+}
+
+export interface CanvasRuntimeSnapshotResponse {
+  canvasId: string;
+  canvasRevision: number;
+  workspaceId: string;
+  title: string | null;
+  sourceVersion: string;
+  renderProjection: CanvasRenderProjectionResponseV1;
+  editingProjection: CanvasEditingProjectionResponseV1;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -59,10 +77,10 @@ function resolveFrameProps(
     : {};
   return {
     ...(readString((node.props ?? {})['type']) ? { type: (node.props ?? {})['type'] } : {}),
-    ...(readString(frame.shape) ? { type: frame.shape } : {}),
-    ...(readString(frame.fill) ? { fill: frame.fill } : {}),
-    ...(readString(frame.stroke) ? { stroke: frame.stroke } : {}),
-    ...(readNumber(frame.strokeWidth) !== undefined ? { strokeWidth: readNumber(frame.strokeWidth) } : {}),
+    ...(readString(frame['shape']) ? { type: frame['shape'] } : {}),
+    ...(readString(frame['fill']) ? { fill: frame['fill'] } : {}),
+    ...(readString(frame['stroke']) ? { stroke: frame['stroke'] } : {}),
+    ...(readNumber(frame['strokeWidth']) !== undefined ? { strokeWidth: readNumber(frame['strokeWidth']) } : {}),
   };
 }
 
@@ -126,16 +144,16 @@ function resolveBodyChildren(objectRecord: CanonicalObjectRecord | null): Render
     }
 
     if (block.blockType === 'canvas.image') {
-      const assetRef = isRecord(block.payload?.assetRef) ? block.payload.assetRef : null;
-      const src = assetRef && assetRef.kind === 'external-url'
-        ? readString(assetRef.value)
+      const assetRef = isRecord(block.payload?.['assetRef']) ? block.payload['assetRef'] : null;
+      const src = assetRef && assetRef['kind'] === 'external-url'
+        ? readString(assetRef['value'])
         : undefined;
       return src
         ? [{
             type: 'graph-image',
             props: {
               src,
-              ...(readString(block.payload?.alt) ? { alt: block.payload.alt } : {}),
+              ...(readString(block.payload?.['alt']) ? { alt: block.payload['alt'] } : {}),
             },
           }]
         : [];
@@ -150,12 +168,13 @@ function resolveNodeSourceMeta(input: {
   objectRecord: CanonicalObjectRecord | null;
   mindmapId?: string;
 }): Record<string, unknown> {
-  const sourceMeta = isRecord(input.objectRecord?.sourceMeta)
+  const rawSourceMeta = isRecord(input.objectRecord?.sourceMeta)
     ? input.objectRecord?.sourceMeta as Record<string, unknown>
     : {};
+  const { filePath: _legacyFilePath, ...sourceMeta } = rawSourceMeta;
   return {
     ...sourceMeta,
-    sourceId: readString(sourceMeta.sourceId) ?? input.node.id,
+    sourceId: readString(sourceMeta['sourceId']) ?? input.node.id,
     kind: input.mindmapId ? 'mindmap' : 'canvas',
     ...(input.mindmapId ? { scopeId: input.mindmapId } : {}),
     renderedId: input.node.id,
@@ -174,8 +193,8 @@ function buildBaseNodeProps(input: {
     id: input.node.id,
     ...(input.includePosition
       ? {
-          ...(readNumber(input.node.layout.x) !== undefined ? { x: input.node.layout.x } : {}),
-          ...(readNumber(input.node.layout.y) !== undefined ? { y: input.node.layout.y } : {}),
+          ...(readNumber(input.node.layout['x']) !== undefined ? { x: input.node.layout['x'] } : {}),
+          ...(readNumber(input.node.layout['y']) !== undefined ? { y: input.node.layout['y'] } : {}),
         }
       : {}),
     ...props,
@@ -380,8 +399,8 @@ function buildMindmapChildren(input: {
     type: 'graph-mindmap',
     props: {
       id: mindmapId,
-      x: readNumber(input.root.layout.x) ?? 0,
-      y: readNumber(input.root.layout.y) ?? 0,
+      x: readNumber(input.root.layout['x']) ?? 0,
+      y: readNumber(input.root.layout['y']) ?? 0,
     },
     children: treeNodes.map((node) => {
       const objectRecord = node.canonicalObjectId
@@ -472,11 +491,13 @@ export function buildCanonicalRenderResponse(input: {
       children: topLevelChildren,
     },
     canvasId: input.canvasId,
+    canvasRevision: input.latestRevision ?? 0,
     title: input.title,
     sourceVersion: hashCanvasSourceVersion({
       canvasId: input.canvasId,
       latestRevision: input.latestRevision,
     }),
+    assetBasePath: `canvases/${input.canvasId}.graph.tsx`,
   };
 }
 
@@ -498,6 +519,7 @@ export async function renderCanonicalCanvas(input: {
       dataDir: handle.dataDir,
       defaultWorkspaceId: input.workspaceId ?? 'workspace',
     };
+    const runtimeContext = createCanvasRuntimeServiceContext(context);
 
     const canvas = await getWorkspaceCanvas(context, input.canvasId, input.workspaceId ?? context.defaultWorkspaceId);
     const nodes = await repository.listCanvasNodes(input.canvasId);
@@ -522,7 +544,7 @@ export async function renderCanonicalCanvas(input: {
         }),
     );
 
-    return buildCanonicalRenderResponse({
+    const response = buildCanonicalRenderResponse({
       canvasId: input.canvasId,
       title: canvas.title,
       latestRevision: canvas.latestRevision,
@@ -530,7 +552,53 @@ export async function renderCanonicalCanvas(input: {
       objectsById,
       pluginByNodeId,
     });
+
+    const runtimeSnapshot = await readCanvasRuntimeSnapshot({
+      runtimeContext,
+      canvasId: input.canvasId,
+      workspaceId: canvas.workspaceId,
+      title: canvas.title,
+      latestRevision: canvas.latestRevision,
+    });
+
+    return {
+      ...response,
+      renderProjection: runtimeSnapshot.renderProjection,
+      editingProjection: runtimeSnapshot.editingProjection,
+    };
   } finally {
     await handle.close();
   }
+}
+
+export async function readCanvasRuntimeSnapshot(input: {
+  runtimeContext: ReturnType<typeof createCanvasRuntimeServiceContext>;
+  canvasId: string;
+  workspaceId: string;
+  title: string | null;
+  latestRevision: number | null;
+}): Promise<CanvasRuntimeSnapshotResponse> {
+  const [renderProjection, editingProjection] = await Promise.all([
+    buildRenderProjection(input.runtimeContext, {
+      canvasId: input.canvasId,
+      workspaceId: input.workspaceId,
+    }),
+    buildEditingProjection(input.runtimeContext, {
+      canvasId: input.canvasId,
+      workspaceId: input.workspaceId,
+    }),
+  ]);
+
+  return {
+    canvasId: input.canvasId,
+    canvasRevision: input.latestRevision ?? 0,
+    workspaceId: input.workspaceId,
+    title: input.title,
+    sourceVersion: hashCanvasSourceVersion({
+      canvasId: input.canvasId,
+      latestRevision: input.latestRevision,
+    }),
+    renderProjection,
+    editingProjection,
+  };
 }

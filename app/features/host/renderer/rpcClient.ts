@@ -1,4 +1,3 @@
-import type { FileTreeNode } from '@/store/graph';
 import type { RpcAdapterDescriptor } from '@/features/host/contracts';
 import type { WorkspaceProbeResponse } from '@/components/editor/workspaceRegistry';
 import type {
@@ -12,15 +11,6 @@ import type {
   AppWorkspaceUpsertInput,
 } from '../../../../libs/shared/src/lib/app-state-persistence/contracts/types';
 
-export interface RendererFileListResponse {
-  files: string[];
-}
-
-export interface RendererFileCreateResponse {
-  filePath: string;
-  sourceVersion: string;
-}
-
 export interface CreateWorkspaceCanvasResult {
   sourceVersion: string;
   canvasId: string;
@@ -32,13 +22,7 @@ export interface CreateWorkspaceCanvasResult {
 export interface WorkspaceCanvasCreateInput {
   rootPath: string;
   title?: string | null;
-}
-
-export interface WorkspaceFileBrowserActionInput {
-  rootPath: string;
-  action: 'open' | 'reveal';
-  filePath?: string | null;
-  targetPath?: string | null;
+  canvasId?: string | null;
 }
 
 export function isCreateWorkspaceCanvasResult(
@@ -63,6 +47,7 @@ export interface RendererRenderResponse {
   canvasId?: string;
   title?: string | null;
   sourceVersion?: string;
+  assetBasePath?: string | null;
   error?: string;
   type?: string;
   details?: unknown;
@@ -71,7 +56,6 @@ export interface RendererRenderResponse {
 export interface RendererRpcClient {
   descriptor: RpcAdapterDescriptor;
   healthCheck: () => Promise<boolean>;
-  listFiles: () => Promise<RendererFileListResponse>;
   listAppStateWorkspaces: () => Promise<AppWorkspaceRecord[]>;
   upsertAppStateWorkspace: (input: AppWorkspaceUpsertInput) => Promise<AppWorkspaceRecord>;
   removeAppStateWorkspace: (workspaceId: string) => Promise<void>;
@@ -86,8 +70,5 @@ export interface RendererRpcClient {
   ensureWorkspace: (rootPath: string) => Promise<WorkspaceProbeResponse>;
   listWorkspaceCanvases: (rootPath: string) => Promise<WorkspaceProbeResponse>;
   createWorkspaceCanvas: (input: WorkspaceCanvasCreateInput) => Promise<CreateWorkspaceCanvasResult>;
-  launchWorkspaceFileBrowser: (input: WorkspaceFileBrowserActionInput) => Promise<void>;
-  createFile: (filePath: string) => Promise<RendererFileCreateResponse>;
-  getFileTree: (rootPath?: string | null) => Promise<{ tree: FileTreeNode | null }>;
   renderCanvas: (input: { canvasId: string; rootPath?: string | null }) => Promise<RendererRenderResponse>;
 }

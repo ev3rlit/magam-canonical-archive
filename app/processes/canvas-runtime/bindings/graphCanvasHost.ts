@@ -52,6 +52,7 @@ function resolveMindMapCreateNodeType(
 }
 
 export interface GraphCanvasHostContextMenuActionsInput {
+  createMode: GraphCanvasCreateMode;
   copyImageToClipboard: (nodeIds?: string[]) => Promise<void> | void;
   handleFitView: () => void;
   openExportDialog: (scope: 'selection' | 'full', selectedNodeIds?: string[]) => void;
@@ -240,7 +241,6 @@ export function createGraphCanvasContextMenuActions(
         nodeType,
         placement: { mode: 'mindmap-child', parentId },
         targetRenderedNodeId: renderedNodeId,
-        filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
         scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
       }));
@@ -267,7 +267,6 @@ export function createGraphCanvasContextMenuActions(
         nodeType,
         placement: { mode: 'mindmap-sibling', siblingOf, parentId },
         targetRenderedNodeId: renderedNodeId,
-        filePath: typeof sourceMeta?.filePath === 'string' ? sourceMeta.filePath : undefined,
         scopeId: typeof sourceMeta?.scopeId === 'string' ? sourceMeta.scopeId : undefined,
         frameScope: typeof sourceMeta?.frameScope === 'string' ? sourceMeta.frameScope : undefined,
       }));

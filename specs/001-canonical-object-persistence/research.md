@@ -48,13 +48,13 @@
   - Allow dangling relations for later cleanup: rejected because it increases ambiguity and complicates the next slice.
   - Encode missing endpoints as free-form relation metadata only: rejected because it weakens the canonical graph contract.
 
-## Decision 7: Place the reusable persistence contract in a shared module, leaving current chat persistence untouched
+## Decision 7: Place the reusable persistence contract in a shared module with its own ownership boundary
 
-- Decision: Add the canonical persistence schema, validators, mappers, repository interface, and `PGlite` bootstrap under a new shared library module rather than inside the app or existing CLI chat repository.
+- Decision: Add the canonical persistence schema, validators, mappers, repository interface, and `PGlite` bootstrap under a new shared library module rather than inside the app or an existing product/runtime module.
 - Rationale: Both the app-side runtime and the future headless CLI will need the same persistence contract. A shared module is the smallest stable boundary that supports both consumers without cross-layer coupling.
 - Alternatives considered:
   - Implementing inside `app/` only: rejected because the future CLI would then depend on app-owned implementation details.
-  - Reusing `libs/cli/src/chat/repository` directly: rejected because chat SQLite storage is a separate concern and should not become the canonical canvas persistence home.
+- Reusing an unrelated runtime-specific repository directly: rejected because canonical persistence needs its own stable ownership boundary.
 
 ## Decision 8: Preserve editable note bodies as extensible ordered content blocks with clone-on-create semantics
 

@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   createCanonicalCanvas,
   getCanonicalCanvas,
   listCanonicalCanvases,
-  resolveCanonicalCanvasCompatibilityFilePath,
 } from './service';
 
 describe('canonical canvas shell service', () => {
@@ -23,7 +22,6 @@ describe('canonical canvas shell service', () => {
     const created = await createCanonicalCanvas({
       targetDir,
       workspaceId: 'ws-shell',
-      filePath: 'docs/alpha.graph.tsx',
       actor: {
         kind: 'user',
         id: 'tester',
@@ -39,13 +37,6 @@ describe('canonical canvas shell service', () => {
       bindingCount: 0,
     });
 
-    const compatibilityFilePath = await resolveCanonicalCanvasCompatibilityFilePath({
-      targetDir,
-      workspaceId: 'ws-shell',
-      canvasId: createdCanvasId,
-    });
-    expect(compatibilityFilePath).toBe(`canvases/${createdCanvasId}.graph.tsx`);
-
     await expect(listCanonicalCanvases({ targetDir, workspaceId: 'ws-shell' })).resolves.toEqual([
       expect.objectContaining({
         canvasId: createdCanvasId,
@@ -60,7 +51,7 @@ describe('canonical canvas shell service', () => {
     });
   });
 
-  it('falls back to a generated compatibility file path', async () => {
+  it('creates canonical canvases without compatibility file metadata', async () => {
     const targetDir = await mkdtemp(path.join(os.tmpdir(), 'magam-canonical-canvas-shell-'));
     tempDirs.push(targetDir);
 
@@ -68,12 +59,6 @@ describe('canonical canvas shell service', () => {
       targetDir,
       workspaceId: 'ws-shell',
     });
-    const createdCanvasId = created.canvasId;
-    const compatibilityFilePath = await resolveCanonicalCanvasCompatibilityFilePath({
-      targetDir,
-      workspaceId: 'ws-shell',
-      canvasId: createdCanvasId,
-    });
-    expect(compatibilityFilePath).toBe(`canvases/${createdCanvasId}.graph.tsx`);
+    expect(created.canvasId).toEqual(expect.any(String));
   });
 });

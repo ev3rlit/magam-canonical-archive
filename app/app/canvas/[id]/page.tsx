@@ -1,7 +1,12 @@
-'use client';
-
 import { CanvasEditorPage } from '@/features/editor/pages/CanvasEditorPage';
 
-export default function CanvasPage({ params }: { params: { id: string } }) {
-  return <CanvasEditorPage canvasId={decodeURIComponent(params.id)} />;
+interface PageProps {
+  params: Promise<{
+    id: string;
+  }>;
+}
+
+export default async function CanvasPage({ params }: PageProps) {
+  const { id } = await params;
+  return <CanvasEditorPage canvasId={decodeURIComponent(id)} />;
 }

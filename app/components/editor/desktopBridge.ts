@@ -34,6 +34,19 @@ export async function pickWorkspaceRootPath(input: {
   return value || null;
 }
 
+export async function pickWorkspaceSaveLocation(input: {
+  title: string;
+  defaultPath?: string | null;
+}): Promise<string | null> {
+  const runtime = typeof window !== 'undefined' ? getHostRuntime() : undefined;
+  if (runtime?.capabilities?.workspace?.chooseSaveLocation) {
+    const selection = await runtime.capabilities.workspace.chooseSaveLocation();
+    return selection?.path?.trim() || null;
+  }
+
+  return pickWorkspaceRootPath(input);
+}
+
 export async function copyTextWithDesktopBridge(text: string): Promise<void> {
   const bridge = typeof window !== 'undefined' ? window.magamDesktop : undefined;
   if (bridge?.copyText) {

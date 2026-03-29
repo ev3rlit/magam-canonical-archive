@@ -1,4 +1,5 @@
 import type { Node } from 'reactflow';
+import type { CanvasEditingProjectionNodeV1 } from '../../../libs/shared/src/lib/canvas-runtime';
 import {
   deriveCapabilityProfile,
   type CapabilityProfile,
@@ -59,6 +60,7 @@ export interface EditMeta {
   styleEditableKeys: string[];
   createMode?: CreateMode;
   readOnlyReason?: string;
+  allowedCommandsOverride?: EditCommandType[];
 }
 
 type ParsedNodeLike = {
@@ -317,6 +319,10 @@ export function isCommandAllowed(editMeta: EditMeta | undefined, commandType: Ed
     return false;
   }
 
+  if (editMeta.allowedCommandsOverride?.includes(commandType)) {
+    return true;
+  }
+
   if (commandType === 'node.move.absolute') {
     return editMeta.family !== 'mindmap-member' && !editMeta.relativeCarrier;
   }
@@ -354,6 +360,87 @@ export function isCommandAllowed(editMeta: EditMeta | undefined, commandType: Ed
   }
 
   return false;
+}
+
+function toLegacyAllowedCommands(runtimeNode: CanvasEditingProjectionNodeV1): EditCommandType[] {
+  const commands = new Set<EditCommandType>();
+
+  runtimeNode.allowedCommands.forEach((command) => {
+    switch (command) {
+      case 'canvas.node.move':
+        commands.add('node.move.absolute');
+        break;
+      case 'canvas.node.reparent':
+        commands.add('node.reparent');
+        commands.add('mindmap.child.create');
+        commands.add('mindmap.sibling.create');
+        break;
+      case 'canvas.node.presentation-style.update':
+      case 'canvas.node.render-profile.update':
+      case 'canvas.node.resize':
+      case 'canvas.node.rotate':
+        commands.add('node.style.update');
+        break;
+      case 'canvas.node.rename':
+        commands.add('node.rename');
+        break;
+      case 'canvas.node.z-order.update':
+        commands.add('node.z-order.update');
+        break;
+      case 'object.content.update':
+      case 'object.body.block.insert':
+      case 'object.body.block.update':
+      case 'object.body.block.remove':
+      case 'object.body.block.reorder':
+        commands.add('node.content.update');
+        break;
+      default:
+        break;
+    }
+  });
+
+  if (runtimeNode.allowedCommands.includes('canvas.node.move') && !runtimeNode.allowedCommands.includes('canvas.node.reparent')) {
+    commands.add('node.create');
+  }
+
+  return [...commands];
+}
+
+export function createEditMetaFromRuntimeProjection(input: {
+  nodeType?: string;
+  runtimeNode: CanvasEditingProjectionNodeV1;
+}): EditMeta {
+  // Runtime projection data is the primary source; local edit meta remains a compatibility mapping for existing UI affordances.
+  const allowedCommandsOverride = toLegacyAllowedCommands(input.runtimeNode);
+  const styleEditableKeys = allowedCommandsOverride.includes('node.style.update')
+    ? [
+        ...new Set([
+          ...getNodeTypeStyleEditableKeys(input.nodeType),
+          ...(input.runtimeNode.allowedCommands.includes('canvas.node.resize') ? ['width', 'height'] : []),
+          ...(input.runtimeNode.allowedCommands.includes('canvas.node.rotate') ? ['rotation'] : []),
+        ]),
+      ]
+    : [];
+  const family: EditFamily = allowedCommandsOverride.includes('node.reparent')
+    ? 'mindmap-member'
+    : allowedCommandsOverride.includes('node.content.update')
+      ? 'rich-content'
+      : 'canvas-absolute';
+
+  const locked = !input.runtimeNode.interactionCapabilities.movable
+    && !input.runtimeNode.interactionCapabilities.objectContentEditable
+    && !input.runtimeNode.interactionCapabilities.zOrderEditable;
+
+  return {
+    family,
+    contentCarrier: input.runtimeNode.bodyEntry.supported
+      ? (input.nodeType === 'text' ? 'text-child' : 'markdown-child')
+      : undefined,
+    styleEditableKeys,
+    createMode: family === 'mindmap-member' ? 'mindmap-child' : 'canvas',
+    ...(locked ? { readOnlyReason: 'LOCKED' } : {}),
+    allowedCommandsOverride,
+  };
 }
 
 export function pickStylePatch(

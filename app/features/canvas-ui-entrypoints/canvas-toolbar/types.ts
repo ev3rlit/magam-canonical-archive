@@ -1,4 +1,5 @@
 import type {
+  CanvasEntrypointCreateNodeType,
   CanvasEntrypointCreateMode,
 } from '@/features/canvas-ui-entrypoints/contracts';
 import type { EntrypointInteractionMode } from '@/features/canvas-ui-entrypoints/ui-runtime-state';
@@ -71,7 +72,7 @@ export type CanvasToolbarActionDefinition =
 
 export interface CanvasToolbarActionBindings {
   onSelectInteractionMode?: (mode: EntrypointInteractionMode) => void;
-  onSelectCreateMode?: (mode: CanvasEntrypointCreateNodeType) => void;
+  onSelectCreateMode?: (mode: Exclude<CanvasEntrypointCreateMode, null>) => void;
   onZoomIn?: () => void;
   onZoomOut?: () => void;
   onFitView?: () => void;

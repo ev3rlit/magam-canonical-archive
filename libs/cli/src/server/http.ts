@@ -437,7 +437,7 @@ async function handleAppStateRecentCanvasesUpsert(
 
     const recentCanvas = await repository.upsertRecentCanvas({
       workspaceId: requireAppStateString(body.workspaceId, 'workspaceId'),
-      canvasPath: requireAppStateString(body.canvasPath, 'canvasPath'),
+      canvasId: requireAppStateString(body.canvasId, 'canvasId'),
       lastOpenedAt: parseAppStateOptionalDate(body.lastOpenedAt),
     });
 
@@ -975,10 +975,12 @@ async function handleCanvasesCreate(req: http.IncomingMessage, res: http.ServerR
 
     const workspace = await requireWorkspaceRoot(rootPath);
     const rawTitle = typeof body.title === 'string' ? body.title : null;
+    const rawCanvasId = typeof body.canvasId === 'string' ? body.canvasId : null;
     let created: CanonicalCanvasShellRecord;
     try {
       created = await createCanonicalCanvas({
         targetDir: workspace.rootPath,
+        ...(rawCanvasId ? { canvasId: rawCanvasId } : {}),
         title: rawTitle,
         actor: {
           kind: 'system',

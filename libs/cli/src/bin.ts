@@ -121,8 +121,12 @@ const resourceCommands: Record<string, ResourceCommandRunner> = {
     return runWorkspaceCommand(args);
   },
   document: async (args) => {
-    const { runDocumentCommand } = await import('./commands/document');
-    return runDocumentCommand(args);
+    const { runCanvasCommand } = await import('./commands/canvas');
+    return runCanvasCommand(args);
+  },
+  canvas: async (args) => {
+    const { runCanvasCommand } = await import('./commands/canvas');
+    return runCanvasCommand(args);
   },
   surface: async (args) => {
     const { runSurfaceCommand } = await import('./commands/surface');

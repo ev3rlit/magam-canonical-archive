@@ -11,9 +11,6 @@ desktop adapter와 optional web adapter가 동일 logical RPC contract를 제공
 - `render.generate`
 - `edit.apply`
 - `sync.watch`
-- `chat.send`
-- `chat.stop`
-- `chat.sessions.list`
 
 ## Adapter Rules
 
