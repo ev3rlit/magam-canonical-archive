@@ -120,15 +120,18 @@ describe('AppProvider keyboard shortcuts', () => {
     act(() => {
       useEditorStore.getState().createObjectAtViewportCenter('sticky');
       stickyId = useEditorStore.getState().selection.primaryId!;
-      useEditorStore.getState().insertBlock(stickyId, 'markdown');
+      const firstBlockId = useEditorStore.getState().scene.objects
+        .find((object) => object.id === stickyId)!
+        .contentBlocks[0]!.id;
+      useEditorStore.getState().startBlockEdit(stickyId, firstBlockId);
     });
 
-    const textarea = container.querySelector('.canvas-object__block-textarea') as HTMLTextAreaElement;
-    expect(textarea).toBeTruthy();
+    const editor = container.querySelector('.canvas-object__wysiwyg-surface') as HTMLDivElement;
+    expect(editor).toBeTruthy();
 
     act(() => {
-      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
-      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }));
+      editor.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }));
     });
 
     expect(useEditorStore.getState().temporaryToolOverride).toBe(null);

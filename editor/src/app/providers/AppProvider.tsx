@@ -14,7 +14,8 @@ function isTypingTarget(target: EventTarget | null) {
     target.tagName === 'INPUT' ||
     target.tagName === 'TEXTAREA' ||
     target.tagName === 'SELECT' ||
-    target.isContentEditable
+    target.isContentEditable ||
+    target.getAttribute('contenteditable') === 'true'
   );
 }
 

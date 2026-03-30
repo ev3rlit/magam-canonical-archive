@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useEditorStore } from '@/core/editor/model/editor-store';
 import type { EditorCanvasObject, EditorContentBlock } from '@/core/editor/model/editor-types';
+import { CanvasMarkdownWysiwygEditor } from '@/widgets/canvas-editor/ui/CanvasMarkdownWysiwygEditor';
 
 interface BlockDraftState {
   blockId: string;
@@ -30,7 +31,7 @@ function toDraft(block: EditorContentBlock): BlockDraftState {
     return {
       blockId: block.id,
       blockType: block.blockType,
-      text: block.source,
+      text: '',
       src: '',
       alt: '',
     };
@@ -81,6 +82,10 @@ function BlockEditor({
   cancel: () => void;
 }) {
   if (!draft) {
+    return null;
+  }
+
+  if (block.blockType === 'markdown') {
     return null;
   }
 
@@ -182,7 +187,7 @@ function BlockPreview({ block }: { block: EditorContentBlock }) {
             {block.source}
           </ReactMarkdown>
         ) : (
-          <p>Empty markdown block</p>
+          <p className="canvas-object__block-placeholder">Write text, # heading, or - list</p>
         )}
       </div>
     );
@@ -340,13 +345,20 @@ export function CanvasObjectBody({
               ) : null}
             </div>
             {isEditing ? (
-              <BlockEditor
-                block={block}
-                cancel={handleCancel}
-                commit={handleCommit}
-                draft={draft}
-                setDraft={setDraft}
-              />
+              block.blockType === 'markdown' ? (
+                <CanvasMarkdownWysiwygEditor
+                  initialMarkdown={block.source}
+                  onCommit={(source) => commitBlockEdit(object.id, block.id, { source })}
+                />
+              ) : (
+                <BlockEditor
+                  block={block}
+                  cancel={handleCancel}
+                  commit={handleCommit}
+                  draft={draft}
+                  setDraft={setDraft}
+                />
+              )
             ) : (
               <BlockPreview block={block} />
             )}
