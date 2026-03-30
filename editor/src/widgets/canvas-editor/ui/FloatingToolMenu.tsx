@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEditorStore } from '@/core/editor/model/editor-store';
+import { getEffectiveTool, useEditorStore } from '@/core/editor/model/editor-store';
 import type { EditorTool } from '@/core/editor/model/editor-types';
 import { EditorIcon, type EditorIconName } from '@/shared/ui/EditorIcon';
 
@@ -18,7 +18,7 @@ const CREATE_TOOLS: Array<{
 ];
 
 export function FloatingToolMenu() {
-  const activeTool = useEditorStore((state) => state.activeTool);
+  const effectiveTool = useEditorStore((state) => getEffectiveTool(state));
   const setActiveTool = useEditorStore((state) => state.setActiveTool);
   const createObjectAtViewportCenter = useEditorStore((state) => state.createObjectAtViewportCenter);
 
@@ -27,7 +27,7 @@ export function FloatingToolMenu() {
       <div className="floating-tool-menu__cluster">
         <button
           className={clsx('floating-tool-menu__button', {
-            'floating-tool-menu__button--active': activeTool === 'select',
+            'floating-tool-menu__button--active': effectiveTool === 'select',
           })}
           aria-label="Select tool"
           onClick={() => setActiveTool('select')}
@@ -38,7 +38,7 @@ export function FloatingToolMenu() {
         </button>
         <button
           className={clsx('floating-tool-menu__button', {
-            'floating-tool-menu__button--active': activeTool === 'pan',
+            'floating-tool-menu__button--active': effectiveTool === 'pan',
           })}
           aria-label="Pan tool"
           onClick={() => setActiveTool('pan')}

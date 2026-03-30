@@ -54,6 +54,11 @@ export interface EditorSelectionState {
   primaryId: string | null;
 }
 
+export interface EditorHistorySnapshot {
+  objects: EditorCanvasObject[];
+  selection: EditorSelectionState;
+}
+
 export interface EditorMarqueeState extends EditorBounds {
   originX: number;
   originY: number;

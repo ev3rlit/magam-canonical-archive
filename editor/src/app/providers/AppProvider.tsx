@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
 import { useEditorStore } from '@/core/editor/model/editor-store';
+import { dispatchShortcut } from '@/core/editor/shortcuts/dispatchShortcut';
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
@@ -19,50 +20,31 @@ function isTypingTarget(target: EventTarget | null) {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const state = useEditorStore.getState();
+    const handleKeyboardEvent = (phase: 'down' | 'up') => (event: KeyboardEvent) => {
+      const result = dispatchShortcut({
+        event,
+        isTypingTarget: isTypingTarget(event.target),
+        phase,
+      });
 
-      if (event.key === 'Escape') {
-        state.setContextMenu(null);
-        state.setMarquee(null);
-        state.openMobilePanel(null);
-        state.clearFocusRequest();
-        state.clearSelection();
-        return;
-      }
-
-      if (isTypingTarget(event.target)) {
-        return;
-      }
-
-      const isMeta = event.metaKey || event.ctrlKey;
-      const lowered = event.key.toLowerCase();
-
-      if ((event.key === 'Delete' || event.key === 'Backspace') && state.selection.ids.length > 0) {
+      if (result.preventDefault) {
         event.preventDefault();
-        state.deleteSelection();
-        return;
-      }
-
-      if (isMeta && lowered === 'd' && state.selection.ids.length > 0) {
-        event.preventDefault();
-        state.duplicateSelection();
-        return;
-      }
-
-      if (isMeta && lowered === 'g' && state.selection.ids.length > 0) {
-        event.preventDefault();
-        if (event.shiftKey) {
-          state.ungroupSelection();
-          return;
-        }
-        state.groupSelection();
       }
     };
 
+    const handleKeyDown = handleKeyboardEvent('down');
+    const handleKeyUp = handleKeyboardEvent('up');
+    const handleBlur = () => {
+      useEditorStore.getState().setTemporaryToolOverride(null);
+    };
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, []);
 

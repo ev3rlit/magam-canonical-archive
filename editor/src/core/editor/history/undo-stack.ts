@@ -1,6 +1,7 @@
 export interface UndoEntry<TValue> {
   label: string;
-  value: TValue;
+  before: TValue;
+  after: TValue;
 }
 
 export class UndoStack<TValue> {
@@ -10,6 +11,19 @@ export class UndoStack<TValue> {
 
   push(entry: UndoEntry<TValue>) {
     this.past.push(entry);
+    this.future = [];
+  }
+
+  canUndo() {
+    return this.past.length > 0;
+  }
+
+  canRedo() {
+    return this.future.length > 0;
+  }
+
+  clear() {
+    this.past = [];
     this.future = [];
   }
 

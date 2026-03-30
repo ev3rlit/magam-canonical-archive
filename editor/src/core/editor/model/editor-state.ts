@@ -9,6 +9,7 @@ import type {
 
 export interface EditorState {
   activeTool: EditorTool;
+  temporaryToolOverride: EditorTool | null;
   panels: EditorPanelsState;
   viewport: EditorViewportState;
   scene: EditorSceneState;
@@ -18,6 +19,7 @@ export interface EditorState {
 
 export const initialEditorState: EditorState = {
   activeTool: 'select',
+  temporaryToolOverride: null,
   panels: {
     open: {
       outliner: true,

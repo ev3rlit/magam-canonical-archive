@@ -10,8 +10,8 @@ import {
   screenBoundsFromWorld,
   worldPointFromClient,
 } from '@/core/editor/model/editor-geometry';
-import { getPrimarySelectionObject, useEditorStore } from '@/core/editor/model/editor-store';
-import type { EditorCanvasObject, EditorMarqueeState } from '@/core/editor/model/editor-types';
+import { getEffectiveTool, getPrimarySelectionObject, useEditorStore } from '@/core/editor/model/editor-store';
+import type { EditorCanvasObject, EditorHistorySnapshot, EditorMarqueeState } from '@/core/editor/model/editor-types';
 import { CanvasContextMenu } from '@/widgets/canvas-editor/ui/CanvasContextMenu';
 import { CanvasObjectFloatingMenu } from '@/widgets/canvas-editor/ui/CanvasObjectFloatingMenu';
 
@@ -27,6 +27,7 @@ type InteractionState =
       originWorldY: number;
       appliedDeltaX: number;
       appliedDeltaY: number;
+      historyBefore: EditorHistorySnapshot;
     }
   | {
       type: 'marquee';
@@ -97,7 +98,7 @@ function CanvasObjectContent({ object }: { object: EditorCanvasObject }) {
 }
 
 export function CanvasViewport() {
-  const activeTool = useEditorStore((state) => state.activeTool);
+  const effectiveTool = useEditorStore((state) => getEffectiveTool(state));
   const contextMenu = useEditorStore((state) => state.overlays.contextMenu);
   const objects = useEditorStore((state) => state.scene.objects);
   const selection = useEditorStore((state) => state.selection);
@@ -111,6 +112,7 @@ export function CanvasViewport() {
   const setMarquee = useEditorStore((state) => state.setMarquee);
   const moveSelection = useEditorStore((state) => state.moveSelection);
   const selectMany = useEditorStore((state) => state.selectMany);
+  const commitHistoryEntry = useEditorStore((state) => state.commitHistoryEntry);
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const interactionRef = useRef<InteractionState | null>(null);
@@ -189,6 +191,10 @@ export function CanvasViewport() {
         return;
       }
 
+      if (interaction.type === 'drag' && (interaction.appliedDeltaX !== 0 || interaction.appliedDeltaY !== 0)) {
+        commitHistoryEntry('Move selection', interaction.historyBefore);
+      }
+
       if (interaction.type === 'marquee') {
         const state = useEditorStore.getState();
         const bounds = state.scene.marquee ? marqueeToBounds(state.scene.marquee) : null;
@@ -214,7 +220,7 @@ export function CanvasViewport() {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
     };
-  }, [moveSelection, panViewport, selectMany, setMarquee]);
+  }, [commitHistoryEntry, moveSelection, panViewport, selectMany, setMarquee]);
 
   const selectionBounds = getSelectionBounds(selection, objects);
   const primaryObject = getPrimarySelectionObject(useEditorStore.getState());
@@ -237,7 +243,7 @@ export function CanvasViewport() {
         }
 
         const state = useEditorStore.getState();
-        if (activeTool === 'pan') {
+        if (effectiveTool === 'pan') {
           interactionRef.current = {
             type: 'pan',
             lastClientX: event.clientX,
@@ -285,7 +291,7 @@ export function CanvasViewport() {
       />
       <div
         className={clsx('canvas-viewport__world', {
-          'canvas-viewport__world--pan': activeTool === 'pan',
+          'canvas-viewport__world--pan': effectiveTool === 'pan',
         })}
         style={{
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
@@ -337,7 +343,7 @@ export function CanvasViewport() {
                   event.preventDefault();
                   setContextMenu(null);
 
-                  if (activeTool === 'pan') {
+                  if (effectiveTool === 'pan') {
                     interactionRef.current = {
                       type: 'pan',
                       lastClientX: event.clientX,
@@ -361,12 +367,13 @@ export function CanvasViewport() {
                     return;
                   }
 
+                  const dragState = useEditorStore.getState();
                   const stageRect = stageRef.current.getBoundingClientRect();
                   const point = worldPointFromClient({
                     clientX: event.clientX,
                     clientY: event.clientY,
                     stageRect,
-                    viewport: useEditorStore.getState().viewport,
+                    viewport: dragState.viewport,
                   });
                   interactionRef.current = {
                     type: 'drag',
@@ -374,6 +381,7 @@ export function CanvasViewport() {
                     originWorldY: point.y,
                     appliedDeltaX: 0,
                     appliedDeltaY: 0,
+                    historyBefore: dragState.captureHistorySnapshot(),
                   };
                 }}
                 style={{

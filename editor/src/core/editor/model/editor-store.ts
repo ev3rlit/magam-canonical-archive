@@ -1,13 +1,16 @@
 'use client';
 
 import { create } from 'zustand';
+import { UndoStack } from '../history/undo-stack';
 import { clamp, createObjectMap, getChildObjects, getDescendantIds, getSelectionBounds, nextZIndex } from './editor-geometry';
 import type {
   EditorCanvasObject,
   EditorCanvasObjectKind,
   EditorContextMenuState,
   EditorFillPreset,
+  EditorHistorySnapshot,
   EditorImageFit,
+  EditorMarqueeState,
   EditorPanelId,
   EditorSelectionState,
   EditorTextStyle,
@@ -96,6 +99,7 @@ const OBJECT_DEFAULTS: Record<
 
 let objectCounter = 0;
 let focusRequestCounter = 1;
+const historyStack = new UndoStack<EditorHistorySnapshot>();
 
 function shouldUseMobilePanel() {
   return typeof window !== 'undefined' && window.matchMedia('(max-width: 920px)').matches;
@@ -130,6 +134,7 @@ function seedObjects(): EditorCanvasObject[] {
 function createInitialState(): EditorState {
   return {
     activeTool: 'select',
+    temporaryToolOverride: null,
     panels: {
       open: {
         outliner: true,
@@ -153,6 +158,39 @@ function createInitialState(): EditorState {
       contextMenu: null,
       focusRequest: null,
     },
+  };
+}
+
+function cloneCanvasObjects(objects: EditorCanvasObject[]) {
+  return objects.map((object) => ({ ...object }));
+}
+
+function cloneSelection(selection: EditorSelectionState): EditorSelectionState {
+  return {
+    ids: [...selection.ids],
+    primaryId: selection.primaryId,
+  };
+}
+
+function createHistorySnapshot(state: Pick<EditorState, 'scene' | 'selection'>): EditorHistorySnapshot {
+  return {
+    objects: cloneCanvasObjects(state.scene.objects),
+    selection: cloneSelection(state.selection),
+  };
+}
+
+function historySnapshotsMatch(left: EditorHistorySnapshot, right: EditorHistorySnapshot) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function restoreHistorySnapshot(state: EditorState, snapshot: EditorHistorySnapshot) {
+  return {
+    scene: {
+      ...state.scene,
+      objects: cloneCanvasObjects(snapshot.objects),
+      marquee: null,
+    },
+    ...withClearedContext(cloneSelection(snapshot.selection)),
   };
 }
 
@@ -337,6 +375,7 @@ function setFieldPatch(
 
 export interface EditorState {
   activeTool: EditorTool;
+  temporaryToolOverride: EditorTool | null;
   panels: {
     open: Record<EditorPanelId, boolean>;
     mobileOpenPanel: EditorPanelId | null;
@@ -375,7 +414,7 @@ interface EditorStore extends EditorState {
   toggleSelection: (objectId: string) => void;
   selectMany: (objectIds: string[], primaryId?: string | null) => void;
   clearSelection: () => void;
-  setMarquee: (bounds: import('./editor-types').EditorMarqueeState | null) => void;
+  setMarquee: (bounds: EditorMarqueeState | null) => void;
   moveSelection: (deltaX: number, deltaY: number) => void;
   updateObjectField: (objectId: string, field: keyof EditorCanvasObject, value: string) => void;
   updateObjectPatch: (objectId: string, patch: Partial<EditorCanvasObject>) => void;
@@ -390,282 +429,329 @@ interface EditorStore extends EditorState {
   deleteSelection: () => void;
   groupSelection: () => void;
   ungroupSelection: () => void;
+  setTemporaryToolOverride: (tool: EditorTool | null) => void;
+  captureHistorySnapshot: () => EditorHistorySnapshot;
+  commitHistoryEntry: (label: string, before: EditorHistorySnapshot) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
 }
 
-export const useEditorStore = create<EditorStore>((set, get) => ({
-  ...createInitialState(),
-  reset: () => {
-    set(createInitialState());
-  },
-  setActiveTool: (tool) => {
-    set({
-      activeTool: tool,
-      overlays: {
-        contextMenu: null,
-        focusRequest: null,
-      },
-    });
-  },
-  togglePanel: (panelId) => {
-    set((state) => ({
-      panels: {
-        ...state.panels,
-        open: {
-          ...state.panels.open,
-          [panelId]: !state.panels.open[panelId],
-        },
-      },
-    }));
-  },
-  showPanel: (panelId) => {
-    set((state) => ({
-      panels: {
-        ...state.panels,
-        open: {
-          ...state.panels.open,
-          [panelId]: true,
-        },
-        mobileOpenPanel: shouldUseMobilePanel() ? panelId : state.panels.mobileOpenPanel,
-      },
-    }));
-  },
-  openMobilePanel: (panelId) => {
-    set((state) => ({
-      panels: {
-        ...state.panels,
-        mobileOpenPanel: panelId,
-      },
-    }));
-  },
-  toggleHierarchyNode: (objectId) => {
+export const useEditorStore = create<EditorStore>((set, get) => {
+  function commitCanvasMutation(
+    label: string,
+    reducer: (state: EditorStore) => Partial<EditorStore> | EditorStore,
+  ) {
+    let nextHistoryEntry: {
+      label: string;
+      before: EditorHistorySnapshot;
+      after: EditorHistorySnapshot;
+    } | null = null;
+
     set((state) => {
-      const collapsed = new Set(state.panels.collapsedNodeIds);
-      if (collapsed.has(objectId)) {
-        collapsed.delete(objectId);
-      } else {
-        collapsed.add(objectId);
+      const nextState = reducer(state);
+      if (nextState === state) {
+        return state;
       }
-      return {
+
+      const before = createHistorySnapshot(state);
+      const mergedState = { ...state, ...nextState };
+      const after = createHistorySnapshot(mergedState);
+      if (!historySnapshotsMatch(before, after)) {
+        nextHistoryEntry = {
+          label,
+          before,
+          after,
+        };
+      }
+      return nextState;
+    });
+
+    if (nextHistoryEntry) {
+      historyStack.push(nextHistoryEntry);
+    }
+  }
+
+  return {
+    ...createInitialState(),
+    reset: () => {
+      objectCounter = 0;
+      focusRequestCounter = 1;
+      historyStack.clear();
+      set(createInitialState());
+    },
+    setActiveTool: (tool) => {
+      set({
+        activeTool: tool,
+        temporaryToolOverride: null,
+        overlays: {
+          contextMenu: null,
+          focusRequest: null,
+        },
+      });
+    },
+    togglePanel: (panelId) => {
+      set((state) => ({
         panels: {
           ...state.panels,
-          collapsedNodeIds: [...collapsed],
+          open: {
+            ...state.panels.open,
+            [panelId]: !state.panels.open[panelId],
+          },
         },
-      };
-    });
-  },
-  setViewportRect: (width, height) => {
-    set((state) => ({
-      viewport: {
-        ...state.viewport,
-        width,
-        height,
-      },
-    }));
-  },
-  panViewport: (deltaX, deltaY) => {
-    set((state) => ({
-      viewport: {
-        ...state.viewport,
-        x: state.viewport.x + deltaX,
-        y: state.viewport.y + deltaY,
-      },
-    }));
-  },
-  setZoom: (nextZoom) => {
-    set((state) => ({
-      viewport: {
-        ...state.viewport,
-        zoom: clamp(nextZoom, 0.65, 1.6),
-      },
-    }));
-  },
-  createObjectAtViewportCenter: (kind) => {
-    set((state) => {
-      const defaults = OBJECT_DEFAULTS[kind];
-      const x = (state.viewport.width / 2 - state.viewport.x) / state.viewport.zoom - defaults.width / 2;
-      const y = (state.viewport.height / 2 - state.viewport.y) / state.viewport.zoom - defaults.height / 2;
-      const nextObject = buildDraftObject({
-        kind,
-        x,
-        y,
-        zIndex: nextZIndex(state.scene.objects),
+      }));
+    },
+    showPanel: (panelId) => {
+      set((state) => ({
+        panels: {
+          ...state.panels,
+          open: {
+            ...state.panels.open,
+            [panelId]: true,
+          },
+          mobileOpenPanel: shouldUseMobilePanel() ? panelId : state.panels.mobileOpenPanel,
+        },
+      }));
+    },
+    openMobilePanel: (panelId) => {
+      set((state) => ({
+        panels: {
+          ...state.panels,
+          mobileOpenPanel: panelId,
+        },
+      }));
+    },
+    toggleHierarchyNode: (objectId) => {
+      set((state) => {
+        const collapsed = new Set(state.panels.collapsedNodeIds);
+        if (collapsed.has(objectId)) {
+          collapsed.delete(objectId);
+        } else {
+          collapsed.add(objectId);
+        }
+        return {
+          panels: {
+            ...state.panels,
+            collapsedNodeIds: [...collapsed],
+          },
+        };
       });
-      const selection = normalizeSelection([nextObject.id], nextObject.id);
+    },
+    setViewportRect: (width, height) => {
+      set((state) => ({
+        viewport: {
+          ...state.viewport,
+          width,
+          height,
+        },
+      }));
+    },
+    panViewport: (deltaX, deltaY) => {
+      set((state) => ({
+        viewport: {
+          ...state.viewport,
+          x: state.viewport.x + deltaX,
+          y: state.viewport.y + deltaY,
+        },
+      }));
+    },
+    setZoom: (nextZoom) => {
+      set((state) => ({
+        viewport: {
+          ...state.viewport,
+          zoom: clamp(nextZoom, 0.65, 1.6),
+        },
+      }));
+    },
+    createObjectAtViewportCenter: (kind) => {
+      commitCanvasMutation('Create object', (state) => {
+        const defaults = OBJECT_DEFAULTS[kind];
+        const x = (state.viewport.width / 2 - state.viewport.x) / state.viewport.zoom - defaults.width / 2;
+        const y = (state.viewport.height / 2 - state.viewport.y) / state.viewport.zoom - defaults.height / 2;
+        const nextObject = buildDraftObject({
+          kind,
+          x,
+          y,
+          zIndex: nextZIndex(state.scene.objects),
+        });
+        const selection = normalizeSelection([nextObject.id], nextObject.id);
 
-      return {
-        activeTool: 'select',
+        return {
+          activeTool: 'select',
+          temporaryToolOverride: null,
+          scene: {
+            ...state.scene,
+            objects: [...state.scene.objects, nextObject],
+          },
+          ...withClearedContext(selection),
+        };
+      });
+    },
+    selectOnly: (objectId) => {
+      set({
+        ...withClearedContext(normalizeSelection([objectId], objectId)),
+      });
+    },
+    toggleSelection: (objectId) => {
+      set((state) => {
+        const ids = state.selection.ids.includes(objectId)
+          ? state.selection.ids.filter((id) => id !== objectId)
+          : [...state.selection.ids, objectId];
+
+        return {
+          ...withClearedContext(normalizeSelection(ids, objectId)),
+        };
+      });
+    },
+    selectMany: (objectIds, primaryId = null) => {
+      set({
+        ...withClearedContext(normalizeSelection(objectIds, primaryId)),
+      });
+    },
+    clearSelection: () => {
+      set({
+        ...withClearedContext({
+          ids: [],
+          primaryId: null,
+        }),
+      });
+    },
+    setMarquee: (marquee) => {
+      set((state) => ({
         scene: {
           ...state.scene,
-          objects: [...state.scene.objects, nextObject],
+          marquee,
         },
-        ...withClearedContext(selection),
-      };
-    });
-  },
-  selectOnly: (objectId) => {
-    set({
-      ...withClearedContext(normalizeSelection([objectId], objectId)),
-    });
-  },
-  toggleSelection: (objectId) => {
-    set((state) => {
-      const ids = state.selection.ids.includes(objectId)
-        ? state.selection.ids.filter((id) => id !== objectId)
-        : [...state.selection.ids, objectId];
-
-      return {
-        ...withClearedContext(normalizeSelection(ids, objectId)),
-      };
-    });
-  },
-  selectMany: (objectIds, primaryId = null) => {
-    set({
-      ...withClearedContext(normalizeSelection(objectIds, primaryId)),
-    });
-  },
-  clearSelection: () => {
-    set({
-      ...withClearedContext({
-        ids: [],
-        primaryId: null,
-      }),
-    });
-  },
-  setMarquee: (marquee) => {
-    set((state) => ({
-      scene: {
-        ...state.scene,
-        marquee,
-      },
-    }));
-  },
-  moveSelection: (deltaX, deltaY) => {
-    set((state) => {
-      const moveIds = collectMoveTargets(state.selection.ids, state.scene.objects);
-      return {
-        scene: {
-          ...state.scene,
-          objects: moveObjects(state.scene.objects, moveIds, deltaX, deltaY),
-        },
-      };
-    });
-  },
-  updateObjectField: (objectId, field, value) => {
-    set((state) => ({
-      scene: {
-        ...state.scene,
-        objects: state.scene.objects.map((object) => (
-          object.id === objectId ? setFieldPatch(object, field, value) : object
-        )),
-      },
-    }));
-  },
-  updateObjectPatch: (objectId, patch) => {
-    set((state) => ({
-      scene: {
-        ...state.scene,
-        objects: state.scene.objects.map((object) => (
-          object.id === objectId ? { ...object, ...patch } : object
-        )),
-      },
-    }));
-  },
-  updateSelectionPatch: (patch) => {
-    set((state) => {
-      const selection = new Set(state.selection.ids);
-      return {
+      }));
+    },
+    moveSelection: (deltaX, deltaY) => {
+      set((state) => {
+        const moveIds = collectMoveTargets(state.selection.ids, state.scene.objects);
+        return {
+          scene: {
+            ...state.scene,
+            objects: moveObjects(state.scene.objects, moveIds, deltaX, deltaY),
+          },
+        };
+      });
+    },
+    updateObjectField: (objectId, field, value) => {
+      commitCanvasMutation('Update object field', (state) => ({
         scene: {
           ...state.scene,
           objects: state.scene.objects.map((object) => (
-            selection.has(object.id) ? { ...object, ...patch } : object
+            object.id === objectId ? setFieldPatch(object, field, value) : object
           )),
         },
-      };
-    });
-  },
-  cycleQuickProperty: (objectId) => {
-    set((state) => ({
-      scene: {
-        ...state.scene,
-        objects: state.scene.objects.map((object) => {
-          if (object.id !== objectId) {
-            return object;
-          }
-          if (object.kind === 'image') {
+      }));
+    },
+    updateObjectPatch: (objectId, patch) => {
+      commitCanvasMutation('Update object patch', (state) => ({
+        scene: {
+          ...state.scene,
+          objects: state.scene.objects.map((object) => (
+            object.id === objectId ? { ...object, ...patch } : object
+          )),
+        },
+      }));
+    },
+    updateSelectionPatch: (patch) => {
+      commitCanvasMutation('Update selection patch', (state) => {
+        const selection = new Set(state.selection.ids);
+        return {
+          scene: {
+            ...state.scene,
+            objects: state.scene.objects.map((object) => (
+              selection.has(object.id) ? { ...object, ...patch } : object
+            )),
+          },
+        };
+      });
+    },
+    cycleQuickProperty: (objectId) => {
+      commitCanvasMutation('Cycle quick property', (state) => ({
+        scene: {
+          ...state.scene,
+          objects: state.scene.objects.map((object) => {
+            if (object.id !== objectId) {
+              return object;
+            }
+            if (object.kind === 'image') {
+              return {
+                ...object,
+                imageFit: object.imageFit === 'contain' ? 'cover' : 'contain',
+              };
+            }
+            if (object.kind === 'text') {
+              return {
+                ...object,
+                textStyle: object.textStyle === 'headline' ? 'body' : 'headline',
+              };
+            }
             return {
               ...object,
-              imageFit: object.imageFit === 'contain' ? 'cover' : 'contain',
+              fillPreset: cycleFillPreset(object.fillPreset),
             };
-          }
-          if (object.kind === 'text') {
-            return {
-              ...object,
-              textStyle: object.textStyle === 'headline' ? 'body' : 'headline',
-            };
-          }
-          return {
-            ...object,
-            fillPreset: cycleFillPreset(object.fillPreset),
-          };
-        }),
-      },
-    }));
-  },
-  setContextMenu: (menu) => {
-    set((state) => ({
-      overlays: {
-        ...state.overlays,
-        contextMenu: menu,
-      },
-    }));
-  },
-  requestNameFocus: (objectId) => {
-    set((state) => ({
-      panels: {
-        ...state.panels,
-        open: {
-          ...state.panels.open,
-          inspector: true,
+          }),
         },
-        mobileOpenPanel: shouldUseMobilePanel() ? 'inspector' : state.panels.mobileOpenPanel,
-      },
-      overlays: {
-        ...state.overlays,
-        contextMenu: null,
-        focusRequest: {
-          objectId,
-          field: 'name',
-          requestId: focusRequestCounter++,
+      }));
+    },
+    setContextMenu: (menu) => {
+      set((state) => ({
+        overlays: {
+          ...state.overlays,
+          contextMenu: menu,
         },
-      },
-    }));
-  },
-  clearFocusRequest: () => {
-    set((state) => ({
-      overlays: {
-        ...state.overlays,
-        focusRequest: null,
-      },
-    }));
-  },
-  bringSelectionToFront: () => {
-    set((state) => ({
-      scene: {
-        ...state.scene,
-        objects: restackObjects(state.scene.objects, state.selection.ids, 'front'),
-      },
-    }));
-  },
-  sendSelectionToBack: () => {
-    set((state) => ({
-      scene: {
-        ...state.scene,
-        objects: restackObjects(state.scene.objects, state.selection.ids, 'back'),
-      },
-    }));
-  },
-  duplicateSelection: () => {
-    set((state) => {
+      }));
+    },
+    requestNameFocus: (objectId) => {
+      set((state) => ({
+        panels: {
+          ...state.panels,
+          open: {
+            ...state.panels.open,
+            inspector: true,
+          },
+          mobileOpenPanel: shouldUseMobilePanel() ? 'inspector' : state.panels.mobileOpenPanel,
+        },
+        overlays: {
+          ...state.overlays,
+          contextMenu: null,
+          focusRequest: {
+            objectId,
+            field: 'name',
+            requestId: focusRequestCounter++,
+          },
+        },
+      }));
+    },
+    clearFocusRequest: () => {
+      set((state) => ({
+        overlays: {
+          ...state.overlays,
+          focusRequest: null,
+        },
+      }));
+    },
+    bringSelectionToFront: () => {
+      commitCanvasMutation('Bring selection to front', (state) => ({
+        scene: {
+          ...state.scene,
+          objects: restackObjects(state.scene.objects, state.selection.ids, 'front'),
+        },
+      }));
+    },
+    sendSelectionToBack: () => {
+      commitCanvasMutation('Send selection to back', (state) => ({
+        scene: {
+          ...state.scene,
+          objects: restackObjects(state.scene.objects, state.selection.ids, 'back'),
+        },
+      }));
+    },
+    duplicateSelection: () => {
+      commitCanvasMutation('Duplicate selection', (state) => {
       const roots = getSelectionRoots(state.selection.ids, state.scene.objects);
       const clones: EditorCanvasObject[] = [];
       const rootCloneIds: string[] = [];
@@ -688,21 +774,21 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ...withClearedContext(selection),
       };
     });
-  },
-  deleteSelection: () => {
-    set((state) => ({
-      scene: {
-        ...state.scene,
-        objects: removeObjects(state.scene.objects, state.selection.ids),
-      },
-      ...withClearedContext({
-        ids: [],
-        primaryId: null,
-      }),
-    }));
-  },
-  groupSelection: () => {
-    set((state) => {
+    },
+    deleteSelection: () => {
+      commitCanvasMutation('Delete selection', (state) => ({
+        scene: {
+          ...state.scene,
+          objects: removeObjects(state.scene.objects, state.selection.ids),
+        },
+        ...withClearedContext({
+          ids: [],
+          primaryId: null,
+        }),
+      }));
+    },
+    groupSelection: () => {
+      commitCanvasMutation('Group selection', (state) => {
       if (state.selection.ids.length < 2) {
         return state;
       }
@@ -746,9 +832,9 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ...withClearedContext(selection),
       };
     });
-  },
-  ungroupSelection: () => {
-    set((state) => {
+    },
+    ungroupSelection: () => {
+      commitCanvasMutation('Ungroup selection', (state) => {
       const selectedGroups = state.scene.objects.filter((object) => (
         state.selection.ids.includes(object.id) && object.kind === 'group'
       ));
@@ -793,8 +879,55 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
         ...withClearedContext(normalizeSelection(childSelectionIds, childSelectionIds[0] ?? null)),
       };
     });
-  },
-}));
+    },
+    setTemporaryToolOverride: (tool) => {
+      set((state) => {
+        if (tool === 'pan' && state.activeTool === 'pan') {
+          return state;
+        }
+        if (state.temporaryToolOverride === tool) {
+          return state;
+        }
+        return {
+          temporaryToolOverride: tool,
+        };
+      });
+    },
+    captureHistorySnapshot: () => createHistorySnapshot(get()),
+    commitHistoryEntry: (label, before) => {
+      const after = createHistorySnapshot(get());
+      if (historySnapshotsMatch(before, after)) {
+        return;
+      }
+
+      historyStack.push({
+        label,
+        before,
+        after,
+      });
+    },
+    undo: () => {
+      const entry = historyStack.undo();
+      if (!entry) {
+        return;
+      }
+      set((state) => restoreHistorySnapshot(state, entry.before));
+    },
+    redo: () => {
+      const entry = historyStack.redo();
+      if (!entry) {
+        return;
+      }
+      set((state) => restoreHistorySnapshot(state, entry.after));
+    },
+    canUndo: () => historyStack.canUndo(),
+    canRedo: () => historyStack.canRedo(),
+  };
+});
+
+export function getEffectiveTool(state: Pick<EditorState, 'activeTool' | 'temporaryToolOverride'>) {
+  return state.temporaryToolOverride ?? state.activeTool;
+}
 
 export function getPrimarySelectionObject(state: EditorStore) {
   return state.scene.objects.find((object) => object.id === state.selection.primaryId) ?? null;
