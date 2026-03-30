@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 import {
   getEffectiveBounds,
+  getObjectTransformFrame,
   getSelectionBounds,
   intersectsBounds,
   marqueeToBounds,
@@ -274,7 +275,7 @@ export function CanvasViewport() {
           .filter((object) => object.visible)
           .sort((left, right) => left.zIndex - right.zIndex)
           .map((object) => {
-            const bounds = getEffectiveBounds(object, objects);
+            const frame = getObjectTransformFrame(object, objects);
             const isSelected = selection.ids.includes(object.id);
 
             return (
@@ -360,9 +361,12 @@ export function CanvasViewport() {
                 }}
                 style={{
                   cursor: panCursor ?? (object.locked ? 'not-allowed' : 'pointer'),
-                  minHeight: bounds.height,
-                  transform: `translate(${bounds.x}px, ${bounds.y}px)`,
-                  width: bounds.width,
+                  height: frame.height,
+                  left: frame.x,
+                  top: frame.y,
+                  transform: `rotate(${frame.rotation}deg)`,
+                  transformOrigin: 'center',
+                  width: frame.width,
                   zIndex: object.zIndex,
                 }}
               >

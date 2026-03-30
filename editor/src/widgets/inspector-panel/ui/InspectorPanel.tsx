@@ -132,6 +132,12 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
           type="number"
           value={object.zIndex}
         />
+        <PropertyField
+          label="Rotation"
+          onChange={(value) => updateObjectField(object.id, 'rotation', value)}
+          type="number"
+          value={object.rotation}
+        />
       </section>
       <section className="inspector-card">
         <div className="inspector-card__header">

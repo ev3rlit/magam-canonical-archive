@@ -90,17 +90,27 @@ export function createSeedContentBlocks(input: {
   kind: Exclude<EditorCanvasObjectKind, 'group'>;
   placeholderImageSrc: string;
 }): EditorContentBlock[] {
-  if (input.kind !== 'image') {
-    return [];
+  if (input.kind === 'sticky' || input.kind === 'shape') {
+    return [
+      createContentBlockFromPalette({
+        blockId: 'body-1',
+        type: 'markdown',
+        placeholderImageSrc: input.placeholderImageSrc,
+      }),
+    ];
   }
 
-  return [
-    createContentBlockFromPalette({
-      blockId: 'body-1',
-      type: 'image',
-      placeholderImageSrc: input.placeholderImageSrc,
-    }),
-  ];
+  if (input.kind === 'image') {
+    return [
+      createContentBlockFromPalette({
+        blockId: 'body-1',
+        type: 'image',
+        placeholderImageSrc: input.placeholderImageSrc,
+      }),
+    ];
+  }
+
+  return [];
 }
 
 export function updateContentBlock(
@@ -138,13 +148,13 @@ export function getContentBlockText(block: EditorContentBlock) {
   return block.alt;
 }
 
-export function estimateCanvasObjectHeight(object: EditorCanvasObject) {
+export function getCanvasObjectMinimumHeight(object: EditorCanvasObject) {
   if (object.kind === 'group') {
     return object.height;
   }
 
   if (object.contentBlocks.length === 0) {
-    return Math.max(object.height, EMPTY_OBJECT_HEIGHT);
+    return EMPTY_OBJECT_HEIGHT;
   }
 
   const bodyHeight = object.contentBlocks.reduce((total, block, index) => {
@@ -152,7 +162,11 @@ export function estimateCanvasObjectHeight(object: EditorCanvasObject) {
   }, 0);
 
   const shellPadding = object.kind === 'text' ? 20 : object.kind === 'frame' ? 36 : 28;
-  return Math.max(object.height, bodyHeight + shellPadding * 2);
+  return bodyHeight + shellPadding * 2;
+}
+
+export function estimateCanvasObjectHeight(object: EditorCanvasObject) {
+  return Math.max(object.height, getCanvasObjectMinimumHeight(object));
 }
 
 export function isBodyCapableObject(object: EditorCanvasObject) {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { getSelectionTransformFrame } from './editor-geometry';
 import { getEffectiveTool, useEditorStore } from './editor-store';
 
 describe('editor store history', () => {
@@ -73,12 +74,26 @@ describe('editor store history', () => {
     expect(useEditorStore.getState().scene.objects.some((object) => object.kind === 'group')).toBe(true);
   });
 
-  it('creates empty sticky objects and seeded image objects', () => {
+  it('seeds sticky and shape objects with markdown blocks and image objects with image blocks', () => {
     useEditorStore.getState().createObjectAtViewportCenter('sticky');
     const stickyId = useEditorStore.getState().selection.primaryId!;
     const sticky = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId);
 
-    expect(sticky?.contentBlocks).toEqual([]);
+    expect(sticky?.contentBlocks).toEqual([
+      expect.objectContaining({
+        blockType: 'markdown',
+      }),
+    ]);
+
+    useEditorStore.getState().createObjectAtViewportCenter('shape');
+    const shapeId = useEditorStore.getState().selection.primaryId!;
+    const shape = useEditorStore.getState().scene.objects.find((object) => object.id === shapeId);
+
+    expect(shape?.contentBlocks).toEqual([
+      expect.objectContaining({
+        blockType: 'markdown',
+      }),
+    ]);
 
     useEditorStore.getState().createObjectAtViewportCenter('image');
     const imageId = useEditorStore.getState().selection.primaryId!;
@@ -94,8 +109,6 @@ describe('editor store history', () => {
   it('tracks block insert, edit, remove, undo, and redo without per-keystroke history noise', () => {
     useEditorStore.getState().createObjectAtViewportCenter('sticky');
     const stickyId = useEditorStore.getState().selection.primaryId!;
-
-    useEditorStore.getState().insertBlock(stickyId, 'markdown');
     let sticky = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)!;
     const firstBlockId = sticky.contentBlocks[0]!.id;
     useEditorStore.getState().commitBlockEdit(stickyId, firstBlockId, { source: '# First block' });
@@ -141,6 +154,92 @@ describe('editor store history', () => {
     useEditorStore.getState().undo();
     useEditorStore.getState().createObjectAtViewportCenter('sticky');
     expect(useEditorStore.getState().canRedo()).toBe(false);
+  });
+
+  it('resizes and rotates a single selection through transform actions', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('shape');
+    const historyBefore = useEditorStore.getState().captureHistorySnapshot();
+    const baseFrame = getSelectionTransformFrame(useEditorStore.getState().selection, historyBefore.objects)!;
+
+    useEditorStore.getState().resizeSelection({
+      baseObjects: historyBefore.objects,
+      baseFrame,
+      nextFrame: {
+        ...baseFrame,
+        x: baseFrame.x - 20,
+        y: baseFrame.y - 12,
+        width: baseFrame.width + 60,
+        height: baseFrame.height + 36,
+      },
+    });
+
+    const resized = useEditorStore.getState().scene.objects[0]!;
+    expect(resized.width).toBeGreaterThan(baseFrame.width);
+    expect(resized.height).toBeGreaterThan(baseFrame.height);
+
+    useEditorStore.getState().rotateSelection({
+      baseObjects: useEditorStore.getState().captureHistorySnapshot().objects,
+      baseFrame: getSelectionTransformFrame(useEditorStore.getState().selection, useEditorStore.getState().scene.objects)!,
+      nextFrame: {
+        ...getSelectionTransformFrame(useEditorStore.getState().selection, useEditorStore.getState().scene.objects)!,
+        rotation: 90,
+      },
+    });
+
+    expect(useEditorStore.getState().scene.objects[0]?.rotation).toBe(90);
+  });
+
+  it('keeps multi-selection spacing and group descendants coherent during transforms', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('shape');
+    const firstId = useEditorStore.getState().selection.primaryId!;
+    useEditorStore.getState().createObjectAtViewportCenter('sticky');
+    const secondId = useEditorStore.getState().selection.primaryId!;
+    useEditorStore.getState().selectMany([firstId, secondId], secondId);
+    useEditorStore.getState().groupSelection();
+
+    const groupId = useEditorStore.getState().selection.primaryId!;
+    const childIds = useEditorStore.getState().scene.objects
+      .filter((object) => object.parentId === groupId)
+      .map((object) => object.id);
+    const before = useEditorStore.getState().captureHistorySnapshot();
+    const baseFrame = getSelectionTransformFrame(useEditorStore.getState().selection, before.objects)!;
+
+    useEditorStore.getState().rotateSelection({
+      baseObjects: before.objects,
+      baseFrame,
+      nextFrame: {
+        ...baseFrame,
+        rotation: 90,
+      },
+    });
+
+    const rotatedGroup = useEditorStore.getState().scene.objects.find((object) => object.id === groupId)!;
+    const rotatedChildren = useEditorStore.getState().scene.objects.filter((object) => childIds.includes(object.id));
+
+    expect(rotatedGroup.rotation).toBe(90);
+    expect(rotatedChildren.every((object) => object.rotation === 90)).toBe(true);
+  });
+
+  it('does not mutate locked selections through transform actions', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('shape');
+    const shapeId = useEditorStore.getState().selection.primaryId!;
+    useEditorStore.getState().updateObjectPatch(shapeId, { locked: true });
+    const before = useEditorStore.getState().captureHistorySnapshot();
+    const baseFrame = getSelectionTransformFrame(useEditorStore.getState().selection, before.objects)!;
+
+    useEditorStore.getState().resizeSelection({
+      baseObjects: before.objects,
+      baseFrame,
+      nextFrame: {
+        ...baseFrame,
+        width: baseFrame.width + 80,
+        height: baseFrame.height + 40,
+      },
+    });
+
+    const lockedShape = useEditorStore.getState().scene.objects.find((object) => object.id === shapeId)!;
+    expect(lockedShape.width).toBe(before.objects.find((object) => object.id === shapeId)!.width);
+    expect(lockedShape.height).toBe(before.objects.find((object) => object.id === shapeId)!.height);
   });
 
   it('keeps viewport and overlay-only changes out of history', () => {

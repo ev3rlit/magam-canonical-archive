@@ -7,9 +7,22 @@ import {
   createContentBlockFromPalette,
   createSeedContentBlocks,
   findContentBlockIndex,
+  getCanvasObjectMinimumHeight,
   updateContentBlock,
 } from './editor-content-blocks';
-import { clamp, createObjectMap, getChildObjects, getDescendantIds, getSelectionBounds, nextZIndex } from './editor-geometry';
+import {
+  clamp,
+  createObjectMap,
+  getChildObjects,
+  getDescendantIds,
+  getFrameCenter,
+  getObjectTransformFrame,
+  getSelectionBounds,
+  getSelectionRootIds,
+  nextZIndex,
+  normalizeRotationDegrees,
+  syncGroupFrames,
+} from './editor-geometry';
 import type {
   EditorBlockPaletteType,
   EditorCanvasObject,
@@ -21,6 +34,7 @@ import type {
   EditorMarqueeState,
   EditorPanelId,
   EditorSelectionState,
+  EditorTransformFrame,
   EditorTool,
 } from './editor-types';
 
@@ -54,6 +68,8 @@ const PLACEHOLDER_IMAGE =
   `);
 
 const FILL_PRESETS: EditorFillPreset[] = ['iris', 'sky', 'mint', 'amber', 'blush', 'slate'];
+const MIN_OBJECT_WIDTH = 120;
+const MIN_OBJECT_HEIGHT = 96;
 
 const OBJECT_DEFAULTS: Record<
   Exclude<EditorCanvasObjectKind, 'group'>,
@@ -231,6 +247,7 @@ function buildDraftObject(input: {
     y: input.y,
     width: defaults.width,
     height: defaults.height,
+    rotation: 0,
     zIndex: input.zIndex,
     locked: false,
     visible: true,
@@ -357,11 +374,33 @@ function setFieldPatch(
   field: keyof EditorCanvasObject,
   value: string,
 ) {
-  if (field === 'x' || field === 'y' || field === 'width' || field === 'height' || field === 'zIndex') {
+  if (field === 'x' || field === 'y' || field === 'width' || field === 'height' || field === 'zIndex' || field === 'rotation') {
     const nextValue = Number(value);
     if (!Number.isFinite(nextValue)) {
       return object;
     }
+
+    if (field === 'width') {
+      return {
+        ...object,
+        width: Math.max(nextValue, MIN_OBJECT_WIDTH),
+      };
+    }
+
+    if (field === 'height') {
+      return {
+        ...object,
+        height: Math.max(nextValue, getMinimumObjectHeight(object)),
+      };
+    }
+
+    if (field === 'rotation') {
+      return {
+        ...object,
+        rotation: normalizeRotationDegrees(nextValue),
+      };
+    }
+
     return {
       ...object,
       [field]: nextValue,
@@ -372,6 +411,112 @@ function setFieldPatch(
     ...object,
     [field]: value,
   };
+}
+
+function getMinimumObjectHeight(object: EditorCanvasObject) {
+  if (object.kind === 'group') {
+    return MIN_OBJECT_HEIGHT;
+  }
+  return Math.max(MIN_OBJECT_HEIGHT, getCanvasObjectMinimumHeight(object));
+}
+
+function sanitizeObjectPatch(object: EditorCanvasObject, patch: Partial<EditorCanvasObject>) {
+  const nextPatch = { ...patch };
+
+  if (typeof nextPatch['width'] === 'number') {
+    nextPatch.width = Math.max(nextPatch.width, MIN_OBJECT_WIDTH);
+  }
+
+  if (typeof nextPatch['height'] === 'number') {
+    nextPatch.height = Math.max(nextPatch.height, getMinimumObjectHeight({
+      ...object,
+      width: typeof nextPatch['width'] === 'number' ? nextPatch.width : object.width,
+    }));
+  }
+
+  if (typeof nextPatch['rotation'] === 'number') {
+    nextPatch.rotation = normalizeRotationDegrees(nextPatch.rotation);
+  }
+
+  return nextPatch;
+}
+
+function rotateVector(x: number, y: number, rotation: number) {
+  const radians = rotation * (Math.PI / 180);
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+
+  return {
+    x: x * cos - y * sin,
+    y: x * sin + y * cos,
+  };
+}
+
+function transformPointBetweenFrames(
+  point: { x: number; y: number },
+  baseFrame: EditorTransformFrame,
+  nextFrame: EditorTransformFrame,
+) {
+  const baseCenter = getFrameCenter(baseFrame);
+  const nextCenter = getFrameCenter(nextFrame);
+  const deltaRotation = nextFrame.rotation - baseFrame.rotation;
+  const inverse = rotateVector(point.x - baseCenter.x, point.y - baseCenter.y, -baseFrame.rotation);
+  const scaled = {
+    x: inverse.x * (nextFrame.width / baseFrame.width),
+    y: inverse.y * (nextFrame.height / baseFrame.height),
+  };
+  const rotated = rotateVector(scaled.x, scaled.y, nextFrame.rotation);
+
+  return {
+    x: nextCenter.x + rotated.x,
+    y: nextCenter.y + rotated.y,
+    deltaRotation,
+  };
+}
+
+function applySelectionTransform(input: {
+  baseObjects: EditorCanvasObject[];
+  selectionIds: string[];
+  baseFrame: EditorTransformFrame;
+  nextFrame: EditorTransformFrame;
+}) {
+  const roots = getSelectionRootIds(input.selectionIds, input.baseObjects);
+  const targetIds = new Set<string>();
+
+  roots.forEach((rootId) => {
+    targetIds.add(rootId);
+    getDescendantIds(rootId, input.baseObjects).forEach((descendantId) => targetIds.add(descendantId));
+  });
+
+  const nextObjects = input.baseObjects.map((object) => {
+    if (!targetIds.has(object.id)) {
+      return object;
+    }
+
+    const frame = getObjectTransformFrame(object, input.baseObjects);
+    const center = getFrameCenter(frame);
+    const transformedCenter = transformPointBetweenFrames(center, input.baseFrame, input.nextFrame);
+    const nextWidth = Math.max(frame.width * (input.nextFrame.width / input.baseFrame.width), MIN_OBJECT_WIDTH);
+    const nextHeight = Math.max(
+      frame.height * (input.nextFrame.height / input.baseFrame.height),
+      getMinimumObjectHeight({
+        ...object,
+        width: nextWidth,
+        height: frame.height,
+      }),
+    );
+
+    return {
+      ...object,
+      x: transformedCenter.x - nextWidth / 2,
+      y: transformedCenter.y - nextHeight / 2,
+      width: nextWidth,
+      height: nextHeight,
+      rotation: normalizeRotationDegrees(frame.rotation + transformedCenter.deltaRotation),
+    };
+  });
+
+  return syncGroupFrames(nextObjects);
 }
 
 export interface EditorState {
@@ -419,6 +564,16 @@ interface EditorStore extends EditorState {
   clearSelection: () => void;
   setMarquee: (bounds: EditorMarqueeState | null) => void;
   moveSelection: (deltaX: number, deltaY: number) => void;
+  resizeSelection: (input: {
+    baseObjects: EditorCanvasObject[];
+    baseFrame: EditorTransformFrame;
+    nextFrame: EditorTransformFrame;
+  }) => void;
+  rotateSelection: (input: {
+    baseObjects: EditorCanvasObject[];
+    baseFrame: EditorTransformFrame;
+    nextFrame: EditorTransformFrame;
+  }) => void;
   updateObjectField: (objectId: string, field: keyof EditorCanvasObject, value: string) => void;
   updateObjectPatch: (objectId: string, patch: Partial<EditorCanvasObject>) => void;
   updateSelectionPatch: (patch: Partial<Pick<EditorCanvasObject, 'locked' | 'visible'>>) => void;
@@ -465,8 +620,18 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         return state;
       }
 
+      const normalizedNextState = 'scene' in nextState && nextState.scene?.objects
+        ? {
+            ...nextState,
+            scene: {
+              ...nextState.scene,
+              objects: syncGroupFrames(nextState.scene.objects),
+            },
+          }
+        : nextState;
+
       const before = createHistorySnapshot(state);
-      const mergedState = { ...state, ...nextState };
+      const mergedState = { ...state, ...normalizedNextState };
       const after = createHistorySnapshot(mergedState);
       if (!historySnapshotsMatch(before, after)) {
         nextHistoryEntry = {
@@ -475,7 +640,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
           after,
         };
       }
-      return nextState;
+      return normalizedNextState;
     });
 
     if (nextHistoryEntry) {
@@ -643,7 +808,54 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         return {
           scene: {
             ...state.scene,
-            objects: moveObjects(state.scene.objects, moveIds, deltaX, deltaY),
+            objects: syncGroupFrames(moveObjects(state.scene.objects, moveIds, deltaX, deltaY)),
+          },
+        };
+      });
+    },
+    resizeSelection: ({ baseObjects, baseFrame, nextFrame }) => {
+      set((state) => {
+        const hasLockedSelection = state.selection.ids.some((id) => state.scene.objects.find((object) => object.id === id)?.locked);
+        if (hasLockedSelection) {
+          return state;
+        }
+
+        return {
+          scene: {
+            ...state.scene,
+            objects: applySelectionTransform({
+              baseObjects,
+              selectionIds: state.selection.ids,
+              baseFrame,
+              nextFrame: {
+                ...nextFrame,
+                rotation: baseFrame.rotation,
+              },
+            }),
+          },
+        };
+      });
+    },
+    rotateSelection: ({ baseObjects, baseFrame, nextFrame }) => {
+      set((state) => {
+        const hasLockedSelection = state.selection.ids.some((id) => state.scene.objects.find((object) => object.id === id)?.locked);
+        if (hasLockedSelection) {
+          return state;
+        }
+
+        return {
+          scene: {
+            ...state.scene,
+            objects: applySelectionTransform({
+              baseObjects,
+              selectionIds: state.selection.ids,
+              baseFrame,
+              nextFrame: {
+                ...nextFrame,
+                width: baseFrame.width,
+                height: baseFrame.height,
+              },
+            }),
           },
         };
       });
@@ -663,7 +875,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         scene: {
           ...state.scene,
           objects: state.scene.objects.map((object) => (
-            object.id === objectId ? { ...object, ...patch } : object
+            object.id === objectId ? { ...object, ...sanitizeObjectPatch(object, patch) } : object
           )),
         },
       }));
@@ -1021,6 +1233,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         y: bounds.y,
         width: bounds.width,
         height: bounds.height,
+        rotation: 0,
         zIndex: nextZIndex(state.scene.objects),
         locked: false,
         visible: true,

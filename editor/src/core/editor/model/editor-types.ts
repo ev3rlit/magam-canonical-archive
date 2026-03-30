@@ -57,6 +57,7 @@ export interface EditorCanvasObject {
   y: number;
   width: number;
   height: number;
+  rotation: number;
   zIndex: number;
   locked: boolean;
   visible: boolean;
@@ -69,6 +70,10 @@ export interface EditorBounds {
   y: number;
   width: number;
   height: number;
+}
+
+export interface EditorTransformFrame extends EditorBounds {
+  rotation: number;
 }
 
 export interface EditorSelectionState {

@@ -1,17 +1,24 @@
+import { estimateCanvasObjectHeight } from './editor-content-blocks';
 import type {
   EditorBounds,
   EditorCanvasObject,
   EditorHierarchyNode,
   EditorMarqueeState,
   EditorSelectionState,
+  EditorTransformFrame,
   EditorViewportState,
 } from './editor-types';
-import { estimateCanvasObjectHeight } from './editor-content-blocks';
 
 const GROUP_PADDING = 24;
+const GROUP_LABEL_OFFSET = 12;
 
 export function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+export function normalizeRotationDegrees(rotation: number) {
+  const normalized = rotation % 360;
+  return normalized < 0 ? normalized + 360 : normalized;
 }
 
 export function normalizeBounds(bounds: EditorBounds): EditorBounds {
@@ -66,34 +73,52 @@ export function hasSelectedAncestor(
   return getAncestorIds(objectId, objectMap).some((ancestorId) => selection.has(ancestorId));
 }
 
-export function getEffectiveBounds(
-  object: EditorCanvasObject,
-  objects: EditorCanvasObject[],
-): EditorBounds {
-  if (object.kind !== 'group') {
-    return {
-      x: object.x,
-      y: object.y,
-      width: object.width,
-      height: estimateCanvasObjectHeight(object),
-    };
+export function getSelectionRootIds(selectionIds: string[], objects: EditorCanvasObject[]) {
+  const objectMap = createObjectMap(objects);
+  return selectionIds.filter((id) => !hasSelectedAncestor(id, selectionIds, objectMap));
+}
+
+export function getFrameCenter(frame: EditorTransformFrame) {
+  return {
+    x: frame.x + frame.width / 2,
+    y: frame.y + frame.height / 2,
+  };
+}
+
+export function rotatePoint(point: { x: number; y: number }, center: { x: number; y: number }, rotation: number) {
+  const radians = rotation * (Math.PI / 180);
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const offsetX = point.x - center.x;
+  const offsetY = point.y - center.y;
+
+  return {
+    x: center.x + offsetX * cos - offsetY * sin,
+    y: center.y + offsetX * sin + offsetY * cos,
+  };
+}
+
+export function getFrameCornerPoints(frame: EditorTransformFrame) {
+  const center = getFrameCenter(frame);
+  const corners = [
+    { x: frame.x, y: frame.y },
+    { x: frame.x + frame.width, y: frame.y },
+    { x: frame.x + frame.width, y: frame.y + frame.height },
+    { x: frame.x, y: frame.y + frame.height },
+  ];
+
+  if (frame.rotation === 0) {
+    return corners;
   }
 
-  const descendants = getChildObjects(objects, object.id);
-  if (descendants.length === 0) {
-    return {
-      x: object.x,
-      y: object.y,
-      width: object.width,
-      height: object.height,
-    };
-  }
+  return corners.map((corner) => rotatePoint(corner, center, frame.rotation));
+}
 
-  const childBounds = descendants.map((child) => getEffectiveBounds(child, objects));
-  const x = Math.min(...childBounds.map((bounds) => bounds.x)) - GROUP_PADDING;
-  const y = Math.min(...childBounds.map((bounds) => bounds.y)) - GROUP_PADDING - 12;
-  const maxX = Math.max(...childBounds.map((bounds) => bounds.x + bounds.width)) + GROUP_PADDING;
-  const maxY = Math.max(...childBounds.map((bounds) => bounds.y + bounds.height)) + GROUP_PADDING;
+function getBoundsFromPoints(points: Array<{ x: number; y: number }>): EditorBounds {
+  const x = Math.min(...points.map((point) => point.x));
+  const y = Math.min(...points.map((point) => point.y));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const maxY = Math.max(...points.map((point) => point.y));
 
   return {
     x,
@@ -101,6 +126,48 @@ export function getEffectiveBounds(
     width: maxX - x,
     height: maxY - y,
   };
+}
+
+function getProjectionBounds(points: Array<{ x: number; y: number }>, rotation: number) {
+  const radians = rotation * (Math.PI / 180);
+  const axisX = { x: Math.cos(radians), y: Math.sin(radians) };
+  const axisY = { x: -Math.sin(radians), y: Math.cos(radians) };
+
+  const projectedX = points.map((point) => point.x * axisX.x + point.y * axisX.y);
+  const projectedY = points.map((point) => point.x * axisY.x + point.y * axisY.y);
+
+  return {
+    minX: Math.min(...projectedX),
+    maxX: Math.max(...projectedX),
+    minY: Math.min(...projectedY),
+    maxY: Math.max(...projectedY),
+    axisX,
+    axisY,
+  };
+}
+
+export function getObjectTransformFrame(
+  object: EditorCanvasObject,
+  _objects: EditorCanvasObject[],
+): EditorTransformFrame {
+  return {
+    x: object.x,
+    y: object.y,
+    width: object.width,
+    height: object.kind === 'group' ? object.height : estimateCanvasObjectHeight(object),
+    rotation: normalizeRotationDegrees(object.rotation),
+  };
+}
+
+function getObjectHullPoints(object: EditorCanvasObject, objects: EditorCanvasObject[]) {
+  return getFrameCornerPoints(getObjectTransformFrame(object, objects));
+}
+
+export function getEffectiveBounds(
+  object: EditorCanvasObject,
+  objects: EditorCanvasObject[],
+): EditorBounds {
+  return getBoundsFromPoints(getObjectHullPoints(object, objects));
 }
 
 export function getSelectionBounds(
@@ -135,6 +202,72 @@ export function getSelectionBounds(
   };
 }
 
+export function getSelectionTransformFrame(
+  selection: EditorSelectionState,
+  objects: EditorCanvasObject[],
+): EditorTransformFrame | null {
+  if (selection.ids.length === 0) {
+    return null;
+  }
+
+  if (selection.ids.length === 1 && selection.primaryId) {
+    const primaryObject = objects.find((object) => object.id === selection.primaryId);
+    if (primaryObject) {
+      return getObjectTransformFrame(primaryObject, objects);
+    }
+  }
+
+  const selectionBounds = getSelectionBounds(selection, objects);
+  if (!selectionBounds) {
+    return null;
+  }
+
+  return {
+    ...selectionBounds,
+    rotation: 0,
+  };
+}
+
+export function syncGroupFrames(objects: EditorCanvasObject[]) {
+  const objectMap = createObjectMap(objects);
+  const groups = objects
+    .filter((object) => object.kind === 'group')
+    .sort((left, right) => getAncestorIds(right.id, objectMap).length - getAncestorIds(left.id, objectMap).length);
+
+  if (groups.length === 0) {
+    return objects;
+  }
+
+  const nextObjects = objects.map((object) => ({ ...object }));
+  const nextMap = createObjectMap(nextObjects);
+
+  groups.forEach((group) => {
+    const liveGroup = nextMap.get(group.id);
+    if (!liveGroup) {
+      return;
+    }
+
+    const children = getChildObjects(nextObjects, group.id);
+    if (children.length === 0) {
+      return;
+    }
+
+    const childPoints = children.flatMap((child) => getObjectHullPoints(child, nextObjects));
+    const projection = getProjectionBounds(childPoints, liveGroup.rotation);
+    const minX = projection.minX - GROUP_PADDING;
+    const maxX = projection.maxX + GROUP_PADDING;
+    const minY = projection.minY - GROUP_PADDING - GROUP_LABEL_OFFSET;
+    const maxY = projection.maxY + GROUP_PADDING;
+
+    liveGroup.x = minX * projection.axisX.x + minY * projection.axisY.x;
+    liveGroup.y = minX * projection.axisX.y + minY * projection.axisY.y;
+    liveGroup.width = maxX - minX;
+    liveGroup.height = maxY - minY;
+  });
+
+  return nextObjects;
+}
+
 export function intersectsBounds(source: EditorBounds, target: EditorBounds) {
   return (
     source.x < target.x + target.width &&
@@ -162,6 +295,16 @@ export function screenBoundsFromWorld(bounds: EditorBounds, viewport: EditorView
     y: viewport.y + bounds.y * viewport.zoom,
     width: bounds.width * viewport.zoom,
     height: bounds.height * viewport.zoom,
+  };
+}
+
+export function screenFrameFromWorld(frame: EditorTransformFrame, viewport: EditorViewportState): EditorTransformFrame {
+  return {
+    x: viewport.x + frame.x * viewport.zoom,
+    y: viewport.y + frame.y * viewport.zoom,
+    width: frame.width * viewport.zoom,
+    height: frame.height * viewport.zoom,
+    rotation: frame.rotation,
   };
 }
 
