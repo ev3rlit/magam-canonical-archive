@@ -2,11 +2,18 @@
 
 This file defines how agents should work in this repository. It focuses on project and task principles, not codebase inventory.
 
+## Primary References
+
+- For product direction, architecture, runtime modes, editor-shell structure, killer features, and the current target tech stack, read `TECHSPEC.md` first and treat it as the primary product/technical reference.
+- For design, layout, and visual language decisions, read `DESIGN.md` first and treat it as the primary design reference.
+
 ## Product Identity
 
 Magam은 AI와 사람이 "그리기"보다 "설명하기"로 캔버스를 만들고, 그 결과를 데이터로 축적하는 AI-native programmable whiteboard입니다.
 
 Magam is being rebuilt from scratch as a canvas-first MVP. Existing implementation should not be treated as a compatibility target by default; if current code conflicts with this direction, prefer the new product direction and replace complexity instead of preserving it.
+
+The detailed product direction and current target technology stack live in `TECHSPEC.md`. When repository code or older docs diverge from that document, prefer `TECHSPEC.md` unless the task explicitly updates the spec itself.
 
 ### Core Concepts
 
@@ -107,6 +114,7 @@ No task is done until the outcome is verified.
 
 ## Working Workflow
 
+- Start product, architecture, runtime, or technology-stack changes by reading `TECHSPEC.md`.
 - Start significant architectural or boundary changes with a spec, task brief, or ADR.
 - Decompose work into units that can be completed with minimal unrelated context.
 - Keep diffs task-focused and split unrelated cleanup into separate work.
