@@ -133,16 +133,17 @@ describe('CanonicalPersistenceRepository', () => {
         ...buildNoteRecord('note-empty'),
         contentBlocks: undefined,
         canonicalText: '',
-        primaryContentKind: 'text',
+        primaryContentKind: 'document',
       },
       operation: 'create',
     });
 
     expect(created.ok).toBe(true);
     if (created.ok) {
-      expect(created.value.contentBlocks).toEqual([
-        { id: 'body-1', blockType: 'text', text: '' },
-      ]);
+      expect(created.value.body).toEqual({
+        type: 'doc',
+        content: [{ type: 'paragraph' }],
+      });
     }
 
     const imported = await repository.createCanonicalObject({

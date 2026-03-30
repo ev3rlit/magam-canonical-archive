@@ -1,3 +1,8 @@
+import type {
+  CanonicalBodyCarrier,
+  CanonicalBodyDocument,
+} from './canonical-body-document';
+
 export type SemanticRole =
   | 'topic'
   | 'shape'
@@ -6,7 +11,7 @@ export type SemanticRole =
   | 'sticker'
   | 'sequence';
 
-export type ContentKind = 'text' | 'markdown' | 'media' | 'sequence';
+export type ContentKind = 'text' | 'markdown' | 'media' | 'sequence' | 'document';
 export type PrimaryContentKind = ContentKind | null;
 
 export type CanonicalObjectAlias =
@@ -179,7 +184,7 @@ export interface CapabilityBag {
 
 export type CanonicalCapabilityKey = keyof CapabilityBag;
 
-export interface CanonicalObject extends ContentBlocksCarrier {
+export interface CanonicalObject extends ContentBlocksCarrier, CanonicalBodyCarrier {
   core: ObjectCore;
   semanticRole: SemanticRole;
   capabilities: CapabilityBag;
@@ -188,7 +193,7 @@ export interface CanonicalObject extends ContentBlocksCarrier {
   primaryContentKind?: PrimaryContentKind;
 }
 
-export interface CanonicalObjectRecord extends ContentBlocksCarrier {
+export interface CanonicalObjectRecord extends ContentBlocksCarrier, CanonicalBodyCarrier {
   id: string;
   workspaceId: string;
   semanticRole: SemanticRole;
@@ -224,7 +229,7 @@ export const SEMANTIC_ROLES: readonly SemanticRole[] = [
   'sequence',
 ];
 
-export const CONTENT_KINDS: readonly ContentKind[] = ['text', 'markdown', 'media', 'sequence'];
+export const CONTENT_KINDS: readonly ContentKind[] = ['text', 'markdown', 'media', 'sequence', 'document'];
 export const CORE_CONTENT_BLOCK_TYPES: readonly CoreContentBlockType[] = ['text', 'markdown'];
 export const EDITABLE_NOTE_ALIASES: readonly EditableNoteAlias[] = ['Node', 'Sticky'];
 export const EDITABLE_NOTE_SEMANTIC_ROLES: readonly EditableNoteSemanticRole[] = [
@@ -286,6 +291,16 @@ export function cloneContentBlocks(
       ...(block.metadata ? { metadata: { ...block.metadata } } : {}),
     };
   });
+}
+
+export function cloneCanonicalBody(
+  body: CanonicalBodyDocument | undefined,
+): CanonicalBodyDocument | undefined {
+  if (!body) {
+    return undefined;
+  }
+
+  return JSON.parse(JSON.stringify(body)) as CanonicalBodyDocument;
 }
 
 export function okValidation(): ValidationSuccess {

@@ -29,6 +29,16 @@ import {
   validateObjectCore,
 } from '../canonical-object-contract';
 import {
+  CANONICAL_BODY_SCHEMA_VERSION,
+  createBodyParagraphNode,
+  createCanonicalBodyDocument,
+  isCanonicalBodyDocument,
+  readCanonicalBody,
+  readCanonicalBodySchemaVersion,
+  type CanonicalBodyDocument,
+  type CanonicalBodyNode,
+} from '../canonical-body-document';
+import {
   deriveCanonicalText,
   derivePrimaryContentKind,
 } from './mappers';
@@ -87,6 +97,90 @@ function isNumber(value: unknown): value is number {
 
 function isBoolean(value: unknown): value is boolean {
   return typeof value === 'boolean';
+}
+
+function validateBodyNode(node: CanonicalBodyNode, path: string): ValidationResult {
+  if (!node || typeof node !== 'object') {
+    return invalidValidation('CONTENT_CONTRACT_VIOLATION', 'body node must be an object.', path);
+  }
+
+  if (!isString(node.type)) {
+    return invalidValidation('CONTENT_CONTRACT_VIOLATION', 'body node requires type.', `${path}.type`);
+  }
+
+  const allowedTypes = new Set([
+    'paragraph',
+    'text',
+    'heading',
+    'bulletList',
+    'orderedList',
+    'listItem',
+    'taskList',
+    'taskItem',
+    'blockquote',
+    'codeBlock',
+    'horizontalRule',
+    'image',
+  ]);
+
+  if (!allowedTypes.has(node.type)) {
+    return invalidValidation('CONTENT_CONTRACT_VIOLATION', `Unsupported body node type ${node.type}.`, `${path}.type`);
+  }
+
+  if ('text' in node && node.text !== undefined && !isString(node.text)) {
+    return invalidValidation('CONTENT_CONTRACT_VIOLATION', 'body text nodes require string text.', `${path}.text`);
+  }
+
+  if ('marks' in node && node.marks !== undefined && !Array.isArray(node.marks)) {
+    return invalidValidation('CONTENT_CONTRACT_VIOLATION', 'body marks must be an array.', `${path}.marks`);
+  }
+
+  if (Array.isArray(node.marks)) {
+    const allowedMarks = new Set(['bold', 'italic', 'strike', 'code', 'link']);
+    for (let index = 0; index < node.marks.length; index += 1) {
+      const mark = node.marks[index];
+      if (!mark || typeof mark !== 'object' || !isString(mark.type) || !allowedMarks.has(mark.type)) {
+        return invalidValidation('CONTENT_CONTRACT_VIOLATION', 'Unsupported body mark.', `${path}.marks.${index}.type`);
+      }
+      if ('attrs' in mark && mark.attrs !== undefined && !isRecord(mark.attrs)) {
+        return invalidValidation('CONTENT_CONTRACT_VIOLATION', 'body mark attrs must be an object.', `${path}.marks.${index}.attrs`);
+      }
+    }
+  }
+
+  if ('attrs' in node && node.attrs !== undefined && !isRecord(node.attrs)) {
+    return invalidValidation('CONTENT_CONTRACT_VIOLATION', 'body node attrs must be an object.', `${path}.attrs`);
+  }
+
+  if ('content' in node && node.content !== undefined && !Array.isArray(node.content)) {
+    return invalidValidation('CONTENT_CONTRACT_VIOLATION', 'body node content must be an array.', `${path}.content`);
+  }
+
+  if (Array.isArray(node.content)) {
+    for (let index = 0; index < node.content.length; index += 1) {
+      const childValidation = validateBodyNode(node.content[index]!, `${path}.content.${index}`);
+      if (!childValidation.ok) {
+        return childValidation;
+      }
+    }
+  }
+
+  return okValidation();
+}
+
+export function validateCanonicalBody(body: CanonicalBodyDocument): ValidationResult {
+  if (!isCanonicalBodyDocument(body)) {
+    return invalidValidation('CONTENT_CONTRACT_VIOLATION', 'body must be a Tiptap doc node.', 'body');
+  }
+
+  for (let index = 0; index < body.content.length; index += 1) {
+    const validation = validateBodyNode(body.content[index]!, `body.content.${index}`);
+    if (!validation.ok) {
+      return validation;
+    }
+  }
+
+  return okValidation();
 }
 
 export function isBodyCapableNativeNodeType(value: unknown): value is 'shape' | 'text' | 'markdown' | 'sticky' {
@@ -188,10 +282,14 @@ export function validateCapabilityBag(capabilities: CapabilityBag): ValidationRe
 }
 
 export function isEditableNoteLikeRecord(
-  record: Pick<CanonicalObjectRecord, 'semanticRole' | 'contentBlocks' | 'content_blocks'>
+  record: Pick<CanonicalObjectRecord, 'semanticRole' | 'contentBlocks' | 'content_blocks' | 'body' | 'body_json'>
     & Partial<Pick<CanonicalObjectRecord, 'publicAlias'>>,
 ): boolean {
   const aliasEditable = record.publicAlias ? isEditableNoteAlias(record.publicAlias) : false;
+  const body = readCanonicalBody(record);
+  if (aliasEditable && body) {
+    return true;
+  }
   const contentBlocks = readContentBlocks(record);
   return aliasEditable || (Boolean(contentBlocks?.length) && (record.semanticRole === 'topic' || record.semanticRole === 'sticky-note'));
 }
@@ -220,6 +318,15 @@ export function seedEditableNoteContentBlocks(record: CanonicalObjectRecord): Ca
     return record;
   }
 
+  const body = readCanonicalBody(record);
+  if (body) {
+    return {
+      ...record,
+      body,
+      bodySchemaVersion: readCanonicalBodySchemaVersion(record) ?? CANONICAL_BODY_SCHEMA_VERSION,
+    };
+  }
+
   const contentBlocks = readContentBlocks(record);
   if (contentBlocks && contentBlocks.length > 0) {
     return {
@@ -234,7 +341,8 @@ export function seedEditableNoteContentBlocks(record: CanonicalObjectRecord): Ca
 
   return {
     ...record,
-    contentBlocks: [createEmptyTextBlock()],
+    body: createCanonicalBodyDocument([createBodyParagraphNode()]),
+    bodySchemaVersion: CANONICAL_BODY_SCHEMA_VERSION,
   };
 }
 
@@ -314,6 +422,21 @@ export function validateCanonicalObjectRecord(record: CanonicalObjectRecord): Pe
     return capabilityResult;
   }
 
+  const body = readCanonicalBody(record);
+  if (body) {
+    const bodyValidation = validateCanonicalBody(body);
+    const bodyResult = toPersistenceResult(bodyValidation, record);
+    if (!bodyResult.ok) {
+      return bodyResult;
+    }
+    const bodySchemaVersion = readCanonicalBodySchemaVersion(record);
+    if (bodySchemaVersion !== undefined && bodySchemaVersion !== CANONICAL_BODY_SCHEMA_VERSION) {
+      return errResult('CONTENT_CONTRACT_VIOLATION', `Unsupported body schema version ${bodySchemaVersion}.`, {
+        path: 'bodySchemaVersion',
+      });
+    }
+  }
+
   const blockValidation = validateContentBlocks(record);
   const blockResult = toPersistenceResult(blockValidation, record);
   if (!blockResult.ok) {
@@ -321,7 +444,7 @@ export function validateCanonicalObjectRecord(record: CanonicalObjectRecord): Pe
   }
 
   const contentBlocks = readContentBlocks(record);
-  if (contentBlocks && contentBlocks.length > 0 && record.capabilities.content) {
+  if (!body && contentBlocks && contentBlocks.length > 0 && record.capabilities.content) {
     return errResult('CONTENT_BODY_CONFLICT', 'contentBlocks and capabilities.content cannot both define note body truth.', {
       path: 'contentBlocks',
     });

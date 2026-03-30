@@ -73,7 +73,7 @@ export async function runObjectCommand(args: string[]): Promise<ResourceCommandR
         canvasRef: getOptionalStringFlag(parsed, 'document'),
       }, async (context) => {
         const objectId = getStringFlag(parsed, 'object');
-        const kind = getStringFlag(parsed, 'kind') as 'text' | 'markdown' | 'media' | 'sequence';
+        const kind = getStringFlag(parsed, 'kind') as 'text' | 'markdown' | 'media' | 'sequence' | 'document';
         const patch = normalizeObjectContentPatch(await readJsonValue(getStringFlag(parsed, 'patch'), 'object content patch'));
         return {
           data: await executeMutationBatch({

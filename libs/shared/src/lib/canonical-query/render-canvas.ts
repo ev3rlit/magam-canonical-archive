@@ -1,6 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { CanonicalObjectRecord, MediaContentCapability } from '../canonical-object-contract';
 import { readContentBlocks } from '../canonical-object-contract';
+import {
+  contentBlocksToCanonicalBody,
+  contentCapabilityToCanonicalBody,
+  getNodePlainText,
+  readCanonicalBody,
+  type CanonicalBodyNode,
+} from '../canonical-body-document';
 import type { HeadlessServiceContext } from '../canonical-cli';
 import {
   CanonicalPersistenceRepository,
@@ -85,6 +92,13 @@ function resolveFrameProps(
 }
 
 function resolveTextContent(objectRecord: CanonicalObjectRecord | null): string | undefined {
+  const body = readCanonicalBody(objectRecord ?? {});
+  if (body) {
+    return body.content
+      .map((node) => getNodePlainText(node))
+      .find((value) => value.length > 0);
+  }
+
   const content = objectRecord?.capabilities?.content;
   if (content?.kind === 'text') {
     return content.value;
@@ -100,6 +114,11 @@ function resolveTextContent(objectRecord: CanonicalObjectRecord | null): string 
 }
 
 function resolveMarkdownContent(objectRecord: CanonicalObjectRecord | null): string | undefined {
+  const body = readCanonicalBody(objectRecord ?? {});
+  if (body) {
+    return undefined;
+  }
+
   const content = objectRecord?.capabilities?.content;
   if (content?.kind === 'markdown') {
     return content.source;
@@ -122,7 +141,57 @@ function resolveMediaContent(objectRecord: CanonicalObjectRecord | null): MediaC
   return null;
 }
 
+function toRenderNodeFromBodyNode(node: CanonicalBodyNode): RenderNode[] {
+  switch (node.type) {
+    case 'paragraph':
+      return [{
+        type: 'text',
+        props: {
+          text: getNodePlainText(node),
+        },
+      }];
+    case 'heading':
+    case 'blockquote':
+    case 'codeBlock':
+    case 'bulletList':
+    case 'orderedList':
+    case 'taskList':
+      return [{
+        type: 'graph-markdown',
+        props: {
+          content: getNodePlainText(node),
+        },
+      }];
+    case 'horizontalRule':
+      return [{
+        type: 'graph-markdown',
+        props: {
+          content: '---',
+        },
+      }];
+    case 'image':
+      return [{
+        type: 'graph-image',
+        props: {
+          src: typeof node.attrs?.['src'] === 'string' ? node.attrs['src'] : '',
+          ...(typeof node.attrs?.['alt'] === 'string' ? { alt: node.attrs['alt'] } : {}),
+        },
+      }];
+    default:
+      return [];
+  }
+}
+
 function resolveBodyChildren(objectRecord: CanonicalObjectRecord | null): RenderNode[] {
+  const body = readCanonicalBody(objectRecord ?? {})
+    ?? ((readContentBlocks(objectRecord ?? {}) ?? []).length > 0
+      ? contentBlocksToCanonicalBody(readContentBlocks(objectRecord ?? {}) ?? [])
+      : null)
+    ?? (objectRecord?.capabilities.content ? contentCapabilityToCanonicalBody(objectRecord.capabilities.content) : null);
+  if (body) {
+    return body.content.flatMap(toRenderNodeFromBodyNode);
+  }
+
   const blocks = readContentBlocks(objectRecord ?? {}) ?? [];
   return blocks.flatMap((block): RenderNode[] => {
     if (block.blockType === 'markdown') {

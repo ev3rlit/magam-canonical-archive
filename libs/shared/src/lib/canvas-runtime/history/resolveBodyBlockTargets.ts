@@ -1,4 +1,11 @@
 import { readContentBlocks } from '../../canonical-object-contract';
+import {
+  contentBlocksToCanonicalBody,
+  contentCapabilityToCanonicalBody,
+  getBodyBlockIdAtIndex,
+  getTopLevelBodyNodes,
+  readCanonicalBody,
+} from '../../canonical-body-document';
 import type {
   BodyBlockPositionRefV1,
   BodyBlockTargetRefV1,
@@ -36,9 +43,18 @@ export function resolveBodyBlockTarget(input: {
   objectRecord: Parameters<typeof readContentBlocks>[0];
   target: BodyBlockTargetRefV1;
 }): ResolvedBodyBlockTarget {
-  const blocks = readContentBlocks(input.objectRecord) ?? [];
+  const legacyBlocks = readContentBlocks(input.objectRecord) ?? [];
+  const body = readCanonicalBody(input.objectRecord)
+    ?? (legacyBlocks.length > 0 ? contentBlocksToCanonicalBody(legacyBlocks) : null)
+    ?? ('capabilities' in input.objectRecord && input.objectRecord.capabilities?.content
+      ? contentCapabilityToCanonicalBody(input.objectRecord.capabilities.content)
+      : null);
+  const blockIds = body
+    ? getTopLevelBodyNodes(body).map((_, index) => getBodyBlockIdAtIndex(index))
+    : legacyBlocks.map((block, index) => block.id ?? getBodyBlockIdAtIndex(index));
   if (input.target.mode === 'index') {
-    const block = blocks[input.target.index];
+    const blockId = blockIds[input.target.index];
+    const block = blockId ? { id: blockId } : null;
     if (!block) {
       throw new Error(`Body block index ${input.target.index} was not found.`);
     }
@@ -53,12 +69,12 @@ export function resolveBodyBlockTarget(input: {
     if (!parsed) {
       throw new Error(`Unsupported body selection key ${input.target.selectionKey}.`);
     }
-    const block = blocks.find((candidate) => candidate.id === parsed.blockId);
+    const block = blockIds.find((candidate) => candidate === parsed.blockId);
     if (!block) {
       throw new Error(`Body block ${parsed.blockId} was not found.`);
     }
     return {
-      blockId: block.id,
+      blockId: block,
       index: parsed.index,
     };
   }
@@ -67,7 +83,7 @@ export function resolveBodyBlockTarget(input: {
   if (!parsed) {
     throw new Error(`Unsupported body anchor ${input.target.anchorId}.`);
   }
-  const index = blocks.findIndex((candidate) => candidate.id === parsed.blockId);
+  const index = blockIds.findIndex((candidate) => candidate === parsed.blockId);
   if (index < 0) {
     throw new Error(`Body block ${parsed.blockId} was not found.`);
   }
@@ -81,21 +97,29 @@ export function resolveBodyBlockPosition(input: {
   objectRecord: Parameters<typeof readContentBlocks>[0];
   position: BodyBlockPositionRefV1;
 }): { resolved: ResolvedBodyBlockPositionV1; index: number } {
-  const blocks = readContentBlocks(input.objectRecord) ?? [];
+  const legacyBlocks = readContentBlocks(input.objectRecord) ?? [];
+  const body = readCanonicalBody(input.objectRecord)
+    ?? (legacyBlocks.length > 0 ? contentBlocksToCanonicalBody(legacyBlocks) : null)
+    ?? ('capabilities' in input.objectRecord && input.objectRecord.capabilities?.content
+      ? contentCapabilityToCanonicalBody(input.objectRecord.capabilities.content)
+      : null);
+  const blockIds = body
+    ? getTopLevelBodyNodes(body).map((_, index) => getBodyBlockIdAtIndex(index))
+    : legacyBlocks.map((block, index) => block.id ?? getBodyBlockIdAtIndex(index));
   if (input.position.mode === 'start') {
     return { resolved: { mode: 'start' }, index: 0 };
   }
   if (input.position.mode === 'end') {
-    return { resolved: { mode: 'end' }, index: blocks.length };
+    return { resolved: { mode: 'end' }, index: blockIds.length };
   }
   if (input.position.mode === 'index') {
-    const index = Math.max(0, Math.min(input.position.index, blocks.length));
+    const index = Math.max(0, Math.min(input.position.index, blockIds.length));
     if (index === 0) {
       return { resolved: { mode: 'start' }, index };
     }
-    const previous = blocks[index - 1];
+    const previous = blockIds[index - 1];
     return previous
-      ? { resolved: { mode: 'after-block', blockId: previous.id }, index }
+      ? { resolved: { mode: 'after-block', blockId: previous }, index }
       : { resolved: { mode: 'start' }, index };
   }
   if (input.position.mode === 'selection') {
@@ -113,7 +137,7 @@ export function resolveBodyBlockPosition(input: {
   if (!parsed) {
     throw new Error(`Unsupported body anchor ${input.position.anchorId}.`);
   }
-  const index = blocks.findIndex((candidate) => candidate.id === parsed.blockId);
+  const index = blockIds.findIndex((candidate) => candidate === parsed.blockId);
   if (index < 0) {
     throw new Error(`Body block ${parsed.blockId} was not found.`);
   }

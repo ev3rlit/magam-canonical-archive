@@ -7,8 +7,8 @@ const shortcutCommands: Record<ShortcutCommandId, ShortcutCommandDefinition> = {
     preventDefault: false,
     execute: () => {
       const state = useEditorStore.getState();
-      if (state.overlays.blockEditor) {
-        state.cancelBlockEdit();
+      if (state.overlays.isBodyEditorOpen) {
+        state.closeBodyEditor();
         return;
       }
       state.setTemporaryToolOverride(null);

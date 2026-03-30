@@ -1,5 +1,12 @@
 import { readContentBlocks } from '../../canonical-object-contract';
 import type { CanonicalObjectRecord } from '../../canonical-object-contract';
+import {
+  contentBlocksToCanonicalBody,
+  contentCapabilityToCanonicalBody,
+  getBodyBlockIdAtIndex,
+  getTopLevelBodyNodes,
+  readCanonicalBody,
+} from '../../canonical-body-document';
 import type {
   CanvasEditingProjectionRequestV1,
   CanvasEditingProjectionResponseV1,
@@ -41,7 +48,10 @@ function deriveInteractionCapabilities(input: {
   }
 
   const bodyBlocks = readContentBlocks(input.objectRecord ?? {}) ?? [];
-  const bodyEntrySupported = bodyBlocks.length > 0 || input.objectRecord?.primaryContentKind === 'text' || input.objectRecord?.primaryContentKind === 'markdown';
+  const body = readCanonicalBody(input.objectRecord ?? {})
+    ?? (bodyBlocks.length > 0 ? contentBlocksToCanonicalBody(bodyBlocks) : null)
+    ?? (input.objectRecord?.capabilities.content ? contentCapabilityToCanonicalBody(input.objectRecord.capabilities.content) : null);
+  const bodyEntrySupported = Boolean(body) || input.objectRecord?.primaryContentKind === 'document';
 
   return {
     selectable: true,
@@ -85,6 +95,7 @@ function deriveAllowedCommands(input: {
     commands.push('object.capability.patch');
   }
   if (input.capabilities.bodyEntrySupported && input.canonicalObjectId) {
+    commands.push('object.body.replace');
     commands.push('object.body.block.insert');
     commands.push('object.body.block.update');
     commands.push('object.body.block.remove');
@@ -110,6 +121,29 @@ function toBodyBlockKind(blockType: string): import('../contracts').BodyBlockKin
   }
 }
 
+function toBodyBlockKindFromNode(nodeType: string): import('../contracts').BodyBlockKindV1 {
+  switch (nodeType) {
+    case 'paragraph':
+      return 'paragraph';
+    case 'heading':
+      return 'heading';
+    case 'bulletList':
+    case 'orderedList':
+    case 'taskList':
+      return 'checklist';
+    case 'blockquote':
+      return 'quote';
+    case 'codeBlock':
+      return 'code';
+    case 'horizontalRule':
+      return 'divider';
+    case 'image':
+      return 'image';
+    default:
+      return 'custom';
+  }
+}
+
 function previewTextForBlock(block: NonNullable<ReturnType<typeof readContentBlocks>>[number] | undefined): string | null {
   if (!block) {
     return null;
@@ -129,7 +163,9 @@ export async function buildEditingProjection(
 ): Promise<CanvasEditingProjectionResponseV1> {
   const workspaceId = request.workspaceId ?? context.headless.defaultWorkspaceId;
   const allNodes = await context.repository.listCanvasNodes(request.canvasId, request.surfaceId);
-  const canvasRevision = await context.repository.getLatestCanvasRevision(request.canvasId);
+  const canvasRevision = typeof context.repository.getLatestCanvasRevision === 'function'
+    ? await context.repository.getLatestCanvasRevision(request.canvasId)
+    : 0;
   const nodes = request.nodeIds?.length
     ? allNodes.filter((node) => request.nodeIds?.includes(node.id))
     : allNodes;
@@ -144,6 +180,10 @@ export async function buildEditingProjection(
     nodes: nodes.map((node) => {
       const objectRecord = node.canonicalObjectId ? objectsById.get(node.canonicalObjectId) ?? null : null;
       const bodyBlocks = readContentBlocks(objectRecord ?? {}) ?? [];
+      const body = readCanonicalBody(objectRecord ?? {})
+        ?? (bodyBlocks.length > 0 ? contentBlocksToCanonicalBody(bodyBlocks) : null)
+        ?? (objectRecord?.capabilities.content ? contentCapabilityToCanonicalBody(objectRecord.capabilities.content) : null);
+      const topLevelNodes = body ? getTopLevelBodyNodes(body) : [];
       const locked = node.props?.['locked'] === true;
       const interactionCapabilities = deriveInteractionCapabilities({
         nodeKind: node.nodeKind,
@@ -170,10 +210,14 @@ export async function buildEditingProjection(
           supported: interactionCapabilities.bodyEntrySupported,
           targetObjectId: node.canonicalObjectId ?? null,
           preferredCommandName: interactionCapabilities.bodyEntrySupported
-            ? (bodyBlocks.length > 0 ? 'object.body.block.insert' : 'object.content.update')
+            ? 'object.body.replace'
             : null,
           mode: interactionCapabilities.bodyEntrySupported ? 'object-body' : null,
         },
+        body: body ?? null,
+        bodySource: body
+          ? (readCanonicalBody(objectRecord ?? {}) ? 'native' : 'legacy-converted')
+          : null,
         anchors: [
           {
             anchorId: createAnchorId(node.id, 'shell'),
@@ -189,43 +233,49 @@ export async function buildEditingProjection(
             surfaceId: node.surfaceId,
             canonicalObjectId: node.canonicalObjectId ?? null,
           },
-          ...bodyBlocks.flatMap((block) => ([
+          ...topLevelNodes.flatMap((block, index) => {
+            const blockId = getBodyBlockIdAtIndex(index);
+            return ([
             {
-              anchorId: createAnchorId(node.id, 'body-before', block.id),
+              anchorId: createAnchorId(node.id, 'body-before', blockId),
               anchorKind: 'body-block-before' as const,
               nodeId: node.id,
               surfaceId: node.surfaceId,
               canonicalObjectId: node.canonicalObjectId ?? null,
-              bodyBlockId: block.id,
+              bodyBlockId: blockId,
             },
             {
-              anchorId: createAnchorId(node.id, 'body-content', block.id),
+              anchorId: createAnchorId(node.id, 'body-content', blockId),
               anchorKind: 'body-block-content' as const,
               nodeId: node.id,
               surfaceId: node.surfaceId,
               canonicalObjectId: node.canonicalObjectId ?? null,
-              bodyBlockId: block.id,
+              bodyBlockId: blockId,
             },
             {
-              anchorId: createAnchorId(node.id, 'body-after', block.id),
+              anchorId: createAnchorId(node.id, 'body-after', blockId),
               anchorKind: 'body-block-after' as const,
               nodeId: node.id,
               surfaceId: node.surfaceId,
               canonicalObjectId: node.canonicalObjectId ?? null,
-              bodyBlockId: block.id,
+              bodyBlockId: blockId,
             },
-          ])),
+          ]);
+          }),
         ],
-        bodyBlocks: bodyBlocks.map((block, index) => ({
-          blockId: block.id,
-          kind: toBodyBlockKind(block.blockType),
+        bodyBlocks: topLevelNodes.map((block, index) => {
+          const blockId = getBodyBlockIdAtIndex(index);
+          return ({
+          blockId,
+          kind: toBodyBlockKindFromNode(block.type),
           index,
-          selectionKey: createBodySelectionKey(node.canonicalObjectId ?? node.id, block.id, index),
-          contentAnchorId: createAnchorId(node.id, 'body-content', block.id),
-          beforeAnchorId: createAnchorId(node.id, 'body-before', block.id),
-          afterAnchorId: createAnchorId(node.id, 'body-after', block.id),
-          previewText: previewTextForBlock(block),
-        })),
+          selectionKey: createBodySelectionKey(node.canonicalObjectId ?? node.id, blockId, index),
+          contentAnchorId: createAnchorId(node.id, 'body-content', blockId),
+          beforeAnchorId: createAnchorId(node.id, 'body-before', blockId),
+          afterAnchorId: createAnchorId(node.id, 'body-after', blockId),
+          previewText: previewTextForBlock(bodyBlocks[index]),
+        });
+        }),
         selectedBodyBlockId: null,
       };
     }),

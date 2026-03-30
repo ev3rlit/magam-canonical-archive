@@ -162,7 +162,7 @@ async function applyOperation(input: {
 
       const next = applyObjectBodyReplace({
         record: current.value,
-        blocks: operation.blocks,
+        body: operation.body,
       });
       if (apply) {
         await persistObjectRecord(context, next);

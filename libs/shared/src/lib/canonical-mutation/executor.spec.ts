@@ -264,15 +264,16 @@ describe('headless mutation executor', () => {
     const objectRecord = await context.repository.getCanonicalObject('ws-1', 'shape-root-1');
     expect(objectRecord.ok).toBe(true);
     if (objectRecord.ok) {
-      expect(objectRecord.value.contentBlocks).toEqual([
-        {
-          id: 'body-1',
-          blockType: 'markdown',
-          source: '# New root',
-        },
-      ]);
-      expect(objectRecord.value.primaryContentKind).toBe('markdown');
-      expect(objectRecord.value.canonicalText).toBe('# New root');
+      expect(objectRecord.value.body).toEqual({
+        type: 'doc',
+        content: [{
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'New root' }],
+        }],
+      });
+      expect(objectRecord.value.primaryContentKind).toBe('document');
+      expect(objectRecord.value.canonicalText).toBe('New root');
     }
 
     const nodeRecord = await context.repository.getCanvasNode('doc-create-1', 'shape-root-1');
@@ -382,10 +383,13 @@ describe('headless mutation executor', () => {
     const objectRecord = await context.repository.getCanonicalObject('ws-1', 'child-1');
     expect(objectRecord.ok).toBe(true);
     if (objectRecord.ok) {
-      expect(objectRecord.value.contentBlocks).toEqual([
-        { id: 'body-1', blockType: 'markdown', source: 'child' },
-        { id: 'body-2', blockType: 'markdown', source: 'second' },
-      ]);
+      expect(objectRecord.value.body).toEqual({
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: 'child' }] },
+          { type: 'paragraph', content: [{ type: 'text', text: 'second' }] },
+        ],
+      });
     }
 
     await handle.close();

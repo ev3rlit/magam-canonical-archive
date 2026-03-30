@@ -1,4 +1,5 @@
 import type { ContentBlock, ContentKind, CanonicalCapabilityKey } from '../canonical-object-contract';
+import type { CanonicalBodyDocument } from '../canonical-body-document';
 
 export interface MutationActor {
   kind: 'agent' | 'user' | 'system';
@@ -27,7 +28,7 @@ export interface ObjectCapabilityPatchOperation {
 export interface ObjectBodyReplaceOperation {
   op: 'object.body.replace';
   objectId: string;
-  blocks: ContentBlock[];
+  body: CanonicalBodyDocument;
 }
 
 export interface ObjectBodyBlockInsertOperation {

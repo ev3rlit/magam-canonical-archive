@@ -174,14 +174,17 @@ describe('canonical-persistence validators', () => {
     }
   });
 
-  it('seeds an empty text block for editable notes with no initial body', () => {
+  it('seeds an empty document body for editable notes with no initial body', () => {
     const seeded = seedEditableNoteContentBlocks(buildBaseRecord({
       contentBlocks: undefined,
-      primaryContentKind: 'text',
+      primaryContentKind: 'document',
       canonicalText: '',
     }));
 
-    expect(seeded.contentBlocks).toEqual([createEmptyTextBlock()]);
+    expect(seeded.body).toEqual({
+      type: 'doc',
+      content: [{ type: 'paragraph' }],
+    });
   });
 
   it('provides a markdown-first block seed helper for body-capable create flows', () => {

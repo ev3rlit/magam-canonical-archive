@@ -2,6 +2,7 @@
 
 import clsx from 'clsx';
 import { useEffect, useRef, type Ref } from 'react';
+import { getBodyPlainText } from '@/core/editor/model/editor-body';
 import { useEditorStore } from '@/core/editor/model/editor-store';
 import type { EditorCanvasObject } from '@/core/editor/model/editor-types';
 import { WidgetBase } from '@/shared/ui/WidgetBase';
@@ -40,20 +41,14 @@ function PropertyField({
 
 function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
   const focusRequest = useEditorStore((state) => state.overlays.focusRequest);
-  const blockSelection = useEditorStore((state) => state.overlays.blockSelection);
   const clearFocusRequest = useEditorStore((state) => state.clearFocusRequest);
-  const insertBlock = useEditorStore((state) => state.insertBlock);
-  const selectBlock = useEditorStore((state) => state.selectBlock);
-  const startBlockEdit = useEditorStore((state) => state.startBlockEdit);
+  const openBodyEditor = useEditorStore((state) => state.openBodyEditor);
   const updateObjectField = useEditorStore((state) => state.updateObjectField);
   const updateObjectPatch = useEditorStore((state) => state.updateObjectPatch);
   const ungroupSelection = useEditorStore((state) => state.ungroupSelection);
   const fillSectionRef = useRef<HTMLDivElement | null>(null);
   const borderSectionRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
-  const selectedBlock = blockSelection?.objectId === object.id
-    ? object.contentBlocks.find((block) => block.id === blockSelection.blockId) ?? null
-    : null;
 
   useEffect(() => {
     if (
@@ -171,44 +166,12 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
         {object.kind !== 'group' ? (
           <>
             <p className="inspector-copy">
-              {object.contentBlocks.length} block{object.contentBlocks.length === 1 ? '' : 's'}
-              {selectedBlock ? ` selected: ${selectedBlock.blockType}` : ''}
+              {object.body.content.length} document block{object.body.content.length === 1 ? '' : 's'}
             </p>
-            <div className="inspector-actions">
-              <button
-                className="inspector-action"
-                onClick={() => insertBlock(object.id, 'markdown', selectedBlock?.id ?? null)}
-                type="button"
-              >
-                Add markdown
-              </button>
-              <button
-                className="inspector-action"
-                onClick={() => insertBlock(object.id, 'text', selectedBlock?.id ?? null)}
-                type="button"
-              >
-                Add text
-              </button>
-              <button
-                className="inspector-action"
-                onClick={() => insertBlock(object.id, 'image', selectedBlock?.id ?? null)}
-                type="button"
-              >
-                Add image
-              </button>
-              {object.contentBlocks[0] ? (
-                <button
-                  className="inspector-action"
-                  onClick={() => {
-                    selectBlock(object.id, selectedBlock?.id ?? object.contentBlocks[0]!.id);
-                    startBlockEdit(object.id, selectedBlock?.id ?? object.contentBlocks[0]!.id);
-                  }}
-                  type="button"
-                >
-                  Edit on canvas
-                </button>
-              ) : null}
-            </div>
+            <p className="inspector-copy">{getBodyPlainText(object.body) || 'Empty body'}</p>
+            <button className="inspector-action" onClick={() => openBodyEditor(object.id)} type="button">
+              Edit on canvas
+            </button>
           </>
         ) : null}
         {object.kind === 'group' ? (

@@ -142,7 +142,7 @@ export function CanvasSelectionLayer() {
   const selection = useEditorStore((state) => state.selection);
   const viewport = useEditorStore((state) => state.viewport);
   const contextMenu = useEditorStore((state) => state.overlays.contextMenu);
-  const blockEditor = useEditorStore((state) => state.overlays.blockEditor);
+  const isBodyEditorOpen = useEditorStore((state) => state.overlays.isBodyEditorOpen);
   const commitHistoryEntry = useEditorStore((state) => state.commitHistoryEntry);
   const captureHistorySnapshot = useEditorStore((state) => state.captureHistorySnapshot);
   const resizeSelection = useEditorStore((state) => state.resizeSelection);
@@ -223,7 +223,7 @@ export function CanvasSelectionLayer() {
   const selectionFrame = getSelectionTransformFrame(selection, objects);
   const screenFrame = selectionFrame ? screenFrameFromWorld(selectionFrame, viewport) : null;
   const hasLockedSelection = selection.ids.some((id) => objects.find((object) => object.id === id)?.locked);
-  const showHandles = Boolean(selectionFrame && !hasLockedSelection && !contextMenu && !blockEditor);
+  const showHandles = Boolean(selectionFrame && !hasLockedSelection && !contextMenu && !isBodyEditorOpen);
   const singleSelection = selection.ids.length === 1;
 
   return (

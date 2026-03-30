@@ -10,6 +10,22 @@ import { cloneContentBlocks, readContentBlocks } from '../canonical-object-contr
 import { cliError, persistenceFailureToCliError } from '../canonical-cli';
 import { deriveCanonicalText, derivePrimaryContentKind } from '../canonical-persistence/mappers';
 import { validateCanonicalObjectRecord } from '../canonical-persistence/validators';
+import {
+  CANONICAL_BODY_SCHEMA_VERSION,
+  contentBlocksToCanonicalBody,
+  contentCapabilityToCanonicalBody,
+  createBodyImageNode,
+  createBodyParagraphNode,
+  createCanonicalBodyDocument,
+  insertTopLevelBodyNode,
+  markdownToCanonicalBody,
+  readCanonicalBody,
+  removeTopLevelBodyNode,
+  reorderTopLevelBodyNode,
+  replaceTopLevelBodyNode,
+  type CanonicalBodyDocument,
+  type CanonicalBodyNode,
+} from '../canonical-body-document';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -21,37 +37,6 @@ function ensureRecord(value: unknown, message: string): Record<string, unknown> 
   }
 
   return value;
-}
-
-function toSingleBlock(
-  blockType: 'text' | 'markdown',
-  patch: Record<string, unknown>,
-  existingId: string,
-): ContentBlock {
-  if (blockType === 'text') {
-    const text = typeof patch['value'] === 'string'
-      ? patch['value']
-      : typeof patch['text'] === 'string'
-        ? patch['text']
-        : '';
-    return {
-      id: existingId,
-      blockType: 'text',
-      text,
-    };
-  }
-
-  const source = typeof patch['source'] === 'string'
-    ? patch['source']
-    : typeof patch['value'] === 'string'
-      ? patch['value']
-      : '';
-
-  return {
-    id: existingId,
-    blockType: 'markdown',
-    source,
-  };
 }
 
 function toDirectContent(kind: Exclude<ContentKind, 'text' | 'markdown'>, patch: Record<string, unknown>): ContentCapability {
@@ -75,6 +60,90 @@ function toDirectContent(kind: Exclude<ContentKind, 'text' | 'markdown'>, patch:
     participants: Array.isArray(patch['participants']) ? patch['participants'] : [],
     messages: Array.isArray(patch['messages']) ? patch['messages'] : [],
   };
+}
+
+function resolveBody(record: CanonicalObjectRecord): CanonicalBodyDocument {
+  const existing = readCanonicalBody(record);
+  if (existing) {
+    return existing;
+  }
+
+  const contentBlocks = cloneContentBlocks(readContentBlocks(record));
+  if (contentBlocks && contentBlocks.length > 0) {
+    return contentBlocksToCanonicalBody(contentBlocks);
+  }
+
+  if (record.capabilities.content) {
+    return contentCapabilityToCanonicalBody(record.capabilities.content) ?? createCanonicalBodyDocument();
+  }
+
+  return createCanonicalBodyDocument();
+}
+
+function toBodyNodeFromLegacyBlock(block: ContentBlock): CanonicalBodyNode {
+  if (block.blockType === 'text') {
+    return createBodyParagraphNode(block.text);
+  }
+
+  if (block.blockType === 'markdown') {
+    return markdownToCanonicalBody(block.source).content[0] ?? createBodyParagraphNode();
+  }
+
+  const payload = isRecord(block.payload) ? block.payload : {};
+  if (block.blockType.includes('image')) {
+    return createBodyImageNode({
+      src: typeof payload['src'] === 'string' ? payload['src'] : '',
+      alt: typeof payload['alt'] === 'string' ? payload['alt'] : '',
+    });
+  }
+
+  return createBodyParagraphNode(typeof block.textualProjection === 'string' ? block.textualProjection : '');
+}
+
+function applyLegacyPatchToBodyNode(
+  current: CanonicalBodyNode,
+  patch: Record<string, unknown>,
+): CanonicalBodyNode {
+  if (typeof patch['source'] === 'string') {
+    return markdownToCanonicalBody(patch['source']).content[0] ?? createBodyParagraphNode();
+  }
+
+  if (typeof patch['text'] === 'string' || typeof patch['value'] === 'string') {
+    const text = typeof patch['text'] === 'string' ? patch['text'] : patch['value'] as string;
+    if (current.type === 'heading') {
+      return {
+        type: 'heading',
+        ...(current.attrs ? { attrs: { ...current.attrs } } : { attrs: { level: 1 } }),
+        content: text.length > 0 ? [{ type: 'text', text }] : [],
+      };
+    }
+    return createBodyParagraphNode(text);
+  }
+
+  if (current.type === 'image') {
+    return {
+      type: 'image',
+      attrs: {
+        ...(current.attrs ?? {}),
+        ...(typeof patch['src'] === 'string' ? { src: patch['src'] } : {}),
+        ...(typeof patch['alt'] === 'string' ? { alt: patch['alt'] } : {}),
+      },
+    };
+  }
+
+  return current;
+}
+
+function applyDocumentPatch(patch: Record<string, unknown>): CanonicalBodyDocument {
+  if (patch['body'] && typeof patch['body'] === 'object') {
+    return patch['body'] as CanonicalBodyDocument;
+  }
+
+  if (typeof patch['value'] === 'string') {
+    return createCanonicalBodyDocument([createBodyParagraphNode(patch['value'])]);
+  }
+
+  return createCanonicalBodyDocument();
 }
 
 function commitNextRecord(
@@ -116,15 +185,34 @@ export function applyObjectContentUpdate(input: {
     capabilities: { ...record.capabilities },
   };
 
-  if (kind === 'text' || kind === 'markdown') {
-    const existingBlocks = cloneContentBlocks(readContentBlocks(record)) ?? [];
-    const firstBlockId = existingBlocks[0]?.id ?? 'body-1';
+  if (kind === 'document' || kind === 'text' || kind === 'markdown') {
     delete next.capabilities.content;
-    next.contentBlocks = Array.isArray(patch['contentBlocks'])
-      ? cloneContentBlocks(patch['contentBlocks'] as ContentBlock[]) ?? []
-      : [toSingleBlock(kind, patch, firstBlockId)];
+    delete next.contentBlocks;
+    delete next.content_blocks;
+    next.body = kind === 'document'
+      ? applyDocumentPatch(patch)
+      : kind === 'text'
+        ? createCanonicalBodyDocument([
+            createBodyParagraphNode(
+              typeof patch['value'] === 'string'
+                ? patch['value']
+                : typeof patch['text'] === 'string'
+                  ? patch['text']
+                  : '',
+            ),
+          ])
+        : markdownToCanonicalBody(
+            typeof patch['source'] === 'string'
+              ? patch['source']
+              : typeof patch['value'] === 'string'
+                ? patch['value']
+                : '',
+          );
+    next.bodySchemaVersion = CANONICAL_BODY_SCHEMA_VERSION;
   } else {
     next.capabilities.content = toDirectContent(kind, patch);
+    delete next.body;
+    delete next.bodySchemaVersion;
     delete next.contentBlocks;
     delete next.content_blocks;
   }
@@ -166,16 +254,19 @@ export function applyObjectCapabilityPatch(input: {
 
 export function applyObjectBodyReplace(input: {
   record: CanonicalObjectRecord;
-  blocks: ContentBlock[];
+  body: CanonicalBodyDocument;
 }): CanonicalObjectRecord {
   const next: CanonicalObjectRecord = {
     ...input.record,
     capabilities: {
       ...input.record.capabilities,
     },
-    contentBlocks: cloneContentBlocks(input.blocks) ?? [],
+    body: input.body,
+    bodySchemaVersion: CANONICAL_BODY_SCHEMA_VERSION,
   };
   delete next.capabilities.content;
+  delete next.contentBlocks;
+  delete next.content_blocks;
   return withNormalizedContent(input.record, next);
 }
 
@@ -185,19 +276,18 @@ export function applyObjectBodyBlockInsert(input: {
   index?: number;
   afterBlockId?: string;
 }): CanonicalObjectRecord {
-  const blocks = cloneContentBlocks(readContentBlocks(input.record)) ?? [];
+  const body = resolveBody(input.record);
   const anchorIndex = typeof input.afterBlockId === 'string'
-    ? blocks.findIndex((block) => block.id === input.afterBlockId)
+    ? Number.parseInt(input.afterBlockId.replace(/^body-/, ''), 10) - 1
     : -1;
   const index = typeof input.index === 'number'
-    ? Math.max(0, Math.min(input.index, blocks.length))
+    ? Math.max(0, Math.min(input.index, body.content.length))
     : anchorIndex >= 0
       ? anchorIndex + 1
-      : blocks.length;
-  blocks.splice(index, 0, cloneContentBlocks([input.block])![0]);
+      : body.content.length;
   return applyObjectBodyReplace({
     record: input.record,
-    blocks,
+    body: insertTopLevelBodyNode(body, index, toBodyNodeFromLegacyBlock(input.block)),
   });
 }
 
@@ -206,37 +296,17 @@ export function applyObjectBodyBlockUpdate(input: {
   blockId: string;
   patch: Record<string, unknown>;
 }): CanonicalObjectRecord {
-  const blocks = cloneContentBlocks(readContentBlocks(input.record)) ?? [];
-  const index = blocks.findIndex((block) => block.id === input.blockId);
-  if (index < 0) {
+  const body = resolveBody(input.record);
+  const index = Number.parseInt(input.blockId.replace(/^body-/, ''), 10) - 1;
+  if (index < 0 || index >= body.content.length) {
     throw cliError('INVALID_ARGUMENT', `Content block ${input.blockId} was not found.`, {
       details: { blockId: input.blockId },
     });
   }
 
-  const current = blocks[index];
-  if (current.blockType === 'text') {
-    blocks[index] = {
-      ...current,
-      ...(typeof input.patch['text'] === 'string' ? { text: input.patch['text'] } : {}),
-    };
-  } else if (current.blockType === 'markdown') {
-    blocks[index] = {
-      ...current,
-      ...(typeof input.patch['source'] === 'string' ? { source: input.patch['source'] } : {}),
-    };
-  } else {
-    blocks[index] = {
-      ...current,
-      ...(isRecord(input.patch['payload']) ? { payload: input.patch['payload'] } : {}),
-      ...(typeof input.patch['textualProjection'] === 'string' ? { textualProjection: input.patch['textualProjection'] } : {}),
-      ...(isRecord(input.patch['metadata']) ? { metadata: input.patch['metadata'] } : {}),
-    };
-  }
-
   return applyObjectBodyReplace({
     record: input.record,
-    blocks,
+    body: replaceTopLevelBodyNode(body, index, applyLegacyPatchToBodyNode(body.content[index]!, input.patch)),
   });
 }
 
@@ -244,11 +314,11 @@ export function applyObjectBodyBlockRemove(input: {
   record: CanonicalObjectRecord;
   blockId: string;
 }): CanonicalObjectRecord {
-  const blocks = (cloneContentBlocks(readContentBlocks(input.record)) ?? [])
-    .filter((block) => block.id !== input.blockId);
+  const body = resolveBody(input.record);
+  const index = Number.parseInt(input.blockId.replace(/^body-/, ''), 10) - 1;
   return applyObjectBodyReplace({
     record: input.record,
-    blocks,
+    body: removeTopLevelBodyNode(body, index),
   });
 }
 
@@ -257,20 +327,16 @@ export function applyObjectBodyBlockReorder(input: {
   blockId: string;
   toIndex: number;
 }): CanonicalObjectRecord {
-  const blocks = cloneContentBlocks(readContentBlocks(input.record)) ?? [];
-  const index = blocks.findIndex((block) => block.id === input.blockId);
-  if (index < 0) {
+  const body = resolveBody(input.record);
+  const index = Number.parseInt(input.blockId.replace(/^body-/, ''), 10) - 1;
+  if (index < 0 || index >= body.content.length) {
     throw cliError('INVALID_ARGUMENT', `Content block ${input.blockId} was not found.`, {
       details: { blockId: input.blockId },
     });
   }
-
-  const [block] = blocks.splice(index, 1);
-  const toIndex = Math.max(0, Math.min(input.toIndex, blocks.length));
-  blocks.splice(toIndex, 0, block);
   return applyObjectBodyReplace({
     record: input.record,
-    blocks,
+    body: reorderTopLevelBodyNode(body, index, input.toIndex),
   });
 }
 

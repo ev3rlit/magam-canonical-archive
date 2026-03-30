@@ -158,6 +158,7 @@ export interface CanonicalObjectAggregateV1 {
   objectId: CanonicalObjectIdV1;
   content: CanonicalObjectContentV1;
   capabilities: CanonicalObjectCapabilityV1[];
+  body?: CanonicalBodyDocument;
   bodyBlocks: BodyBlockEntityV1[];
 }
 
@@ -183,3 +184,4 @@ export interface CanvasDomainEventMetaV1 {
   mutationId?: MutationIdV1;
   causedByCommandName?: string;
 }
+import type { CanonicalBodyDocument } from '../../canonical-body-document';

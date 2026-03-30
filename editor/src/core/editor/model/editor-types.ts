@@ -1,9 +1,8 @@
+import type { EditorBodyDocument } from './editor-body';
+
 export type EditorTool = 'select' | 'pan' | 'shape' | 'sticky' | 'text' | 'image' | 'frame';
 
 export type EditorPanelId = 'outliner' | 'inspector';
-
-export type EditorContentBlockType = 'text' | 'markdown' | 'canvas.image';
-export type EditorBlockPaletteType = 'markdown' | 'text' | 'image';
 
 export type EditorCanvasObjectKind =
   | 'shape'
@@ -17,30 +16,6 @@ export type EditorFillPreset = 'iris' | 'sky' | 'mint' | 'amber' | 'blush' | 'sl
 export type EditorShapeVariant = 'rectangle' | 'rounded' | 'pill' | 'diamond';
 export type EditorOutlinePreset = 'none' | 'thin' | 'medium' | 'dashed';
 export type EditorFocusableField = 'name' | 'fill' | 'border';
-
-export interface EditorTextContentBlock {
-  id: string;
-  blockType: 'text';
-  text: string;
-}
-
-export interface EditorMarkdownContentBlock {
-  id: string;
-  blockType: 'markdown';
-  source: string;
-}
-
-export interface EditorImageContentBlock {
-  id: string;
-  blockType: 'canvas.image';
-  src: string;
-  alt: string;
-}
-
-export type EditorContentBlock =
-  | EditorTextContentBlock
-  | EditorMarkdownContentBlock
-  | EditorImageContentBlock;
 
 export interface EditorViewportState {
   x: number;
@@ -68,7 +43,7 @@ export interface EditorCanvasObject {
   outlinePreset: EditorOutlinePreset;
   outlineColor: string;
   shapeVariant?: EditorShapeVariant;
-  contentBlocks: EditorContentBlock[];
+  body: EditorBodyDocument;
 }
 
 export interface EditorBounds {
@@ -115,21 +90,12 @@ export interface EditorFocusRequest {
   requestId: number;
 }
 
-export interface EditorBlockSelectionState {
-  objectId: string;
-  blockId: string | null;
-}
-
-export interface EditorBlockEditorState {
-  objectId: string;
-  blockId: string;
-}
-
 export interface EditorOverlayState {
   contextMenu: EditorContextMenuState | null;
   focusRequest: EditorFocusRequest | null;
-  blockSelection: EditorBlockSelectionState | null;
-  blockEditor: EditorBlockEditorState | null;
+  activeBodyEditorObjectId: string | null;
+  isBodyEditorOpen: boolean;
+  bodyEditorPendingText: string | null;
 }
 
 export interface EditorSceneState {

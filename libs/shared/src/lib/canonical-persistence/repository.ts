@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import type { CanonicalObjectRecord } from '../canonical-object-contract';
 import { cloneContentBlocks, isSemanticRole, readContentBlocks } from '../canonical-object-contract';
+import { cloneCanonicalBodyDocument, readCanonicalBody } from '../canonical-body-document';
 import type {
   CanvasMetadataVersionRecord,
   CanvasHistoryCursorRecord,
@@ -80,6 +81,8 @@ function toCanonicalObjectInsert(record: CanonicalObjectRecord): typeof canonica
     semanticRole: record.semanticRole,
     primaryContentKind: record.primaryContentKind ?? null,
     publicAlias: record.publicAlias ?? null,
+    body: readCanonicalBody(record) ?? null,
+    bodySchemaVersion: record.bodySchemaVersion ?? null,
     contentBlocks: readContentBlocks(record) ?? null,
     sourceMeta: record.sourceMeta,
     capabilities: record.capabilities,
@@ -104,6 +107,8 @@ function fromCanonicalObjectRow(row: CanonicalObjectRow): CanonicalObjectRecord 
     canonicalText: row.canonicalText,
     ...(row.primaryContentKind !== null ? { primaryContentKind: row.primaryContentKind } : { primaryContentKind: null }),
     ...(row.publicAlias ? { publicAlias: row.publicAlias } : {}),
+    ...(row.body ? { body: cloneCanonicalBodyDocument(row.body) } : {}),
+    ...(row.bodySchemaVersion !== null ? { bodySchemaVersion: row.bodySchemaVersion } : {}),
     ...(row.contentBlocks ? { contentBlocks: cloneContentBlocks(row.contentBlocks) } : {}),
     ...(row.capabilitySources ? { capabilitySources: row.capabilitySources } : {}),
     ...(row.extensions ? { extensions: row.extensions } : {}),
@@ -385,6 +390,8 @@ export class CanonicalPersistenceRepository {
           semanticRole: validation.value.semanticRole,
           primaryContentKind: validation.value.primaryContentKind ?? null,
           publicAlias: validation.value.publicAlias ?? null,
+          body: readCanonicalBody(validation.value) ?? null,
+          bodySchemaVersion: validation.value.bodySchemaVersion ?? null,
           contentBlocks: readContentBlocks(validation.value) ?? null,
           sourceMeta: validation.value.sourceMeta,
           capabilities: validation.value.capabilities,

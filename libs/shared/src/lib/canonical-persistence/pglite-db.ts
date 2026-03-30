@@ -134,6 +134,24 @@ async function hasRuntimeCoordinationSchema(client: PGlite): Promise<boolean> {
   return requiredTables.size === 0;
 }
 
+async function hasCanonicalBodySchema(client: PGlite): Promise<boolean> {
+  const result = await client.query(`
+    select column_name
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'objects'
+      and column_name in ('body', 'body_schema_version')
+  `);
+
+  const columns = new Set(
+    (result.rows as Array<Record<string, unknown>>)
+      .map((row) => typeof row['column_name'] === 'string' ? row['column_name'] : null)
+      .filter((value): value is string => value !== null),
+  );
+
+  return columns.has('body') && columns.has('body_schema_version');
+}
+
 async function ensurePluginRuntimeSchema(client: PGlite): Promise<void> {
   await client.query(`
     create table if not exists plugin_packages (
@@ -318,6 +336,17 @@ async function ensureRuntimeCoordinationSchema(client: PGlite): Promise<void> {
   `);
 }
 
+async function ensureCanonicalBodySchema(client: PGlite): Promise<void> {
+  await client.query(`
+    alter table objects
+      add column if not exists body jsonb;
+  `);
+  await client.query(`
+    alter table objects
+      add column if not exists body_schema_version integer;
+  `);
+}
+
 export async function createCanonicalPgliteDb(
   targetDir: string,
   options?: {
@@ -370,6 +399,9 @@ export async function createCanonicalPgliteDb(
     }
     if (!(await hasRuntimeCoordinationSchema(client))) {
       await ensureRuntimeCoordinationSchema(client);
+    }
+    if (!(await hasCanonicalBodySchema(client))) {
+      await ensureCanonicalBodySchema(client);
     }
   }
 

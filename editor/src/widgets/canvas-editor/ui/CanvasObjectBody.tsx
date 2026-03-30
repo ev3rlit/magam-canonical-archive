@@ -1,228 +1,423 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { EditorContent, useEditor } from '@tiptap/react';
+import Placeholder from '@tiptap/extension-placeholder';
+import Image from '@tiptap/extension-image';
+import TaskItem from '@tiptap/extension-task-item';
+import TaskList from '@tiptap/extension-task-list';
+import StarterKit from '@tiptap/starter-kit';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { useEditorStore } from '@/core/editor/model/editor-store';
-import type { EditorCanvasObject, EditorContentBlock } from '@/core/editor/model/editor-types';
-import { CanvasMarkdownWysiwygEditor } from '@/widgets/canvas-editor/ui/CanvasMarkdownWysiwygEditor';
+import type { EditorCanvasObject } from '@/core/editor/model/editor-types';
+import {
+  getNodePlainText,
+  type EditorBodyDocument,
+  type EditorBodyNode,
+} from '@/core/editor/model/editor-body';
+import {
+  CanvasActiveBlockDecoration,
+  CanvasBodyClipboardNormalizer,
+  CanvasSlashCommand,
+  canvasSlashCommandKey,
+  type CanvasSlashState,
+} from './body-editor-extensions';
 
-interface BlockDraftState {
-  blockId: string;
-  blockType: EditorContentBlock['blockType'];
-  text: string;
-  src: string;
-  alt: string;
+interface SlashAction {
+  id: string;
+  label: string;
+  apply: () => void;
 }
 
-function toDraft(block: EditorContentBlock): BlockDraftState {
-  if (block.blockType === 'text') {
-    return {
-      blockId: block.id,
-      blockType: block.blockType,
-      text: block.text,
-      src: '',
-      alt: '',
-    };
-  }
-
-  if (block.blockType === 'markdown') {
-    return {
-      blockId: block.id,
-      blockType: block.blockType,
-      text: '',
-      src: '',
-      alt: '',
-    };
-  }
-
-  return {
-    blockId: block.id,
-    blockType: block.blockType,
-    text: '',
-    src: block.src,
-    alt: block.alt,
-  };
-}
-
-function stopCanvasPointer(event: PointerEvent | MouseEvent) {
-  event.stopPropagation();
-}
-
-function handleEditorKeyDown(input: {
-  event: KeyboardEvent<HTMLElement>;
-  commit: () => void;
-  cancel: () => void;
-}) {
-  if (input.event.key === 'Escape') {
-    input.event.stopPropagation();
-    input.event.preventDefault();
-    input.cancel();
-    return;
-  }
-
-  if ((input.event.metaKey || input.event.ctrlKey) && input.event.key === 'Enter') {
-    input.event.preventDefault();
-    input.commit();
-  }
-}
-
-function BlockEditor({
-  block,
-  draft,
-  setDraft,
-  commit,
-  cancel,
-}: {
-  block: EditorContentBlock;
-  draft: BlockDraftState | null;
-  setDraft: (draft: BlockDraftState | null) => void;
-  commit: () => void;
-  cancel: () => void;
-}) {
-  if (!draft) {
-    return null;
-  }
-
-  if (block.blockType === 'markdown') {
-    return null;
-  }
-
-  const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
-    const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
-      return;
+function renderBodyNode(node: EditorBodyNode, key: string): ReactNode {
+  switch (node.type) {
+    case 'paragraph':
+      return <p key={key}>{node.content?.map((child, index) => renderBodyNode(child, `${key}-${index}`))}</p>;
+    case 'text':
+      return node.text ?? '';
+    case 'heading': {
+      const level = Number(node.attrs?.['level'] ?? 1);
+      if (level === 1) {
+        return <h1 key={key}>{node.content?.map((child, index) => renderBodyNode(child, `${key}-${index}`))}</h1>;
+      }
+      if (level === 2) {
+        return <h2 key={key}>{node.content?.map((child, index) => renderBodyNode(child, `${key}-${index}`))}</h2>;
+      }
+      return <h3 key={key}>{node.content?.map((child, index) => renderBodyNode(child, `${key}-${index}`))}</h3>;
     }
-    commit();
-  };
-
-  if (block.blockType === 'canvas.image') {
-    return (
-      <div
-        className="canvas-object__block-editor canvas-object__block-editor--image"
-        onBlur={handleBlur}
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => handleEditorKeyDown({ event, commit, cancel })}
-        onPointerDown={stopCanvasPointer}
-      >
-        <label className="canvas-object__block-field">
-          <span>Image URL</span>
-          <input
-            autoFocus
-            className="canvas-object__block-input"
-            onChange={(event) => setDraft({
-              ...draft,
-              src: event.target.value,
-            })}
-            value={draft.src}
+    case 'bulletList':
+      return <ul key={key}>{node.content?.map((child, index) => renderBodyNode(child, `${key}-${index}`))}</ul>;
+    case 'orderedList':
+      return <ol key={key}>{node.content?.map((child, index) => renderBodyNode(child, `${key}-${index}`))}</ol>;
+    case 'taskList':
+      return <ul className="canvas-body-preview__task-list" key={key}>{node.content?.map((child, index) => renderBodyNode(child, `${key}-${index}`))}</ul>;
+    case 'listItem':
+      return <li key={key}>{node.content?.map((child, index) => renderBodyNode(child, `${key}-${index}`))}</li>;
+    case 'taskItem':
+      return (
+        <li className="canvas-body-preview__task-item" key={key}>
+          <input checked={Boolean(node.attrs?.['checked'])} readOnly type="checkbox" />
+          <span>{node.content?.map((child, index) => renderBodyNode(child, `${key}-${index}`))}</span>
+        </li>
+      );
+    case 'blockquote':
+      return <blockquote key={key}>{node.content?.map((child, index) => renderBodyNode(child, `${key}-${index}`))}</blockquote>;
+    case 'codeBlock':
+      return <pre key={key}><code>{getNodePlainText(node)}</code></pre>;
+    case 'horizontalRule':
+      return <hr key={key} />;
+    case 'image':
+      return (
+        <figure className="canvas-object__image-block" key={key}>
+          <img
+            alt={typeof node.attrs?.['alt'] === 'string' ? node.attrs['alt'] : 'Canvas image block'}
+            className="canvas-object__image"
+            src={typeof node.attrs?.['src'] === 'string' ? node.attrs['src'] : ''}
           />
-        </label>
-        <label className="canvas-object__block-field">
-          <span>Alt text</span>
-          <input
-            className="canvas-object__block-input"
-            onChange={(event) => setDraft({
-              ...draft,
-              alt: event.target.value,
-            })}
-            value={draft.alt}
-          />
-        </label>
-        <div className="canvas-object__block-actions">
-          <button className="canvas-object__block-action" onClick={commit} type="button">
-            Apply
-          </button>
-          <button className="canvas-object__block-action canvas-object__block-action--secondary" onClick={cancel} type="button">
-            Cancel
-          </button>
-        </div>
-      </div>
-    );
+          {typeof node.attrs?.['alt'] === 'string' && node.attrs['alt'].length > 0
+            ? <figcaption>{node.attrs['alt']}</figcaption>
+            : null}
+        </figure>
+      );
+    default:
+      return null;
   }
+}
 
+function BodyPreview({ body }: { body: EditorBodyDocument }) {
   return (
-    <div
-      className="canvas-object__block-editor"
-      onBlur={handleBlur}
-      onClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => handleEditorKeyDown({ event, commit, cancel })}
-      onPointerDown={stopCanvasPointer}
-    >
-      <textarea
-        autoFocus
-        className="canvas-object__block-textarea"
-        onChange={(event) => setDraft({
-          ...draft,
-          text: event.target.value,
-        })}
-        value={draft.text}
-      />
-      <div className="canvas-object__block-actions">
-        <button className="canvas-object__block-action" onClick={commit} type="button">
-          Apply
-        </button>
-        <button className="canvas-object__block-action canvas-object__block-action--secondary" onClick={cancel} type="button">
-          Cancel
-        </button>
-      </div>
+    <div className="canvas-body-preview">
+      {body.content.map((node, index) => (
+        <div className="canvas-body-preview__node" key={`node-${index}`}>
+          {renderBodyNode(node, `node-${index}`)}
+        </div>
+      ))}
     </div>
   );
 }
 
-function BlockPreview({ block }: { block: EditorContentBlock }) {
-  if (block.blockType === 'text') {
-    return (
-      <p className="canvas-object__block-paragraph">
-        {block.text || 'Empty text block'}
-      </p>
-    );
-  }
-
-  if (block.blockType === 'markdown') {
-    return (
-      <div className="canvas-object__block-markdown">
-        {block.source.trim().length > 0 ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {block.source}
-          </ReactMarkdown>
-        ) : (
-          <p className="canvas-object__block-placeholder">Write text, # heading, or - list</p>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <figure className="canvas-object__image-block">
-      <img alt={block.alt || 'Canvas image block'} className="canvas-object__image" src={block.src} />
-      {block.alt ? <figcaption>{block.alt}</figcaption> : null}
-    </figure>
-  );
-}
-
-function AddBlockPalette({
-  visible,
-  onInsert,
+function BodyEditor({
+  body,
+  objectId,
 }: {
-  visible: boolean;
-  onInsert: (type: 'markdown' | 'text' | 'image') => void;
+  body: EditorBodyDocument;
+  objectId: string;
 }) {
-  if (!visible) {
+  const closeBodyEditor = useEditorStore((state) => state.closeBodyEditor);
+  const consumeBodyEditorPendingText = useEditorStore((state) => state.consumeBodyEditorPendingText);
+  const updateObjectBody = useEditorStore((state) => state.updateObjectBody);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [slashState, setSlashState] = useState<CanvasSlashState | null>(null);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashAnchor, setSlashAnchor] = useState<{ left: number; top: number } | null>(null);
+  const [pendingImageOpen, setPendingImageOpen] = useState(false);
+  const [imageDraft, setImageDraft] = useState({ src: '', alt: '' });
+  const initialRef = useRef(JSON.stringify(body));
+
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit.configure({
+        heading: {
+          levels: [1, 2, 3],
+        },
+      }),
+      Placeholder.configure({
+        placeholder: 'Type to write, or / for blocks',
+      }),
+      Image,
+      TaskList,
+      TaskItem.configure({ nested: false }),
+      CanvasSlashCommand,
+      CanvasActiveBlockDecoration,
+      CanvasBodyClipboardNormalizer,
+    ],
+    content: body,
+    autofocus: 'end',
+    editorProps: {
+      attributes: {
+        class: 'canvas-object__wysiwyg-surface',
+        'aria-label': 'Document body editor',
+      },
+      handleKeyDown: (_view, event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          (event.target as HTMLElement | null)?.blur();
+          return true;
+        }
+        return false;
+      },
+    },
+    onSelectionUpdate: ({ editor: currentEditor }) => {
+      const state = canvasSlashCommandKey.getState(currentEditor.state) ?? null;
+      setSlashState(state?.active ? state : null);
+      if (!state?.active) {
+        setSlashIndex(0);
+      }
+    },
+    onUpdate: ({ editor: currentEditor }) => {
+      const state = canvasSlashCommandKey.getState(currentEditor.state) ?? null;
+      setSlashState(state?.active ? state : null);
+      if (!state?.active) {
+        setSlashIndex(0);
+      }
+    },
+  }, [body, objectId]);
+
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    const pendingText = consumeBodyEditorPendingText();
+    if (!pendingText) {
+      return;
+    }
+
+    editor.commands.focus('end');
+    if (pendingText === '\n') {
+      editor.commands.enter();
+      return;
+    }
+    editor.commands.insertContent(pendingText);
+  }, [consumeBodyEditorPendingText, editor]);
+
+  useEffect(() => {
+    if (!editor || !slashState?.active || !wrapperRef.current) {
+      setSlashAnchor(null);
+      return;
+    }
+
+    const coords = editor.view.coordsAtPos(slashState.from);
+    const rect = wrapperRef.current.getBoundingClientRect();
+    setSlashAnchor({
+      left: coords.left - rect.left,
+      top: coords.bottom - rect.top + 8,
+    });
+  }, [editor, slashState]);
+
+  const commitIfNeeded = () => {
+    if (!editor) {
+      return;
+    }
+
+    const nextBody = editor.getJSON() as EditorBodyDocument;
+    const nextSerialized = JSON.stringify(nextBody);
+    if (nextSerialized !== initialRef.current) {
+      updateObjectBody(objectId, nextBody);
+      initialRef.current = nextSerialized;
+      return;
+    }
+
+    closeBodyEditor();
+  };
+
+  const syncDomIntoEditor = () => {
+    if (!editor || !wrapperRef.current) {
+      return;
+    }
+
+    const surface = wrapperRef.current.querySelector('.canvas-object__wysiwyg-surface');
+    if (!(surface instanceof HTMLElement)) {
+      return;
+    }
+
+    const domHtml = surface.innerHTML.trim();
+    if (domHtml.length === 0) {
+      return;
+    }
+
+    const editorHtml = editor.getHTML().trim();
+    if (domHtml === editorHtml) {
+      return;
+    }
+
+    editor.commands.setContent(domHtml, {
+      contentType: 'html',
+    });
+  };
+
+  const slashActions = useMemo<SlashAction[]>(() => {
+    if (!editor || !slashState?.active) {
+      return [];
+    }
+
+    const deleteSlash = () => editor.chain().focus().deleteRange({ from: slashState.from, to: slashState.to }).run();
+
+    return [
+      { id: 'text', label: 'Text', apply: () => { deleteSlash(); editor.chain().focus().setParagraph().run(); } },
+      { id: 'h1', label: 'Heading 1', apply: () => { deleteSlash(); editor.chain().focus().toggleHeading({ level: 1 }).run(); } },
+      { id: 'h2', label: 'Heading 2', apply: () => { deleteSlash(); editor.chain().focus().toggleHeading({ level: 2 }).run(); } },
+      { id: 'h3', label: 'Heading 3', apply: () => { deleteSlash(); editor.chain().focus().toggleHeading({ level: 3 }).run(); } },
+      { id: 'bulleted', label: 'Bulleted List', apply: () => { deleteSlash(); editor.chain().focus().toggleBulletList().run(); } },
+      { id: 'numbered', label: 'Numbered List', apply: () => { deleteSlash(); editor.chain().focus().toggleOrderedList().run(); } },
+      { id: 'checklist', label: 'Checklist', apply: () => { deleteSlash(); editor.chain().focus().toggleTaskList().run(); } },
+      { id: 'quote', label: 'Quote', apply: () => { deleteSlash(); editor.chain().focus().toggleBlockquote().run(); } },
+      { id: 'code', label: 'Code Block', apply: () => { deleteSlash(); editor.chain().focus().toggleCodeBlock().run(); } },
+      {
+        id: 'divider',
+        label: 'Divider',
+        apply: () => {
+          deleteSlash();
+          editor.chain().focus().setHorizontalRule().createParagraphNear().run();
+        },
+      },
+      {
+        id: 'image',
+        label: 'Image',
+        apply: () => {
+          deleteSlash();
+          editor.chain().focus().insertContent([
+            { type: 'image', attrs: { src: '', alt: '' } },
+            { type: 'paragraph' },
+          ]).run();
+          setPendingImageOpen(true);
+          setImageDraft({ src: '', alt: '' });
+        },
+      },
+    ].filter((action) => action.label.toLowerCase().includes(slashState.query));
+  }, [editor, slashState]);
+
+  useEffect(() => {
+    if (!slashActions.length) {
+      setSlashIndex(0);
+      return;
+    }
+    setSlashIndex((current) => Math.min(current, slashActions.length - 1));
+  }, [slashActions]);
+
+  const applySlashAction = (action: SlashAction) => {
+    action.apply();
+    setSlashState(null);
+    setSlashAnchor(null);
+    setSlashIndex(0);
+  };
+
+  const applyImageDraft = () => {
+    if (!editor) {
+      return;
+    }
+
+    const nextBody = editor.getJSON() as EditorBodyDocument;
+    const imageIndex = [...nextBody.content].reverse().findIndex((node) => node.type === 'image');
+    if (imageIndex < 0) {
+      setPendingImageOpen(false);
+      return;
+    }
+
+    const targetIndex = nextBody.content.length - 1 - imageIndex;
+    const target = nextBody.content[targetIndex];
+    if (!target) {
+      setPendingImageOpen(false);
+      return;
+    }
+
+    nextBody.content[targetIndex] = {
+      ...target,
+      attrs: {
+        ...(target.attrs ?? {}),
+        src: imageDraft.src,
+        alt: imageDraft.alt,
+      },
+    };
+    editor.commands.setContent(nextBody);
+    setPendingImageOpen(false);
+  };
+
+  if (!editor) {
     return null;
   }
 
   return (
-    <div className="canvas-object__block-palette" onClick={(event) => event.stopPropagation()} onPointerDown={stopCanvasPointer}>
-      <button className="canvas-object__block-chip" onClick={() => onInsert('markdown')} type="button">
-        Markdown
-      </button>
-      <button className="canvas-object__block-chip" onClick={() => onInsert('text')} type="button">
-        Text
-      </button>
-      <button className="canvas-object__block-chip" onClick={() => onInsert('image')} type="button">
-        Image
-      </button>
+    <div
+      className="canvas-object__wysiwyg"
+      onBlur={(event) => {
+        const nextTarget = event.relatedTarget;
+        if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+          return;
+        }
+        syncDomIntoEditor();
+        commitIfNeeded();
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+      ref={wrapperRef}
+    >
+      <EditorContent
+        editor={editor}
+        onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+          if (!slashState?.active || slashActions.length === 0) {
+            return;
+          }
+
+          if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            setSlashIndex((current) => (current + 1) % slashActions.length);
+            return;
+          }
+          if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            setSlashIndex((current) => (current - 1 + slashActions.length) % slashActions.length);
+            return;
+          }
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            applySlashAction(slashActions[slashIndex] ?? slashActions[0]!);
+            return;
+          }
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            editor.chain().focus().deleteRange({ from: slashState.from, to: slashState.to }).run();
+            setSlashState(null);
+            setSlashAnchor(null);
+          }
+        }}
+      />
+      {slashState?.active && slashActions.length > 0 && slashAnchor ? (
+        <div
+          className="canvas-body-slash-menu"
+          style={{ left: slashAnchor.left, top: slashAnchor.top }}
+        >
+          {slashActions.map((action, index) => (
+            <button
+              className={clsx('canvas-body-slash-menu__item', {
+                'canvas-body-slash-menu__item--active': index === slashIndex,
+              })}
+              key={action.id}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                applySlashAction(action);
+              }}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {pendingImageOpen ? (
+        <div className="canvas-body-image-panel">
+          <label className="canvas-body-image-panel__field">
+            <span>Image URL</span>
+            <input
+              autoFocus
+              className="canvas-object__block-input"
+              onChange={(event) => setImageDraft((current) => ({ ...current, src: event.target.value }))}
+              value={imageDraft.src}
+            />
+          </label>
+          <label className="canvas-body-image-panel__field">
+            <span>Alt text</span>
+            <input
+              className="canvas-object__block-input"
+              onChange={(event) => setImageDraft((current) => ({ ...current, alt: event.target.value }))}
+              value={imageDraft.alt}
+            />
+          </label>
+          <button className="canvas-body-image-panel__submit" onClick={applyImageDraft} type="button">
+            Apply image
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -234,159 +429,32 @@ export function CanvasObjectBody({
   object: EditorCanvasObject;
   isSelected: boolean;
 }) {
-  const blockSelection = useEditorStore((state) => state.overlays.blockSelection);
-  const blockEditor = useEditorStore((state) => state.overlays.blockEditor);
-  const selectBlock = useEditorStore((state) => state.selectBlock);
-  const insertBlock = useEditorStore((state) => state.insertBlock);
-  const startBlockEdit = useEditorStore((state) => state.startBlockEdit);
-  const commitBlockEdit = useEditorStore((state) => state.commitBlockEdit);
-  const cancelBlockEdit = useEditorStore((state) => state.cancelBlockEdit);
-  const removeBlock = useEditorStore((state) => state.removeBlock);
-  const [draft, setDraft] = useState<BlockDraftState | null>(null);
+  const activeBodyEditorObjectId = useEditorStore((state) => state.overlays.activeBodyEditorObjectId);
+  const isBodyEditorOpen = useEditorStore((state) => state.overlays.isBodyEditorOpen);
+  const openBodyEditor = useEditorStore((state) => state.openBodyEditor);
 
-  const selectedBlockId = blockSelection?.objectId === object.id ? blockSelection.blockId : null;
-  const editingBlockId = blockEditor?.objectId === object.id ? blockEditor.blockId : null;
-  const editingBlock = editingBlockId
-    ? object.contentBlocks.find((block) => block.id === editingBlockId) ?? null
-    : null;
-
-  useEffect(() => {
-    if (!editingBlock) {
-      setDraft(null);
-      return;
-    }
-
-    setDraft(toDraft(editingBlock));
-  }, [editingBlock]);
-
-  const handleInsert = (type: 'markdown' | 'text' | 'image') => {
-    insertBlock(object.id, type, selectedBlockId);
-  };
-
-  const handleCommit = () => {
-    if (!draft || !editingBlock) {
-      return;
-    }
-
-    if (draft.blockType === 'canvas.image') {
-      commitBlockEdit(object.id, editingBlock.id, {
-        src: draft.src,
-        alt: draft.alt,
-      });
-      return;
-    }
-
-    commitBlockEdit(object.id, editingBlock.id, draft.blockType === 'markdown'
-      ? { source: draft.text }
-      : { text: draft.text });
-  };
-
-  const handleCancel = () => {
-    cancelBlockEdit();
-    setDraft(editingBlock ? toDraft(editingBlock) : null);
-  };
-
-  const emptyState: ReactNode = object.contentBlocks.length === 0 ? (
-    <div className={clsx('canvas-object__empty-state', {
-      'canvas-object__empty-state--active': isSelected,
-    })}>
-      <p>Add blocks like notes, markdown, or images.</p>
-      <AddBlockPalette visible={isSelected} onInsert={handleInsert} />
-    </div>
-  ) : null;
+  const isEditing = isBodyEditorOpen && activeBodyEditorObjectId === object.id;
 
   return (
-    <div className="canvas-object__content-stack">
-      {object.contentBlocks.map((block) => {
-        const isBlockSelected = selectedBlockId === block.id;
-        const isEditing = editingBlockId === block.id;
-
-        return (
-          <div
-            className={clsx('canvas-object__block', {
-              'canvas-object__block--active': isBlockSelected,
-              'canvas-object__block--editing': isEditing,
-            })}
-            key={block.id}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (!isSelected) {
-                return;
-              }
-
-              if (!isEditing) {
-                selectBlock(object.id, block.id);
-                startBlockEdit(object.id, block.id);
-              }
-            }}
-            onPointerDown={(event) => {
-              if (!isSelected) {
-                return;
-              }
-
-              event.stopPropagation();
-              selectBlock(object.id, block.id);
-            }}
-          >
-            <div className="canvas-object__block-meta">
-              <span className="canvas-object__block-kind">{block.blockType === 'canvas.image' ? 'Image' : block.blockType}</span>
-              {isSelected ? (
-                <button
-                  className="canvas-object__block-remove"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    removeBlock(object.id, block.id);
-                  }}
-                  onPointerDown={stopCanvasPointer}
-                  type="button"
-                >
-                  Remove
-                </button>
-              ) : null}
-            </div>
-            {isEditing ? (
-              block.blockType === 'markdown' ? (
-                <CanvasMarkdownWysiwygEditor
-                  initialMarkdown={block.source}
-                  onCommit={(source) => commitBlockEdit(object.id, block.id, { source })}
-                />
-              ) : (
-                <BlockEditor
-                  block={block}
-                  cancel={handleCancel}
-                  commit={handleCommit}
-                  draft={draft}
-                  setDraft={setDraft}
-                />
-              )
-            ) : (
-              <BlockPreview block={block} />
-            )}
-            <AddBlockPalette visible={isSelected && selectedBlockId === block.id && !isEditing} onInsert={handleInsert} />
-          </div>
-        );
+    <div
+      className={clsx('canvas-object__content-stack', {
+        'canvas-object__content-stack--editing': isEditing,
       })}
-      {emptyState}
-      {object.contentBlocks.length > 0 ? (
-        <AddBlockPalette visible={isSelected && selectedBlockId === null && !editingBlockId} onInsert={handleInsert} />
-      ) : null}
-      {isSelected && object.contentBlocks.length > 0 && selectedBlockId === null ? (
-        <button
-          className="canvas-object__select-hint"
-          onClick={(event) => {
-            event.stopPropagation();
-            const firstBlock = object.contentBlocks[0];
-            if (!firstBlock) {
-              return;
-            }
-            selectBlock(object.id, firstBlock.id);
-          }}
-          onPointerDown={stopCanvasPointer}
-          type="button"
-        >
-          Select a block to insert after it
-        </button>
-      ) : null}
+      onClick={(event) => {
+        if (!isSelected || isEditing) {
+          return;
+        }
+        event.stopPropagation();
+        openBodyEditor(object.id);
+      }}
+      onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
+        if (!isSelected) {
+          return;
+        }
+        event.stopPropagation();
+      }}
+    >
+      {isEditing ? <BodyEditor body={object.body} objectId={object.id} /> : <BodyPreview body={object.body} />}
     </div>
   );
 }

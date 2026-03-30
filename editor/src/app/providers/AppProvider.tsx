@@ -19,12 +19,48 @@ function isTypingTarget(target: EventTarget | null) {
   );
 }
 
+function isPrintableCanvasKey(event: KeyboardEvent) {
+  return event.key.length === 1
+    && !event.metaKey
+    && !event.ctrlKey
+    && !event.altKey
+    && event.key !== ' ';
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const handleKeyboardEvent = (phase: 'down' | 'up') => (event: KeyboardEvent) => {
+      const isTyping = isTypingTarget(event.target);
+      if (phase === 'down' && !isTyping) {
+        const state = useEditorStore.getState();
+        const primaryId = state.selection.primaryId;
+        const primaryObject = primaryId
+          ? state.scene.objects.find((object) => object.id === primaryId) ?? null
+          : null;
+
+        if (
+          primaryObject
+          && primaryObject.kind !== 'group'
+          && state.selection.ids.length === 1
+          && !state.overlays.isBodyEditorOpen
+        ) {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            state.openBodyEditor(primaryObject.id, '\n');
+            return;
+          }
+
+          if (event.key === '/' || isPrintableCanvasKey(event)) {
+            event.preventDefault();
+            state.openBodyEditor(primaryObject.id, event.key);
+            return;
+          }
+        }
+      }
+
       const result = dispatchShortcut({
         event,
-        isTypingTarget: isTypingTarget(event.target),
+        isTypingTarget: isTyping,
         phase,
       });
 

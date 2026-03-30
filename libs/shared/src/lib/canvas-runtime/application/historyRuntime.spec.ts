@@ -108,7 +108,7 @@ describe('runtime-owned history', () => {
     const objectAfterUndo = await context.repository.getCanonicalObject('ws-1', 'note-1');
     expect(objectAfterUndo.ok).toBe(true);
     if (objectAfterUndo.ok) {
-      expect(objectAfterUndo.value.primaryContentKind).toBe('text');
+      expect(objectAfterUndo.value.primaryContentKind).toBe('document');
       expect(objectAfterUndo.value.canonicalText).toBe('before');
     }
 
@@ -131,8 +131,8 @@ describe('runtime-owned history', () => {
     const objectAfterRedo = await context.repository.getCanonicalObject('ws-1', 'note-1');
     expect(objectAfterRedo.ok).toBe(true);
     if (objectAfterRedo.ok) {
-      expect(objectAfterRedo.value.primaryContentKind).toBe('markdown');
-      expect(objectAfterRedo.value.canonicalText).toBe('# after');
+      expect(objectAfterRedo.value.primaryContentKind).toBe('document');
+      expect(objectAfterRedo.value.canonicalText).toBe('after');
     }
 
     const cursorAfterRedo = await context.repository.getCanvasHistoryCursor('doc-1', 'client-1', 'session-1');

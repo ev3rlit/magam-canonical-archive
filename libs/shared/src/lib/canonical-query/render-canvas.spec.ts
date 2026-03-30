@@ -161,7 +161,7 @@ describe('render-canvas', () => {
       children: [
         {
           type: 'graph-markdown',
-          props: { content: '# Hello' },
+          props: { content: 'Hello' },
         },
         {
           type: 'graph-image',

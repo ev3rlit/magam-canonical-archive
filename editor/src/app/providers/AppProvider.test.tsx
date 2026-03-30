@@ -120,10 +120,7 @@ describe('AppProvider keyboard shortcuts', () => {
     act(() => {
       useEditorStore.getState().createObjectAtViewportCenter('sticky');
       stickyId = useEditorStore.getState().selection.primaryId!;
-      const firstBlockId = useEditorStore.getState().scene.objects
-        .find((object) => object.id === stickyId)!
-        .contentBlocks[0]!.id;
-      useEditorStore.getState().startBlockEdit(stickyId, firstBlockId);
+      useEditorStore.getState().openBodyEditor(stickyId);
     });
 
     const editor = container.querySelector('.canvas-object__wysiwyg-surface') as HTMLDivElement;
@@ -135,7 +132,7 @@ describe('AppProvider keyboard shortcuts', () => {
     });
 
     expect(useEditorStore.getState().temporaryToolOverride).toBe(null);
-    expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.contentBlocks).toHaveLength(1);
+    expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.body.content).toHaveLength(1);
   });
 
   it('routes undo and redo through the keyboard dispatcher', () => {

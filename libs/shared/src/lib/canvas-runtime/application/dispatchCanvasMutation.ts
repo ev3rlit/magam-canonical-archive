@@ -1,5 +1,6 @@
 import { executeMutationBatch, type MutationBatch, type MutationExecutionResult, type MutationOperation } from '../../canonical-mutation';
 import { cloneContentBlocks, readContentBlocks, type CanonicalObjectRecord, type ContentBlock } from '../../canonical-object-contract';
+import { readCanonicalBody } from '../../canonical-body-document';
 import type {
   BodyBlockEntityV1,
   CanvasHistoryEntryV1,
@@ -41,6 +42,7 @@ type CommandSnapshot =
   | { command: Extract<CanvasRuntimeCommandV1, { name: 'canvas.node.z-order.update' }>; node: RuntimeCanvasNodeRecord }
   | { command: Extract<CanvasRuntimeCommandV1, { name: 'object.content.update' }>; object: CanonicalObjectRecord }
   | { command: Extract<CanvasRuntimeCommandV1, { name: 'object.capability.patch' }>; object: CanonicalObjectRecord }
+  | { command: Extract<CanvasRuntimeCommandV1, { name: 'object.body.replace' }>; object: CanonicalObjectRecord }
   | { command: Extract<CanvasRuntimeCommandV1, { name: 'object.body.block.insert' }>; object: CanonicalObjectRecord }
   | {
       command: Extract<CanvasRuntimeCommandV1, { name: 'object.body.block.update' }>;
@@ -376,8 +378,8 @@ function toCanvasMutationOperation(command: CanvasRuntimeCommandV1): MutationOpe
       return {
         op: 'object.content.update',
         objectId: command.objectId,
-        kind: command.kind === 'document' ? 'markdown' : command.kind,
-        expectedContentKind: command.expectedContentKind === 'document' ? 'markdown' : command.expectedContentKind,
+        kind: command.kind,
+        expectedContentKind: command.expectedContentKind,
         patch: command.patch,
       };
 
@@ -390,6 +392,13 @@ function toCanvasMutationOperation(command: CanvasRuntimeCommandV1): MutationOpe
         objectId: command.objectId,
         capability: command.capability,
         patch: command.patch,
+      };
+
+    case 'object.body.replace':
+      return {
+        op: 'object.body.replace',
+        objectId: command.objectId,
+        body: command.body,
       };
 
     default:
@@ -420,11 +429,23 @@ async function translateCommand(
         block: toLegacyBodyBlock(command.block),
         ...(resolvedPosition.index > 0
           ? {
-              afterBlockId: (readContentBlocks(object.value) ?? [])[resolvedPosition.index - 1]?.id,
+              afterBlockId: `body-${resolvedPosition.index}`,
             }
           : { index: 0 }),
       }],
       bodyBlockIds: [command.block.blockId],
+    };
+  }
+
+  if (command.name === 'object.body.replace') {
+    return {
+      command,
+      operations: [{
+        op: 'object.body.replace',
+        objectId: command.objectId,
+        body: command.body,
+      }],
+      bodyBlockIds: [],
     };
   }
 
@@ -635,6 +656,13 @@ async function captureCommandSnapshot(
     };
   }
 
+  if (command.name === 'object.body.replace') {
+    return {
+      command,
+      object: objectResult.value,
+    };
+  }
+
   return {
     command,
     object: objectResult.value,
@@ -767,7 +795,14 @@ function buildRestoreDeletedNodeCommands(input: {
   }
 
   const contentBlocks = cloneContentBlocks(readContentBlocks(input.object)) ?? [];
-  if (contentBlocks.length > 0 && isBodyCapableNodeType(input.node.nodeType)) {
+  const body = readCanonicalBody(input.object);
+  if (body && isBodyCapableNodeType(input.node.nodeType)) {
+    commands.push({
+      name: 'object.body.replace',
+      objectId: input.object.id,
+      body,
+    });
+  } else if (contentBlocks.length > 0 && isBodyCapableNodeType(input.node.nodeType)) {
     const firstBlock = contentBlocks[0];
     if (firstBlock?.blockType === 'text' || firstBlock?.blockType === 'markdown') {
       commands.push({
@@ -925,6 +960,13 @@ function buildInverseCommandsFromSnapshot(
 
     case 'object.content.update': {
       const contentSnapshot = snapshot as Extract<CommandSnapshot, { command: { name: 'object.content.update' } }>;
+      if (readCanonicalBody(contentSnapshot.object)) {
+        return [{
+          name: 'object.body.replace',
+          objectId: contentSnapshot.object.id,
+          body: readCanonicalBody(contentSnapshot.object)!,
+        }];
+      }
       const previousBlocks = cloneContentBlocks(readContentBlocks(contentSnapshot.object)) ?? [];
       if (previousBlocks.length > 0) {
         const firstBlock = previousBlocks[0];
@@ -964,6 +1006,18 @@ function buildInverseCommandsFromSnapshot(
       }
 
       return [];
+    }
+
+    case 'object.body.replace': {
+      const bodySnapshot = snapshot as Extract<CommandSnapshot, { command: { name: 'object.body.replace' } }>;
+      const previousBody = readCanonicalBody(bodySnapshot.object);
+      return previousBody
+        ? [{
+            name: 'object.body.replace',
+            objectId: bodySnapshot.object.id,
+            body: previousBody,
+          }]
+        : [];
     }
 
     case 'object.capability.patch': {

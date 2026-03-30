@@ -4,9 +4,10 @@ import type { HeadlessServiceContext } from '../canonical-cli';
 import { cliError, persistenceFailureToCliError } from '../canonical-cli';
 import type { CanvasNodeRecord, ObjectRelationRecord } from '../canonical-persistence/records';
 import {
-  createDefaultMarkdownContentBlock,
   isBodyCapableNativeNodeType,
 } from '../canonical-persistence/validators';
+import { createBodyParagraphNode, createCanonicalBodyDocument, markdownToCanonicalBody } from '../canonical-body-document';
+import { deriveCanonicalTextFromBody } from '../canonical-body-document';
 import type { CanvasNodeCreateOperation, MutationChangedSet } from './types';
 
 const DEFAULT_SURFACE_ID = 'main';
@@ -89,20 +90,18 @@ function resolveSemanticDescriptor(input: {
   }
 }
 
-function toSeededContentBlocks(input: {
+function toSeededBody(input: {
   operation: CanvasNodeCreateOperation;
   props: Record<string, unknown>;
-}): CanonicalObjectRecord['contentBlocks'] | undefined {
+}): CanonicalObjectRecord['body'] | undefined {
   if (!isBodyCapableNativeNodeType(input.operation.nodeType)) {
     return undefined;
   }
 
-  return [
-    createDefaultMarkdownContentBlock(
-      'body-1',
-      typeof input.props['content'] === 'string' ? input.props['content'] : '',
-    ),
-  ];
+  const content = typeof input.props['content'] === 'string' ? input.props['content'] : '';
+  return content.length > 0
+    ? markdownToCanonicalBody(content)
+    : createCanonicalBodyDocument([createBodyParagraphNode()]);
 }
 
 function toCanonicalObjectRecord(input: {
@@ -114,7 +113,7 @@ function toCanonicalObjectRecord(input: {
     nodeType: input.operation.nodeType,
     placement: input.operation.placement,
   });
-  const seededContentBlocks = toSeededContentBlocks({
+  const seededBody = toSeededBody({
     operation: input.operation,
     props: input.props,
   });
@@ -132,9 +131,9 @@ function toCanonicalObjectRecord(input: {
         : {}),
     },
     capabilities: {},
-    ...(seededContentBlocks ? { contentBlocks: seededContentBlocks } : {}),
-    primaryContentKind: seededContentBlocks ? 'markdown' : null,
-    canonicalText: seededContentBlocks?.[0]?.blockType === 'markdown' ? seededContentBlocks[0].source : '',
+    ...(seededBody ? { body: seededBody, bodySchemaVersion: 1 } : {}),
+    primaryContentKind: seededBody ? 'document' : null,
+    canonicalText: seededBody ? deriveCanonicalTextFromBody(seededBody) : '',
   };
 }
 

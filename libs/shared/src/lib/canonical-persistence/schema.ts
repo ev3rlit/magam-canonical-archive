@@ -7,6 +7,7 @@ import type {
   ObjectCoreSourceMeta,
   PrimaryContentKind,
 } from '../canonical-object-contract';
+import type { CanonicalBodyDocument } from '../canonical-body-document';
 import type {
   CanvasBindingKind,
   CanvasNodeKind,
@@ -40,6 +41,8 @@ export const canonicalObjects = pgTable(
     semanticRole: text('semantic_role').notNull(),
     primaryContentKind: text('primary_content_kind').$type<PrimaryContentKind>(),
     publicAlias: text('public_alias').$type<CanonicalObjectAlias>(),
+    body: jsonb('body').$type<CanonicalBodyDocument>(),
+    bodySchemaVersion: integer('body_schema_version'),
     contentBlocks: jsonb('content_blocks').$type<ContentBlock[]>(),
     sourceMeta: jsonb('source_meta').$type<ObjectCoreSourceMeta>().notNull(),
     capabilities: jsonb('capabilities').$type<CapabilityBag>().notNull(),

@@ -11,6 +11,11 @@ import {
   cloneContentBlocks,
   readContentBlocks,
 } from '../canonical-object-contract';
+import {
+  cloneCanonicalBodyDocument,
+  deriveCanonicalTextFromBody,
+  readCanonicalBody,
+} from '../canonical-body-document';
 
 function trimOrEmpty(value: string | undefined): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -52,6 +57,11 @@ function projectTextFromBlock(block: ContentBlock): string {
 export function derivePrimaryContentKind(input: {
   capabilities?: { content?: ContentCapability };
 } & ContentBlocksCarrier): PrimaryContentKind {
+  const body = readCanonicalBody(input);
+  if (body) {
+    return 'document';
+  }
+
   const directContent = input.capabilities?.content;
   if (directContent) {
     return directContent.kind;
@@ -76,6 +86,11 @@ export function derivePrimaryContentKind(input: {
 export function deriveCanonicalText(input: {
   capabilities?: { content?: ContentCapability };
 } & ContentBlocksCarrier): string {
+  const body = readCanonicalBody(input);
+  if (body) {
+    return deriveCanonicalTextFromBody(body);
+  }
+
   const contentBlocks = readContentBlocks(input);
   if (contentBlocks && contentBlocks.length > 0) {
     return contentBlocks
@@ -96,6 +111,7 @@ export function toCanonicalObjectRecord(input: {
   deletedAt?: string | null;
 }): CanonicalObjectRecord {
   const contentBlocks = cloneContentBlocks(readContentBlocks(input.canonical));
+  const body = cloneCanonicalBodyDocument(readCanonicalBody(input.canonical));
 
   return {
     id: input.canonical.core.id,
@@ -105,6 +121,7 @@ export function toCanonicalObjectRecord(input: {
     capabilities: input.canonical.capabilities,
     canonicalText: deriveCanonicalText(input.canonical),
     primaryContentKind: derivePrimaryContentKind(input.canonical),
+    ...(body ? { body, bodySchemaVersion: input.canonical.bodySchemaVersion ?? 1 } : {}),
     ...(input.publicAlias || input.canonical.alias ? { publicAlias: input.publicAlias ?? input.canonical.alias } : {}),
     ...(input.canonical.capabilitySources ? { capabilitySources: input.canonical.capabilitySources } : {}),
     ...(contentBlocks ? { contentBlocks } : {}),
@@ -115,6 +132,7 @@ export function toCanonicalObjectRecord(input: {
 
 export function fromCanonicalObjectRecord(record: CanonicalObjectRecord): CanonicalObject {
   const contentBlocks = cloneContentBlocks(readContentBlocks(record));
+  const body = cloneCanonicalBodyDocument(readCanonicalBody(record));
 
   return {
     core: {
@@ -126,6 +144,7 @@ export function fromCanonicalObjectRecord(record: CanonicalObjectRecord): Canoni
     ...(record.capabilitySources ? { capabilitySources: record.capabilitySources } : {}),
     ...(record.publicAlias ? { alias: record.publicAlias } : {}),
     ...(record.primaryContentKind !== undefined ? { primaryContentKind: record.primaryContentKind } : {}),
+    ...(body ? { body, bodySchemaVersion: record.bodySchemaVersion ?? 1 } : {}),
     ...(contentBlocks ? { contentBlocks } : {}),
   };
 }

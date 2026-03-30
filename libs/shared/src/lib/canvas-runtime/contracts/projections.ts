@@ -14,6 +14,7 @@ import type {
   WorkspaceIdV1,
 } from './core';
 import type { CanvasRuntimeCommandNameV1 } from './commands';
+import type { CanonicalBodyDocument } from '../../canonical-body-document';
 
 export interface CanvasProjectionSummaryV1 {
   title?: string | null;
@@ -143,6 +144,8 @@ export interface CanvasEditingProjectionNodeV1 {
   allowedCommands: CanvasRuntimeCommandNameV1[];
   interactionCapabilities: InteractionCapabilitiesV1;
   bodyEntry: CanvasBodyEntryCapabilityV1;
+  body?: CanonicalBodyDocument | null;
+  bodySource?: 'native' | 'legacy-converted' | null;
   anchors: CanvasEditingAnchorV1[];
   bodyBlocks: CanvasEditingProjectionBodyBlockV1[];
   selectedBodyBlockId?: BodyBlockIdV1 | null;

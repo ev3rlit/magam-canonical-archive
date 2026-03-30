@@ -16,6 +16,7 @@ import type {
   TransformV1,
   WorkspaceIdV1,
 } from './core';
+import type { CanonicalBodyDocument } from '../../canonical-body-document';
 
 export interface CanvasMutationPreconditionsV1 {
   canvasRevision?: number;
@@ -34,6 +35,7 @@ export type CanvasRuntimeCommandNameV1 =
   | 'canvas.node.z-order.update'
   | 'object.content.update'
   | 'object.capability.patch'
+  | 'object.body.replace'
   | 'object.body.block.insert'
   | 'object.body.block.update'
   | 'object.body.block.remove'
@@ -174,6 +176,12 @@ export interface ObjectCapabilityPatchCommandV1 {
   patch: Record<string, unknown> | null;
 }
 
+export interface ObjectBodyReplaceCommandV1 {
+  name: 'object.body.replace';
+  objectId: CanonicalObjectIdV1;
+  body: CanonicalBodyDocument;
+}
+
 export interface ObjectBodyBlockInsertCommandV1 {
   name: 'object.body.block.insert';
   objectId: CanonicalObjectIdV1;
@@ -226,6 +234,7 @@ export type CanvasRuntimeCommandV1 =
   | CanvasNodeZOrderUpdateCommandV1
   | ObjectContentUpdateCommandV1
   | ObjectCapabilityPatchCommandV1
+  | ObjectBodyReplaceCommandV1
   | ObjectBodyBlockInsertCommandV1
   | ObjectBodyBlockUpdateCommandV1
   | ObjectBodyBlockRemoveCommandV1

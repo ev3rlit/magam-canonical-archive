@@ -28,9 +28,9 @@ export const FILL_PRESET_TOKENS: Record<EditorFillPreset, { fill: string; text: 
     border: '#357a67',
   },
   amber: {
-    fill: '#fff1c9',
-    text: '#5a4822',
-    border: '#c49a3b',
+    fill: '#ffe95a',
+    text: '#5d4710',
+    border: '#c49a1b',
   },
   blush: {
     fill: '#ffe6ee',

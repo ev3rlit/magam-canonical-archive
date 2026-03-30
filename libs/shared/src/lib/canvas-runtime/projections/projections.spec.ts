@@ -53,7 +53,9 @@ describe('canvas runtime projections', () => {
     expect(editingProjection.nodes).toEqual([
       expect.objectContaining({
         nodeId: 'node-1',
-        allowedCommands: expect.arrayContaining(['object.content.update', 'object.body.block.insert']),
+        allowedCommands: expect.arrayContaining(['object.content.update', 'object.body.replace', 'object.body.block.insert']),
+        body: expect.objectContaining({ type: 'doc' }),
+        bodySource: 'legacy-converted',
         bodyBlocks: [
           expect.objectContaining({
             blockId: 'body-1',

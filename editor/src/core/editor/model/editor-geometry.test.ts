@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createBodyDocument } from './editor-body';
 import {
   getEffectiveBounds,
   getSelectionBounds,
@@ -27,7 +28,7 @@ function createObject(overrides: Partial<EditorCanvasObject> & Pick<EditorCanvas
     outlinePreset: 'thin',
     outlineColor: '#5851ff',
     shapeVariant: kind === 'shape' ? 'rectangle' : undefined,
-    contentBlocks: [],
+    body: createBodyDocument(),
     ...rest,
   };
 }
