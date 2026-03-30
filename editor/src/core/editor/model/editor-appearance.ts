@@ -1,6 +1,17 @@
 import type { EditorFillPreset, EditorOutlinePreset, EditorShapeVariant } from './editor-types';
 
-export const FILL_PRESET_ORDER: EditorFillPreset[] = ['iris', 'sky', 'mint', 'amber', 'blush', 'slate'];
+export const FILL_PRESET_ORDER: EditorFillPreset[] = [
+  'iris',
+  'sky',
+  'mint',
+  'amber',
+  'blush',
+  'slate',
+  'peach',
+  'sage',
+  'lavender',
+  'sand',
+];
 
 export const FILL_PRESET_LABELS: Record<EditorFillPreset, string> = {
   iris: 'Iris',
@@ -9,6 +20,10 @@ export const FILL_PRESET_LABELS: Record<EditorFillPreset, string> = {
   amber: 'Amber',
   blush: 'Blush',
   slate: 'Slate',
+  peach: 'Peach',
+  sage: 'Sage',
+  lavender: 'Lavender',
+  sand: 'Sand',
 };
 
 export const FILL_PRESET_TOKENS: Record<EditorFillPreset, { fill: string; text: string; border: string }> = {
@@ -41,6 +56,26 @@ export const FILL_PRESET_TOKENS: Record<EditorFillPreset, { fill: string; text: 
     fill: '#f3f5fb',
     text: '#26314b',
     border: '#586e9b',
+  },
+  peach: {
+    fill: '#ffe8de',
+    text: '#6f3f2f',
+    border: '#d98d6a',
+  },
+  sage: {
+    fill: '#e8f1df',
+    text: '#36503b',
+    border: '#6d8a60',
+  },
+  lavender: {
+    fill: '#f2eaff',
+    text: '#4a3d73',
+    border: '#8d78c9',
+  },
+  sand: {
+    fill: '#f4ecdc',
+    text: '#5b4730',
+    border: '#b59558',
   },
 };
 

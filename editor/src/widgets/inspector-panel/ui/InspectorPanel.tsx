@@ -49,6 +49,7 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
   const fillSectionRef = useRef<HTMLDivElement | null>(null);
   const borderSectionRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const bodySummary = object.kind === 'group' ? '' : getBodyPlainText(object.body);
 
   useEffect(() => {
     if (
@@ -87,7 +88,7 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
     <div className="inspector-stack">
       <section className="inspector-card">
         <div className="inspector-card__header">
-          <h3>Selection</h3>
+          <h3>Object</h3>
         </div>
         <PropertyField
           inputRef={nameInputRef}
@@ -97,28 +98,30 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
         />
         <div className="inspector-toggle-grid">
           <button
+            aria-pressed={object.visible}
             className={clsx('inspector-toggle', {
               'inspector-toggle--active': object.visible,
             })}
             onClick={() => updateObjectPatch(object.id, { visible: !object.visible })}
             type="button"
           >
-            {object.visible ? 'Visible' : 'Hidden'}
+            Visible
           </button>
           <button
+            aria-pressed={object.locked}
             className={clsx('inspector-toggle', {
               'inspector-toggle--active': object.locked,
             })}
             onClick={() => updateObjectPatch(object.id, { locked: !object.locked })}
             type="button"
           >
-            {object.locked ? 'Locked' : 'Unlocked'}
+            Locked
           </button>
         </div>
       </section>
       <section className="inspector-card">
         <div className="inspector-card__header">
-          <h3>Geometry</h3>
+          <h3>Frame</h3>
         </div>
         <div className="inspector-grid">
           <PropertyField
@@ -161,16 +164,15 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
       </section>
       <section className="inspector-card">
         <div className="inspector-card__header">
-          <h3>Details</h3>
+          <h3>{object.kind === 'group' ? 'Group' : 'Body'}</h3>
         </div>
         {object.kind !== 'group' ? (
           <>
-            <p className="inspector-copy">
-              {object.body.content.length} document block{object.body.content.length === 1 ? '' : 's'}
-            </p>
-            <p className="inspector-copy">{getBodyPlainText(object.body) || 'Empty body'}</p>
+            {bodySummary ? (
+              <p className="inspector-copy">{bodySummary}</p>
+            ) : null}
             <button className="inspector-action" onClick={() => openBodyEditor(object.id)} type="button">
-              Edit on canvas
+              Edit body
             </button>
           </>
         ) : null}
@@ -180,7 +182,7 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
             onClick={() => ungroupSelection()}
             type="button"
           >
-            Ungroup children
+            Ungroup
           </button>
         ) : null}
       </section>
@@ -220,27 +222,31 @@ function MultiSelectionInspector({ objects }: { objects: EditorCanvasObject[] })
     <div className="inspector-stack">
       <section className="inspector-card">
         <div className="inspector-card__header">
-          <h3>Multi selection</h3>
+          <h3>Selection</h3>
         </div>
-        <p className="inspector-copy">{objects.length} objects selected: {kinds.join(', ')}</p>
+        <p className="inspector-copy">
+          {objects.length} selected{(kinds.length === 1 && kinds[0]) ? ` · ${kinds[0]}` : ''}
+        </p>
         <div className="inspector-toggle-grid">
           <button
+            aria-pressed={allVisible}
             className={clsx('inspector-toggle', {
               'inspector-toggle--active': allVisible,
             })}
             onClick={() => updateSelectionPatch({ visible: !allVisible })}
             type="button"
           >
-            {allVisible ? 'Hide selection' : 'Show selection'}
+            Visible
           </button>
           <button
+            aria-pressed={allLocked}
             className={clsx('inspector-toggle', {
               'inspector-toggle--active': allLocked,
             })}
             onClick={() => updateSelectionPatch({ locked: !allLocked })}
             type="button"
           >
-            {allLocked ? 'Unlock selection' : 'Lock selection'}
+            Locked
           </button>
         </div>
       </section>
@@ -253,10 +259,10 @@ function MultiSelectionInspector({ objects }: { objects: EditorCanvasObject[] })
             Ungroup
           </button>
           <button className="inspector-action" onClick={() => bringSelectionToFront()} type="button">
-            Bring front
+            To front
           </button>
           <button className="inspector-action" onClick={() => sendSelectionToBack()} type="button">
-            Send back
+            To back
           </button>
           <button className="inspector-action inspector-action--danger" onClick={() => deleteSelection()} type="button">
             Delete
@@ -279,7 +285,6 @@ export function InspectorPanel() {
       entryDelayMs={220}
       panelId="inspector"
       side="right"
-      subtitle={selectedObjects.length > 0 ? 'Quick edits for the current selection' : undefined}
       title="Inspector"
     >
       <div data-testid="inspector-panel">

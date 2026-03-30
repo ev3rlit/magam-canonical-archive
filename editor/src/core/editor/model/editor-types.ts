@@ -12,7 +12,17 @@ export type EditorCanvasObjectKind =
   | 'frame'
   | 'group';
 
-export type EditorFillPreset = 'iris' | 'sky' | 'mint' | 'amber' | 'blush' | 'slate';
+export type EditorFillPreset =
+  | 'iris'
+  | 'sky'
+  | 'mint'
+  | 'amber'
+  | 'blush'
+  | 'slate'
+  | 'peach'
+  | 'sage'
+  | 'lavender'
+  | 'sand';
 export type EditorShapeVariant = 'rectangle' | 'rounded' | 'pill' | 'diamond';
 export type EditorOutlinePreset = 'none' | 'thin' | 'medium' | 'dashed';
 export type EditorFocusableField = 'name' | 'fill' | 'border';

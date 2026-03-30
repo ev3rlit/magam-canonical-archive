@@ -238,26 +238,20 @@
 
 .inspector-appearance {
   display: grid;
-  gap: 14px;
+  gap: 18px;
 }
 
 .inspector-focus-target {
   outline: none;
 }
 
-.object-style-editor {
-  display: grid;
-  gap: 10px;
-}
-
 .object-style-editor__section {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .object-style-editor__title,
-.object-style-editor__field-label,
-.object-style-editor__current-label {
+.object-style-editor__field-label {
   color: var(--editor-soft);
   font-size: 11px;
   font-weight: 700;
@@ -266,7 +260,8 @@
 }
 
 .object-style-editor__variant-grid,
-.object-style-editor__swatch-grid {
+.object-style-editor__swatch-grid,
+.object-style-editor__preset-row {
   display: grid;
   gap: 8px;
 }
@@ -276,123 +271,121 @@
 }
 
 .object-style-editor__swatch-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .object-style-editor__variant,
-.object-style-editor__swatch-button,
 .object-style-editor__outline-preset {
   display: grid;
-  gap: 8px;
-  justify-items: start;
-  min-height: 64px;
-  padding: 12px;
-  border: 1px solid rgba(88, 81, 255, 0.1);
-  border-radius: 16px;
-  background: rgba(88, 81, 255, 0.04);
+  align-content: center;
+  justify-items: center;
+  aspect-ratio: 1;
+  min-height: auto;
+  padding: 10px;
+  border: 1px solid rgba(88, 81, 255, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
   color: var(--editor-text);
   cursor: pointer;
-  text-align: left;
   transition:
-    transform var(--motion-fast) var(--ease-out-quart),
     background-color var(--motion-fast) var(--ease-out-quart),
     border-color var(--motion-fast) var(--ease-out-quart),
-    box-shadow var(--motion-fast) var(--ease-out-quart);
+    box-shadow var(--motion-fast) var(--ease-out-quart),
+    transform var(--motion-fast) var(--ease-out-quart);
 }
 
 .object-style-editor__variant:hover,
-.object-style-editor__swatch-button:hover,
 .object-style-editor__outline-preset:hover,
 .object-style-editor__variant--active,
-.object-style-editor__swatch-button--active,
 .object-style-editor__outline-preset--active {
   border-color: rgba(88, 81, 255, 0.24);
-  background: rgba(88, 81, 255, 0.08);
+  background: rgba(88, 81, 255, 0.05);
+  box-shadow: 0 0 0 3px rgba(88, 81, 255, 0.06);
   transform: translateY(-1px);
 }
 
-.object-style-editor__variant-label {
-  font-size: 12px;
-  font-weight: 600;
-}
-
 .object-style-editor__variant-preview {
-  width: 100%;
-  height: 28px;
+  width: 48px;
+  height: 48px;
   border: 1.5px solid rgba(88, 81, 255, 0.28);
-  background: rgba(88, 81, 255, 0.08);
+  background: rgba(88, 81, 255, 0.06);
 }
 
 .object-style-editor__variant-preview--rectangle {
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .object-style-editor__variant-preview--rounded {
-  border-radius: 14px;
+  border-radius: 16px;
 }
 
 .object-style-editor__variant-preview--pill {
+  width: 56px;
+  height: 34px;
   border-radius: 999px;
 }
 
 .object-style-editor__variant-preview--diamond {
-  width: 22px;
-  height: 22px;
-  margin-left: 8px;
+  width: 30px;
+  height: 30px;
   transform: rotate(45deg);
 }
 
-.object-style-editor__current,
 .object-style-editor__field {
   display: grid;
   gap: 8px;
 }
 
-.object-style-editor__swatch-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 0 12px;
-  border: 1px solid rgba(88, 81, 255, 0.08);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--editor-text);
-  font-size: 13px;
-  font-weight: 600;
+.object-style-editor__field--compact {
+  gap: 0;
 }
 
-.object-style-editor__swatch {
-  width: 18px;
-  height: 18px;
-  border: 1px solid rgba(23, 32, 51, 0.12);
-  border-radius: 999px;
+.object-style-editor__swatch-button {
+  aspect-ratio: 1;
+  min-height: auto;
+  padding: 0;
+  border: 1px solid rgba(23, 32, 51, 0.08);
+  border-radius: 16px;
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-out-quart),
+    box-shadow var(--motion-fast) var(--ease-out-quart),
+    transform var(--motion-fast) var(--ease-out-quart);
+}
+
+.object-style-editor__swatch-button:hover,
+.object-style-editor__swatch-button--active {
+  border-color: rgba(88, 81, 255, 0.28);
+  box-shadow: 0 0 0 3px rgba(88, 81, 255, 0.08);
+  transform: translateY(-1px);
 }
 
 .object-style-editor__preset-row {
-  display: grid;
-  gap: 8px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .object-style-editor__outline-preview {
-  width: 100%;
-  height: 24px;
-  border-radius: 10px;
-  border: 1px solid currentColor;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  border: 2px solid currentColor;
+  background: rgba(88, 81, 255, 0.03);
 }
 
 .object-style-editor__outline-preview--none {
-  border-style: solid;
-  opacity: 0.4;
+  border-width: 1px;
+  border-color: rgba(88, 81, 255, 0.24);
+  background:
+    linear-gradient(135deg, transparent calc(50% - 1px), rgba(88, 81, 255, 0.34) calc(50% - 1px), rgba(88, 81, 255, 0.34) calc(50% + 1px), transparent calc(50% + 1px)),
+    rgba(88, 81, 255, 0.02);
 }
 
 .object-style-editor__outline-preview--thin {
-  border-width: 1px;
+  border-width: 1.5px;
 }
 
 .object-style-editor__outline-preview--medium {
-  border-width: 2px;
+  border-width: 2.5px;
 }
 
 .object-style-editor__outline-preview--dashed {
@@ -403,13 +396,13 @@
 .object-style-editor__color-row {
   display: grid;
   gap: 8px;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 48px minmax(0, 1fr);
 }
 
 .object-style-editor__color-input {
-  width: 44px;
-  min-width: 44px;
-  height: 42px;
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
   padding: 4px;
   border: 1px solid rgba(88, 81, 255, 0.12);
   border-radius: 14px;
@@ -421,9 +414,28 @@
   min-height: 42px;
 }
 
-.object-style-editor--compact .object-style-editor__variant,
-.object-style-editor--compact .object-style-editor__swatch-button,
-.object-style-editor--compact .object-style-editor__outline-preset {
-  min-height: 58px;
-  padding: 10px;
+.object-style-editor__section--compact .object-style-editor__variant,
+.object-style-editor__section--compact .object-style-editor__outline-preset {
+  border-radius: 16px;
+}
+
+.object-style-editor__section--compact .object-style-editor__variant-preview,
+.object-style-editor__section--compact .object-style-editor__outline-preview {
+  width: 42px;
+  height: 42px;
+}
+
+.object-style-editor__section--compact .object-style-editor__variant-preview--pill {
+  width: 50px;
+  height: 30px;
+}
+
+.object-style-editor__field--compact .object-style-editor__color-row {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+.object-style-editor__field--compact .object-style-editor__color-input {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
 }
