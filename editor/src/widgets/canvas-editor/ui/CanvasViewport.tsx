@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   getEffectiveBounds,
   getSelectionBounds,
@@ -116,6 +116,8 @@ export function CanvasViewport() {
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const interactionRef = useRef<InteractionState | null>(null);
+  const [isPanGestureActive, setIsPanGestureActive] = useState(false);
+  const panCursor = isPanGestureActive ? 'grabbing' : effectiveTool === 'pan' ? 'grab' : undefined;
 
   useEffect(() => {
     const node = stageRef.current;
@@ -212,6 +214,7 @@ export function CanvasViewport() {
       }
 
       interactionRef.current = null;
+      setIsPanGestureActive(false);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -219,6 +222,7 @@ export function CanvasViewport() {
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
+      setIsPanGestureActive(false);
     };
   }, [commitHistoryEntry, moveSelection, panViewport, selectMany, setMarquee]);
 
@@ -230,8 +234,12 @@ export function CanvasViewport() {
 
   return (
     <div
-      className="canvas-viewport"
+      className={clsx('canvas-viewport', {
+        'canvas-viewport--pan': effectiveTool === 'pan',
+        'canvas-viewport--panning': isPanGestureActive,
+      })}
       data-testid="canvas-viewport"
+      style={panCursor ? { cursor: panCursor } : undefined}
       onContextMenu={(event) => {
         if (event.target === stageRef.current) {
           event.preventDefault();
@@ -249,6 +257,7 @@ export function CanvasViewport() {
             lastClientX: event.clientX,
             lastClientY: event.clientY,
           };
+          setIsPanGestureActive(true);
           setContextMenu(null);
           return;
         }
@@ -294,6 +303,7 @@ export function CanvasViewport() {
           'canvas-viewport__world--pan': effectiveTool === 'pan',
         })}
         style={{
+          cursor: panCursor,
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
         }}
       >
@@ -349,6 +359,7 @@ export function CanvasViewport() {
                       lastClientX: event.clientX,
                       lastClientY: event.clientY,
                     };
+                    setIsPanGestureActive(true);
                     return;
                   }
 
@@ -385,6 +396,7 @@ export function CanvasViewport() {
                   };
                 }}
                 style={{
+                  cursor: panCursor ?? (object.locked ? 'not-allowed' : 'pointer'),
                   height: bounds.height,
                   transform: `translate(${bounds.x}px, ${bounds.y}px)`,
                   width: bounds.width,
