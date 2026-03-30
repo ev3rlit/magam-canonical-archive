@@ -15,6 +15,18 @@ describe('editor shortcut keymap', () => {
       phase: 'down',
       repeat: false,
     })).toBe('editor.redo');
+
+    expect(resolveShortcutCommandId({
+      chord: 'Mod+C',
+      phase: 'down',
+      repeat: false,
+    })).toBe('selection.copy');
+
+    expect(resolveShortcutCommandId({
+      chord: 'Mod+V',
+      phase: 'down',
+      repeat: false,
+    })).toBe('selection.paste');
   });
 
   it('normalizes keyboard events for space press and release', () => {

@@ -40,6 +40,93 @@ describe('editor store history', () => {
     expect(useEditorStore.getState().scene.objects).toHaveLength(2);
   });
 
+  it('seeds new objects with explicit appearance defaults', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('shape');
+    const shape = useEditorStore.getState().scene.objects[0]!;
+
+    expect(shape.fillPreset).toBe('iris');
+    expect(shape.fillColor).toBe('#ecebff');
+    expect(shape.outlinePreset).toBe('thin');
+    expect(shape.outlineColor).toBe('#5851ff');
+    expect(shape.shapeVariant).toBe('rectangle');
+  });
+
+  it('copies the current selection into the clipboard and pastes offset clones', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('shape');
+    const originalId = useEditorStore.getState().selection.primaryId!;
+    const original = useEditorStore.getState().scene.objects.find((object) => object.id === originalId)!;
+
+    useEditorStore.getState().copySelection();
+    expect(useEditorStore.getState().clipboard.rootIds).toEqual([originalId]);
+
+    useEditorStore.getState().pasteClipboard();
+    expect(useEditorStore.getState().scene.objects).toHaveLength(2);
+
+    const firstPaste = useEditorStore.getState().scene.objects.find((object) => object.id !== originalId)!;
+    expect(firstPaste.x).toBe(original.x + 24);
+    expect(firstPaste.y).toBe(original.y + 24);
+
+    useEditorStore.getState().pasteClipboard();
+    const pastedObjects = useEditorStore.getState().scene.objects.filter((object) => object.id !== originalId);
+    const secondPaste = pastedObjects.find((object) => object.id !== firstPaste.id)!;
+    expect(secondPaste.x).toBe(original.x + 48);
+    expect(secondPaste.y).toBe(original.y + 48);
+  });
+
+  it('moves selection one z-order step forward and backward', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('shape');
+    const shapeId = useEditorStore.getState().selection.primaryId!;
+    useEditorStore.getState().createObjectAtViewportCenter('sticky');
+    const stickyId = useEditorStore.getState().selection.primaryId!;
+
+    useEditorStore.getState().selectOnly(shapeId);
+    useEditorStore.getState().bringSelectionForward();
+    expect(
+      useEditorStore.getState().scene.objects
+        .sort((left, right) => left.zIndex - right.zIndex)
+        .map((object) => object.id),
+    ).toEqual([stickyId, shapeId]);
+
+    useEditorStore.getState().sendSelectionBackward();
+    expect(
+      useEditorStore.getState().scene.objects
+        .sort((left, right) => left.zIndex - right.zIndex)
+        .map((object) => object.id),
+    ).toEqual([shapeId, stickyId]);
+  });
+
+  it('tracks shape variant and custom appearance changes through undo and redo', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('shape');
+    const shapeId = useEditorStore.getState().selection.primaryId!;
+
+    useEditorStore.getState().updateObjectPatch(shapeId, {
+      shapeVariant: 'pill',
+      fillColor: '#112233',
+      outlinePreset: 'dashed',
+      outlineColor: '#445566',
+    });
+
+    let shape = useEditorStore.getState().scene.objects.find((object) => object.id === shapeId)!;
+    expect(shape.shapeVariant).toBe('pill');
+    expect(shape.fillColor).toBe('#112233');
+    expect(shape.outlinePreset).toBe('dashed');
+    expect(shape.outlineColor).toBe('#445566');
+
+    useEditorStore.getState().undo();
+    shape = useEditorStore.getState().scene.objects.find((object) => object.id === shapeId)!;
+    expect(shape.shapeVariant).toBe('rectangle');
+    expect(shape.fillColor).toBe('#ecebff');
+    expect(shape.outlinePreset).toBe('thin');
+    expect(shape.outlineColor).toBe('#5851ff');
+
+    useEditorStore.getState().redo();
+    shape = useEditorStore.getState().scene.objects.find((object) => object.id === shapeId)!;
+    expect(shape.shapeVariant).toBe('pill');
+    expect(shape.fillColor).toBe('#112233');
+    expect(shape.outlinePreset).toBe('dashed');
+    expect(shape.outlineColor).toBe('#445566');
+  });
+
   it('tracks group and ungroup as discrete history entries', () => {
     useEditorStore.getState().createObjectAtViewportCenter('shape');
     const shapeId = useEditorStore.getState().selection.primaryId;

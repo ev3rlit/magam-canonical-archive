@@ -1,30 +1,44 @@
 'use client';
 
+import clsx from 'clsx';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { OUTLINE_PRESET_TOKENS } from '@/core/editor/model/editor-appearance';
 import { clampFloatingPosition } from '@/core/editor/model/editor-geometry';
-import { quickPropertyLabel, useEditorStore } from '@/core/editor/model/editor-store';
+import { useEditorStore } from '@/core/editor/model/editor-store';
 import type { EditorBounds, EditorCanvasObject } from '@/core/editor/model/editor-types';
 import { EditorIcon, type EditorIconName } from '@/shared/ui/EditorIcon';
+import { CanvasObjectActionList } from '@/widgets/canvas-editor/ui/CanvasObjectActionList';
+import { ShapeStyleEditor } from '@/widgets/canvas-editor/ui/ObjectStyleEditors';
 
-function MenuButton({
+type OpenPanel = 'shape' | 'more' | null;
+
+function TriggerButton({
+  active,
+  children,
+  disabled = false,
   icon,
   label,
   onClick,
-  danger = false,
 }: {
-  icon: EditorIconName;
+  active: boolean;
+  children?: ReactNode;
+  disabled?: boolean;
+  icon?: EditorIconName;
   label: string;
   onClick: () => void;
-  danger?: boolean;
 }) {
   return (
     <button
       aria-label={label}
-      className={`floating-object-menu__button${danger ? ' floating-object-menu__button--danger' : ''}`}
+      className={clsx('floating-object-menu__trigger', {
+        'floating-object-menu__trigger--active': active,
+      })}
+      disabled={disabled}
       onClick={onClick}
       title={label}
       type="button"
     >
-      <EditorIcon name={icon} />
+      {children ?? (icon ? <EditorIcon name={icon} /> : null)}
     </button>
   );
 }
@@ -42,58 +56,134 @@ export function CanvasObjectFloatingMenu({
   stageHeight: number;
   stageWidth: number;
 }) {
-  const bringSelectionToFront = useEditorStore((state) => state.bringSelectionToFront);
-  const cycleQuickProperty = useEditorStore((state) => state.cycleQuickProperty);
-  const deleteSelection = useEditorStore((state) => state.deleteSelection);
-  const duplicateSelection = useEditorStore((state) => state.duplicateSelection);
-  const groupSelection = useEditorStore((state) => state.groupSelection);
-  const showPanel = useEditorStore((state) => state.showPanel);
-  const sendSelectionToBack = useEditorStore((state) => state.sendSelectionToBack);
-  const ungroupSelection = useEditorStore((state) => state.ungroupSelection);
+  const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
+  const requestStyleFocus = useEditorStore((state) => state.requestStyleFocus);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const isSingleSelection = selectionCount === 1;
 
-  const singleMenu = selectionCount === 1;
-  const position = clampFloatingPosition({
+  useEffect(() => {
+    setOpenPanel(null);
+  }, [primaryObject.id, selectionCount]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current || menuRef.current.contains(event.target as Node)) {
+        return;
+      }
+      setOpenPanel(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenPanel(null);
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
+
+  const position = useMemo(() => clampFloatingPosition({
     stageRect: {
       width: stageWidth,
       height: stageHeight,
     } as DOMRect,
-    menuHeight: 58,
-    menuWidth: 320,
+    menuHeight: openPanel ? 360 : 58,
+    menuWidth: openPanel === 'more' ? 248 : 280,
     anchorX: selectionBounds.x + selectionBounds.width / 2,
-    anchorY: selectionBounds.y - 16,
-  });
+    anchorY: selectionBounds.y - 18,
+  }), [openPanel, selectionBounds.height, selectionBounds.width, selectionBounds.x, selectionBounds.y, stageHeight, stageWidth]);
+
+  const togglePanel = (panel: Exclude<OpenPanel, null>) => {
+    setOpenPanel((current) => current === panel ? null : panel);
+  };
+
+  const panel = (() => {
+    if (!isSingleSelection || !openPanel) {
+      return null;
+    }
+
+    switch (openPanel) {
+      case 'shape':
+        return primaryObject.kind === 'shape' ? <ShapeStyleEditor mode="compact" object={primaryObject} /> : null;
+      case 'more':
+        return <CanvasObjectActionList onActionComplete={() => setOpenPanel(null)} />;
+    }
+  })();
 
   return (
     <div
       className="floating-object-menu"
+      ref={menuRef}
       style={{
         left: position.x,
         top: position.y,
       }}
     >
-      {singleMenu ? (
-        <>
-          <MenuButton
-            icon="property"
-            label={quickPropertyLabel(primaryObject) ?? 'Quick property'}
-            onClick={() => cycleQuickProperty(primaryObject.id)}
+      <div className="floating-object-menu__bar">
+        <TriggerButton
+          active={openPanel === 'shape'}
+          disabled={primaryObject.kind !== 'shape' || !isSingleSelection}
+          icon="shape"
+          label="모양"
+          onClick={() => togglePanel('shape')}
+        />
+        <TriggerButton
+          active={false}
+          disabled={!isSingleSelection || primaryObject.kind === 'group'}
+          label="채우기"
+          onClick={() => {
+            setOpenPanel(null);
+            requestStyleFocus(primaryObject.id, 'fill');
+          }}
+        >
+          <span
+            className="floating-object-menu__swatch-preview"
+            style={{ backgroundColor: primaryObject.fillColor }}
           />
-          <MenuButton icon="copy" label="Duplicate" onClick={() => duplicateSelection()} />
-          <MenuButton icon="front" label="Bring to front" onClick={() => bringSelectionToFront()} />
-          <MenuButton icon="back" label="Send to back" onClick={() => sendSelectionToBack()} />
-          <MenuButton icon="inspect" label="Open inspector" onClick={() => showPanel('inspector')} />
-          <MenuButton danger icon="delete" label="Delete" onClick={() => deleteSelection()} />
-        </>
-      ) : (
-        <>
-          <MenuButton icon="group" label="Group selection" onClick={() => groupSelection()} />
-          <MenuButton icon="ungroup" label="Ungroup selection" onClick={() => ungroupSelection()} />
-          <MenuButton icon="front" label="Bring to front" onClick={() => bringSelectionToFront()} />
-          <MenuButton icon="back" label="Send to back" onClick={() => sendSelectionToBack()} />
-          <MenuButton icon="inspect" label="Open inspector" onClick={() => showPanel('inspector')} />
-          <MenuButton danger icon="delete" label="Delete" onClick={() => deleteSelection()} />
-        </>
-      )}
+        </TriggerButton>
+        <TriggerButton
+          active={false}
+          disabled={!isSingleSelection || primaryObject.kind === 'group'}
+          label="테두리"
+          onClick={() => {
+            setOpenPanel(null);
+            requestStyleFocus(primaryObject.id, 'border');
+          }}
+        >
+          <span
+            className={clsx(
+              'floating-object-menu__outline-preview',
+              `floating-object-menu__outline-preview--${primaryObject.outlinePreset}`,
+            )}
+            style={{
+              borderColor: primaryObject.outlineColor,
+              borderStyle: OUTLINE_PRESET_TOKENS[primaryObject.outlinePreset].style,
+              borderWidth: OUTLINE_PRESET_TOKENS[primaryObject.outlinePreset].width,
+            }}
+          />
+        </TriggerButton>
+        <TriggerButton
+          active={openPanel === 'more'}
+          disabled={!isSingleSelection}
+          icon="more"
+          label="더보기"
+          onClick={() => togglePanel('more')}
+        />
+      </div>
+      {panel ? (
+        <div
+          className={clsx('floating-object-menu__drawer', {
+            'floating-object-menu__drawer--more': openPanel === 'more',
+          })}
+        >
+          {panel}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -3,6 +3,10 @@
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 import {
+  OUTLINE_PRESET_TOKENS,
+  resolveReadableTextColor,
+} from '@/core/editor/model/editor-appearance';
+import {
   getEffectiveBounds,
   getObjectTransformFrame,
   getSelectionBounds,
@@ -286,6 +290,7 @@ export function CanvasViewport() {
                 })}
                 data-fill={object.fillPreset}
                 data-kind={object.kind}
+                data-shape-variant={object.shapeVariant ?? 'rectangle'}
                 key={object.id}
                 onContextMenu={(event) => {
                   if (!stageRef.current) {
@@ -363,6 +368,11 @@ export function CanvasViewport() {
                   cursor: panCursor ?? (object.locked ? 'not-allowed' : 'pointer'),
                   height: frame.height,
                   left: frame.x,
+                  ['--object-bg' as string]: object.fillColor,
+                  ['--object-border-color' as string]: object.outlineColor,
+                  ['--object-border-style' as string]: OUTLINE_PRESET_TOKENS[object.outlinePreset].style,
+                  ['--object-border-width' as string]: OUTLINE_PRESET_TOKENS[object.outlinePreset].width,
+                  ['--object-text' as string]: resolveReadableTextColor(object.fillColor, object.fillPreset),
                   top: frame.y,
                   transform: `rotate(${frame.rotation}deg)`,
                   transformOrigin: 'center',
@@ -378,7 +388,7 @@ export function CanvasViewport() {
             );
           })}
       </div>
-      {selectionBounds && primaryObject && !contextMenu ? (
+      {selectionBounds && primaryObject && selection.ids.length === 1 && !contextMenu ? (
         <CanvasObjectFloatingMenu
           primaryObject={primaryObject}
           selectionBounds={screenBoundsFromWorld(selectionBounds, viewport)}
@@ -390,7 +400,6 @@ export function CanvasViewport() {
       {contextMenu && contextObject ? (
         <CanvasContextMenu
           contextMenu={contextMenu}
-          object={contextObject}
           stageHeight={viewport.height}
           stageWidth={viewport.width}
         />

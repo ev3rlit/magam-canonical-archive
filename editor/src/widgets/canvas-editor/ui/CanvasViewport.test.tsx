@@ -34,6 +34,16 @@ describe('CanvasViewport content blocks', () => {
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     globalThis.ResizeObserver = ResizeObserverStub as typeof ResizeObserver;
+    window.matchMedia = window.matchMedia ?? (((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia);
     useEditorStore.getState().reset();
     useEditorStore.getState().setViewportRect(1200, 800);
     container = document.createElement('div');
@@ -55,8 +65,10 @@ describe('CanvasViewport content blocks', () => {
       useEditorStore.getState().createObjectAtViewportCenter('sticky');
     });
 
-    expect(container.textContent).toContain('Write text, # heading, or - list');
     expect(container.textContent).not.toContain('Sticky 1');
+    expect(container.textContent).not.toContain('MARKDOWN');
+    expect(container.textContent).not.toContain('Remove');
+    expect(container.textContent).not.toContain('Select a block to insert after it');
   });
 
   it('renders seeded image blocks for image objects', () => {
@@ -134,6 +146,59 @@ describe('CanvasViewport content blocks', () => {
 
     expect(container.querySelectorAll('[data-testid="graph-canvas-resize-handle"]')).toHaveLength(8);
     expect(container.textContent).toContain('2 selected');
+  });
+
+  it('renders style previews on floating triggers and routes fill changes to inspector focus', () => {
+    renderInProvider(<CanvasViewport />, root);
+
+    act(() => {
+      useEditorStore.getState().createObjectAtViewportCenter('shape');
+    });
+
+    expect(container.querySelectorAll('.floating-object-menu__trigger')).toHaveLength(4);
+    expect(container.querySelector('.floating-object-menu__swatch-preview')).toBeTruthy();
+    expect(container.querySelector('.floating-object-menu__outline-preview')).toBeTruthy();
+
+    const fillButton = container.querySelector('[aria-label="채우기"]') as HTMLButtonElement;
+    expect(fillButton).toBeTruthy();
+
+    act(() => {
+      fillButton.click();
+    });
+
+    expect(useEditorStore.getState().overlays.focusRequest?.field).toBe('fill');
+    expect(useEditorStore.getState().panels.open.inspector).toBe(true);
+
+    const moreButton = container.querySelector('[aria-label="더보기"]') as HTMLButtonElement;
+    expect(moreButton).toBeTruthy();
+
+    act(() => {
+      moreButton.click();
+    });
+
+    const textContent = container.textContent ?? '';
+    expect(textContent.indexOf('복사')).toBeLessThan(textContent.indexOf('삭제'));
+    expect(textContent.indexOf('삭제')).toBeLessThan(textContent.indexOf('맨앞으로'));
+
+    const shapeNode = container.querySelector('.canvas-object[data-kind="shape"]') as HTMLDivElement;
+    expect(shapeNode).toBeTruthy();
+
+    act(() => {
+      shapeNode.dispatchEvent(new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: 48,
+        clientY: 48,
+      }));
+    });
+
+    expect(container.textContent).toContain('복사');
+    expect(container.textContent).toContain('붙여넣기');
+    expect(container.textContent).toContain('삭제');
+    expect(container.textContent).toContain('맨앞으로');
+    expect(container.textContent).toContain('앞으로');
+    expect(container.textContent).toContain('뒤로');
+    expect(container.textContent).toContain('맨뒤로');
   });
 
   it('hides transform handles while context menu or block editor is open', () => {

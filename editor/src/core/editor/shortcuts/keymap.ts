@@ -6,6 +6,8 @@ export const defaultEditorKeymap: Record<ShortcutPhase, Record<string, ShortcutC
     'Mod+Z': 'editor.undo',
     'Mod+Shift+Z': 'editor.redo',
     Space: 'canvas.pan-temporary.start',
+    'Mod+C': 'selection.copy',
+    'Mod+V': 'selection.paste',
     Delete: 'selection.delete',
     Backspace: 'selection.delete',
     'Mod+D': 'selection.duplicate',

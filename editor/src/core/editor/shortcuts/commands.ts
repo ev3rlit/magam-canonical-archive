@@ -42,6 +42,24 @@ const shortcutCommands: Record<ShortcutCommandId, ShortcutCommandDefinition> = {
       useEditorStore.getState().setTemporaryToolOverride(null);
     },
   },
+  'selection.copy': {
+    execute: () => {
+      const state = useEditorStore.getState();
+      if (state.selection.ids.length === 0) {
+        return;
+      }
+      state.copySelection();
+    },
+  },
+  'selection.paste': {
+    execute: () => {
+      const state = useEditorStore.getState();
+      if (state.clipboard.rootIds.length === 0) {
+        return;
+      }
+      state.pasteClipboard();
+    },
+  },
   'selection.delete': {
     execute: () => {
       const state = useEditorStore.getState();

@@ -3,6 +3,11 @@
 import { create } from 'zustand';
 import { UndoStack } from '../history/undo-stack';
 import {
+  parseColorInput,
+  resolveFillColor,
+  resolveOutlineColor,
+} from './editor-appearance';
+import {
   cloneContentBlocks,
   createContentBlockFromPalette,
   createSeedContentBlocks,
@@ -32,8 +37,10 @@ import type {
   EditorFillPreset,
   EditorHistorySnapshot,
   EditorMarqueeState,
+  EditorOutlinePreset,
   EditorPanelId,
   EditorSelectionState,
+  EditorShapeVariant,
   EditorTransformFrame,
   EditorTool,
 } from './editor-types';
@@ -67,38 +74,42 @@ const PLACEHOLDER_IMAGE =
     </svg>
   `);
 
-const FILL_PRESETS: EditorFillPreset[] = ['iris', 'sky', 'mint', 'amber', 'blush', 'slate'];
 const MIN_OBJECT_WIDTH = 120;
 const MIN_OBJECT_HEIGHT = 96;
 
 const OBJECT_DEFAULTS: Record<
   Exclude<EditorCanvasObjectKind, 'group'>,
-  Pick<EditorCanvasObject, 'width' | 'height' | 'fillPreset'>
+  Pick<EditorCanvasObject, 'width' | 'height' | 'fillPreset' | 'outlinePreset'>
 > = {
   shape: {
     width: 184,
     height: 124,
     fillPreset: 'iris',
+    outlinePreset: 'thin',
   },
   sticky: {
     width: 208,
     height: 208,
     fillPreset: 'amber',
+    outlinePreset: 'thin',
   },
   text: {
     width: 240,
     height: 108,
     fillPreset: 'slate',
+    outlinePreset: 'none',
   },
   image: {
     width: 252,
     height: 180,
     fillPreset: 'sky',
+    outlinePreset: 'thin',
   },
   frame: {
     width: 380,
     height: 256,
     fillPreset: 'sky',
+    outlinePreset: 'thin',
   },
 };
 
@@ -140,6 +151,11 @@ function createInitialState(): EditorState {
   return {
     activeTool: 'select',
     temporaryToolOverride: null,
+    clipboard: {
+      objects: [],
+      rootIds: [],
+      pasteCount: 0,
+    },
     panels: {
       open: {
         outliner: true,
@@ -224,11 +240,6 @@ function withClearedContext(selection: EditorSelectionState) {
   };
 }
 
-function cycleFillPreset(current: EditorFillPreset) {
-  const index = FILL_PRESETS.indexOf(current);
-  return FILL_PRESETS[(index + 1 + FILL_PRESETS.length) % FILL_PRESETS.length];
-}
-
 function buildDraftObject(input: {
   kind: Exclude<EditorCanvasObjectKind, 'group'>;
   x: number;
@@ -252,6 +263,10 @@ function buildDraftObject(input: {
     locked: false,
     visible: true,
     fillPreset: defaults.fillPreset,
+    fillColor: resolveFillColor(defaults.fillPreset),
+    outlinePreset: defaults.outlinePreset,
+    outlineColor: resolveOutlineColor(defaults.fillPreset),
+    shapeVariant: input.kind === 'shape' ? 'rectangle' : undefined,
     contentBlocks: createSeedContentBlocks({
       kind: input.kind,
       placeholderImageSrc: PLACEHOLDER_IMAGE,
@@ -357,16 +372,57 @@ function removeObjects(objects: EditorCanvasObject[], ids: string[]) {
 function restackObjects(
   objects: EditorCanvasObject[],
   ids: string[],
-  direction: 'front' | 'back',
+  direction: 'front' | 'back' | 'forward' | 'backward',
 ) {
   const selection = new Set(ids);
-  const rest = objects.filter((object) => !selection.has(object.id)).sort((left, right) => left.zIndex - right.zIndex);
-  const moving = objects.filter((object) => selection.has(object.id)).sort((left, right) => left.zIndex - right.zIndex);
-  const ordered = direction === 'front' ? [...rest, ...moving] : [...moving, ...rest];
-  return ordered.map((object, index) => ({
+  const ordered = [...objects].sort((left, right) => left.zIndex - right.zIndex);
+
+  if (direction === 'front' || direction === 'back') {
+    const rest = ordered.filter((object) => !selection.has(object.id));
+    const moving = ordered.filter((object) => selection.has(object.id));
+    const nextOrdered = direction === 'front' ? [...rest, ...moving] : [...moving, ...rest];
+
+    return nextOrdered.map((object, index) => ({
+      ...object,
+      zIndex: index + 1,
+    }));
+  }
+
+  const nextOrdered = [...ordered];
+  if (direction === 'forward') {
+    for (let index = nextOrdered.length - 2; index >= 0; index -= 1) {
+      if (selection.has(nextOrdered[index]!.id) && !selection.has(nextOrdered[index + 1]!.id)) {
+        [nextOrdered[index], nextOrdered[index + 1]] = [nextOrdered[index + 1]!, nextOrdered[index]!];
+      }
+    }
+  } else {
+    for (let index = 1; index < nextOrdered.length; index += 1) {
+      if (selection.has(nextOrdered[index]!.id) && !selection.has(nextOrdered[index - 1]!.id)) {
+        [nextOrdered[index - 1], nextOrdered[index]] = [nextOrdered[index]!, nextOrdered[index - 1]!];
+      }
+    }
+  }
+
+  return nextOrdered.map((object, index) => ({
     ...object,
     zIndex: index + 1,
   }));
+}
+
+function createClipboardSnapshot(selectionIds: string[], objects: EditorCanvasObject[]) {
+  const rootIds = getSelectionRoots(selectionIds, objects);
+  const copiedIds = new Set<string>();
+
+  rootIds.forEach((rootId) => {
+    copiedIds.add(rootId);
+    getDescendantIds(rootId, objects).forEach((descendantId) => copiedIds.add(descendantId));
+  });
+
+  return {
+    objects: cloneCanvasObjects(objects.filter((object) => copiedIds.has(object.id))),
+    rootIds,
+    pasteCount: 0,
+  };
 }
 
 function setFieldPatch(
@@ -436,6 +492,18 @@ function sanitizeObjectPatch(object: EditorCanvasObject, patch: Partial<EditorCa
 
   if (typeof nextPatch['rotation'] === 'number') {
     nextPatch.rotation = normalizeRotationDegrees(nextPatch.rotation);
+  }
+
+  if (typeof nextPatch['fillColor'] === 'string') {
+    nextPatch.fillColor = parseColorInput(nextPatch.fillColor, object.fillColor);
+  }
+
+  if (typeof nextPatch['outlineColor'] === 'string') {
+    nextPatch.outlineColor = parseColorInput(nextPatch.outlineColor, object.outlineColor);
+  }
+
+  if (typeof nextPatch['shapeVariant'] === 'string' && object.kind !== 'shape') {
+    delete nextPatch.shapeVariant;
   }
 
   return nextPatch;
@@ -522,6 +590,11 @@ function applySelectionTransform(input: {
 export interface EditorState {
   activeTool: EditorTool;
   temporaryToolOverride: EditorTool | null;
+  clipboard: {
+    objects: EditorCanvasObject[];
+    rootIds: string[];
+    pasteCount: number;
+  };
   panels: {
     open: Record<EditorPanelId, boolean>;
     mobileOpenPanel: EditorPanelId | null;
@@ -584,11 +657,15 @@ interface EditorStore extends EditorState {
   startBlockEdit: (objectId: string, blockId: string) => void;
   commitBlockEdit: (objectId: string, blockId: string, patch: Record<string, unknown>) => void;
   cancelBlockEdit: () => void;
-  cycleQuickProperty: (objectId: string) => void;
   setContextMenu: (menu: EditorContextMenuState | null) => void;
   requestNameFocus: (objectId: string) => void;
+  requestStyleFocus: (objectId: string, field: Extract<import('./editor-types').EditorFocusableField, 'fill' | 'border'>) => void;
   clearFocusRequest: () => void;
+  copySelection: () => void;
+  pasteClipboard: () => void;
   bringSelectionToFront: () => void;
+  bringSelectionForward: () => void;
+  sendSelectionBackward: () => void;
   sendSelectionToBack: () => void;
   duplicateSelection: () => void;
   deleteSelection: () => void;
@@ -1100,22 +1177,6 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         },
       }));
     },
-    cycleQuickProperty: (objectId) => {
-      commitCanvasMutation('Cycle quick property', (state) => ({
-        scene: {
-          ...state.scene,
-          objects: state.scene.objects.map((object) => {
-            if (object.id !== objectId) {
-              return object;
-            }
-            return {
-              ...object,
-              fillPreset: cycleFillPreset(object.fillPreset),
-            };
-          }),
-        },
-      }));
-    },
     setContextMenu: (menu) => {
       set((state) => ({
         overlays: {
@@ -1147,6 +1208,29 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         },
       }));
     },
+    requestStyleFocus: (objectId, field) => {
+      set((state) => ({
+        panels: {
+          ...state.panels,
+          open: {
+            ...state.panels.open,
+            inspector: true,
+          },
+          mobileOpenPanel: shouldUseMobilePanel() ? 'inspector' : state.panels.mobileOpenPanel,
+        },
+        overlays: {
+          ...state.overlays,
+          contextMenu: null,
+          focusRequest: {
+            objectId,
+            field,
+            requestId: focusRequestCounter++,
+          },
+          blockSelection: null,
+          blockEditor: null,
+        },
+      }));
+    },
     clearFocusRequest: () => {
       set((state) => ({
         overlays: {
@@ -1155,11 +1239,83 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         },
       }));
     },
+    copySelection: () => {
+      set((state) => {
+        if (state.selection.ids.length === 0) {
+          return state;
+        }
+
+        return {
+          clipboard: createClipboardSnapshot(state.selection.ids, state.scene.objects),
+        };
+      });
+    },
+    pasteClipboard: () => {
+      commitCanvasMutation('Paste selection', (state) => {
+        if (state.clipboard.rootIds.length === 0) {
+          return state;
+        }
+
+        const offsetMultiplier = state.clipboard.pasteCount + 1;
+        const offset = {
+          x: 24 * offsetMultiplier,
+          y: 24 * offsetMultiplier,
+        };
+        const clones: EditorCanvasObject[] = [];
+        const rootCloneIds: string[] = [];
+
+        state.clipboard.rootIds.forEach((rootId) => {
+          const root = state.clipboard.objects.find((candidate) => candidate.id === rootId);
+          const previousLength = clones.length;
+          const targetParentId = root?.parentId && state.scene.objects.some((object) => object.id === root.parentId)
+            ? root.parentId
+            : null;
+          cloneBranch(rootId, state.clipboard.objects, offset, targetParentId, clones);
+          const rootClone = clones[previousLength];
+          if (rootClone) {
+            rootCloneIds.push(rootClone.id);
+          }
+        });
+
+        if (clones.length === 0) {
+          return state;
+        }
+
+        const selection = normalizeSelection(rootCloneIds, rootCloneIds[0] ?? null);
+        return {
+          scene: {
+            ...state.scene,
+            objects: [...state.scene.objects, ...clones],
+          },
+          clipboard: {
+            ...state.clipboard,
+            pasteCount: offsetMultiplier,
+          },
+          ...withClearedContext(selection),
+        };
+      });
+    },
     bringSelectionToFront: () => {
       commitCanvasMutation('Bring selection to front', (state) => ({
         scene: {
           ...state.scene,
           objects: restackObjects(state.scene.objects, state.selection.ids, 'front'),
+        },
+      }));
+    },
+    bringSelectionForward: () => {
+      commitCanvasMutation('Bring selection forward', (state) => ({
+        scene: {
+          ...state.scene,
+          objects: restackObjects(state.scene.objects, state.selection.ids, 'forward'),
+        },
+      }));
+    },
+    sendSelectionBackward: () => {
+      commitCanvasMutation('Send selection backward', (state) => ({
+        scene: {
+          ...state.scene,
+          objects: restackObjects(state.scene.objects, state.selection.ids, 'backward'),
         },
       }));
     },
@@ -1238,6 +1394,10 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         locked: false,
         visible: true,
         fillPreset: 'slate',
+        fillColor: resolveFillColor('slate'),
+        outlinePreset: 'none',
+        outlineColor: resolveOutlineColor('slate'),
+        shapeVariant: undefined,
         contentBlocks: [],
       };
 
@@ -1361,12 +1521,4 @@ export function getSelectionStats(state: EditorStore) {
     count: state.selection.ids.length,
     bounds,
   };
-}
-
-export function quickPropertyLabel(object: EditorCanvasObject | null) {
-  if (!object) {
-    return null;
-  }
-
-  return `Fill ${object.fillPreset}`;
 }

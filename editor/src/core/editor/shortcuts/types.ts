@@ -6,6 +6,8 @@ export type ShortcutCommandId =
   | 'editor.redo'
   | 'canvas.pan-temporary.start'
   | 'canvas.pan-temporary.end'
+  | 'selection.copy'
+  | 'selection.paste'
   | 'selection.delete'
   | 'selection.duplicate'
   | 'selection.group'

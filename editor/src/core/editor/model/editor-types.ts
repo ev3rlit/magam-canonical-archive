@@ -14,7 +14,9 @@ export type EditorCanvasObjectKind =
   | 'group';
 
 export type EditorFillPreset = 'iris' | 'sky' | 'mint' | 'amber' | 'blush' | 'slate';
-export type EditorFocusableField = 'name';
+export type EditorShapeVariant = 'rectangle' | 'rounded' | 'pill' | 'diamond';
+export type EditorOutlinePreset = 'none' | 'thin' | 'medium' | 'dashed';
+export type EditorFocusableField = 'name' | 'fill' | 'border';
 
 export interface EditorTextContentBlock {
   id: string;
@@ -62,6 +64,10 @@ export interface EditorCanvasObject {
   locked: boolean;
   visible: boolean;
   fillPreset: EditorFillPreset;
+  fillColor: string;
+  outlinePreset: EditorOutlinePreset;
+  outlineColor: string;
+  shapeVariant?: EditorShapeVariant;
   contentBlocks: EditorContentBlock[];
 }
 

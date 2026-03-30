@@ -3,10 +3,13 @@
 import clsx from 'clsx';
 import { useEffect, useRef, type Ref } from 'react';
 import { useEditorStore } from '@/core/editor/model/editor-store';
-import type { EditorCanvasObject, EditorFillPreset } from '@/core/editor/model/editor-types';
+import type { EditorCanvasObject } from '@/core/editor/model/editor-types';
 import { WidgetBase } from '@/shared/ui/WidgetBase';
-
-const FILL_OPTIONS: EditorFillPreset[] = ['iris', 'sky', 'mint', 'amber', 'blush', 'slate'];
+import {
+  BorderStyleEditor,
+  FillStyleEditor,
+  ShapeStyleEditor,
+} from '@/widgets/canvas-editor/ui/ObjectStyleEditors';
 
 function PropertyField({
   label,
@@ -45,6 +48,8 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
   const updateObjectField = useEditorStore((state) => state.updateObjectField);
   const updateObjectPatch = useEditorStore((state) => state.updateObjectPatch);
   const ungroupSelection = useEditorStore((state) => state.ungroupSelection);
+  const fillSectionRef = useRef<HTMLDivElement | null>(null);
+  const borderSectionRef = useRef<HTMLDivElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const selectedBlock = blockSelection?.objectId === object.id
     ? object.contentBlocks.find((block) => block.id === blockSelection.blockId) ?? null
@@ -59,6 +64,26 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
     ) {
       nameInputRef.current.focus();
       nameInputRef.current.select();
+      clearFocusRequest();
+    }
+    if (
+      focusRequest &&
+      focusRequest.objectId === object.id &&
+      focusRequest.field === 'fill' &&
+      fillSectionRef.current
+    ) {
+      fillSectionRef.current.focus();
+      fillSectionRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+      clearFocusRequest();
+    }
+    if (
+      focusRequest &&
+      focusRequest.objectId === object.id &&
+      focusRequest.field === 'border' &&
+      borderSectionRef.current
+    ) {
+      borderSectionRef.current.focus();
+      borderSectionRef.current.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
       clearFocusRequest();
     }
   }, [clearFocusRequest, focusRequest, object.id]);
@@ -186,22 +211,6 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
             </div>
           </>
         ) : null}
-        {object.kind !== 'group' ? (
-          <label className="inspector-field">
-            <span className="inspector-field__label">Fill preset</span>
-            <select
-              className="inspector-field__input"
-              onChange={(event) => updateObjectPatch(object.id, { fillPreset: event.target.value as EditorFillPreset })}
-              value={object.fillPreset}
-            >
-              {FILL_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
         {object.kind === 'group' ? (
           <button
             className="inspector-action"
@@ -212,6 +221,22 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
           </button>
         ) : null}
       </section>
+      {object.kind !== 'group' ? (
+        <section className="inspector-card">
+          <div className="inspector-card__header">
+            <h3>스타일</h3>
+          </div>
+          <div className="inspector-appearance">
+            {object.kind === 'shape' ? <ShapeStyleEditor mode="panel" object={object} /> : null}
+            <div className="inspector-focus-target" ref={fillSectionRef} tabIndex={-1}>
+              <FillStyleEditor mode="panel" object={object} />
+            </div>
+            <div className="inspector-focus-target" ref={borderSectionRef} tabIndex={-1}>
+              <BorderStyleEditor mode="panel" object={object} />
+            </div>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

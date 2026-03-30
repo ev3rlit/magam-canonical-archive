@@ -2,16 +2,21 @@ import type { SVGProps } from 'react';
 
 export type EditorIconName =
   | 'back'
+  | 'backward'
+  | 'border'
   | 'copy'
   | 'cursor'
   | 'delete'
   | 'frame'
   | 'front'
+  | 'forward'
   | 'group'
   | 'image'
   | 'inspect'
   | 'lock'
+  | 'more'
   | 'pan'
+  | 'paste'
   | 'property'
   | 'rename'
   | 'shape'
@@ -115,6 +120,15 @@ export function EditorIcon({
           <path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
         </Svg>
       );
+    case 'paste':
+      return (
+        <Svg {...props}>
+          <path d="M9 5.5A1.5 1.5 0 0 1 10.5 4H13.5A1.5 1.5 0 0 1 15 5.5V7H9V5.5Z" />
+          <path d="M8 7H16A2 2 0 0 1 18 9V18A2 2 0 0 1 16 20H8A2 2 0 0 1 6 18V9A2 2 0 0 1 8 7Z" />
+          <path d="M9.5 12H14.5" />
+          <path d="M9.5 15H13" />
+        </Svg>
+      );
     case 'front':
       return (
         <Svg {...props}>
@@ -124,6 +138,15 @@ export function EditorIcon({
           <path d="M9.5 5.5L12 3L14.5 5.5" />
         </Svg>
       );
+    case 'forward':
+      return (
+        <Svg {...props}>
+          <rect height="8" rx="2" width="8" x="6" y="8" />
+          <rect height="8" rx="2" width="8" x="10" y="6" />
+          <path d="M14 18H20" />
+          <path d="M17 15L20 18L17 21" />
+        </Svg>
+      );
     case 'back':
       return (
         <Svg {...props}>
@@ -131,6 +154,23 @@ export function EditorIcon({
           <path d="M12 18H19a2 2 0 0 0 2-2V9" />
           <path d="M12 18V21" />
           <path d="M9.5 18.5L12 21L14.5 18.5" />
+        </Svg>
+      );
+    case 'backward':
+      return (
+        <Svg {...props}>
+          <rect height="8" rx="2" width="8" x="10" y="8" />
+          <rect height="8" rx="2" width="8" x="6" y="6" />
+          <path d="M10 18H4" />
+          <path d="M7 15L4 18L7 21" />
+        </Svg>
+      );
+    case 'border':
+      return (
+        <Svg {...props}>
+          <rect height="12" rx="3" width="16" x="4" y="6" />
+          <path d="M8 10H16" strokeDasharray="2 2" />
+          <path d="M8 14H14" strokeDasharray="2 2" />
         </Svg>
       );
     case 'inspect':
@@ -196,6 +236,14 @@ export function EditorIcon({
         <Svg {...props}>
           <rect height="10" rx="2" width="12" x="6" y="10" />
           <path d="M15 10V7.5A3 3 0 0 0 9.9 5.4" />
+        </Svg>
+      );
+    case 'more':
+      return (
+        <Svg {...props}>
+          <circle cx="6" cy="12" fill="currentColor" r="1.8" stroke="none" />
+          <circle cx="12" cy="12" fill="currentColor" r="1.8" stroke="none" />
+          <circle cx="18" cy="12" fill="currentColor" r="1.8" stroke="none" />
         </Svg>
       );
   }

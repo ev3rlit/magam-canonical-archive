@@ -235,3 +235,195 @@
   background: var(--editor-danger-soft);
   border-color: rgba(202, 71, 82, 0.12);
 }
+
+.inspector-appearance {
+  display: grid;
+  gap: 14px;
+}
+
+.inspector-focus-target {
+  outline: none;
+}
+
+.object-style-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.object-style-editor__section {
+  display: grid;
+  gap: 10px;
+}
+
+.object-style-editor__title,
+.object-style-editor__field-label,
+.object-style-editor__current-label {
+  color: var(--editor-soft);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.object-style-editor__variant-grid,
+.object-style-editor__swatch-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.object-style-editor__variant-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.object-style-editor__swatch-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.object-style-editor__variant,
+.object-style-editor__swatch-button,
+.object-style-editor__outline-preset {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  min-height: 64px;
+  padding: 12px;
+  border: 1px solid rgba(88, 81, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(88, 81, 255, 0.04);
+  color: var(--editor-text);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform var(--motion-fast) var(--ease-out-quart),
+    background-color var(--motion-fast) var(--ease-out-quart),
+    border-color var(--motion-fast) var(--ease-out-quart),
+    box-shadow var(--motion-fast) var(--ease-out-quart);
+}
+
+.object-style-editor__variant:hover,
+.object-style-editor__swatch-button:hover,
+.object-style-editor__outline-preset:hover,
+.object-style-editor__variant--active,
+.object-style-editor__swatch-button--active,
+.object-style-editor__outline-preset--active {
+  border-color: rgba(88, 81, 255, 0.24);
+  background: rgba(88, 81, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.object-style-editor__variant-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.object-style-editor__variant-preview {
+  width: 100%;
+  height: 28px;
+  border: 1.5px solid rgba(88, 81, 255, 0.28);
+  background: rgba(88, 81, 255, 0.08);
+}
+
+.object-style-editor__variant-preview--rectangle {
+  border-radius: 8px;
+}
+
+.object-style-editor__variant-preview--rounded {
+  border-radius: 14px;
+}
+
+.object-style-editor__variant-preview--pill {
+  border-radius: 999px;
+}
+
+.object-style-editor__variant-preview--diamond {
+  width: 22px;
+  height: 22px;
+  margin-left: 8px;
+  transform: rotate(45deg);
+}
+
+.object-style-editor__current,
+.object-style-editor__field {
+  display: grid;
+  gap: 8px;
+}
+
+.object-style-editor__swatch-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(88, 81, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--editor-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.object-style-editor__swatch {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(23, 32, 51, 0.12);
+  border-radius: 999px;
+}
+
+.object-style-editor__preset-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.object-style-editor__outline-preview {
+  width: 100%;
+  height: 24px;
+  border-radius: 10px;
+  border: 1px solid currentColor;
+}
+
+.object-style-editor__outline-preview--none {
+  border-style: solid;
+  opacity: 0.4;
+}
+
+.object-style-editor__outline-preview--thin {
+  border-width: 1px;
+}
+
+.object-style-editor__outline-preview--medium {
+  border-width: 2px;
+}
+
+.object-style-editor__outline-preview--dashed {
+  border-width: 2px;
+  border-style: dashed;
+}
+
+.object-style-editor__color-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+.object-style-editor__color-input {
+  width: 44px;
+  min-width: 44px;
+  height: 42px;
+  padding: 4px;
+  border: 1px solid rgba(88, 81, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+}
+
+.object-style-editor__hex-input {
+  min-height: 42px;
+}
+
+.object-style-editor--compact .object-style-editor__variant,
+.object-style-editor--compact .object-style-editor__swatch-button,
+.object-style-editor--compact .object-style-editor__outline-preset {
+  min-height: 58px;
+  padding: 10px;
+}

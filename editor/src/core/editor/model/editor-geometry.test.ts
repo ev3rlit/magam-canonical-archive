@@ -23,6 +23,10 @@ function createObject(overrides: Partial<EditorCanvasObject> & Pick<EditorCanvas
     locked: false,
     visible: true,
     fillPreset: 'iris',
+    fillColor: '#ecebff',
+    outlinePreset: 'thin',
+    outlineColor: '#5851ff',
+    shapeVariant: kind === 'shape' ? 'rectangle' : undefined,
     contentBlocks: [],
     ...rest,
   };
