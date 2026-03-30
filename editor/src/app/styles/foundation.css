@@ -1,0 +1,130 @@
+:root {
+  color-scheme: light;
+  --editor-bg: #f8f9fa;
+  --editor-shell: #fbfcff;
+  --editor-panel: rgba(255, 255, 255, 0.82);
+  --editor-panel-border: rgba(89, 81, 255, 0.14);
+  --editor-panel-shadow: 0 24px 80px rgba(88, 81, 255, 0.08);
+  --editor-surface: rgba(255, 255, 255, 0.74);
+  --editor-stage: #f5f7fb;
+  --editor-grid: rgba(88, 81, 255, 0.08);
+  --editor-text: #172033;
+  --editor-muted: #66718a;
+  --editor-soft: #8f97ab;
+  --editor-primary: #5851ff;
+  --editor-primary-soft: rgba(88, 81, 255, 0.12);
+  --editor-primary-strong: rgba(88, 81, 255, 0.22);
+  --editor-danger: #ca4752;
+  --editor-danger-soft: rgba(202, 71, 82, 0.12);
+  --editor-radius-sm: 10px;
+  --editor-radius-md: 18px;
+  --editor-radius-lg: 26px;
+  --motion-fast: 140ms;
+  --motion-medium: 240ms;
+  --motion-slow: 420ms;
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  color: var(--editor-text);
+  font-family: var(--font-body), 'Inter', sans-serif;
+}
+
+body {
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  border: 0;
+}
+
+@keyframes editor-enter-down {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes widget-panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floating-menu-enter {
+  from {
+    opacity: 0;
+    transform: translate(var(--floating-tool-x), -8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(var(--floating-tool-x), 0) scale(1);
+  }
+}
+
+@keyframes overlay-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes widget-sheet-enter {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes overlay-backdrop-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

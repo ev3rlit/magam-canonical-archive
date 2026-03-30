@@ -1,6 +1,10 @@
 import type { Metadata } from 'next';
 import { Inter, Manrope } from 'next/font/google';
-import './globals.css';
+import './styles/foundation.css';
+import './styles/shell.css';
+import './styles/widget-base.css';
+import './styles/panel-widgets.css';
+import './styles/canvas-widget.css';
 import { AppProvider } from '@/app/providers/AppProvider';
 import { ThemeProvider } from '@/app/providers/ThemeProvider';
 
