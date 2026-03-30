@@ -8,9 +8,9 @@ import { useEditorStore } from '@/core/editor/model/editor-store';
 import type { EditorBounds, EditorCanvasObject } from '@/core/editor/model/editor-types';
 import { EditorIcon, type EditorIconName } from '@/shared/ui/EditorIcon';
 import { CanvasObjectActionList } from '@/widgets/canvas-editor/ui/CanvasObjectActionList';
-import { ShapeStyleEditor } from '@/widgets/canvas-editor/ui/ObjectStyleEditors';
+import { BorderStyleEditor, FillStyleEditor, ShapeStyleEditor } from '@/widgets/canvas-editor/ui/ObjectStyleEditors';
 
-type OpenPanel = 'shape' | 'more' | null;
+type OpenPanel = 'shape' | 'fill' | 'border' | 'more' | null;
 
 function TriggerButton({
   active,
@@ -57,7 +57,7 @@ export function CanvasObjectFloatingMenu({
   stageWidth: number;
 }) {
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
-  const requestStyleFocus = useEditorStore((state) => state.requestStyleFocus);
+  const commitActiveBodyEditor = useEditorStore((state) => state.commitActiveBodyEditor);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const isSingleSelection = selectionCount === 1;
 
@@ -99,6 +99,7 @@ export function CanvasObjectFloatingMenu({
   }), [openPanel, selectionBounds.height, selectionBounds.width, selectionBounds.x, selectionBounds.y, stageHeight, stageWidth]);
 
   const togglePanel = (panel: Exclude<OpenPanel, null>) => {
+    commitActiveBodyEditor();
     setOpenPanel((current) => current === panel ? null : panel);
   };
 
@@ -110,6 +111,10 @@ export function CanvasObjectFloatingMenu({
     switch (openPanel) {
       case 'shape':
         return primaryObject.kind === 'shape' ? <ShapeStyleEditor mode="compact" object={primaryObject} /> : null;
+      case 'fill':
+        return <FillStyleEditor mode="compact" object={primaryObject} />;
+      case 'border':
+        return <BorderStyleEditor mode="compact" object={primaryObject} />;
       case 'more':
         return <CanvasObjectActionList onActionComplete={() => setOpenPanel(null)} />;
     }
@@ -133,13 +138,10 @@ export function CanvasObjectFloatingMenu({
           onClick={() => togglePanel('shape')}
         />
         <TriggerButton
-          active={false}
+          active={openPanel === 'fill'}
           disabled={!isSingleSelection || primaryObject.kind === 'group'}
           label="채우기"
-          onClick={() => {
-            setOpenPanel(null);
-            requestStyleFocus(primaryObject.id, 'fill');
-          }}
+          onClick={() => togglePanel('fill')}
         >
           <span
             className="floating-object-menu__swatch-preview"
@@ -147,13 +149,10 @@ export function CanvasObjectFloatingMenu({
           />
         </TriggerButton>
         <TriggerButton
-          active={false}
+          active={openPanel === 'border'}
           disabled={!isSingleSelection || primaryObject.kind === 'group'}
           label="테두리"
-          onClick={() => {
-            setOpenPanel(null);
-            requestStyleFocus(primaryObject.id, 'border');
-          }}
+          onClick={() => togglePanel('border')}
         >
           <span
             className={clsx(

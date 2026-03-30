@@ -103,16 +103,16 @@ function BodyEditor({
   body: EditorBodyDocument;
   objectId: string;
 }) {
-  const closeBodyEditor = useEditorStore((state) => state.closeBodyEditor);
+  const commitActiveBodyEditor = useEditorStore((state) => state.commitActiveBodyEditor);
   const consumeBodyEditorPendingText = useEditorStore((state) => state.consumeBodyEditorPendingText);
-  const updateObjectBody = useEditorStore((state) => state.updateObjectBody);
+  const updateBodyEditorDraft = useEditorStore((state) => state.updateBodyEditorDraft);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const initialBodyRef = useRef<EditorBodyDocument>(body);
   const [slashState, setSlashState] = useState<CanvasSlashState | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashAnchor, setSlashAnchor] = useState<{ left: number; top: number } | null>(null);
   const [pendingImageOpen, setPendingImageOpen] = useState(false);
   const [imageDraft, setImageDraft] = useState({ src: '', alt: '' });
-  const initialRef = useRef(JSON.stringify(body));
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -132,7 +132,7 @@ function BodyEditor({
       CanvasActiveBlockDecoration,
       CanvasBodyClipboardNormalizer,
     ],
-    content: body,
+    content: initialBodyRef.current,
     autofocus: 'end',
     editorProps: {
       attributes: {
@@ -156,13 +156,14 @@ function BodyEditor({
       }
     },
     onUpdate: ({ editor: currentEditor }) => {
+      updateBodyEditorDraft(objectId, currentEditor.getJSON() as EditorBodyDocument);
       const state = canvasSlashCommandKey.getState(currentEditor.state) ?? null;
       setSlashState(state?.active ? state : null);
       if (!state?.active) {
         setSlashIndex(0);
       }
     },
-  }, [body, objectId]);
+  }, [objectId, updateBodyEditorDraft]);
 
   useEffect(() => {
     if (!editor) {
@@ -195,47 +196,6 @@ function BodyEditor({
       top: coords.bottom - rect.top + 8,
     });
   }, [editor, slashState]);
-
-  const commitIfNeeded = () => {
-    if (!editor) {
-      return;
-    }
-
-    const nextBody = editor.getJSON() as EditorBodyDocument;
-    const nextSerialized = JSON.stringify(nextBody);
-    if (nextSerialized !== initialRef.current) {
-      updateObjectBody(objectId, nextBody);
-      initialRef.current = nextSerialized;
-      return;
-    }
-
-    closeBodyEditor();
-  };
-
-  const syncDomIntoEditor = () => {
-    if (!editor || !wrapperRef.current) {
-      return;
-    }
-
-    const surface = wrapperRef.current.querySelector('.canvas-object__wysiwyg-surface');
-    if (!(surface instanceof HTMLElement)) {
-      return;
-    }
-
-    const domHtml = surface.innerHTML.trim();
-    if (domHtml.length === 0) {
-      return;
-    }
-
-    const editorHtml = editor.getHTML().trim();
-    if (domHtml === editorHtml) {
-      return;
-    }
-
-    editor.commands.setContent(domHtml, {
-      contentType: 'html',
-    });
-  };
 
   const slashActions = useMemo<SlashAction[]>(() => {
     if (!editor || !slashState?.active) {
@@ -324,6 +284,14 @@ function BodyEditor({
     setPendingImageOpen(false);
   };
 
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    updateBodyEditorDraft(objectId, initialBodyRef.current);
+  }, [editor, objectId, updateBodyEditorDraft]);
+
   if (!editor) {
     return null;
   }
@@ -336,8 +304,7 @@ function BodyEditor({
         if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
           return;
         }
-        syncDomIntoEditor();
-        commitIfNeeded();
+        commitActiveBodyEditor();
       }}
       onPointerDown={(event) => event.stopPropagation()}
       ref={wrapperRef}
@@ -430,10 +397,16 @@ export function CanvasObjectBody({
   isSelected: boolean;
 }) {
   const activeBodyEditorObjectId = useEditorStore((state) => state.overlays.activeBodyEditorObjectId);
+  const bodyEditorSession = useEditorStore((state) => state.overlays.bodyEditorSession);
   const isBodyEditorOpen = useEditorStore((state) => state.overlays.isBodyEditorOpen);
   const openBodyEditor = useEditorStore((state) => state.openBodyEditor);
+  const pointerStartedWhileSelectedRef = useRef(false);
 
   const isEditing = isBodyEditorOpen && activeBodyEditorObjectId === object.id;
+
+  const bodyForRender = bodyEditorSession?.objectId === object.id
+    ? bodyEditorSession.draftBody
+    : object.body;
 
   return (
     <div
@@ -441,20 +414,24 @@ export function CanvasObjectBody({
         'canvas-object__content-stack--editing': isEditing,
       })}
       onClick={(event) => {
-        if (!isSelected || isEditing) {
+        const shouldEnterEdit = pointerStartedWhileSelectedRef.current;
+        pointerStartedWhileSelectedRef.current = false;
+
+        if (!shouldEnterEdit || !isSelected || isEditing) {
           return;
         }
         event.stopPropagation();
         openBodyEditor(object.id);
       }}
       onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
+        pointerStartedWhileSelectedRef.current = isSelected;
         if (!isSelected) {
           return;
         }
         event.stopPropagation();
       }}
     >
-      {isEditing ? <BodyEditor body={object.body} objectId={object.id} /> : <BodyPreview body={object.body} />}
+      {isEditing ? <BodyEditor body={bodyForRender} objectId={object.id} /> : <BodyPreview body={bodyForRender} />}
     </div>
   );
 }

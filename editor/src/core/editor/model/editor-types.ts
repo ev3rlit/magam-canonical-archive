@@ -90,9 +90,17 @@ export interface EditorFocusRequest {
   requestId: number;
 }
 
+export interface EditorBodyEditorSession {
+  objectId: string;
+  draftBody: EditorBodyDocument;
+  dirty: boolean;
+  pendingEntryText: string | null;
+}
+
 export interface EditorOverlayState {
   contextMenu: EditorContextMenuState | null;
   focusRequest: EditorFocusRequest | null;
+  bodyEditorSession: EditorBodyEditorSession | null;
   activeBodyEditorObjectId: string | null;
   isBodyEditorOpen: boolean;
   bodyEditorPendingText: string | null;

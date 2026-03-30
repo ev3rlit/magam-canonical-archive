@@ -232,12 +232,38 @@ describe('editor store history', () => {
     useEditorStore.getState().openBodyEditor(stickyId, '/');
     expect(useEditorStore.getState().overlays.activeBodyEditorObjectId).toBe(stickyId);
     expect(useEditorStore.getState().overlays.isBodyEditorOpen).toBe(true);
+    expect(useEditorStore.getState().overlays.bodyEditorSession?.dirty).toBe(false);
     expect(useEditorStore.getState().consumeBodyEditorPendingText()).toBe('/');
     expect(useEditorStore.getState().overlays.bodyEditorPendingText).toBeNull();
 
-    useEditorStore.getState().closeBodyEditor();
+    useEditorStore.getState().discardActiveBodyEditor();
     expect(useEditorStore.getState().overlays.activeBodyEditorObjectId).toBeNull();
     expect(useEditorStore.getState().overlays.isBodyEditorOpen).toBe(false);
+  });
+
+  it('keeps the body draft in session until explicit commit and then writes it once', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('sticky');
+    const stickyId = useEditorStore.getState().selection.primaryId!;
+
+    useEditorStore.getState().openBodyEditor(stickyId);
+    useEditorStore.getState().updateBodyEditorDraft(stickyId, createBodyDocument([
+      createBodyParagraphNode('draft body'),
+    ]));
+
+    expect(useEditorStore.getState().overlays.bodyEditorSession).toEqual(expect.objectContaining({
+      objectId: stickyId,
+      dirty: true,
+    }));
+    expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.body.content[0])
+      .toEqual(expect.objectContaining({ type: 'paragraph' }));
+
+    useEditorStore.getState().commitActiveBodyEditor();
+    expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.body.content[0])
+      .toEqual(expect.objectContaining({
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'draft body' }],
+      }));
+    expect(useEditorStore.getState().overlays.bodyEditorSession).toBeNull();
   });
 
   it('records drag history once and clears redo after a new mutation', () => {

@@ -46,6 +46,7 @@ export const initialEditorState: EditorState = {
   overlays: {
     contextMenu: null,
     focusRequest: null,
+    bodyEditorSession: null,
     activeBodyEditorObjectId: null,
     isBodyEditorOpen: false,
     bodyEditorPendingText: null,

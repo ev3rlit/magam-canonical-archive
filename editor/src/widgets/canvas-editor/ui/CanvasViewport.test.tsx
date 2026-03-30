@@ -5,6 +5,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppProvider } from '../../../app/providers/AppProvider';
+import { createBodyDocument, createBodyParagraphNode } from '../../../core/editor/model/editor-body';
 import { useEditorStore } from '../../../core/editor/model/editor-store';
 import { CanvasSelectionLayer } from './CanvasSelectionLayer';
 import { CanvasViewport } from './CanvasViewport';
@@ -83,6 +84,35 @@ describe('CanvasViewport document bodies', () => {
     expect(image?.getAttribute('src')).toContain('data:image/svg+xml');
   });
 
+  it('selects an object on first click and enters body edit on second click', () => {
+    renderInProvider(<CanvasViewport />, root);
+
+    act(() => {
+      useEditorStore.getState().createObjectAtViewportCenter('sticky');
+    });
+
+    const stickyNode = container.querySelector('.canvas-object[data-kind="sticky"]') as HTMLDivElement;
+    expect(stickyNode).toBeTruthy();
+
+    act(() => {
+      useEditorStore.getState().clearSelection();
+      stickyNode.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+      stickyNode.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+    });
+
+    expect(useEditorStore.getState().selection.primaryId).toBe('sticky-1');
+    expect(useEditorStore.getState().overlays.isBodyEditorOpen).toBe(false);
+
+    const body = stickyNode.querySelector('.canvas-object__content-stack') as HTMLDivElement;
+    act(() => {
+      body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+      body.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0 }));
+    });
+
+    expect(useEditorStore.getState().overlays.activeBodyEditorObjectId).toBe('sticky-1');
+    expect(useEditorStore.getState().overlays.isBodyEditorOpen).toBe(true);
+  });
+
   it('commits document body edits when focus leaves the inline editor', () => {
     renderInProvider(
       <>
@@ -101,12 +131,17 @@ describe('CanvasViewport document bodies', () => {
 
     const editor = container.querySelector('.canvas-object__wysiwyg-surface') as HTMLDivElement;
     const outsideButton = container.querySelector('[data-testid="outside"]') as HTMLButtonElement;
-
     expect(editor).toBeTruthy();
     act(() => {
       editor.focus();
-      editor.innerHTML = '<h1>Launch plan</h1><p></p>';
-      editor.dispatchEvent(new Event('input', { bubbles: true }));
+      useEditorStore.getState().updateBodyEditorDraft(stickyId, createBodyDocument([
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Launch plan' }],
+        },
+        createBodyParagraphNode(),
+      ]));
     });
     act(() => {
       outsideButton.focus();
@@ -118,6 +153,39 @@ describe('CanvasViewport document bodies', () => {
       attrs: expect.objectContaining({ level: 1 }),
     }));
     expect(useEditorStore.getState().overlays.activeBodyEditorObjectId).toBeNull();
+  });
+
+  it('commits the active draft before selecting another object', () => {
+    renderInProvider(<CanvasViewport />, root);
+
+    let firstId = '';
+    let secondId = '';
+    act(() => {
+      useEditorStore.getState().createObjectAtViewportCenter('sticky');
+      firstId = useEditorStore.getState().selection.primaryId!;
+      useEditorStore.getState().createObjectAtViewportCenter('shape');
+      secondId = useEditorStore.getState().selection.primaryId!;
+      useEditorStore.getState().selectOnly(firstId);
+      useEditorStore.getState().openBodyEditor(firstId);
+      useEditorStore.getState().updateBodyEditorDraft(firstId, createBodyDocument([
+        createBodyParagraphNode('persist me'),
+      ]));
+    });
+
+    const shapeNode = container.querySelector('.canvas-object[data-kind="shape"]') as HTMLDivElement;
+    expect(shapeNode).toBeTruthy();
+
+    act(() => {
+      shapeNode.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }));
+    });
+
+    expect(useEditorStore.getState().selection.primaryId).toBe(secondId);
+    expect(useEditorStore.getState().scene.objects.find((object) => object.id === firstId)?.body.content[0])
+      .toEqual(expect.objectContaining({
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'persist me' }],
+      }));
+    expect(useEditorStore.getState().overlays.isBodyEditorOpen).toBe(false);
   });
 
   it('renders resize and rotate handles for single and multi selection', () => {
@@ -148,7 +216,7 @@ describe('CanvasViewport document bodies', () => {
     expect(container.textContent).toContain('2 selected');
   });
 
-  it('renders style previews on floating triggers and routes fill changes to inspector focus', () => {
+  it('renders style previews on floating triggers and opens fill and border drawers', () => {
     renderInProvider(<CanvasViewport />, root);
 
     act(() => {
@@ -166,8 +234,18 @@ describe('CanvasViewport document bodies', () => {
       fillButton.click();
     });
 
-    expect(useEditorStore.getState().overlays.focusRequest?.field).toBe('fill');
-    expect(useEditorStore.getState().panels.open.inspector).toBe(true);
+    expect(container.textContent).toContain('현재 색상');
+    expect(container.textContent).toContain('직접 지정');
+
+    const borderButton = container.querySelector('[aria-label="테두리"]') as HTMLButtonElement;
+    expect(borderButton).toBeTruthy();
+
+    act(() => {
+      borderButton.click();
+    });
+
+    expect(container.textContent).toContain('없음');
+    expect(container.textContent).toContain('점선');
 
     const moreButton = container.querySelector('[aria-label="더보기"]') as HTMLButtonElement;
     expect(moreButton).toBeTruthy();
@@ -199,6 +277,35 @@ describe('CanvasViewport document bodies', () => {
     expect(container.textContent).toContain('앞으로');
     expect(container.textContent).toContain('뒤로');
     expect(container.textContent).toContain('맨뒤로');
+  });
+
+  it('commits the active draft before opening floating fill controls', () => {
+    renderInProvider(<CanvasViewport />, root);
+
+    let stickyId = '';
+    act(() => {
+      useEditorStore.getState().createObjectAtViewportCenter('sticky');
+      stickyId = useEditorStore.getState().selection.primaryId!;
+      useEditorStore.getState().openBodyEditor(stickyId);
+      useEditorStore.getState().updateBodyEditorDraft(stickyId, createBodyDocument([
+        createBodyParagraphNode('keep this'),
+      ]));
+    });
+
+    const fillButton = container.querySelector('[aria-label="채우기"]') as HTMLButtonElement;
+    expect(fillButton).toBeTruthy();
+
+    act(() => {
+      fillButton.click();
+    });
+
+    expect(container.textContent).toContain('현재 색상');
+    expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.body.content[0])
+      .toEqual(expect.objectContaining({
+        type: 'paragraph',
+        content: [{ type: 'text', text: 'keep this' }],
+      }));
+    expect(useEditorStore.getState().overlays.isBodyEditorOpen).toBe(false);
   });
 
   it('hides transform handles while context menu or body editor is open', () => {

@@ -72,7 +72,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const handleKeyDown = handleKeyboardEvent('down');
     const handleKeyUp = handleKeyboardEvent('up');
     const handleBlur = () => {
-      useEditorStore.getState().setTemporaryToolOverride(null);
+      const state = useEditorStore.getState();
+      if (state.overlays.isBodyEditorOpen) {
+        state.commitActiveBodyEditor();
+      }
+      state.setTemporaryToolOverride(null);
     };
 
     window.addEventListener('keydown', handleKeyDown);

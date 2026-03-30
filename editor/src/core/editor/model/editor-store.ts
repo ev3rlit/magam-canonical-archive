@@ -174,6 +174,7 @@ function createInitialState(): EditorState {
     overlays: {
       contextMenu: null,
       focusRequest: null,
+      bodyEditorSession: null,
       activeBodyEditorObjectId: null,
       isBodyEditorOpen: false,
       bodyEditorPendingText: null,
@@ -231,6 +232,7 @@ function withClearedContext(selection: EditorSelectionState) {
     overlays: {
       contextMenu: null,
       focusRequest: null,
+      bodyEditorSession: null,
       activeBodyEditorObjectId: null,
       isBodyEditorOpen: false,
       bodyEditorPendingText: null,
@@ -601,6 +603,7 @@ export interface EditorState {
   overlays: {
     contextMenu: EditorContextMenuState | null;
     focusRequest: import('./editor-types').EditorFocusRequest | null;
+    bodyEditorSession: import('./editor-types').EditorBodyEditorSession | null;
     activeBodyEditorObjectId: string | null;
     isBodyEditorOpen: boolean;
     bodyEditorPendingText: string | null;
@@ -638,6 +641,9 @@ interface EditorStore extends EditorState {
   updateObjectPatch: (objectId: string, patch: Partial<EditorCanvasObject>) => void;
   updateSelectionPatch: (patch: Partial<Pick<EditorCanvasObject, 'locked' | 'visible'>>) => void;
   openBodyEditor: (objectId: string, pendingText?: string | null) => void;
+  updateBodyEditorDraft: (objectId: string, body: EditorCanvasObject['body']) => void;
+  commitActiveBodyEditor: () => void;
+  discardActiveBodyEditor: () => void;
   closeBodyEditor: (options?: { clearPendingText?: boolean }) => void;
   consumeBodyEditorPendingText: () => string | null;
   updateObjectBody: (objectId: string, body: EditorCanvasObject['body']) => void;
@@ -718,12 +724,16 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       set(createInitialState());
     },
     setActiveTool: (tool) => {
+      if (get().overlays.isBodyEditorOpen) {
+        get().commitActiveBodyEditor();
+      }
       set({
         activeTool: tool,
         temporaryToolOverride: null,
         overlays: {
           contextMenu: null,
           focusRequest: null,
+          bodyEditorSession: null,
           activeBodyEditorObjectId: null,
           isBodyEditorOpen: false,
           bodyEditorPendingText: null,
@@ -962,12 +972,35 @@ export const useEditorStore = create<EditorStore>((set, get) => {
           return state;
         }
 
+        const existingSession = state.overlays.bodyEditorSession;
+        if (existingSession?.objectId === objectId && state.overlays.isBodyEditorOpen) {
+          return {
+            selection: normalizeSelection([objectId], objectId),
+            overlays: {
+              ...state.overlays,
+              bodyEditorSession: {
+                ...existingSession,
+                pendingEntryText: pendingText ?? existingSession.pendingEntryText,
+              },
+              activeBodyEditorObjectId: objectId,
+              isBodyEditorOpen: true,
+              bodyEditorPendingText: pendingText ?? existingSession.pendingEntryText,
+            },
+          };
+        }
+
         const selection = normalizeSelection([objectId], objectId);
         return {
           selection,
           overlays: {
             contextMenu: null,
             focusRequest: null,
+            bodyEditorSession: {
+              objectId,
+              draftBody: cloneBody(object.body),
+              dirty: false,
+              pendingEntryText: pendingText,
+            },
             activeBodyEditorObjectId: objectId,
             isBodyEditorOpen: true,
             bodyEditorPendingText: pendingText,
@@ -975,22 +1008,101 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         };
       });
     },
-    closeBodyEditor: (options) => {
+    updateBodyEditorDraft: (objectId, body) => {
+      set((state) => {
+        if (state.overlays.bodyEditorSession?.objectId !== objectId) {
+          return state;
+        }
+
+        return {
+          overlays: {
+            ...state.overlays,
+            bodyEditorSession: {
+              ...state.overlays.bodyEditorSession,
+              draftBody: cloneBody(body),
+              dirty: true,
+            },
+          },
+        };
+      });
+    },
+    commitActiveBodyEditor: () => {
+      const session = get().overlays.bodyEditorSession;
+      if (!session) {
+        return;
+      }
+
+      if (!session.dirty) {
+        set((state) => ({
+          overlays: {
+            ...state.overlays,
+            bodyEditorSession: null,
+            activeBodyEditorObjectId: null,
+            isBodyEditorOpen: false,
+            bodyEditorPendingText: null,
+          },
+        }));
+        return;
+      }
+
+      commitCanvasMutation('Edit document body', (state) => {
+        const activeSession = state.overlays.bodyEditorSession;
+        if (!activeSession) {
+          return state;
+        }
+
+        return {
+          scene: {
+            ...state.scene,
+            objects: state.scene.objects.map((candidate) => (
+              candidate.id === activeSession.objectId
+                ? {
+                    ...candidate,
+                    body: cloneBody(activeSession.draftBody),
+                  }
+                : candidate
+            )),
+          },
+          overlays: {
+            ...state.overlays,
+            bodyEditorSession: null,
+            activeBodyEditorObjectId: null,
+            isBodyEditorOpen: false,
+            bodyEditorPendingText: null,
+          },
+        };
+      });
+    },
+    discardActiveBodyEditor: () => {
       set((state) => ({
         overlays: {
           ...state.overlays,
+          bodyEditorSession: null,
           activeBodyEditorObjectId: null,
           isBodyEditorOpen: false,
-          bodyEditorPendingText: options?.clearPendingText === false ? state.overlays.bodyEditorPendingText : null,
+          bodyEditorPendingText: null,
         },
       }));
     },
+    closeBodyEditor: (options) => {
+      if (options?.clearPendingText === false) {
+        get().commitActiveBodyEditor();
+        return;
+      }
+      get().discardActiveBodyEditor();
+    },
     consumeBodyEditorPendingText: () => {
-      const pendingText = get().overlays.bodyEditorPendingText;
+      const pendingText = get().overlays.bodyEditorSession?.pendingEntryText ?? get().overlays.bodyEditorPendingText;
       if (pendingText !== null) {
         set((state) => ({
           overlays: {
             ...state.overlays,
+            bodyEditorSession: state.overlays.bodyEditorSession
+              ? {
+                  ...state.overlays.bodyEditorSession,
+                  pendingEntryText: null,
+                }
+              : null,
             bodyEditorPendingText: null,
           },
         }));
@@ -1016,16 +1128,20 @@ export const useEditorStore = create<EditorStore>((set, get) => {
                 : candidate
             )),
           },
-          overlays: {
-            ...state.overlays,
-            activeBodyEditorObjectId: null,
-            isBodyEditorOpen: false,
-            bodyEditorPendingText: null,
+        overlays: {
+          ...state.overlays,
+          bodyEditorSession: null,
+          activeBodyEditorObjectId: null,
+          isBodyEditorOpen: false,
+          bodyEditorPendingText: null,
           },
         };
       });
     },
     setContextMenu: (menu) => {
+      if (menu && get().overlays.isBodyEditorOpen) {
+        get().commitActiveBodyEditor();
+      }
       set((state) => ({
         overlays: {
           ...state.overlays,
@@ -1034,6 +1150,9 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       }));
     },
     requestNameFocus: (objectId) => {
+      if (get().overlays.isBodyEditorOpen) {
+        get().commitActiveBodyEditor();
+      }
       set((state) => ({
         panels: {
           ...state.panels,
@@ -1051,6 +1170,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
             field: 'name',
             requestId: focusRequestCounter++,
           },
+          bodyEditorSession: null,
           activeBodyEditorObjectId: null,
           isBodyEditorOpen: false,
           bodyEditorPendingText: null,
@@ -1058,6 +1178,9 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       }));
     },
     requestStyleFocus: (objectId, field) => {
+      if (get().overlays.isBodyEditorOpen) {
+        get().commitActiveBodyEditor();
+      }
       set((state) => ({
         panels: {
           ...state.panels,
@@ -1075,6 +1198,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
             field,
             requestId: focusRequestCounter++,
           },
+          bodyEditorSession: null,
           activeBodyEditorObjectId: null,
           isBodyEditorOpen: false,
           bodyEditorPendingText: null,

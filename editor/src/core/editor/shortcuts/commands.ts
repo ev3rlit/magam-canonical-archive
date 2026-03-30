@@ -8,7 +8,7 @@ const shortcutCommands: Record<ShortcutCommandId, ShortcutCommandDefinition> = {
     execute: () => {
       const state = useEditorStore.getState();
       if (state.overlays.isBodyEditorOpen) {
-        state.closeBodyEditor();
+        state.commitActiveBodyEditor();
         return;
       }
       state.setTemporaryToolOverride(null);

@@ -74,6 +74,7 @@ export function CanvasViewport() {
   const setViewportRect = useEditorStore((state) => state.setViewportRect);
   const panViewport = useEditorStore((state) => state.panViewport);
   const setContextMenu = useEditorStore((state) => state.setContextMenu);
+  const commitActiveBodyEditor = useEditorStore((state) => state.commitActiveBodyEditor);
   const selectOnly = useEditorStore((state) => state.selectOnly);
   const toggleSelection = useEditorStore((state) => state.toggleSelection);
   const clearSelection = useEditorStore((state) => state.clearSelection);
@@ -220,6 +221,7 @@ export function CanvasViewport() {
 
         const state = useEditorStore.getState();
         if (effectiveTool === 'pan') {
+          commitActiveBodyEditor();
           interactionRef.current = {
             type: 'pan',
             lastClientX: event.clientX,
@@ -244,6 +246,7 @@ export function CanvasViewport() {
           originWorldY: point.y,
           seedIds: event.shiftKey ? [...state.selection.ids] : [],
         };
+        commitActiveBodyEditor();
         setContextMenu(null);
         if (!event.shiftKey) {
           clearSelection();
@@ -299,6 +302,7 @@ export function CanvasViewport() {
 
                   event.preventDefault();
                   event.stopPropagation();
+                  commitActiveBodyEditor();
 
                   if (!selection.ids.includes(object.id)) {
                     selectOnly(object.id);
@@ -320,6 +324,7 @@ export function CanvasViewport() {
 
                   event.stopPropagation();
                   event.preventDefault();
+                  commitActiveBodyEditor();
                   setContextMenu(null);
 
                   if (effectiveTool === 'pan') {
