@@ -5,9 +5,9 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppProvider } from './AppProvider';
-import { useEditorStore } from '@/core/editor/model/editor-store';
-import { FloatingToolMenu } from '@/widgets/canvas-editor/ui/FloatingToolMenu';
-import { CanvasViewport } from '@/widgets/canvas-editor/ui/CanvasViewport';
+import { useEditorStore } from '../../core/editor/model/editor-store';
+import { FloatingToolMenu } from '../../widgets/canvas-editor/ui/FloatingToolMenu';
+import { CanvasViewport } from '../../widgets/canvas-editor/ui/CanvasViewport';
 
 class ResizeObserverStub {
   observe() {}
@@ -105,6 +105,34 @@ describe('AppProvider keyboard shortcuts', () => {
 
     expect(useEditorStore.getState().temporaryToolOverride).toBe(null);
     expect(useEditorStore.getState().scene.objects.find((object) => object.id === shapeId)?.x).toBe(180);
+  });
+
+  it('ignores canvas shortcuts while typing into an inline block editor', () => {
+    renderInProvider(
+      <>
+        <FloatingToolMenu />
+        <CanvasViewport />
+      </>,
+      root,
+    );
+
+    let stickyId = '';
+    act(() => {
+      useEditorStore.getState().createObjectAtViewportCenter('sticky');
+      stickyId = useEditorStore.getState().selection.primaryId!;
+      useEditorStore.getState().insertBlock(stickyId, 'markdown');
+    });
+
+    const textarea = container.querySelector('.canvas-object__block-textarea') as HTMLTextAreaElement;
+    expect(textarea).toBeTruthy();
+
+    act(() => {
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true }));
+    });
+
+    expect(useEditorStore.getState().temporaryToolOverride).toBe(null);
+    expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.contentBlocks).toHaveLength(1);
   });
 
   it('routes undo and redo through the keyboard dispatcher', () => {

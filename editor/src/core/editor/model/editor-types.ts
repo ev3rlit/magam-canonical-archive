@@ -2,6 +2,9 @@ export type EditorTool = 'select' | 'pan' | 'shape' | 'sticky' | 'text' | 'image
 
 export type EditorPanelId = 'outliner' | 'inspector';
 
+export type EditorContentBlockType = 'text' | 'markdown' | 'canvas.image';
+export type EditorBlockPaletteType = 'markdown' | 'text' | 'image';
+
 export type EditorCanvasObjectKind =
   | 'shape'
   | 'sticky'
@@ -11,9 +14,31 @@ export type EditorCanvasObjectKind =
   | 'group';
 
 export type EditorFillPreset = 'iris' | 'sky' | 'mint' | 'amber' | 'blush' | 'slate';
-export type EditorImageFit = 'cover' | 'contain';
-export type EditorTextStyle = 'body' | 'headline';
 export type EditorFocusableField = 'name';
+
+export interface EditorTextContentBlock {
+  id: string;
+  blockType: 'text';
+  text: string;
+}
+
+export interface EditorMarkdownContentBlock {
+  id: string;
+  blockType: 'markdown';
+  source: string;
+}
+
+export interface EditorImageContentBlock {
+  id: string;
+  blockType: 'canvas.image';
+  src: string;
+  alt: string;
+}
+
+export type EditorContentBlock =
+  | EditorTextContentBlock
+  | EditorMarkdownContentBlock
+  | EditorImageContentBlock;
 
 export interface EditorViewportState {
   x: number;
@@ -35,11 +60,8 @@ export interface EditorCanvasObject {
   zIndex: number;
   locked: boolean;
   visible: boolean;
-  text: string;
   fillPreset: EditorFillPreset;
-  imageSrc?: string;
-  imageFit?: EditorImageFit;
-  textStyle?: EditorTextStyle;
+  contentBlocks: EditorContentBlock[];
 }
 
 export interface EditorBounds {
@@ -82,9 +104,21 @@ export interface EditorFocusRequest {
   requestId: number;
 }
 
+export interface EditorBlockSelectionState {
+  objectId: string;
+  blockId: string | null;
+}
+
+export interface EditorBlockEditorState {
+  objectId: string;
+  blockId: string;
+}
+
 export interface EditorOverlayState {
   contextMenu: EditorContextMenuState | null;
   focusRequest: EditorFocusRequest | null;
+  blockSelection: EditorBlockSelectionState | null;
+  blockEditor: EditorBlockEditorState | null;
 }
 
 export interface EditorSceneState {

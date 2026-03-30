@@ -37,11 +37,18 @@ function PropertyField({
 
 function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
   const focusRequest = useEditorStore((state) => state.overlays.focusRequest);
+  const blockSelection = useEditorStore((state) => state.overlays.blockSelection);
   const clearFocusRequest = useEditorStore((state) => state.clearFocusRequest);
+  const insertBlock = useEditorStore((state) => state.insertBlock);
+  const selectBlock = useEditorStore((state) => state.selectBlock);
+  const startBlockEdit = useEditorStore((state) => state.startBlockEdit);
   const updateObjectField = useEditorStore((state) => state.updateObjectField);
   const updateObjectPatch = useEditorStore((state) => state.updateObjectPatch);
   const ungroupSelection = useEditorStore((state) => state.ungroupSelection);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const selectedBlock = blockSelection?.objectId === object.id
+    ? object.contentBlocks.find((block) => block.id === blockSelection.blockId) ?? null
+    : null;
 
   useEffect(() => {
     if (
@@ -130,30 +137,50 @@ function SingleSelectionInspector({ object }: { object: EditorCanvasObject }) {
         <div className="inspector-card__header">
           <h3>Details</h3>
         </div>
-        {object.kind === 'text' || object.kind === 'sticky' ? (
-          <label className="inspector-field">
-            <span className="inspector-field__label">Content</span>
-            <textarea
-              className="inspector-field__input inspector-field__input--textarea"
-              onChange={(event) => updateObjectPatch(object.id, { text: event.target.value })}
-              value={object.text}
-            />
-          </label>
+        {object.kind !== 'group' ? (
+          <>
+            <p className="inspector-copy">
+              {object.contentBlocks.length} block{object.contentBlocks.length === 1 ? '' : 's'}
+              {selectedBlock ? ` selected: ${selectedBlock.blockType}` : ''}
+            </p>
+            <div className="inspector-actions">
+              <button
+                className="inspector-action"
+                onClick={() => insertBlock(object.id, 'markdown', selectedBlock?.id ?? null)}
+                type="button"
+              >
+                Add markdown
+              </button>
+              <button
+                className="inspector-action"
+                onClick={() => insertBlock(object.id, 'text', selectedBlock?.id ?? null)}
+                type="button"
+              >
+                Add text
+              </button>
+              <button
+                className="inspector-action"
+                onClick={() => insertBlock(object.id, 'image', selectedBlock?.id ?? null)}
+                type="button"
+              >
+                Add image
+              </button>
+              {object.contentBlocks[0] ? (
+                <button
+                  className="inspector-action"
+                  onClick={() => {
+                    selectBlock(object.id, selectedBlock?.id ?? object.contentBlocks[0]!.id);
+                    startBlockEdit(object.id, selectedBlock?.id ?? object.contentBlocks[0]!.id);
+                  }}
+                  type="button"
+                >
+                  Edit on canvas
+                </button>
+              ) : null}
+            </div>
+          </>
         ) : null}
-        {object.kind === 'image' ? (
-          <label className="inspector-field">
-            <span className="inspector-field__label">Fit mode</span>
-            <select
-              className="inspector-field__input"
-              onChange={(event) => updateObjectPatch(object.id, { imageFit: event.target.value as 'cover' | 'contain' })}
-              value={object.imageFit ?? 'cover'}
-            >
-              <option value="cover">Cover</option>
-              <option value="contain">Contain</option>
-            </select>
-          </label>
-        ) : null}
-        {object.kind === 'shape' || object.kind === 'frame' ? (
+        {object.kind !== 'group' ? (
           <label className="inspector-field">
             <span className="inspector-field__label">Fill preset</span>
             <select

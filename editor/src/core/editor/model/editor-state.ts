@@ -46,5 +46,7 @@ export const initialEditorState: EditorState = {
   overlays: {
     contextMenu: null,
     focusRequest: null,
+    blockSelection: null,
+    blockEditor: null,
   },
 };

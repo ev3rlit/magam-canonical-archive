@@ -2,18 +2,25 @@
 
 import { create } from 'zustand';
 import { UndoStack } from '../history/undo-stack';
+import {
+  cloneContentBlocks,
+  createContentBlockFromPalette,
+  createSeedContentBlocks,
+  findContentBlockIndex,
+  updateContentBlock,
+} from './editor-content-blocks';
 import { clamp, createObjectMap, getChildObjects, getDescendantIds, getSelectionBounds, nextZIndex } from './editor-geometry';
 import type {
+  EditorBlockPaletteType,
   EditorCanvasObject,
   EditorCanvasObjectKind,
+  EditorContentBlock,
   EditorContextMenuState,
   EditorFillPreset,
   EditorHistorySnapshot,
-  EditorImageFit,
   EditorMarqueeState,
   EditorPanelId,
   EditorSelectionState,
-  EditorTextStyle,
   EditorTool,
 } from './editor-types';
 
@@ -50,50 +57,32 @@ const FILL_PRESETS: EditorFillPreset[] = ['iris', 'sky', 'mint', 'amber', 'blush
 
 const OBJECT_DEFAULTS: Record<
   Exclude<EditorCanvasObjectKind, 'group'>,
-  Pick<
-    EditorCanvasObject,
-    'width' | 'height' | 'fillPreset' | 'text' | 'imageFit' | 'textStyle'
-  >
+  Pick<EditorCanvasObject, 'width' | 'height' | 'fillPreset'>
 > = {
   shape: {
     width: 184,
     height: 124,
     fillPreset: 'iris',
-    text: 'New shape',
-    imageFit: 'cover',
-    textStyle: 'body',
   },
   sticky: {
     width: 208,
     height: 208,
     fillPreset: 'amber',
-    text: 'Capture the next step while it is still fresh.',
-    imageFit: 'cover',
-    textStyle: 'body',
   },
   text: {
     width: 240,
     height: 108,
     fillPreset: 'slate',
-    text: 'Headline the idea, then let the layout breathe.',
-    imageFit: 'cover',
-    textStyle: 'headline',
   },
   image: {
     width: 252,
     height: 180,
     fillPreset: 'sky',
-    text: 'Reference',
-    imageFit: 'cover',
-    textStyle: 'body',
   },
   frame: {
     width: 380,
     height: 256,
     fillPreset: 'sky',
-    text: 'New frame',
-    imageFit: 'cover',
-    textStyle: 'body',
   },
 };
 
@@ -157,12 +146,17 @@ function createInitialState(): EditorState {
     overlays: {
       contextMenu: null,
       focusRequest: null,
+      blockSelection: null,
+      blockEditor: null,
     },
   };
 }
 
 function cloneCanvasObjects(objects: EditorCanvasObject[]) {
-  return objects.map((object) => ({ ...object }));
+  return objects.map((object) => ({
+    ...object,
+    contentBlocks: cloneContentBlocks(object.contentBlocks),
+  }));
 }
 
 function cloneSelection(selection: EditorSelectionState): EditorSelectionState {
@@ -208,6 +202,8 @@ function withClearedContext(selection: EditorSelectionState) {
     overlays: {
       contextMenu: null,
       focusRequest: null,
+      blockSelection: null,
+      blockEditor: null,
     },
   };
 }
@@ -238,20 +234,24 @@ function buildDraftObject(input: {
     zIndex: input.zIndex,
     locked: false,
     visible: true,
-    text: defaults.text,
     fillPreset: defaults.fillPreset,
-    ...(input.kind === 'image'
-      ? {
-          imageFit: defaults.imageFit as EditorImageFit,
-          imageSrc: PLACEHOLDER_IMAGE,
-        }
-      : {}),
-    ...(input.kind === 'text' || input.kind === 'sticky'
-      ? {
-          textStyle: defaults.textStyle as EditorTextStyle,
-        }
-      : {}),
+    contentBlocks: createSeedContentBlocks({
+      kind: input.kind,
+      placeholderImageSrc: PLACEHOLDER_IMAGE,
+    }),
   };
+}
+
+function nextBlockId(contentBlocks: EditorContentBlock[]) {
+  const max = contentBlocks.reduce((largest, block) => {
+    const match = /^body-(\d+)$/.exec(block.id);
+    if (!match) {
+      return largest;
+    }
+    return Math.max(largest, Number(match[1]));
+  }, 0);
+
+  return `body-${max + 1}`;
 }
 
 function getSelectionRoots(selectionIds: string[], objects: EditorCanvasObject[]) {
@@ -316,6 +316,7 @@ function cloneBranch(
     ...original,
     id: nextId,
     name: `${original.name} copy`,
+    contentBlocks: cloneContentBlocks(original.contentBlocks),
     parentId,
     x: original.x + offset.x,
     y: original.y + offset.y,
@@ -396,6 +397,8 @@ export interface EditorState {
   overlays: {
     contextMenu: EditorContextMenuState | null;
     focusRequest: import('./editor-types').EditorFocusRequest | null;
+    blockSelection: import('./editor-types').EditorBlockSelectionState | null;
+    blockEditor: import('./editor-types').EditorBlockEditorState | null;
   };
 }
 
@@ -419,6 +422,13 @@ interface EditorStore extends EditorState {
   updateObjectField: (objectId: string, field: keyof EditorCanvasObject, value: string) => void;
   updateObjectPatch: (objectId: string, patch: Partial<EditorCanvasObject>) => void;
   updateSelectionPatch: (patch: Partial<Pick<EditorCanvasObject, 'locked' | 'visible'>>) => void;
+  selectBlock: (objectId: string, blockId: string | null) => void;
+  insertBlock: (objectId: string, type: EditorBlockPaletteType, afterBlockId?: string | null) => void;
+  updateBlock: (objectId: string, blockId: string, patch: Record<string, unknown>) => void;
+  removeBlock: (objectId: string, blockId: string) => void;
+  startBlockEdit: (objectId: string, blockId: string) => void;
+  commitBlockEdit: (objectId: string, blockId: string, patch: Record<string, unknown>) => void;
+  cancelBlockEdit: () => void;
   cycleQuickProperty: (objectId: string) => void;
   setContextMenu: (menu: EditorContextMenuState | null) => void;
   requestNameFocus: (objectId: string) => void;
@@ -488,6 +498,8 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         overlays: {
           contextMenu: null,
           focusRequest: null,
+          blockSelection: null,
+          blockEditor: null,
         },
       });
     },
@@ -669,6 +681,213 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         };
       });
     },
+    selectBlock: (objectId, blockId) => {
+      set((state) => {
+        const object = state.scene.objects.find((candidate) => candidate.id === objectId);
+        if (!object || object.kind === 'group') {
+          return state;
+        }
+
+        const selection = normalizeSelection([objectId], objectId);
+        return {
+          ...withClearedContext(selection),
+          overlays: {
+            contextMenu: null,
+            focusRequest: null,
+            blockSelection: {
+              objectId,
+              blockId,
+            },
+            blockEditor: null,
+          },
+        };
+      });
+    },
+    insertBlock: (objectId, type, afterBlockId = null) => {
+      commitCanvasMutation('Insert content block', (state) => {
+        const object = state.scene.objects.find((candidate) => candidate.id === objectId);
+        if (!object || object.kind === 'group') {
+          return state;
+        }
+
+        const nextId = nextBlockId(object.contentBlocks);
+        const nextBlock = createContentBlockFromPalette({
+          blockId: nextId,
+          type,
+          placeholderImageSrc: PLACEHOLDER_IMAGE,
+        });
+        const nextBlocks = cloneContentBlocks(object.contentBlocks);
+        const anchorIndex = afterBlockId ? findContentBlockIndex(object, afterBlockId) : -1;
+        const insertIndex = anchorIndex >= 0 ? anchorIndex + 1 : nextBlocks.length;
+        nextBlocks.splice(insertIndex, 0, nextBlock);
+
+        const selection = normalizeSelection([objectId], objectId);
+        return {
+          scene: {
+            ...state.scene,
+            objects: state.scene.objects.map((candidate) => (
+              candidate.id === objectId
+                ? {
+                    ...candidate,
+                    contentBlocks: nextBlocks,
+                  }
+                : candidate
+            )),
+          },
+          selection,
+          overlays: {
+            ...state.overlays,
+            contextMenu: null,
+            focusRequest: null,
+            blockSelection: {
+              objectId,
+              blockId: nextId,
+            },
+            blockEditor: {
+              objectId,
+              blockId: nextId,
+            },
+          },
+        };
+      });
+    },
+    updateBlock: (objectId, blockId, patch) => {
+      commitCanvasMutation('Update content block', (state) => {
+        const object = state.scene.objects.find((candidate) => candidate.id === objectId);
+        if (!object || object.kind === 'group') {
+          return state;
+        }
+
+        if (findContentBlockIndex(object, blockId) < 0) {
+          return state;
+        }
+
+        return {
+          scene: {
+            ...state.scene,
+            objects: state.scene.objects.map((candidate) => {
+              if (candidate.id !== objectId) {
+                return candidate;
+              }
+
+              return {
+                ...candidate,
+                contentBlocks: candidate.contentBlocks.map((block) => (
+                  block.id === blockId ? updateContentBlock(block, patch) : block
+                )),
+              };
+            }),
+          },
+        };
+      });
+    },
+    removeBlock: (objectId, blockId) => {
+      commitCanvasMutation('Remove content block', (state) => {
+        const object = state.scene.objects.find((candidate) => candidate.id === objectId);
+        if (!object || object.kind === 'group') {
+          return state;
+        }
+
+        const nextBlocks = object.contentBlocks.filter((block) => block.id !== blockId);
+        if (nextBlocks.length === object.contentBlocks.length) {
+          return state;
+        }
+
+        const nextSelectedBlockId = nextBlocks[Math.max(0, findContentBlockIndex(object, blockId) - 1)]?.id ?? null;
+        return {
+          scene: {
+            ...state.scene,
+            objects: state.scene.objects.map((candidate) => (
+              candidate.id === objectId
+                ? {
+                    ...candidate,
+                    contentBlocks: nextBlocks,
+                  }
+                : candidate
+            )),
+          },
+          overlays: {
+            ...state.overlays,
+            blockSelection: {
+              objectId,
+              blockId: nextSelectedBlockId,
+            },
+            blockEditor: state.overlays.blockEditor?.objectId === objectId
+              && state.overlays.blockEditor.blockId === blockId
+              ? null
+              : state.overlays.blockEditor,
+          },
+        };
+      });
+    },
+    startBlockEdit: (objectId, blockId) => {
+      set((state) => {
+        const object = state.scene.objects.find((candidate) => candidate.id === objectId);
+        if (!object || object.kind === 'group' || findContentBlockIndex(object, blockId) < 0) {
+          return state;
+        }
+
+        const selection = normalizeSelection([objectId], objectId);
+        return {
+          selection,
+          overlays: {
+            ...state.overlays,
+            contextMenu: null,
+            focusRequest: null,
+            blockSelection: {
+              objectId,
+              blockId,
+            },
+            blockEditor: {
+              objectId,
+              blockId,
+            },
+          },
+        };
+      });
+    },
+    commitBlockEdit: (objectId, blockId, patch) => {
+      commitCanvasMutation('Edit content block', (state) => {
+        const object = state.scene.objects.find((candidate) => candidate.id === objectId);
+        if (!object || object.kind === 'group' || findContentBlockIndex(object, blockId) < 0) {
+          return state;
+        }
+
+        return {
+          scene: {
+            ...state.scene,
+            objects: state.scene.objects.map((candidate) => {
+              if (candidate.id !== objectId) {
+                return candidate;
+              }
+
+              return {
+                ...candidate,
+                contentBlocks: candidate.contentBlocks.map((block) => (
+                  block.id === blockId ? updateContentBlock(block, patch) : block
+                )),
+              };
+            }),
+          },
+          overlays: {
+            ...state.overlays,
+            blockSelection: {
+              objectId,
+              blockId,
+            },
+            blockEditor: null,
+          },
+        };
+      });
+    },
+    cancelBlockEdit: () => {
+      set((state) => ({
+        overlays: {
+          ...state.overlays,
+          blockEditor: null,
+        },
+      }));
+    },
     cycleQuickProperty: (objectId) => {
       commitCanvasMutation('Cycle quick property', (state) => ({
         scene: {
@@ -676,18 +895,6 @@ export const useEditorStore = create<EditorStore>((set, get) => {
           objects: state.scene.objects.map((object) => {
             if (object.id !== objectId) {
               return object;
-            }
-            if (object.kind === 'image') {
-              return {
-                ...object,
-                imageFit: object.imageFit === 'contain' ? 'cover' : 'contain',
-              };
-            }
-            if (object.kind === 'text') {
-              return {
-                ...object,
-                textStyle: object.textStyle === 'headline' ? 'body' : 'headline',
-              };
             }
             return {
               ...object,
@@ -723,6 +930,8 @@ export const useEditorStore = create<EditorStore>((set, get) => {
             field: 'name',
             requestId: focusRequestCounter++,
           },
+          blockSelection: null,
+          blockEditor: null,
         },
       }));
     },
@@ -815,8 +1024,8 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         zIndex: nextZIndex(state.scene.objects),
         locked: false,
         visible: true,
-        text: '',
         fillPreset: 'slate',
+        contentBlocks: [],
       };
 
       const objects = state.scene.objects.map((object) => (
@@ -946,11 +1155,5 @@ export function quickPropertyLabel(object: EditorCanvasObject | null) {
     return null;
   }
 
-  if (object.kind === 'image') {
-    return object.imageFit === 'contain' ? 'Fit contain' : 'Fit cover';
-  }
-  if (object.kind === 'text') {
-    return object.textStyle === 'headline' ? 'Headline style' : 'Body style';
-  }
   return `Fill ${object.fillPreset}`;
 }

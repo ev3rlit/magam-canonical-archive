@@ -13,6 +13,7 @@ import {
 import { getEffectiveTool, getPrimarySelectionObject, useEditorStore } from '@/core/editor/model/editor-store';
 import type { EditorCanvasObject, EditorHistorySnapshot, EditorMarqueeState } from '@/core/editor/model/editor-types';
 import { CanvasContextMenu } from '@/widgets/canvas-editor/ui/CanvasContextMenu';
+import { CanvasObjectBody } from '@/widgets/canvas-editor/ui/CanvasObjectBody';
 import { CanvasObjectFloatingMenu } from '@/widgets/canvas-editor/ui/CanvasObjectFloatingMenu';
 
 type InteractionState =
@@ -48,17 +49,6 @@ function fillClass(object: EditorCanvasObject) {
 }
 
 function CanvasObjectContent({ object }: { object: EditorCanvasObject }) {
-  if (object.kind === 'image') {
-    return (
-      <>
-        <img alt={object.name} className="canvas-object__image" src={object.imageSrc} />
-        <div className="canvas-object__caption">
-          <strong>{object.name}</strong>
-        </div>
-      </>
-    );
-  }
-
   if (object.kind === 'group') {
     return (
       <div className="canvas-object__group-label">
@@ -67,34 +57,7 @@ function CanvasObjectContent({ object }: { object: EditorCanvasObject }) {
     );
   }
 
-  if (object.kind === 'frame') {
-    return (
-      <div className="canvas-object__frame-label">
-        <strong>{object.name}</strong>
-      </div>
-    );
-  }
-
-  if (object.kind === 'text') {
-    return (
-      <div
-        className={clsx('canvas-object__text-block', {
-          'canvas-object__text-block--headline': object.textStyle === 'headline',
-        })}
-      >
-        {object.text.split('\n').map((line) => (
-          <span key={`${object.id}-${line}`}>{line}</span>
-        ))}
-      </div>
-    );
-  }
-
-  return (
-    <div className="canvas-object__body">
-      <strong>{object.name}</strong>
-      <p>{object.text}</p>
-    </div>
-  );
+  return null;
 }
 
 export function CanvasViewport() {
@@ -315,7 +278,7 @@ export function CanvasViewport() {
             const isSelected = selection.ids.includes(object.id);
 
             return (
-              <button
+              <div
                 className={clsx('canvas-object', fillClass(object), {
                   'canvas-object--selected': isSelected,
                   'canvas-object--locked': object.locked,
@@ -397,15 +360,17 @@ export function CanvasViewport() {
                 }}
                 style={{
                   cursor: panCursor ?? (object.locked ? 'not-allowed' : 'pointer'),
-                  height: bounds.height,
+                  minHeight: bounds.height,
                   transform: `translate(${bounds.x}px, ${bounds.y}px)`,
                   width: bounds.width,
                   zIndex: object.zIndex,
                 }}
-                type="button"
               >
                 <CanvasObjectContent object={object} />
-              </button>
+                {object.kind !== 'group' ? (
+                  <CanvasObjectBody isSelected={isSelected} object={object} />
+                ) : null}
+              </div>
             );
           })}
       </div>

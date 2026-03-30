@@ -6,6 +6,7 @@ import type {
   EditorSelectionState,
   EditorViewportState,
 } from './editor-types';
+import { estimateCanvasObjectHeight } from './editor-content-blocks';
 
 const GROUP_PADDING = 24;
 
@@ -74,7 +75,7 @@ export function getEffectiveBounds(
       x: object.x,
       y: object.y,
       width: object.width,
-      height: object.height,
+      height: estimateCanvasObjectHeight(object),
     };
   }
 

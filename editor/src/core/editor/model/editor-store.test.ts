@@ -73,6 +73,53 @@ describe('editor store history', () => {
     expect(useEditorStore.getState().scene.objects.some((object) => object.kind === 'group')).toBe(true);
   });
 
+  it('creates empty sticky objects and seeded image objects', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('sticky');
+    const stickyId = useEditorStore.getState().selection.primaryId!;
+    const sticky = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId);
+
+    expect(sticky?.contentBlocks).toEqual([]);
+
+    useEditorStore.getState().createObjectAtViewportCenter('image');
+    const imageId = useEditorStore.getState().selection.primaryId!;
+    const image = useEditorStore.getState().scene.objects.find((object) => object.id === imageId);
+
+    expect(image?.contentBlocks).toEqual([
+      expect.objectContaining({
+        blockType: 'canvas.image',
+      }),
+    ]);
+  });
+
+  it('tracks block insert, edit, remove, undo, and redo without per-keystroke history noise', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('sticky');
+    const stickyId = useEditorStore.getState().selection.primaryId!;
+
+    useEditorStore.getState().insertBlock(stickyId, 'markdown');
+    let sticky = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)!;
+    const firstBlockId = sticky.contentBlocks[0]!.id;
+    useEditorStore.getState().commitBlockEdit(stickyId, firstBlockId, { source: '# First block' });
+
+    useEditorStore.getState().insertBlock(stickyId, 'markdown', firstBlockId);
+    sticky = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)!;
+    const secondBlockId = sticky.contentBlocks[1]!.id;
+    useEditorStore.getState().commitBlockEdit(stickyId, secondBlockId, { source: 'Second block' });
+
+    sticky = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)!;
+    expect(sticky.contentBlocks).toHaveLength(2);
+    expect(sticky.contentBlocks[0]).toEqual(expect.objectContaining({ source: '# First block' }));
+    expect(sticky.contentBlocks[1]).toEqual(expect.objectContaining({ source: 'Second block' }));
+
+    useEditorStore.getState().removeBlock(stickyId, firstBlockId);
+    expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.contentBlocks).toHaveLength(1);
+
+    useEditorStore.getState().undo();
+    expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.contentBlocks).toHaveLength(2);
+
+    useEditorStore.getState().redo();
+    expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.contentBlocks).toHaveLength(1);
+  });
+
   it('records drag history once and clears redo after a new mutation', () => {
     useEditorStore.getState().createObjectAtViewportCenter('shape');
     const shapeId = useEditorStore.getState().selection.primaryId;
