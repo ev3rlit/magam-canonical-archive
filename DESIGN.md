@@ -28,6 +28,17 @@ Apply this rule broadly across option pickers, toolbars, inspectors, floating me
 
 When designing or reviewing UI, aggressively remove redundant visible labels and descriptive modifiers. Do not add text that simply repeats what the user can already understand from the visual itself, nearby grouping, or surrounding context. Favor recognition through layout, preview, iconography, color, state, and position over explanatory copy. Keep visible labels only when they disambiguate similar options, expose non-visual meaning, improve search/scanning, or prevent a likely user mistake. Accessibility labels may remain in code, but they must not be used as justification for extra visible copy. If a user can correctly choose an option after one glance without the text, the text should usually be removed.
 
+## Canvas/App Shell Overflow Policy
+
+Canvas-first editor surfaces must not rely on document-level scrolling. The viewport, app shell, and panel layout should establish fixed height boundaries first, and scrolling should be assigned only to explicit internal regions.
+
+- Do not allow global page scrolling on editor surfaces. `html` and `body` should be treated as non-scrolling roots for the editor runtime.
+- Keep the primary app shell viewport-bound. The editor shell should own the available height and use an explicit viewport-sized height such as `100dvh`.
+- Panels, sheets, and modals should use a fixed container plus an internal scroll body. The panel itself should not grow to accommodate overflow content.
+- Only explicit internal regions may scroll, such as inspector bodies, side-panel content areas, canvas side sheets, or list panes.
+- Every ancestor of an internal scroll region must be shrinkable. Use `min-height: 0`, `min-width: 0`, or explicit sizing so overflow resolves inside the intended region instead of escaping to the page.
+- Use media queries and container queries to adapt internal layout, density, and control arrangement. Do not use them as a substitute for defining scroll ownership and fixed layout boundaries first.
+
 ## Theme Overview
 
 ### Color Palette

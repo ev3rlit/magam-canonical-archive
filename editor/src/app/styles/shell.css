@@ -8,7 +8,11 @@ body {
 .editor-shell {
   display: grid;
   grid-template-rows: 80px minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
 }
 
 .editor-shell__body {

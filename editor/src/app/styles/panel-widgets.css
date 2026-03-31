@@ -1,3 +1,18 @@
+.inspector-panel__body {
+  display: flex;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  container-type: inline-size;
+}
+
+.inspector-panel__content {
+  display: grid;
+  align-content: start;
+  width: 100%;
+  min-height: 0;
+}
+
 .outliner-root {
   display: grid;
   gap: 10px;

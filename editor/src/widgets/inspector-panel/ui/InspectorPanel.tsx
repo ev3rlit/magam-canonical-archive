@@ -281,13 +281,14 @@ export function InspectorPanel() {
 
   return (
     <WidgetBase
+      bodyClassName="inspector-panel__body"
       collapsible
       entryDelayMs={220}
       panelId="inspector"
       side="right"
       title="Inspector"
     >
-      <div data-testid="inspector-panel">
+      <div className="inspector-panel__content" data-testid="inspector-panel">
         {selectedObjects.length === 1 && primaryObject ? (
           <SingleSelectionInspector object={primaryObject} />
         ) : null}
