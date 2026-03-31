@@ -234,6 +234,7 @@ export function CanvasSelectionLayer() {
             'selection-outline--multi': !singleSelection,
             'selection-outline--transform': showHandles,
           })}
+          data-testid="graph-canvas-selection-shell"
           style={{
             ...toLayerStyle(screenFrame),
             transform: `rotate(${singleSelection ? screenFrame.rotation : 0}deg)`,
@@ -303,6 +304,7 @@ export function CanvasSelectionLayer() {
       {selectionBounds && !screenFrame && selection.ids.length > 1 ? (
         <div
           className="selection-outline selection-outline--multi"
+          data-testid="graph-canvas-selection-shell"
           style={toLayerStyle(screenBoundsFromWorld(selectionBounds, viewport))}
         >
           <span className="selection-outline__label">{selection.ids.length} selected</span>

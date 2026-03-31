@@ -601,7 +601,7 @@
 .selection-outline,
 .selection-marquee {
   position: absolute;
-  border-radius: 24px;
+  border-radius: 0;
 }
 
 .selection-outline {

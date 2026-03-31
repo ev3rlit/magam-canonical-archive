@@ -266,7 +266,9 @@ test.describe('canvas core authoring entry', () => {
     await expect(stickerNode).toBeVisible();
     await stickerNode.click();
 
-    await expect(page.getByTestId('graph-canvas-selection-shell')).toBeVisible();
+    const selectionShell = page.getByTestId('graph-canvas-selection-shell');
+    await expect(selectionShell).toBeVisible();
+    await expect(selectionShell).toHaveCSS('border-radius', '0px');
     await expect(page.getByTestId('graph-canvas-resize-handle')).toBeVisible();
     await expect(page.getByTestId('graph-canvas-rotate-handle')).toBeVisible();
   });
