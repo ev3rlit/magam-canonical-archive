@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import type { LibraryCollection, LibraryItemRecord } from '@magam/explorer-library';
 import { useExplorerLibraryStore, type ExplorerLibraryView } from '@/core/editor/explorer-library/library-store';
@@ -268,20 +267,12 @@ function DetailInspector({
 function CreatorTools() {
   const importAssetFile = useExplorerLibraryStore((state) => state.importAssetFile);
   const createReference = useExplorerLibraryStore((state) => state.createReference);
-  const saveSelectionTemplate = useExplorerLibraryStore((state) => state.saveSelectionTemplate);
-  const saveCanvasTemplate = useExplorerLibraryStore((state) => state.saveCanvasTemplate);
   const [referenceTitle, setReferenceTitle] = useState('');
   const [referenceTarget, setReferenceTarget] = useState('');
 
   return (
     <section className="explorer-library-creator">
       <div className="explorer-library-creator__actions">
-        <button onClick={() => void saveSelectionTemplate()} type="button">
-          Save Selection
-        </button>
-        <button onClick={() => void saveCanvasTemplate()} type="button">
-          Save Canvas
-        </button>
         <label className="explorer-library-creator__file">
           <span>Import Asset</span>
           <input
@@ -344,8 +335,6 @@ function ExplorerLibraryContent({ variant }: { variant: 'quick' | 'page' }) {
   const setView = useExplorerLibraryStore((state) => state.setView);
   const setActiveCollectionId = useExplorerLibraryStore((state) => state.setActiveCollectionId);
   const selectItem = useExplorerLibraryStore((state) => state.selectItem);
-  const saveSelectionTemplate = useExplorerLibraryStore((state) => state.saveSelectionTemplate);
-  const saveCanvasTemplate = useExplorerLibraryStore((state) => state.saveCanvasTemplate);
   const applyItem = useExplorerLibraryStore((state) => state.applyItem);
   const openReference = useExplorerLibraryStore((state) => state.openReference);
   const updateMetadata = useExplorerLibraryStore((state) => state.updateMetadata);
@@ -363,26 +352,11 @@ function ExplorerLibraryContent({ variant }: { variant: 'quick' | 'page' }) {
             placeholder="Search library"
             value={searchQuery}
           />
-          <Link className="explorer-library__open-link" href="/library">
-            Open in Library
-          </Link>
         </div>
         {errorMessage ? <p className="explorer-library__error">{errorMessage}</p> : null}
         {status === 'loading' ? <p className="explorer-library__status">Loading library…</p> : null}
-        {items.length === 0 ? (
-          <div className="explorer-library__empty">
-            <p>Save your current selection or canvas to start building a workspace library.</p>
-            <div className="explorer-library__empty-actions">
-              <button onClick={() => void saveSelectionTemplate()} type="button">
-                Save Selection
-              </button>
-              <button onClick={() => void saveCanvasTemplate()} type="button">
-                Save Canvas
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
+        {items.length > 0 ? (
+          <div className="explorer-library-quick-layout">
             <div className="explorer-library__grid">
               {items.map((item) => (
                 <ItemCard
@@ -400,10 +374,10 @@ function ExplorerLibraryContent({ variant }: { variant: 'quick' | 'page' }) {
               item={selectedItem}
               onApply={(itemId) => void applyItem(itemId)}
               onOpen={(itemId) => void openReference(itemId)}
-              onSave={(input) => void updateMetadata(input)}
-            />
-          </>
-        )}
+                onSave={(input) => void updateMetadata(input)}
+              />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -418,9 +392,6 @@ function ExplorerLibraryContent({ variant }: { variant: 'quick' | 'page' }) {
           placeholder="Search templates, assets, and references"
           value={searchQuery}
         />
-        <Link className="explorer-library__open-link" href="/">
-          Back to Editor
-        </Link>
       </div>
       {errorMessage ? <p className="explorer-library__error">{errorMessage}</p> : null}
       <CreatorTools />

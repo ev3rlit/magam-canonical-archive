@@ -13,8 +13,8 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 20px 22px 18px;
+  gap: 12px;
+  padding: 16px 18px 14px;
   border-bottom: 1px solid rgba(88, 81, 255, 0.1);
 }
 
@@ -45,12 +45,12 @@
 .editor-panel__body {
   flex: 1;
   min-height: 0;
-  padding: 18px 20px 20px;
+  padding: 14px 16px 16px;
   overflow: auto;
 }
 
 .editor-panel__body--compact {
-  padding: 12px 12px 16px;
+  padding: 10px 10px 12px;
 }
 
 .widget-shell {
@@ -120,8 +120,8 @@
 }
 
 .widget-shell--collapsed.widget-shell--bottom .widget-shell__peek {
-  height: 54px;
-  padding: 0 18px;
+  height: 46px;
+  padding: 0 14px;
   border-radius: 20px;
 }
 

@@ -18,9 +18,9 @@ body {
     minmax(0, 1fr)
     var(--shell-right-width, 360px);
   grid-template-rows: minmax(0, 1fr) var(--shell-bottom-height, 320px);
-  gap: 16px;
+  gap: 12px;
   min-height: 0;
-  padding: 0 18px 18px;
+  padding: 0 14px 14px;
 }
 
 .top-toolbar {
@@ -31,26 +31,6 @@ body {
   opacity: 0;
   transform: translateY(-10px);
   animation: editor-enter-down 560ms var(--ease-out-expo) 40ms forwards;
-}
-
-.top-toolbar__links {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.top-toolbar__link {
-  display: inline-flex;
-  align-items: center;
-  min-height: 38px;
-  padding: 0 16px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.76);
-  border: 1px solid rgba(88, 81, 255, 0.1);
-  color: var(--editor-primary);
-  font-size: 13px;
-  font-weight: 700;
-  text-decoration: none;
 }
 
 @media (max-width: 1180px) {
