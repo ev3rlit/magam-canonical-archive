@@ -250,6 +250,14 @@
   gap: 12px;
 }
 
+.object-style-editor__section--compact {
+  gap: 10px;
+}
+
+.object-style-editor__section--titleless {
+  padding-top: 2px;
+}
+
 .object-style-editor__title,
 .object-style-editor__field-label {
   color: var(--editor-soft);
@@ -282,9 +290,9 @@
   aspect-ratio: 1;
   min-height: auto;
   padding: 10px;
-  border: 1px solid rgba(88, 81, 255, 0.08);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid var(--editor-panel-border);
+  border-radius: var(--editor-radius-md);
+  background: color-mix(in srgb, white 80%, var(--editor-bg) 20%);
   color: var(--editor-text);
   cursor: pointer;
   transition:
@@ -298,17 +306,17 @@
 .object-style-editor__outline-preset:hover,
 .object-style-editor__variant--active,
 .object-style-editor__outline-preset--active {
-  border-color: rgba(88, 81, 255, 0.24);
-  background: rgba(88, 81, 255, 0.05);
-  box-shadow: 0 0 0 3px rgba(88, 81, 255, 0.06);
+  border-color: color-mix(in srgb, var(--editor-primary) 22%, white 78%);
+  background: color-mix(in srgb, var(--editor-primary) 4%, white 96%);
+  box-shadow: 0 0 0 2px rgba(88, 81, 255, 0.05);
   transform: translateY(-1px);
 }
 
 .object-style-editor__variant-preview {
   width: 48px;
   height: 48px;
-  border: 1.5px solid rgba(88, 81, 255, 0.28);
-  background: rgba(88, 81, 255, 0.06);
+  border: 1.5px solid color-mix(in srgb, var(--editor-primary) 28%, white 72%);
+  background: color-mix(in srgb, var(--editor-primary) 5%, white 95%);
 }
 
 .object-style-editor__variant-preview--rectangle {
@@ -355,8 +363,8 @@
 
 .object-style-editor__swatch-button:hover,
 .object-style-editor__swatch-button--active {
-  border-color: rgba(88, 81, 255, 0.28);
-  box-shadow: 0 0 0 3px rgba(88, 81, 255, 0.08);
+  border-color: color-mix(in srgb, var(--editor-primary) 24%, white 76%);
+  box-shadow: 0 0 0 2px rgba(88, 81, 255, 0.07);
   transform: translateY(-1px);
 }
 
@@ -369,15 +377,15 @@
   height: 48px;
   border-radius: 14px;
   border: 2px solid currentColor;
-  background: rgba(88, 81, 255, 0.03);
+  background: color-mix(in srgb, var(--editor-primary) 3%, white 97%);
 }
 
 .object-style-editor__outline-preview--none {
   border-width: 1px;
-  border-color: rgba(88, 81, 255, 0.24);
+  border-color: color-mix(in srgb, var(--editor-primary) 24%, white 76%);
   background:
-    linear-gradient(135deg, transparent calc(50% - 1px), rgba(88, 81, 255, 0.34) calc(50% - 1px), rgba(88, 81, 255, 0.34) calc(50% + 1px), transparent calc(50% + 1px)),
-    rgba(88, 81, 255, 0.02);
+    linear-gradient(135deg, transparent calc(50% - 1px), rgba(88, 81, 255, 0.26) calc(50% - 1px), rgba(88, 81, 255, 0.26) calc(50% + 1px), transparent calc(50% + 1px)),
+    color-mix(in srgb, var(--editor-primary) 2%, white 98%);
 }
 
 .object-style-editor__outline-preview--thin {
@@ -404,7 +412,7 @@
   min-width: 48px;
   height: 48px;
   padding: 4px;
-  border: 1px solid rgba(88, 81, 255, 0.12);
+  border: 1px solid var(--editor-panel-border);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.92);
   cursor: pointer;
@@ -414,9 +422,19 @@
   min-height: 42px;
 }
 
+.object-style-editor__variant:focus-visible,
+.object-style-editor__outline-preset:focus-visible,
+.object-style-editor__swatch-button:focus-visible,
+.object-style-editor__color-input:focus-visible {
+  outline: none;
+  border-color: color-mix(in srgb, var(--editor-primary) 28%, white 72%);
+  box-shadow: 0 0 0 3px rgba(88, 81, 255, 0.08);
+}
+
 .object-style-editor__section--compact .object-style-editor__variant,
 .object-style-editor__section--compact .object-style-editor__outline-preset {
   border-radius: 16px;
+  padding: 8px;
 }
 
 .object-style-editor__section--compact .object-style-editor__variant-preview,
@@ -428,6 +446,12 @@
 .object-style-editor__section--compact .object-style-editor__variant-preview--pill {
   width: 50px;
   height: 30px;
+}
+
+.object-style-editor__section--compact .object-style-editor__variant-grid,
+.object-style-editor__section--compact .object-style-editor__swatch-grid,
+.object-style-editor__section--compact .object-style-editor__preset-row {
+  gap: 6px;
 }
 
 .object-style-editor__field--compact .object-style-editor__color-row {

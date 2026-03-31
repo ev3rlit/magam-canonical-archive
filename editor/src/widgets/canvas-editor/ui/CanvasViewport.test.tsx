@@ -263,6 +263,7 @@ describe('CanvasViewport document bodies', () => {
 
     act(() => {
       useEditorStore.getState().createObjectAtViewportCenter('shape');
+      useEditorStore.getState().togglePanel('inspector');
     });
 
     expect(container.querySelectorAll('.floating-object-menu__trigger')).toHaveLength(4);
@@ -276,8 +277,10 @@ describe('CanvasViewport document bodies', () => {
       fillButton.click();
     });
 
-    expect(container.textContent).toContain('현재 색상');
-    expect(container.textContent).toContain('직접 지정');
+    expect(fillButton.getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('.floating-object-menu__drawer .object-style-editor__swatch-grid')).toBeTruthy();
+    expect(container.querySelector('.floating-object-menu__drawer .object-style-editor__hex-input')).toBeTruthy();
+    expect(container.querySelector('.floating-object-menu__drawer .object-style-editor__title')).toBeNull();
 
     const borderButton = container.querySelector('[aria-label="테두리"]') as HTMLButtonElement;
     expect(borderButton).toBeTruthy();
@@ -286,8 +289,10 @@ describe('CanvasViewport document bodies', () => {
       borderButton.click();
     });
 
-    expect(container.textContent).toContain('없음');
-    expect(container.textContent).toContain('점선');
+    expect(borderButton.getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('.floating-object-menu__drawer .object-style-editor__preset-row')).toBeTruthy();
+    expect(container.querySelector('.floating-object-menu__drawer .object-style-editor__hex-input')).toBeTruthy();
+    expect(container.querySelector('.floating-object-menu__drawer .object-style-editor__title')).toBeNull();
 
     const moreButton = container.querySelector('[aria-label="더보기"]') as HTMLButtonElement;
     expect(moreButton).toBeTruthy();
@@ -296,9 +301,15 @@ describe('CanvasViewport document bodies', () => {
       moreButton.click();
     });
 
-    const textContent = container.textContent ?? '';
-    expect(textContent.indexOf('복사')).toBeLessThan(textContent.indexOf('삭제'));
-    expect(textContent.indexOf('삭제')).toBeLessThan(textContent.indexOf('맨앞으로'));
+    const inspectorButton = container.querySelector('[aria-label="인스펙터 열기"]') as HTMLButtonElement;
+    expect(inspectorButton).toBeTruthy();
+    expect(useEditorStore.getState().panels.open.inspector).toBe(false);
+
+    act(() => {
+      inspectorButton.click();
+    });
+
+    expect(useEditorStore.getState().panels.open.inspector).toBe(true);
 
     const shapeNode = container.querySelector('.canvas-object[data-kind="shape"]') as HTMLDivElement;
     expect(shapeNode).toBeTruthy();
@@ -341,7 +352,8 @@ describe('CanvasViewport document bodies', () => {
       fillButton.click();
     });
 
-    expect(container.textContent).toContain('현재 색상');
+    expect(container.querySelector('.floating-object-menu__drawer .object-style-editor__swatch-grid')).toBeTruthy();
+    expect(container.querySelector('.floating-object-menu__drawer .object-style-editor__title')).toBeNull();
     expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.body.content[0])
       .toEqual(expect.objectContaining({
         type: 'paragraph',

@@ -11,30 +11,46 @@ import { CanvasObjectActionList } from '@/widgets/canvas-editor/ui/CanvasObjectA
 import { BorderStyleEditor, FillStyleEditor, ShapeStyleEditor } from '@/widgets/canvas-editor/ui/ObjectStyleEditors';
 
 type OpenPanel = 'shape' | 'fill' | 'border' | 'more' | null;
+const DRAWER_DIMENSIONS: Record<Exclude<OpenPanel, null>, { height: number; width: number }> = {
+  shape: { width: 196, height: 154 },
+  fill: { width: 248, height: 192 },
+  border: { width: 220, height: 192 },
+  more: { width: 248, height: 248 },
+};
 
 function TriggerButton({
+  ariaControls,
+  ariaExpanded,
   active,
   children,
   disabled = false,
   icon,
   label,
   onClick,
+  triggerRef,
 }: {
+  ariaControls?: string;
+  ariaExpanded?: boolean;
   active: boolean;
   children?: ReactNode;
   disabled?: boolean;
   icon?: EditorIconName;
   label: string;
   onClick: () => void;
+  triggerRef?: (node: HTMLButtonElement | null) => void;
 }) {
   return (
     <button
       aria-label={label}
+      aria-controls={ariaControls}
+      aria-expanded={ariaExpanded}
+      aria-haspopup="dialog"
       className={clsx('floating-object-menu__trigger', {
         'floating-object-menu__trigger--active': active,
       })}
       disabled={disabled}
       onClick={onClick}
+      ref={triggerRef}
       title={label}
       type="button"
     >
@@ -58,23 +74,53 @@ export function CanvasObjectFloatingMenu({
 }) {
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
   const commitActiveBodyEditor = useEditorStore((state) => state.commitActiveBodyEditor);
+  const showPanel = useEditorStore((state) => state.showPanel);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRefs = useRef<Record<Exclude<OpenPanel, null>, HTMLButtonElement | null>>({
+    shape: null,
+    fill: null,
+    border: null,
+    more: null,
+  });
+  const lastActiveTrigger = useRef<Exclude<OpenPanel, null> | null>(null);
   const isSingleSelection = selectionCount === 1;
+  const drawerId = openPanel ? `floating-object-menu-drawer-${openPanel}` : undefined;
+  const drawerDimensions = openPanel ? DRAWER_DIMENSIONS[openPanel] : null;
 
   useEffect(() => {
     setOpenPanel(null);
   }, [primaryObject.id, selectionCount]);
 
   useEffect(() => {
+    if (!openPanel || !lastActiveTrigger.current) {
+      return;
+    }
+    const trigger = triggerRefs.current[lastActiveTrigger.current];
+    if (trigger && document.activeElement === document.body) {
+      trigger.focus();
+    }
+  }, [openPanel]);
+
+  useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       if (!menuRef.current || menuRef.current.contains(event.target as Node)) {
         return;
       }
-      setOpenPanel(null);
+      setOpenPanel((current) => {
+        if (current && lastActiveTrigger.current) {
+          queueMicrotask(() => {
+            triggerRefs.current[lastActiveTrigger.current!]?.focus();
+          });
+        }
+        return null;
+      });
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        if (openPanel && lastActiveTrigger.current) {
+          triggerRefs.current[lastActiveTrigger.current]?.focus();
+        }
         setOpenPanel(null);
       }
     };
@@ -85,21 +131,22 @@ export function CanvasObjectFloatingMenu({
       window.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, []);
+  }, [openPanel]);
 
   const position = useMemo(() => clampFloatingPosition({
     stageRect: {
       width: stageWidth,
       height: stageHeight,
     } as DOMRect,
-    menuHeight: openPanel ? 360 : 58,
-    menuWidth: openPanel === 'more' ? 248 : 280,
+    menuHeight: drawerDimensions ? drawerDimensions.height + 66 : 58,
+    menuWidth: drawerDimensions ? drawerDimensions.width : 208,
     anchorX: selectionBounds.x + selectionBounds.width / 2,
     anchorY: selectionBounds.y - 18,
-  }), [openPanel, selectionBounds.height, selectionBounds.width, selectionBounds.x, selectionBounds.y, stageHeight, stageWidth]);
+  }), [drawerDimensions, selectionBounds.height, selectionBounds.width, selectionBounds.x, selectionBounds.y, stageHeight, stageWidth]);
 
   const togglePanel = (panel: Exclude<OpenPanel, null>) => {
     commitActiveBodyEditor();
+    lastActiveTrigger.current = panel;
     setOpenPanel((current) => current === panel ? null : panel);
   };
 
@@ -115,8 +162,30 @@ export function CanvasObjectFloatingMenu({
         return <FillStyleEditor mode="compact" object={primaryObject} />;
       case 'border':
         return <BorderStyleEditor mode="compact" object={primaryObject} />;
-      case 'more':
-        return <CanvasObjectActionList onActionComplete={() => setOpenPanel(null)} />;
+      case 'more': {
+        return (
+          <>
+            <div className="canvas-context-menu__group">
+              <button
+                aria-label="인스펙터 열기"
+                className="canvas-context-menu__button"
+                onClick={() => {
+                  showPanel('inspector');
+                  setOpenPanel(null);
+                }}
+                type="button"
+              >
+                <span className="canvas-context-menu__button-label">
+                  <EditorIcon name="inspect" />
+                  <span>인스펙터 열기</span>
+                </span>
+              </button>
+            </div>
+            <div className="canvas-context-menu__divider" />
+            <CanvasObjectActionList onActionComplete={() => setOpenPanel(null)} />
+          </>
+        );
+      }
     }
   })();
 
@@ -132,16 +201,26 @@ export function CanvasObjectFloatingMenu({
       <div className="floating-object-menu__bar">
         <TriggerButton
           active={openPanel === 'shape'}
+          ariaControls={openPanel === 'shape' ? drawerId : undefined}
+          ariaExpanded={openPanel === 'shape'}
           disabled={primaryObject.kind !== 'shape' || !isSingleSelection}
           icon="shape"
           label="모양"
           onClick={() => togglePanel('shape')}
+          triggerRef={(node) => {
+            triggerRefs.current.shape = node;
+          }}
         />
         <TriggerButton
           active={openPanel === 'fill'}
+          ariaControls={openPanel === 'fill' ? drawerId : undefined}
+          ariaExpanded={openPanel === 'fill'}
           disabled={!isSingleSelection || primaryObject.kind === 'group'}
           label="채우기"
           onClick={() => togglePanel('fill')}
+          triggerRef={(node) => {
+            triggerRefs.current.fill = node;
+          }}
         >
           <span
             className="floating-object-menu__swatch-preview"
@@ -150,9 +229,14 @@ export function CanvasObjectFloatingMenu({
         </TriggerButton>
         <TriggerButton
           active={openPanel === 'border'}
+          ariaControls={openPanel === 'border' ? drawerId : undefined}
+          ariaExpanded={openPanel === 'border'}
           disabled={!isSingleSelection || primaryObject.kind === 'group'}
           label="테두리"
           onClick={() => togglePanel('border')}
+          triggerRef={(node) => {
+            triggerRefs.current.border = node;
+          }}
         >
           <span
             className={clsx(
@@ -168,17 +252,26 @@ export function CanvasObjectFloatingMenu({
         </TriggerButton>
         <TriggerButton
           active={openPanel === 'more'}
+          ariaControls={openPanel === 'more' ? drawerId : undefined}
+          ariaExpanded={openPanel === 'more'}
           disabled={!isSingleSelection}
           icon="more"
           label="더보기"
           onClick={() => togglePanel('more')}
+          triggerRef={(node) => {
+            triggerRefs.current.more = node;
+          }}
         />
       </div>
       {panel ? (
         <div
+          aria-label={`${openPanel} quick actions`}
           className={clsx('floating-object-menu__drawer', {
             'floating-object-menu__drawer--more': openPanel === 'more',
           })}
+          id={drawerId}
+          role="dialog"
+          style={drawerDimensions ? { width: drawerDimensions.width } : undefined}
         >
           {panel}
         </div>

@@ -53,6 +53,7 @@ function HexColorField({
           value={/^#[0-9a-f]{6}$/i.test(value) ? value : '#5851ff'}
         />
         <input
+          aria-label={`${label} HEX`}
           className="inspector-field__input object-style-editor__hex-input"
           onBlur={() => onCommit(draft)}
           onChange={(event) => setDraft(event.target.value)}
@@ -83,8 +84,16 @@ export function ShapeStyleEditor({
   }
 
   return (
-    <div className={clsx('object-style-editor__section', `object-style-editor__section--${mode}`)}>
-      <span className="object-style-editor__title">모양</span>
+    <div
+      className={clsx(
+        'object-style-editor__section',
+        `object-style-editor__section--${mode}`,
+        {
+          'object-style-editor__section--titleless': mode === 'compact',
+        },
+      )}
+    >
+      {mode === 'panel' ? <span className="object-style-editor__title">모양</span> : null}
       <div className="object-style-editor__variant-grid">
         {SHAPE_VARIANT_OPTIONS.map((option) => (
           <button
@@ -121,8 +130,16 @@ export function FillStyleEditor({
   const updateObjectPatch = useEditorStore((state) => state.updateObjectPatch);
 
   return (
-    <div className={clsx('object-style-editor__section', `object-style-editor__section--${mode}`)}>
-      <span className="object-style-editor__title">채우기</span>
+    <div
+      className={clsx(
+        'object-style-editor__section',
+        `object-style-editor__section--${mode}`,
+        {
+          'object-style-editor__section--titleless': mode === 'compact',
+        },
+      )}
+    >
+      {mode === 'panel' ? <span className="object-style-editor__title">채우기</span> : null}
       <div className="object-style-editor__swatch-grid">
         {FILL_PRESET_ORDER.map((preset) => (
           <button
@@ -164,8 +181,16 @@ export function BorderStyleEditor({
   const outlinePresets: EditorOutlinePreset[] = ['none', 'thin', 'medium', 'dashed'];
 
   return (
-    <div className={clsx('object-style-editor__section', `object-style-editor__section--${mode}`)}>
-      <span className="object-style-editor__title">테두리</span>
+    <div
+      className={clsx(
+        'object-style-editor__section',
+        `object-style-editor__section--${mode}`,
+        {
+          'object-style-editor__section--titleless': mode === 'compact',
+        },
+      )}
+    >
+      {mode === 'panel' ? <span className="object-style-editor__title">테두리</span> : null}
       <div className="object-style-editor__preset-row">
         {outlinePresets.map((preset) => (
           <button
