@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "bunx vitest run",
+    "test:store": "bunx vitest run src/core/editor/model/editor-store.test.ts",
+    "test:ui": "bunx vitest run src/widgets/canvas-editor/ui/CanvasViewport.test.tsx src/app/providers/AppProvider.test.tsx src/core/editor/explorer-library/library-service.test.ts src/widgets/editor-shell/ui/EditorShell.test.tsx"
   },
   "dependencies": {
     "@magam/shared": "workspace:*",

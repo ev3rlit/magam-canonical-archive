@@ -8,6 +8,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      '@magam/explorer-library': path.resolve(__dirname, '../libs/shared/src/lib/explorer-library.ts'),
+      '@magam/shared': path.resolve(__dirname, '../libs/shared/src/index.ts'),
     },
   },
   test: {
