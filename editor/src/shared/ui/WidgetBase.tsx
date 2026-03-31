@@ -31,7 +31,7 @@ export function WidgetBase({
   headerActions?: ReactNode;
   panelClassName?: string;
   panelId?: EditorPanelId;
-  side: 'left' | 'center' | 'right';
+  side: 'left' | 'center' | 'right' | 'bottom';
   subtitle?: string;
   title: string;
   titleClassName?: string;
@@ -44,6 +44,11 @@ export function WidgetBase({
   const isExpanded = collapsible && panelId ? panels.open[panelId] : true;
   const isMobileActive = collapsible && panelId ? panels.mobileOpenPanel === panelId : false;
   const directionLabel = isExpanded ? 'Collapse' : 'Expand';
+  const toggleGlyph = side === 'left'
+    ? (isExpanded ? '<' : '>')
+    : side === 'right'
+      ? (isExpanded ? '>' : '<')
+      : (isExpanded ? 'v' : '^');
 
   const handlePeek = () => {
     if (!panelId) {
@@ -114,9 +119,7 @@ export function WidgetBase({
                   title={`${directionLabel} ${title}`}
                   type="button"
                 >
-                  <span className="widget-shell__toggle-glyph">
-                    {side === 'left' ? (isExpanded ? '<' : '>') : (isExpanded ? '>' : '<')}
-                  </span>
+                  <span className="widget-shell__toggle-glyph">{toggleGlyph}</span>
                 </button>
               ) : null}
             </div>

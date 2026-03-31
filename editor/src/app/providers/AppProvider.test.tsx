@@ -5,6 +5,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppProvider } from './AppProvider';
+import { resetExplorerLibraryServiceForTests } from '../../core/editor/explorer-library/library-service';
+import { resetExplorerLibraryStoreForTests } from '../../core/editor/explorer-library/library-store';
 import { useEditorStore } from '../../core/editor/model/editor-store';
 import { FloatingToolMenu } from '../../widgets/canvas-editor/ui/FloatingToolMenu';
 import { CanvasViewport } from '../../widgets/canvas-editor/ui/CanvasViewport';
@@ -31,7 +33,10 @@ describe('AppProvider keyboard shortcuts', () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await resetExplorerLibraryServiceForTests();
+    resetExplorerLibraryStoreForTests();
+    (globalThis as Record<string, unknown>)['__MAGAM_DISABLE_LIBRARY_PROVIDER__'] = true;
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     globalThis.ResizeObserver = ResizeObserverStub as typeof ResizeObserver;
     useEditorStore.getState().reset();
@@ -46,6 +51,7 @@ describe('AppProvider keyboard shortcuts', () => {
       root.unmount();
     });
     container.remove();
+    delete (globalThis as Record<string, unknown>)['__MAGAM_DISABLE_LIBRARY_PROVIDER__'];
   });
 
   it('holds space to enter temporary pan mode and clears it on blur', () => {

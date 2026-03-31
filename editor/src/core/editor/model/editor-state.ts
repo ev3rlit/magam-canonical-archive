@@ -24,6 +24,7 @@ export const initialEditorState: EditorState = {
     open: {
       outliner: true,
       inspector: true,
+      quickExplorer: true,
     },
     mobileOpenPanel: null,
     collapsedNodeIds: [],

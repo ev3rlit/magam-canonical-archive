@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@magam/shared": "workspace:*",
     "@tiptap/core": "^3.21.0",
     "@tiptap/extension-dropcursor": "^3.21.0",
     "@tiptap/extension-image": "^3.21.0",

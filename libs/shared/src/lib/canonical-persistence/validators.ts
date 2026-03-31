@@ -1,8 +1,12 @@
 import type {
+  AssetPayload,
   CanvasHistoryCursorRecord,
   CanvasBindingRecord,
   CanvasNodeRecord,
   CanvasRevisionRecord,
+  LibraryCollection,
+  LibraryItemRecord,
+  LibraryItemVersion,
   ObjectRelationRecord,
   PersistenceResult,
   PluginExportRecord,
@@ -10,6 +14,8 @@ import type {
   PluginPackageRecord,
   PluginPermissionRecord,
   PluginVersionRecord,
+  ReferencePayload,
+  TemplatePayload,
 } from './records';
 import { errResult, okResult } from './records';
 import type {
@@ -79,6 +85,9 @@ const ALLOWED_CAPABILITY_KEYS = new Set<keyof CapabilityBag>([
   'content',
 ]);
 
+export const LIBRARY_MAX_BINARY_BYTES = 25 * 1024 * 1024;
+const SUPPORTED_LIBRARY_ASSET_MIME_PREFIXES = ['image/', 'text/', 'application/pdf', 'audio/', 'video/'];
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -97,6 +106,18 @@ function isNumber(value: unknown): value is number {
 
 function isBoolean(value: unknown): value is boolean {
   return typeof value === 'boolean';
+}
+
+function isDate(value: unknown): value is Date {
+  return value instanceof Date && Number.isFinite(value.getTime());
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function isUint8Array(value: unknown): value is Uint8Array {
+  return value instanceof Uint8Array;
 }
 
 function validateBodyNode(node: CanonicalBodyNode, path: string): ValidationResult {
@@ -711,6 +732,367 @@ export function validatePluginInstanceRecord(record: PluginInstanceRecord): Pers
   if (record.persistedState !== undefined && record.persistedState !== null && !isRecord(record.persistedState)) {
     return errResult('PLUGIN_CONTRACT_VIOLATION', 'persistedState must be an object when provided.', {
       path: 'persistedState',
+    });
+  }
+
+  return okResult(record);
+}
+
+function validateLibraryActor(actor: unknown, path: string): PersistenceResult<{ kind: 'user' | 'system'; id: string }> {
+  if (!isRecord(actor)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'createdBy must be an object.', { path });
+  }
+  if (actor['kind'] !== 'user' && actor['kind'] !== 'system') {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'createdBy.kind must be user or system.', {
+      path: `${path}.kind`,
+    });
+  }
+  if (!isNonEmptyString(actor['id'])) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'createdBy.id is required.', {
+      path: `${path}.id`,
+    });
+  }
+  return okResult({
+    kind: actor['kind'],
+    id: actor['id'],
+  });
+}
+
+function validateTemplatePayload(payload: unknown): PersistenceResult<TemplatePayload> {
+  if (!isRecord(payload)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'template payload must be an object.', {
+      path: 'payload',
+    });
+  }
+  if (!isNonEmptyString(payload['sourceCanvasId'])) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'template payload requires sourceCanvasId.', {
+      path: 'payload.sourceCanvasId',
+    });
+  }
+  if (payload['sourceSelection'] !== null && payload['sourceSelection'] !== undefined) {
+    if (!isRecord(payload['sourceSelection'])) {
+      return errResult('LIBRARY_INVALID_PAYLOAD', 'sourceSelection must be an object when provided.', {
+        path: 'payload.sourceSelection',
+      });
+    }
+    if (!isStringArray(payload['sourceSelection']['nodeIds'])) {
+      return errResult('LIBRARY_INVALID_PAYLOAD', 'sourceSelection.nodeIds must be a string array.', {
+        path: 'payload.sourceSelection.nodeIds',
+      });
+    }
+    if (!isStringArray(payload['sourceSelection']['bindingIds'])) {
+      return errResult('LIBRARY_INVALID_PAYLOAD', 'sourceSelection.bindingIds must be a string array.', {
+        path: 'payload.sourceSelection.bindingIds',
+      });
+    }
+  }
+  if (payload['previewText'] !== null && payload['previewText'] !== undefined && !isString(payload['previewText'])) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'previewText must be a string when provided.', {
+      path: 'payload.previewText',
+    });
+  }
+  if (
+    payload['previewImageAssetId'] !== null
+    && payload['previewImageAssetId'] !== undefined
+    && !isString(payload['previewImageAssetId'])
+  ) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'previewImageAssetId must be a string when provided.', {
+      path: 'payload.previewImageAssetId',
+    });
+  }
+  if (!isRecord(payload['snapshot'])) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'template snapshot must be an object.', {
+      path: 'payload.snapshot',
+    });
+  }
+
+  return okResult({
+    sourceCanvasId: payload['sourceCanvasId'],
+    sourceSelection: payload['sourceSelection'] === null || payload['sourceSelection'] === undefined
+      ? null
+      : {
+          nodeIds: [...(payload['sourceSelection']['nodeIds'] as string[])],
+          bindingIds: [...(payload['sourceSelection']['bindingIds'] as string[])],
+        },
+    previewText: (payload['previewText'] as string | null | undefined) ?? null,
+    previewImageAssetId: (payload['previewImageAssetId'] as string | null | undefined) ?? null,
+    snapshot: payload['snapshot'],
+  });
+}
+
+function validateAssetPayload(payload: unknown): PersistenceResult<AssetPayload> {
+  if (!isRecord(payload)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'asset payload must be an object.', {
+      path: 'payload',
+    });
+  }
+  if (!isNonEmptyString(payload['mimeType'])) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'asset payload requires mimeType.', {
+      path: 'payload.mimeType',
+    });
+  }
+  const mimeType = payload['mimeType'];
+  const supportedMime = SUPPORTED_LIBRARY_ASSET_MIME_PREFIXES.some((prefix) => mimeType.startsWith(prefix));
+  if (!supportedMime) {
+    return errResult('LIBRARY_UNSUPPORTED_MIME', `Unsupported asset MIME type ${mimeType}.`, {
+      path: 'payload.mimeType',
+    });
+  }
+  if (!isUint8Array(payload['binaryData'])) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'asset payload requires binaryData as Uint8Array.', {
+      path: 'payload.binaryData',
+    });
+  }
+  if (!isNumber(payload['byteSize'])) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'asset payload requires byteSize.', {
+      path: 'payload.byteSize',
+    });
+  }
+  if (payload['byteSize'] !== payload['binaryData'].byteLength) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'asset byteSize must match binaryData length.', {
+      path: 'payload.byteSize',
+    });
+  }
+  if (payload['byteSize'] > LIBRARY_MAX_BINARY_BYTES) {
+    return errResult('LIBRARY_BINARY_TOO_LARGE', `Asset exceeds ${LIBRARY_MAX_BINARY_BYTES} byte limit.`, {
+      path: 'payload.byteSize',
+      details: {
+        byteSize: payload['byteSize'],
+        maxByteSize: LIBRARY_MAX_BINARY_BYTES,
+      },
+    });
+  }
+  if (
+    payload['originalFilename'] !== null
+    && payload['originalFilename'] !== undefined
+    && !isString(payload['originalFilename'])
+  ) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'originalFilename must be a string when provided.', {
+      path: 'payload.originalFilename',
+    });
+  }
+  if (!isNonEmptyString(payload['sha256'])) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'asset payload requires sha256.', {
+      path: 'payload.sha256',
+    });
+  }
+  if (
+    payload['importSource'] !== 'clipboard'
+    && payload['importSource'] !== 'file'
+    && payload['importSource'] !== 'url'
+    && payload['importSource'] !== 'canvas-export'
+  ) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'asset importSource is invalid.', {
+      path: 'payload.importSource',
+    });
+  }
+  if (payload['previewText'] !== null && payload['previewText'] !== undefined && !isString(payload['previewText'])) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'previewText must be a string when provided.', {
+      path: 'payload.previewText',
+    });
+  }
+  if (payload['imageMetadata'] !== null && payload['imageMetadata'] !== undefined) {
+    if (!isRecord(payload['imageMetadata'])) {
+      return errResult('LIBRARY_INVALID_PAYLOAD', 'imageMetadata must be an object when provided.', {
+        path: 'payload.imageMetadata',
+      });
+    }
+    if (!isNumber(payload['imageMetadata']['width']) || !isNumber(payload['imageMetadata']['height'])) {
+      return errResult('LIBRARY_INVALID_PAYLOAD', 'imageMetadata.width and imageMetadata.height must be numbers.', {
+        path: 'payload.imageMetadata',
+      });
+    }
+  }
+
+  return okResult({
+    mimeType,
+    byteSize: payload['byteSize'],
+    binaryData: payload['binaryData'],
+    originalFilename: (payload['originalFilename'] as string | null | undefined) ?? null,
+    sha256: payload['sha256'],
+    importSource: payload['importSource'],
+    previewText: (payload['previewText'] as string | null | undefined) ?? null,
+    imageMetadata: payload['imageMetadata'] === null || payload['imageMetadata'] === undefined
+      ? null
+      : {
+          width: Number(payload['imageMetadata']['width']),
+          height: Number(payload['imageMetadata']['height']),
+        },
+  });
+}
+
+function validateReferencePayload(payload: unknown): PersistenceResult<ReferencePayload> {
+  if (!isRecord(payload)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'reference payload must be an object.', {
+      path: 'payload',
+    });
+  }
+  if (payload['targetKind'] !== 'url' && payload['targetKind'] !== 'canvas' && payload['targetKind'] !== 'object') {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'reference targetKind must be url, canvas, or object.', {
+      path: 'payload.targetKind',
+    });
+  }
+  if (!isNonEmptyString(payload['target'])) {
+    return errResult('LIBRARY_REFERENCE_TARGET_MISSING', 'reference target is required.', {
+      path: 'payload.target',
+    });
+  }
+  if (payload['displayHint'] !== null && payload['displayHint'] !== undefined && !isString(payload['displayHint'])) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'displayHint must be a string when provided.', {
+      path: 'payload.displayHint',
+    });
+  }
+  if (payload['metadata'] !== null && payload['metadata'] !== undefined && !isRecord(payload['metadata'])) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'metadata must be an object when provided.', {
+      path: 'payload.metadata',
+    });
+  }
+
+  return okResult({
+    targetKind: payload['targetKind'],
+    target: payload['target'],
+    displayHint: (payload['displayHint'] as string | null | undefined) ?? null,
+    metadata: (payload['metadata'] as Record<string, unknown> | null | undefined) ?? null,
+  });
+}
+
+export function validateLibraryCollection(record: LibraryCollection): PersistenceResult<LibraryCollection> {
+  if (!isNonEmptyString(record.id)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'collection id is required.', { path: 'id' });
+  }
+  if (!isNonEmptyString(record.workspaceId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'workspaceId is required.', { path: 'workspaceId' });
+  }
+  if (!isNonEmptyString(record.name)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'collection name is required.', { path: 'name' });
+  }
+  if (record.description !== null && record.description !== undefined && !isString(record.description)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'collection description must be a string when provided.', {
+      path: 'description',
+    });
+  }
+  if (!isNumber(record.sortOrder)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'sortOrder must be a number.', { path: 'sortOrder' });
+  }
+  if (record.createdAt !== undefined && !isDate(record.createdAt)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'createdAt must be a valid Date when provided.', {
+      path: 'createdAt',
+    });
+  }
+  if (record.updatedAt !== undefined && !isDate(record.updatedAt)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'updatedAt must be a valid Date when provided.', {
+      path: 'updatedAt',
+    });
+  }
+
+  return okResult(record);
+}
+
+export function validateLibraryItemRecord(record: LibraryItemRecord): PersistenceResult<LibraryItemRecord> {
+  if (!isNonEmptyString(record.id)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'library item id is required.', { path: 'id' });
+  }
+  if (!isNonEmptyString(record.workspaceId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'workspaceId is required.', { path: 'workspaceId' });
+  }
+  if (record.type !== 'template' && record.type !== 'asset' && record.type !== 'reference') {
+    return errResult('LIBRARY_INVALID_ITEM_TYPE', 'library item type must be template, asset, or reference.', {
+      path: 'type',
+    });
+  }
+  if (!isNonEmptyString(record.title)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'title is required.', { path: 'title' });
+  }
+  if (record.summary !== null && record.summary !== undefined && !isString(record.summary)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'summary must be a string when provided.', {
+      path: 'summary',
+    });
+  }
+  if (!isStringArray(record.tags)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'tags must be a string array.', { path: 'tags' });
+  }
+  if (!isStringArray(record.collectionIds)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'collectionIds must be a string array.', {
+      path: 'collectionIds',
+    });
+  }
+  if (!isBoolean(record.isFavorite)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'isFavorite must be a boolean.', { path: 'isFavorite' });
+  }
+  if (record.visibility !== 'imported' && record.visibility !== 'curated') {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'visibility must be imported or curated.', {
+      path: 'visibility',
+    });
+  }
+  const actorValidation = validateLibraryActor(record.createdBy, 'createdBy');
+  if (!actorValidation.ok) {
+    return actorValidation as PersistenceResult<LibraryItemRecord>;
+  }
+  if (record.createdAt !== undefined && !isDate(record.createdAt)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'createdAt must be a valid Date when provided.', {
+      path: 'createdAt',
+    });
+  }
+  if (record.updatedAt !== undefined && !isDate(record.updatedAt)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'updatedAt must be a valid Date when provided.', {
+      path: 'updatedAt',
+    });
+  }
+
+  if (record.type === 'template') {
+    const payloadValidation = validateTemplatePayload(record.payload);
+    if (!payloadValidation.ok) {
+      return payloadValidation as PersistenceResult<LibraryItemRecord>;
+    }
+  }
+  if (record.type === 'asset') {
+    const payloadValidation = validateAssetPayload(record.payload);
+    if (!payloadValidation.ok) {
+      return payloadValidation as PersistenceResult<LibraryItemRecord>;
+    }
+  }
+  if (record.type === 'reference') {
+    const payloadValidation = validateReferencePayload(record.payload);
+    if (!payloadValidation.ok) {
+      return payloadValidation as PersistenceResult<LibraryItemRecord>;
+    }
+  }
+
+  return okResult(record);
+}
+
+export function validateLibraryItemVersion(record: LibraryItemVersion): PersistenceResult<LibraryItemVersion> {
+  if (!isNonEmptyString(record.id)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'version id is required.', { path: 'id' });
+  }
+  if (!isNonEmptyString(record.workspaceId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'workspaceId is required.', { path: 'workspaceId' });
+  }
+  if (!isNonEmptyString(record.itemId)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'itemId is required.', { path: 'itemId' });
+  }
+  if (!isNumber(record.versionNo)) {
+    return errResult('PERSISTENCE_REQUIRED_FIELD_MISSING', 'versionNo must be a number.', { path: 'versionNo' });
+  }
+  const snapshotValidation = validateLibraryItemRecord(record.snapshot);
+  if (!snapshotValidation.ok) {
+    return errResult(snapshotValidation.code, snapshotValidation.message, {
+      path: snapshotValidation.path ? `snapshot.${snapshotValidation.path}` : 'snapshot',
+      details: snapshotValidation.details,
+    });
+  }
+  if (record.changeSummary !== null && record.changeSummary !== undefined && !isString(record.changeSummary)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'changeSummary must be a string when provided.', {
+      path: 'changeSummary',
+    });
+  }
+  const actorValidation = validateLibraryActor(record.createdBy, 'createdBy');
+  if (!actorValidation.ok) {
+    return actorValidation as PersistenceResult<LibraryItemVersion>;
+  }
+  if (record.createdAt !== undefined && !isDate(record.createdAt)) {
+    return errResult('LIBRARY_INVALID_PAYLOAD', 'createdAt must be a valid Date when provided.', {
+      path: 'createdAt',
     });
   }
 

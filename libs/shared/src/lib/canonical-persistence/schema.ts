@@ -22,6 +22,7 @@ import {
   timestamp,
   integer,
   uniqueIndex,
+  boolean,
 } from 'drizzle-orm/pg-core';
 import type {
   PluginCapabilitySet,
@@ -32,6 +33,11 @@ import type {
   PluginSchema,
   PluginVersionStatus,
 } from '../plugin-runtime-contract';
+import type {
+  LibraryActor,
+  LibraryItemType,
+  LibraryVisibility,
+} from './records';
 
 export const canonicalObjects = pgTable(
   'objects',
@@ -236,6 +242,100 @@ export const pluginPackages = pgTable(
   (table) => ({
     workspaceNameIdx: index('idx_plugin_packages_workspace_name').on(table.workspaceId, table.packageName),
     ownerIdx: index('idx_plugin_packages_owner').on(table.ownerKind, table.ownerId),
+  }),
+);
+
+export const libraryItems = pgTable(
+  'library_items',
+  {
+    id: text('id').notNull(),
+    workspaceId: text('workspace_id').notNull(),
+    itemType: text('item_type').$type<LibraryItemType>().notNull(),
+    title: text('title').notNull(),
+    summary: text('summary'),
+    tags: jsonb('tags').$type<string[]>().notNull(),
+    isFavorite: boolean('is_favorite').default(false).notNull(),
+    visibility: text('visibility').$type<LibraryVisibility>().notNull(),
+    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+    binaryBlob: text('binary_blob'),
+    searchText: text('search_text').notNull(),
+    createdBy: jsonb('created_by').$type<LibraryActor>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.workspaceId, table.id], name: 'library_items_workspace_id_id_pk' }),
+    workspaceUpdatedIdx: index('idx_library_items_workspace_updated').on(table.workspaceId, table.updatedAt),
+    workspaceTypeIdx: index('idx_library_items_workspace_type').on(table.workspaceId, table.itemType),
+    workspaceVisibilityIdx: index('idx_library_items_workspace_visibility').on(table.workspaceId, table.visibility, table.updatedAt),
+    workspaceFavoriteIdx: index('idx_library_items_workspace_favorite').on(table.workspaceId, table.isFavorite, table.updatedAt),
+  }),
+);
+
+export const libraryCollections = pgTable(
+  'library_collections',
+  {
+    id: text('id').notNull(),
+    workspaceId: text('workspace_id').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    sortOrder: integer('sort_order').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.workspaceId, table.id], name: 'library_collections_workspace_id_id_pk' }),
+    workspaceSortIdx: index('idx_library_collections_workspace_sort').on(table.workspaceId, table.sortOrder),
+    workspaceNameUnique: uniqueIndex('idx_library_collections_workspace_name').on(table.workspaceId, table.name),
+  }),
+);
+
+export const libraryItemCollections = pgTable(
+  'library_item_collections',
+  {
+    workspaceId: text('workspace_id').notNull(),
+    itemId: text('item_id').notNull(),
+    collectionId: text('collection_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({
+      columns: [table.workspaceId, table.itemId, table.collectionId],
+      name: 'library_item_collections_workspace_item_collection_pk',
+    }),
+    workspaceCollectionIdx: index('idx_library_item_collections_workspace_collection').on(
+      table.workspaceId,
+      table.collectionId,
+      table.itemId,
+    ),
+  }),
+);
+
+export const libraryItemVersions = pgTable(
+  'library_item_versions',
+  {
+    id: text('id').notNull(),
+    workspaceId: text('workspace_id').notNull(),
+    itemId: text('item_id').notNull(),
+    versionNo: integer('version_no').notNull(),
+    snapshot: jsonb('snapshot').$type<Record<string, unknown>>().notNull(),
+    binaryBlob: text('binary_blob'),
+    changeSummary: text('change_summary'),
+    createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+    createdBy: jsonb('created_by').$type<LibraryActor>().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.workspaceId, table.id], name: 'library_item_versions_workspace_id_id_pk' }),
+    workspaceItemVersionUnique: uniqueIndex('idx_library_item_versions_workspace_item_version').on(
+      table.workspaceId,
+      table.itemId,
+      table.versionNo,
+    ),
+    workspaceItemCreatedIdx: index('idx_library_item_versions_workspace_item_created').on(
+      table.workspaceId,
+      table.itemId,
+      table.createdAt,
+    ),
   }),
 );
 

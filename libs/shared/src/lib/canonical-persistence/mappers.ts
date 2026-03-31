@@ -15,6 +15,7 @@ import {
   cloneCanonicalBodyDocument,
   deriveCanonicalTextFromBody,
   readCanonicalBody,
+  type CanonicalBodyCarrier,
 } from '../canonical-body-document';
 
 function trimOrEmpty(value: string | undefined): string {
@@ -56,7 +57,7 @@ function projectTextFromBlock(block: ContentBlock): string {
 
 export function derivePrimaryContentKind(input: {
   capabilities?: { content?: ContentCapability };
-} & ContentBlocksCarrier): PrimaryContentKind {
+} & ContentBlocksCarrier & CanonicalBodyCarrier): PrimaryContentKind {
   const body = readCanonicalBody(input);
   if (body) {
     return 'document';
@@ -85,7 +86,7 @@ export function derivePrimaryContentKind(input: {
 
 export function deriveCanonicalText(input: {
   capabilities?: { content?: ContentCapability };
-} & ContentBlocksCarrier): string {
+} & ContentBlocksCarrier & CanonicalBodyCarrier): string {
   const body = readCanonicalBody(input);
   if (body) {
     return deriveCanonicalTextFromBody(body);

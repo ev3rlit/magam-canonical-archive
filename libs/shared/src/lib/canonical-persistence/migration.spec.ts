@@ -8,7 +8,17 @@ describe('canonical migration smoke', () => {
       select tablename
       from pg_tables
       where schemaname = 'public'
-        and tablename in ('objects', 'object_relations', 'canvas_nodes', 'canvas_bindings', 'document_revisions')
+        and tablename in (
+          'objects',
+          'object_relations',
+          'canvas_nodes',
+          'canvas_bindings',
+          'document_revisions',
+          'library_items',
+          'library_collections',
+          'library_item_collections',
+          'library_item_versions'
+        )
       order by tablename
     `);
 
@@ -16,6 +26,10 @@ describe('canonical migration smoke', () => {
       'canvas_bindings',
       'canvas_nodes',
       'document_revisions',
+      'library_collections',
+      'library_item_collections',
+      'library_item_versions',
+      'library_items',
       'object_relations',
       'objects',
     ]);

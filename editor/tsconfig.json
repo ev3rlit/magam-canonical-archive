@@ -24,6 +24,9 @@
     ],
     "baseUrl": ".",
     "paths": {
+      "@magam/explorer-library": [
+        "../libs/shared/src/lib/explorer-library.ts"
+      ],
       "@/*": [
         "./src/*"
       ]

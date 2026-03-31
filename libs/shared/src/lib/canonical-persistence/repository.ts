@@ -1,8 +1,9 @@
-import { and, desc, eq, isNull, or } from 'drizzle-orm';
+import { and, desc, eq, ilike, inArray, isNull, or } from 'drizzle-orm';
 import type { CanonicalObjectRecord } from '../canonical-object-contract';
 import { cloneContentBlocks, isSemanticRole, readContentBlocks } from '../canonical-object-contract';
 import { cloneCanonicalBodyDocument, readCanonicalBody } from '../canonical-body-document';
 import type {
+  AssetItem,
   CanvasMetadataVersionRecord,
   CanvasHistoryCursorRecord,
   CanvasBindingRecord,
@@ -11,6 +12,9 @@ import type {
   CloneEditableNoteInput,
   CreateCanonicalObjectInput,
   CanvasRevisionRecord,
+  LibraryCollection,
+  LibraryItemRecord,
+  LibraryItemVersion,
   ObjectRelationRecord,
   PersistenceResult,
   PluginExportRecord,
@@ -29,6 +33,10 @@ import {
   canvasHistoryCursors,
   canvasNodes,
   canvasRevisions,
+  libraryCollections,
+  libraryItemCollections,
+  libraryItems,
+  libraryItemVersions,
   nodeVersions,
   objectRelations,
   pluginExports,
@@ -44,6 +52,9 @@ import {
   validateCanvasHistoryCursorRecord,
   validateCanvasNodeRecord,
   validateCanvasRevisionRecord,
+  validateLibraryCollection,
+  validateLibraryItemRecord,
+  validateLibraryItemVersion,
   validateObjectRelationRecord,
   validatePluginExportRecord,
   validatePluginInstanceRecord,
@@ -60,6 +71,10 @@ type CanvasHistoryCursorRow = typeof canvasHistoryCursors.$inferSelect;
 type WorkspaceRuntimeVersionRow = typeof workspaceRuntimeVersions.$inferSelect;
 type CanvasMetadataVersionRow = typeof canvasMetadataVersions.$inferSelect;
 type NodeVersionRow = typeof nodeVersions.$inferSelect;
+type LibraryItemRow = typeof libraryItems.$inferSelect;
+type LibraryCollectionRow = typeof libraryCollections.$inferSelect;
+type LibraryItemCollectionRow = typeof libraryItemCollections.$inferSelect;
+type LibraryItemVersionRow = typeof libraryItemVersions.$inferSelect;
 type PluginPackageRow = typeof pluginPackages.$inferSelect;
 type PluginVersionRow = typeof pluginVersions.$inferSelect;
 type PluginExportRow = typeof pluginExports.$inferSelect;
@@ -259,6 +274,129 @@ function fromPluginInstanceRow(row: PluginInstanceRow): PluginInstanceRecord {
   };
 }
 
+function fromLibraryCollectionRow(row: LibraryCollectionRow): LibraryCollection {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    name: row.name,
+    description: row.description ?? null,
+    sortOrder: row.sortOrder,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function fromLibraryItemRow(
+  row: LibraryItemRow,
+  collectionIds: string[],
+): PersistenceResult<LibraryItemRecord> {
+  const record: LibraryItemRecord = {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    type: row.itemType,
+    title: row.title,
+    summary: row.summary ?? null,
+    tags: row.tags,
+    collectionIds,
+    isFavorite: row.isFavorite,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    createdBy: row.createdBy,
+    visibility: row.visibility,
+    payload: deserializeLibraryPayload(row.itemType, row.payload, row.binaryBlob ?? null),
+  };
+
+  return validateLibraryItemRecord(record);
+}
+
+function toLibraryItemInsert(record: LibraryItemRecord): typeof libraryItems.$inferInsert {
+  const serialized = serializeLibraryPayload(record);
+  return {
+    id: record.id,
+    workspaceId: record.workspaceId,
+    itemType: record.type,
+    title: record.title,
+    summary: record.summary ?? null,
+    tags: record.tags,
+    isFavorite: record.isFavorite,
+    visibility: record.visibility,
+    payload: serialized.payload,
+    binaryBlob: serialized.binaryBlob,
+    searchText: buildLibrarySearchText(record),
+    createdBy: record.createdBy,
+    createdAt: record.createdAt ?? new Date(),
+    updatedAt: record.updatedAt ?? new Date(),
+  };
+}
+
+function toLibraryItemVersionInsert(record: LibraryItemVersion): typeof libraryItemVersions.$inferInsert {
+  const snapshotValidation = validateLibraryItemRecord(record.snapshot);
+  if (!snapshotValidation.ok) {
+    throw new Error(snapshotValidation.message);
+  }
+  const serialized = serializeLibraryPayload(snapshotValidation.value);
+
+  return {
+    id: record.id,
+    workspaceId: record.workspaceId,
+    itemId: record.itemId,
+    versionNo: record.versionNo,
+    snapshot: {
+      ...snapshotValidation.value,
+      payload: serialized.payload,
+    } as Record<string, unknown>,
+    binaryBlob: serialized.binaryBlob,
+    changeSummary: record.changeSummary ?? null,
+    createdAt: record.createdAt ?? new Date(),
+    createdBy: record.createdBy,
+  };
+}
+
+function fromLibraryItemVersionRow(row: LibraryItemVersionRow): PersistenceResult<LibraryItemVersion> {
+  const snapshotValue = row.snapshot as Record<string, unknown>;
+  const snapshotRecord: LibraryItemRecord = {
+    id: snapshotValue['id'] as string,
+    workspaceId: snapshotValue['workspaceId'] as string,
+    type: snapshotValue['type'] as LibraryItemRecord['type'],
+    title: snapshotValue['title'] as string,
+    summary: (snapshotValue['summary'] as string | null | undefined) ?? null,
+    tags: Array.isArray(snapshotValue['tags'])
+      ? snapshotValue['tags'].filter((value): value is string => typeof value === 'string')
+      : [],
+    collectionIds: Array.isArray(snapshotValue['collectionIds'])
+      ? snapshotValue['collectionIds'].filter((value): value is string => typeof value === 'string')
+      : [],
+    isFavorite: Boolean(snapshotValue['isFavorite']),
+    createdAt: snapshotValue['createdAt'] instanceof Date ? snapshotValue['createdAt'] : row.createdAt,
+    updatedAt: snapshotValue['updatedAt'] instanceof Date ? snapshotValue['updatedAt'] : row.createdAt,
+    createdBy: snapshotValue['createdBy'] as LibraryItemRecord['createdBy'],
+    visibility: snapshotValue['visibility'] as LibraryItemRecord['visibility'],
+    payload: deserializeLibraryPayload(
+      snapshotValue['type'] as LibraryItemRecord['type'],
+      (snapshotValue['payload'] ?? {}) as Record<string, unknown>,
+      row.binaryBlob ?? null,
+    ),
+  };
+  const validatedSnapshot = validateLibraryItemRecord(snapshotRecord);
+  if (!validatedSnapshot.ok) {
+    return errResult(validatedSnapshot.code, validatedSnapshot.message, {
+      path: validatedSnapshot.path ? `snapshot.${validatedSnapshot.path}` : 'snapshot',
+      details: validatedSnapshot.details,
+    });
+  }
+
+  return validateLibraryItemVersion({
+    id: row.id,
+    workspaceId: row.workspaceId,
+    itemId: row.itemId,
+    versionNo: row.versionNo,
+    snapshot: validatedSnapshot.value,
+    changeSummary: row.changeSummary ?? null,
+    createdAt: row.createdAt,
+    createdBy: row.createdBy,
+  });
+}
+
 function mergeJsonObject(
   existing: Record<string, unknown> | null | undefined,
   patch: Record<string, unknown>,
@@ -267,6 +405,82 @@ function mergeJsonObject(
     ...(existing ?? {}),
     ...patch,
   };
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(bytes).toString('base64');
+  }
+
+  let binary = '';
+  bytes.forEach((value) => {
+    binary += String.fromCharCode(value);
+  });
+  return btoa(binary);
+}
+
+function decodeBase64(value: string): Uint8Array {
+  if (typeof Buffer !== 'undefined') {
+    return Uint8Array.from(Buffer.from(value, 'base64'));
+  }
+
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function serializeLibraryPayload(record: LibraryItemRecord): {
+  payload: Record<string, unknown>;
+  binaryBlob: string | null;
+} {
+  if (record.type === 'asset') {
+    const asset = record as AssetItem;
+    const { binaryData, ...rest } = asset.payload;
+    return {
+      payload: rest as Record<string, unknown>,
+      binaryBlob: encodeBase64(binaryData),
+    };
+  }
+
+  return {
+    payload: record.payload as Record<string, unknown>,
+    binaryBlob: null,
+  };
+}
+
+function deserializeLibraryPayload(
+  itemType: LibraryItemRecord['type'],
+  payload: Record<string, unknown>,
+  binaryBlob: string | null,
+): unknown {
+  if (itemType !== 'asset') {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    binaryData: binaryBlob ? decodeBase64(binaryBlob) : new Uint8Array(),
+  };
+}
+
+function buildLibrarySearchText(record: LibraryItemRecord): string {
+  const parts = [record.title, record.summary ?? '', record.tags.join(' ')];
+
+  if (typeof record.payload === 'object' && record.payload !== null) {
+    const payloadRecord = record.payload as Record<string, unknown>;
+    const previewText = typeof payloadRecord['previewText'] === 'string' ? payloadRecord['previewText'] : '';
+    const displayHint = typeof payloadRecord['displayHint'] === 'string' ? payloadRecord['displayHint'] : '';
+    const target = typeof payloadRecord['target'] === 'string' ? payloadRecord['target'] : '';
+    const originalFilename = typeof payloadRecord['originalFilename'] === 'string'
+      ? payloadRecord['originalFilename']
+      : '';
+    parts.push(previewText, displayHint, target, originalFilename);
+  }
+
+  return parts.join(' ').trim();
 }
 
 function readBindingCanonicalRef(binding: Pick<CanvasBindingRecord, 'bindingKind' | 'sourceRef'>): (
@@ -342,6 +556,448 @@ export class CanonicalPersistenceRepository {
 
   validateCanvasNodeRecord(record: CanvasNodeRecord): PersistenceResult<CanvasNodeRecord> {
     return validateCanvasNodeRecord(record);
+  }
+
+  private async getLibraryCollectionMap(
+    workspaceId: string,
+    itemIds: string[],
+  ): Promise<Map<string, string[]>> {
+    const collectionMap = new Map<string, string[]>();
+    if (itemIds.length === 0) {
+      return collectionMap;
+    }
+
+    const rows = await this.db.query.libraryItemCollections.findMany({
+      where: and(
+        eq(libraryItemCollections.workspaceId, workspaceId),
+        inArray(libraryItemCollections.itemId, itemIds),
+      ),
+    });
+
+    rows.forEach((row: LibraryItemCollectionRow) => {
+      const existing = collectionMap.get(row.itemId) ?? [];
+      existing.push(row.collectionId);
+      collectionMap.set(row.itemId, existing);
+    });
+
+    return collectionMap;
+  }
+
+  private async hydrateLibraryItems(rows: LibraryItemRow[]): Promise<PersistenceResult<LibraryItemRecord[]>> {
+    if (rows.length === 0) {
+      return okResult([]);
+    }
+
+    const workspaceId = rows[0]!.workspaceId;
+    const collectionMap = await this.getLibraryCollectionMap(
+      workspaceId,
+      rows.map((row: LibraryItemRow) => row.id),
+    );
+    const items: LibraryItemRecord[] = [];
+
+    for (const row of rows) {
+      const mapped = fromLibraryItemRow(row, collectionMap.get(row.id) ?? []);
+      if (!mapped.ok) {
+        return mapped as PersistenceResult<LibraryItemRecord[]>;
+      }
+      items.push(mapped.value);
+    }
+
+    return okResult(items);
+  }
+
+  private async replaceLibraryItemCollections(
+    workspaceId: string,
+    itemId: string,
+    collectionIds: string[],
+  ): Promise<PersistenceResult<void>> {
+    if (collectionIds.length > 0) {
+      const collections = await this.db.query.libraryCollections.findMany({
+        where: and(
+          eq(libraryCollections.workspaceId, workspaceId),
+          inArray(libraryCollections.id, collectionIds),
+        ),
+        columns: {
+          id: true,
+        },
+      });
+      const knownIds = new Set(collections.map((row: { id: string }) => row.id));
+      const missing = collectionIds.filter((collectionId) => !knownIds.has(collectionId));
+      if (missing.length > 0) {
+        return errResult('LIBRARY_COLLECTION_NOT_FOUND', `Missing library collection ${missing[0]}.`, {
+          path: 'collectionIds',
+          details: {
+            workspaceId,
+            itemId,
+            missingCollectionIds: missing,
+          },
+        });
+      }
+    }
+
+    await this.db
+      .delete(libraryItemCollections)
+      .where(and(
+        eq(libraryItemCollections.workspaceId, workspaceId),
+        eq(libraryItemCollections.itemId, itemId),
+      ));
+
+    if (collectionIds.length > 0) {
+      await this.db.insert(libraryItemCollections).values(collectionIds.map((collectionId) => ({
+        workspaceId,
+        itemId,
+        collectionId,
+        createdAt: new Date(),
+      })));
+    }
+
+    return okResult(undefined);
+  }
+
+  private async appendLibraryItemVersion(
+    record: LibraryItemRecord,
+    changeSummary: string | null,
+  ): Promise<PersistenceResult<LibraryItemVersion>> {
+    const latest = await this.db.query.libraryItemVersions.findFirst({
+      where: and(
+        eq(libraryItemVersions.workspaceId, record.workspaceId),
+        eq(libraryItemVersions.itemId, record.id),
+      ),
+      orderBy: [desc(libraryItemVersions.versionNo)],
+    });
+
+    const versionRecord: LibraryItemVersion = {
+      id: `${record.id}-version-${(latest?.versionNo ?? 0) + 1}`,
+      workspaceId: record.workspaceId,
+      itemId: record.id,
+      versionNo: (latest?.versionNo ?? 0) + 1,
+      snapshot: record,
+      changeSummary,
+      createdAt: new Date(),
+      createdBy: record.createdBy,
+    };
+    const validation = validateLibraryItemVersion(versionRecord);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const inserted = await this.db
+      .insert(libraryItemVersions)
+      .values(toLibraryItemVersionInsert(validation.value))
+      .returning();
+
+    return fromLibraryItemVersionRow(inserted[0]!);
+  }
+
+  async createLibraryCollection(record: LibraryCollection): Promise<PersistenceResult<LibraryCollection>> {
+    const validation = validateLibraryCollection(record);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const duplicate = await this.db.query.libraryCollections.findFirst({
+      where: and(
+        eq(libraryCollections.workspaceId, validation.value.workspaceId),
+        eq(libraryCollections.id, validation.value.id),
+      ),
+    });
+    if (duplicate) {
+      return errResult('LIBRARY_COLLECTION_CONFLICT', `Library collection ${validation.value.id} already exists.`, {
+        path: 'id',
+        details: {
+          workspaceId: validation.value.workspaceId,
+          collectionId: validation.value.id,
+        },
+      });
+    }
+
+    const inserted = await this.db
+      .insert(libraryCollections)
+      .values({
+        id: validation.value.id,
+        workspaceId: validation.value.workspaceId,
+        name: validation.value.name,
+        description: validation.value.description ?? null,
+        sortOrder: validation.value.sortOrder,
+        createdAt: validation.value.createdAt ?? new Date(),
+        updatedAt: validation.value.updatedAt ?? new Date(),
+      })
+      .returning();
+
+    return okResult(fromLibraryCollectionRow(inserted[0]!));
+  }
+
+  async listLibraryCollections(workspaceId: string): Promise<LibraryCollection[]> {
+    const rows = await this.db.query.libraryCollections.findMany({
+      where: eq(libraryCollections.workspaceId, workspaceId),
+      orderBy: [libraryCollections.sortOrder, libraryCollections.name],
+    });
+    return rows.map(fromLibraryCollectionRow);
+  }
+
+  async createLibraryItem(
+    record: LibraryItemRecord,
+    options?: {
+      changeSummary?: string | null;
+    },
+  ): Promise<PersistenceResult<LibraryItemRecord>> {
+    const validation = validateLibraryItemRecord(record);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const existing = await this.getLibraryItem(validation.value.workspaceId, validation.value.id);
+    if (existing.ok) {
+      return errResult('LIBRARY_ITEM_CONFLICT', `Library item ${validation.value.id} already exists.`, {
+        path: 'id',
+        details: {
+          workspaceId: validation.value.workspaceId,
+          itemId: validation.value.id,
+        },
+      });
+    }
+
+    const inserted = await this.db
+      .insert(libraryItems)
+      .values(toLibraryItemInsert(validation.value))
+      .returning();
+    const collectionResult = await this.replaceLibraryItemCollections(
+      validation.value.workspaceId,
+      validation.value.id,
+      validation.value.collectionIds,
+    );
+    if (!collectionResult.ok) {
+      return collectionResult as PersistenceResult<LibraryItemRecord>;
+    }
+
+    const hydrated = await this.hydrateLibraryItems(inserted);
+    if (!hydrated.ok) {
+      return hydrated as PersistenceResult<LibraryItemRecord>;
+    }
+
+    const versionResult = await this.appendLibraryItemVersion(
+      hydrated.value[0]!,
+      options?.changeSummary ?? 'Created library item',
+    );
+    if (!versionResult.ok) {
+      return versionResult as PersistenceResult<LibraryItemRecord>;
+    }
+
+    return okResult(hydrated.value[0]!);
+  }
+
+  async getLibraryItem(workspaceId: string, id: string): Promise<PersistenceResult<LibraryItemRecord>> {
+    const row = await this.db.query.libraryItems.findFirst({
+      where: and(
+        eq(libraryItems.workspaceId, workspaceId),
+        eq(libraryItems.id, id),
+      ),
+    });
+    if (!row) {
+      return errResult('LIBRARY_ITEM_NOT_FOUND', `Library item ${id} was not found.`, {
+        path: 'id',
+        details: {
+          workspaceId,
+          itemId: id,
+        },
+      });
+    }
+
+    const collectionMap = await this.getLibraryCollectionMap(workspaceId, [id]);
+    return fromLibraryItemRow(row, collectionMap.get(id) ?? []);
+  }
+
+  async listLibraryItems(
+    workspaceId: string,
+    input?: {
+      type?: LibraryItemRecord['type'];
+      visibility?: LibraryItemRecord['visibility'];
+      isFavorite?: boolean;
+      collectionId?: string;
+      limit?: number;
+    },
+  ): Promise<PersistenceResult<LibraryItemRecord[]>> {
+    let collectionItemIds: string[] | null = null;
+    if (input?.collectionId) {
+      const collectionRows = await this.db.query.libraryItemCollections.findMany({
+        where: and(
+          eq(libraryItemCollections.workspaceId, workspaceId),
+          eq(libraryItemCollections.collectionId, input.collectionId),
+        ),
+      });
+      const resolvedItemIds = collectionRows.map((row: LibraryItemCollectionRow) => row.itemId);
+      if (resolvedItemIds.length === 0) {
+        return okResult([]);
+      }
+      collectionItemIds = resolvedItemIds;
+    }
+
+    const filters = [eq(libraryItems.workspaceId, workspaceId)];
+    if (input?.type) {
+      filters.push(eq(libraryItems.itemType, input.type));
+    }
+    if (input?.visibility) {
+      filters.push(eq(libraryItems.visibility, input.visibility));
+    }
+    if (typeof input?.isFavorite === 'boolean') {
+      filters.push(eq(libraryItems.isFavorite, input.isFavorite));
+    }
+    if (collectionItemIds) {
+      filters.push(inArray(libraryItems.id, collectionItemIds));
+    }
+
+    const rows = await this.db.query.libraryItems.findMany({
+      where: and(...filters),
+      orderBy: [desc(libraryItems.updatedAt)],
+      ...(input?.limit ? { limit: input.limit } : {}),
+    });
+
+    return this.hydrateLibraryItems(rows);
+  }
+
+  async searchLibraryItems(
+    workspaceId: string,
+    query: string,
+    input?: {
+      type?: LibraryItemRecord['type'];
+      visibility?: LibraryItemRecord['visibility'];
+      collectionId?: string;
+      limit?: number;
+    },
+  ): Promise<PersistenceResult<LibraryItemRecord[]>> {
+    const trimmed = query.trim();
+    if (trimmed.length === 0) {
+      return this.listLibraryItems(workspaceId, input);
+    }
+
+    const listed = await this.listLibraryItems(workspaceId, input);
+    if (!listed.ok) {
+      return listed;
+    }
+
+    const ids = listed.value.map((item) => item.id);
+    if (ids.length === 0) {
+      return okResult([]);
+    }
+
+    const rows = await this.db.query.libraryItems.findMany({
+      where: and(
+        eq(libraryItems.workspaceId, workspaceId),
+        inArray(libraryItems.id, ids),
+        ilike(libraryItems.searchText, `%${trimmed}%`),
+      ),
+      orderBy: [desc(libraryItems.updatedAt)],
+      ...(input?.limit ? { limit: input.limit } : {}),
+    });
+
+    return this.hydrateLibraryItems(rows);
+  }
+
+  async updateLibraryItemMetadata(input: {
+    workspaceId: string;
+    itemId: string;
+    title?: string;
+    summary?: string | null;
+    tags?: string[];
+    collectionIds?: string[];
+    isFavorite?: boolean;
+    visibility?: LibraryItemRecord['visibility'];
+    changeSummary?: string | null;
+  }): Promise<PersistenceResult<LibraryItemRecord>> {
+    const existing = await this.getLibraryItem(input.workspaceId, input.itemId);
+    if (!existing.ok) {
+      return existing;
+    }
+
+    const nextRecord: LibraryItemRecord = {
+      ...existing.value,
+      ...(input.title !== undefined ? { title: input.title } : {}),
+      ...(input.summary !== undefined ? { summary: input.summary } : {}),
+      ...(input.tags !== undefined ? { tags: input.tags } : {}),
+      ...(input.collectionIds !== undefined ? { collectionIds: input.collectionIds } : {}),
+      ...(input.isFavorite !== undefined ? { isFavorite: input.isFavorite } : {}),
+      ...(input.visibility !== undefined ? { visibility: input.visibility } : {}),
+      updatedAt: new Date(),
+    };
+
+    if (
+      nextRecord.visibility === 'imported'
+      && (
+        (input.tags !== undefined && input.tags.length > 0)
+        || (input.collectionIds !== undefined && input.collectionIds.length > 0)
+      )
+    ) {
+      nextRecord.visibility = 'curated';
+    }
+
+    const validation = validateLibraryItemRecord(nextRecord);
+    if (!validation.ok) {
+      return validation;
+    }
+
+    const updated = await this.db
+      .update(libraryItems)
+      .set({
+        title: validation.value.title,
+        summary: validation.value.summary ?? null,
+        tags: validation.value.tags,
+        isFavorite: validation.value.isFavorite,
+        visibility: validation.value.visibility,
+        payload: serializeLibraryPayload(validation.value).payload,
+        binaryBlob: serializeLibraryPayload(validation.value).binaryBlob,
+        searchText: buildLibrarySearchText(validation.value),
+        updatedAt: validation.value.updatedAt ?? new Date(),
+      })
+      .where(and(
+        eq(libraryItems.workspaceId, validation.value.workspaceId),
+        eq(libraryItems.id, validation.value.id),
+      ))
+      .returning();
+
+    const collectionResult = await this.replaceLibraryItemCollections(
+      validation.value.workspaceId,
+      validation.value.id,
+      validation.value.collectionIds,
+    );
+    if (!collectionResult.ok) {
+      return collectionResult as PersistenceResult<LibraryItemRecord>;
+    }
+
+    const hydrated = await this.hydrateLibraryItems(updated);
+    if (!hydrated.ok) {
+      return hydrated as PersistenceResult<LibraryItemRecord>;
+    }
+
+    const versionResult = await this.appendLibraryItemVersion(
+      hydrated.value[0]!,
+      input.changeSummary ?? 'Updated library metadata',
+    );
+    if (!versionResult.ok) {
+      return versionResult as PersistenceResult<LibraryItemRecord>;
+    }
+
+    return okResult(hydrated.value[0]!);
+  }
+
+  async listLibraryItemVersions(workspaceId: string, itemId: string): Promise<PersistenceResult<LibraryItemVersion[]>> {
+    const rows = await this.db.query.libraryItemVersions.findMany({
+      where: and(
+        eq(libraryItemVersions.workspaceId, workspaceId),
+        eq(libraryItemVersions.itemId, itemId),
+      ),
+      orderBy: [desc(libraryItemVersions.versionNo)],
+    });
+
+    const versions: LibraryItemVersion[] = [];
+    for (const row of rows) {
+      const mapped = fromLibraryItemVersionRow(row);
+      if (!mapped.ok) {
+        return mapped as PersistenceResult<LibraryItemVersion[]>;
+      }
+      versions.push(mapped.value);
+    }
+
+    return okResult(versions);
   }
 
   async createCanonicalObject(input: CreateCanonicalObjectInput): Promise<PersistenceResult<CanonicalObjectRecord>> {
@@ -740,7 +1396,7 @@ export class CanonicalPersistenceRepository {
       },
     });
 
-    return rows.reduce((max, row) => Math.max(max, row.zIndex), 0) + 1;
+    return rows.reduce((max: number, row: { zIndex: number }) => Math.max(max, row.zIndex), 0) + 1;
   }
 
   async renameCanonicalObject(input: {
@@ -1442,7 +2098,7 @@ export class CanonicalPersistenceRepository {
       orderBy: [desc(canvasRevisions.revisionNo)],
     });
 
-    return rows.map((row) => ({
+    return rows.map((row: typeof canvasRevisions.$inferSelect) => ({
       id: row.id,
       canvasId: row.canvasId,
       revisionNo: row.revisionNo,
@@ -1560,7 +2216,7 @@ export class CanonicalPersistenceRepository {
     });
 
     const filtered = input?.nodeIds?.length
-      ? rows.filter((row) => input.nodeIds?.includes(row.nodeId))
+      ? rows.filter((row: typeof nodeVersions.$inferSelect) => input.nodeIds?.includes(row.nodeId))
       : rows;
 
     return filtered.map(fromNodeVersionRow);

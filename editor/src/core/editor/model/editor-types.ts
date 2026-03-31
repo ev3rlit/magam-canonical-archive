@@ -2,7 +2,12 @@ import type { EditorBodyDocument } from './editor-body';
 
 export type EditorTool = 'select' | 'pan' | 'shape' | 'sticky' | 'text' | 'image' | 'frame';
 
-export type EditorPanelId = 'outliner' | 'inspector';
+export type EditorPanelId = 'outliner' | 'inspector' | 'quickExplorer';
+
+export interface EditorReferenceTarget {
+  kind: 'url' | 'canvas' | 'object';
+  value: string;
+}
 
 export type EditorCanvasObjectKind =
   | 'shape'
@@ -54,6 +59,8 @@ export interface EditorCanvasObject {
   outlineColor: string;
   shapeVariant?: EditorShapeVariant;
   body: EditorBodyDocument;
+  libraryItemId?: string | null;
+  referenceTarget?: EditorReferenceTarget | null;
 }
 
 export interface EditorBounds {

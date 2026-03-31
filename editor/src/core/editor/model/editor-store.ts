@@ -12,7 +12,7 @@ import {
   createSeedBodyDocument,
   getCanvasObjectMinimumHeight,
 } from './editor-content-blocks';
-import { createBodyDocument } from './editor-body';
+import { createBodyDocument, createBodyImageNode, createBodyParagraphNode } from './editor-body';
 import {
   clamp,
   createObjectMap,
@@ -35,6 +35,7 @@ import type {
   EditorMarqueeState,
   EditorOutlinePreset,
   EditorPanelId,
+  EditorReferenceTarget,
   EditorSelectionState,
   EditorShapeVariant,
   EditorTransformFrame,
@@ -156,6 +157,7 @@ function createInitialState(): EditorState {
       open: {
         outliner: true,
         inspector: true,
+        quickExplorer: true,
       },
       mobileOpenPanel: null,
       collapsedNodeIds: [],
@@ -271,6 +273,8 @@ function buildDraftObject(input: {
       kind: input.kind,
       placeholderImageSrc: PLACEHOLDER_IMAGE,
     }),
+    libraryItemId: null,
+    referenceTarget: null,
   };
 }
 
@@ -346,6 +350,90 @@ function cloneBranch(
   getChildObjects(objects, rootId).forEach((child) => {
     cloneBranch(child.id, objects, offset, nextId, clones);
   });
+}
+
+function duplicateSnapshotObjects(
+  objects: EditorCanvasObject[],
+  offset: { x: number; y: number },
+  libraryItemId: string | null,
+) {
+  const idMap = new Map<string, string>();
+  const clones = objects.map((object) => {
+    const nextId = createObjectId(object.kind);
+    idMap.set(object.id, nextId);
+    return {
+      ...object,
+      id: nextId,
+      name: `${object.name} copy`,
+      parentId: object.parentId,
+      x: object.x + offset.x,
+      y: object.y + offset.y,
+      zIndex: object.zIndex + 20,
+      body: cloneBody(object.body),
+      libraryItemId: libraryItemId ?? object.libraryItemId ?? null,
+      referenceTarget: object.referenceTarget ?? null,
+    };
+  });
+
+  return {
+    clones: clones.map((object) => ({
+      ...object,
+      parentId: object.parentId ? (idMap.get(object.parentId) ?? null) : null,
+    })),
+    idMap,
+  };
+}
+
+function createAssetImageObject(input: {
+  itemId: string;
+  src: string;
+  alt: string;
+  width?: number;
+  height?: number;
+}) {
+  const nextObject = buildDraftObject({
+    kind: 'image',
+    x: 0,
+    y: 0,
+    zIndex: 1,
+  });
+
+  return {
+    ...nextObject,
+    width: input.width ?? nextObject.width,
+    height: input.height ?? nextObject.height,
+    libraryItemId: input.itemId,
+    body: createBodyDocument([
+      createBodyImageNode({
+        src: input.src,
+        alt: input.alt,
+      }),
+      createBodyParagraphNode(input.alt),
+    ]),
+  };
+}
+
+function createReferenceCanvasObject(input: {
+  itemId: string;
+  title: string;
+  summary?: string | null;
+  target: EditorReferenceTarget;
+}) {
+  const nextObject = buildDraftObject({
+    kind: 'text',
+    x: 0,
+    y: 0,
+    zIndex: 1,
+  });
+
+  const lines = [input.title, input.summary ?? '', input.target.value].filter((value) => value.length > 0);
+  return {
+    ...nextObject,
+    name: input.title,
+    libraryItemId: input.itemId,
+    referenceTarget: input.target,
+    body: createBodyDocument(lines.map((line) => createBodyParagraphNode(line))),
+  };
 }
 
 function removeObjects(objects: EditorCanvasObject[], ids: string[]) {
@@ -621,6 +709,20 @@ interface EditorStore extends EditorState {
   panViewport: (deltaX: number, deltaY: number) => void;
   setZoom: (nextZoom: number) => void;
   createObjectAtViewportCenter: (kind: Exclude<EditorCanvasObjectKind, 'group'>) => void;
+  instantiateTemplateSnapshot: (objects: EditorCanvasObject[], libraryItemId: string) => void;
+  placeLibraryAsset: (input: {
+    itemId: string;
+    src: string;
+    alt: string;
+    width?: number;
+    height?: number;
+  }) => void;
+  placeReferenceItem: (input: {
+    itemId: string;
+    title: string;
+    summary?: string | null;
+    target: EditorReferenceTarget;
+  }) => void;
   selectOnly: (objectId: string) => void;
   toggleSelection: (objectId: string) => void;
   selectMany: (objectIds: string[], primaryId?: string | null) => void;
@@ -832,6 +934,94 @@ export const useEditorStore = create<EditorStore>((set, get) => {
           scene: {
             ...state.scene,
             objects: [...state.scene.objects, nextObject],
+          },
+          ...withClearedContext(selection),
+        };
+      });
+    },
+    instantiateTemplateSnapshot: (objects, libraryItemId) => {
+      commitCanvasMutation('Instantiate template', (state) => {
+        if (objects.length === 0) {
+          return state;
+        }
+
+        const sourceIds = objects.map((object) => object.id);
+        const sourceBounds = getSelectionBounds(
+          {
+            ids: sourceIds,
+            primaryId: sourceIds[0] ?? null,
+          },
+          objects,
+        );
+        const duplicated = duplicateSnapshotObjects(
+          objects,
+          sourceBounds
+            ? {
+                x: (state.viewport.width / 2 - state.viewport.x) / state.viewport.zoom
+                  - (sourceBounds.x + sourceBounds.width / 2),
+                y: (state.viewport.height / 2 - state.viewport.y) / state.viewport.zoom
+                  - (sourceBounds.y + sourceBounds.height / 2),
+              }
+            : { x: 24, y: 24 },
+          libraryItemId,
+        );
+        const rootIds = getSelectionRoots(sourceIds, objects);
+        const rootCloneIds = rootIds
+          .map((rootId) => duplicated.idMap.get(rootId) ?? null)
+          .filter((id): id is string => id !== null);
+        const selection = normalizeSelection(rootCloneIds, rootCloneIds[0] ?? null);
+
+        return {
+          scene: {
+            ...state.scene,
+            objects: [...state.scene.objects, ...duplicated.clones.map((object, index) => ({
+              ...object,
+              zIndex: nextZIndex(state.scene.objects) + index,
+            }))],
+          },
+          ...withClearedContext(selection),
+        };
+      });
+    },
+    placeLibraryAsset: (input) => {
+      commitCanvasMutation('Place library asset', (state) => {
+        const nextObject = createAssetImageObject(input);
+        const x = (state.viewport.width / 2 - state.viewport.x) / state.viewport.zoom - nextObject.width / 2;
+        const y = (state.viewport.height / 2 - state.viewport.y) / state.viewport.zoom - nextObject.height / 2;
+        const placed = {
+          ...nextObject,
+          x,
+          y,
+          zIndex: nextZIndex(state.scene.objects),
+        };
+        const selection = normalizeSelection([placed.id], placed.id);
+
+        return {
+          scene: {
+            ...state.scene,
+            objects: [...state.scene.objects, placed],
+          },
+          ...withClearedContext(selection),
+        };
+      });
+    },
+    placeReferenceItem: (input) => {
+      commitCanvasMutation('Place reference item', (state) => {
+        const nextObject = createReferenceCanvasObject(input);
+        const x = (state.viewport.width / 2 - state.viewport.x) / state.viewport.zoom - nextObject.width / 2;
+        const y = (state.viewport.height / 2 - state.viewport.y) / state.viewport.zoom - nextObject.height / 2;
+        const placed = {
+          ...nextObject,
+          x,
+          y,
+          zIndex: nextZIndex(state.scene.objects),
+        };
+        const selection = normalizeSelection([placed.id], placed.id);
+
+        return {
+          scene: {
+            ...state.scene,
+            objects: [...state.scene.objects, placed],
           },
           ...withClearedContext(selection),
         };

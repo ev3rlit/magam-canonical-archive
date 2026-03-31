@@ -152,6 +152,31 @@ async function hasCanonicalBodySchema(client: PGlite): Promise<boolean> {
   return columns.has('body') && columns.has('body_schema_version');
 }
 
+async function hasLibrarySchema(client: PGlite): Promise<boolean> {
+  const requiredTables = new Set([
+    'library_items',
+    'library_collections',
+    'library_item_collections',
+    'library_item_versions',
+  ]);
+
+  const result = await client.query(`
+    select tablename
+    from pg_tables
+    where schemaname = 'public'
+      and tablename in ('library_items', 'library_collections', 'library_item_collections', 'library_item_versions')
+  `);
+
+  for (const row of result.rows as Array<Record<string, unknown>>) {
+    const tablename = typeof row['tablename'] === 'string' ? row['tablename'] : null;
+    if (tablename) {
+      requiredTables.delete(tablename);
+    }
+  }
+
+  return requiredTables.size === 0;
+}
+
 async function ensurePluginRuntimeSchema(client: PGlite): Promise<void> {
   await client.query(`
     create table if not exists plugin_packages (
@@ -347,6 +372,102 @@ async function ensureCanonicalBodySchema(client: PGlite): Promise<void> {
   `);
 }
 
+async function ensureLibrarySchema(client: PGlite): Promise<void> {
+  await client.query(`
+    create table if not exists library_items (
+      id text not null,
+      workspace_id text not null,
+      item_type text not null,
+      title text not null,
+      summary text,
+      tags jsonb not null,
+      is_favorite boolean default false not null,
+      visibility text not null,
+      payload jsonb not null,
+      binary_blob text,
+      search_text text not null,
+      created_by jsonb not null,
+      created_at timestamp with time zone default now() not null,
+      updated_at timestamp with time zone default now() not null,
+      constraint library_items_workspace_id_id_pk primary key (workspace_id, id)
+    );
+  `);
+  await client.query(`
+    create index if not exists idx_library_items_workspace_updated
+    on library_items (workspace_id, updated_at);
+  `);
+  await client.query(`
+    create index if not exists idx_library_items_workspace_type
+    on library_items (workspace_id, item_type);
+  `);
+  await client.query(`
+    create index if not exists idx_library_items_workspace_visibility
+    on library_items (workspace_id, visibility, updated_at);
+  `);
+  await client.query(`
+    create index if not exists idx_library_items_workspace_favorite
+    on library_items (workspace_id, is_favorite, updated_at);
+  `);
+
+  await client.query(`
+    create table if not exists library_collections (
+      id text not null,
+      workspace_id text not null,
+      name text not null,
+      description text,
+      sort_order integer not null,
+      created_at timestamp with time zone default now() not null,
+      updated_at timestamp with time zone default now() not null,
+      constraint library_collections_workspace_id_id_pk primary key (workspace_id, id)
+    );
+  `);
+  await client.query(`
+    create index if not exists idx_library_collections_workspace_sort
+    on library_collections (workspace_id, sort_order);
+  `);
+  await client.query(`
+    create unique index if not exists idx_library_collections_workspace_name
+    on library_collections (workspace_id, name);
+  `);
+
+  await client.query(`
+    create table if not exists library_item_collections (
+      workspace_id text not null,
+      item_id text not null,
+      collection_id text not null,
+      created_at timestamp with time zone default now() not null,
+      constraint library_item_collections_workspace_item_collection_pk primary key (workspace_id, item_id, collection_id)
+    );
+  `);
+  await client.query(`
+    create index if not exists idx_library_item_collections_workspace_collection
+    on library_item_collections (workspace_id, collection_id, item_id);
+  `);
+
+  await client.query(`
+    create table if not exists library_item_versions (
+      id text not null,
+      workspace_id text not null,
+      item_id text not null,
+      version_no integer not null,
+      snapshot jsonb not null,
+      binary_blob text,
+      change_summary text,
+      created_at timestamp with time zone default now() not null,
+      created_by jsonb not null,
+      constraint library_item_versions_workspace_id_id_pk primary key (workspace_id, id)
+    );
+  `);
+  await client.query(`
+    create unique index if not exists idx_library_item_versions_workspace_item_version
+    on library_item_versions (workspace_id, item_id, version_no);
+  `);
+  await client.query(`
+    create index if not exists idx_library_item_versions_workspace_item_created
+    on library_item_versions (workspace_id, item_id, created_at);
+  `);
+}
+
 export async function createCanonicalPgliteDb(
   targetDir: string,
   options?: {
@@ -402,6 +523,9 @@ export async function createCanonicalPgliteDb(
     }
     if (!(await hasCanonicalBodySchema(client))) {
       await ensureCanonicalBodySchema(client);
+    }
+    if (!(await hasLibrarySchema(client))) {
+      await ensureLibrarySchema(client);
     }
   }
 

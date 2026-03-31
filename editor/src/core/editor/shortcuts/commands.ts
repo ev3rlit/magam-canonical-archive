@@ -52,13 +52,8 @@ const shortcutCommands: Record<ShortcutCommandId, ShortcutCommandDefinition> = {
     },
   },
   'selection.paste': {
-    execute: () => {
-      const state = useEditorStore.getState();
-      if (state.clipboard.rootIds.length === 0) {
-        return;
-      }
-      state.pasteClipboard();
-    },
+    preventDefault: false,
+    execute: () => {},
   },
   'selection.delete': {
     execute: () => {

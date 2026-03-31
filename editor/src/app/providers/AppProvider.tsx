@@ -2,6 +2,8 @@
 
 import type { ReactNode } from 'react';
 import { useEffect } from 'react';
+import { ExplorerLibraryProvider } from '@/core/editor/explorer-library/ExplorerLibraryProvider';
+import { getExplorerLibraryService } from '@/core/editor/explorer-library/library-service';
 import { useEditorStore } from '@/core/editor/model/editor-store';
 import { dispatchShortcut } from '@/core/editor/shortcuts/dispatchShortcut';
 
@@ -79,15 +81,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
       state.setTemporaryToolOverride(null);
     };
 
+    const handlePaste = (event: ClipboardEvent) => {
+      const isTyping = isTypingTarget(event.target);
+      if (isTyping) {
+        return;
+      }
+
+      const files = Array.from(event.clipboardData?.files ?? []);
+      const imageFile = files.find((file) => file.type.startsWith('image/'));
+      if (imageFile) {
+        event.preventDefault();
+        void getExplorerLibraryService().then((service) => service.importClipboardImageAndPlace(imageFile));
+        return;
+      }
+
+      const state = useEditorStore.getState();
+      if (state.clipboard.rootIds.length > 0) {
+        event.preventDefault();
+        state.pasteClipboard();
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleBlur);
+    window.addEventListener('paste', handlePaste);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('paste', handlePaste);
     };
   }, []);
 
-  return <>{children}</>;
+  return (
+    <>
+      <ExplorerLibraryProvider />
+      {children}
+    </>
+  );
 }

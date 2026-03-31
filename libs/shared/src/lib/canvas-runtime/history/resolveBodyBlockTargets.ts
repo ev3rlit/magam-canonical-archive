@@ -5,6 +5,7 @@ import {
   getBodyBlockIdAtIndex,
   getTopLevelBodyNodes,
   readCanonicalBody,
+  type CanonicalBodyCarrier,
 } from '../../canonical-body-document';
 import type {
   BodyBlockPositionRefV1,
@@ -16,6 +17,12 @@ export interface ResolvedBodyBlockTarget {
   blockId: string;
   index: number;
 }
+
+type BodyBlockRecord = Parameters<typeof readContentBlocks>[0] & CanonicalBodyCarrier & {
+  capabilities?: {
+    content?: Parameters<typeof contentCapabilityToCanonicalBody>[0];
+  };
+};
 
 function parseSelectionKey(selectionKey: string): { index: number; blockId: string } | null {
   const match = /^object:[^:]+:body:(\d+):(.+)$/.exec(selectionKey);
@@ -40,7 +47,7 @@ function parseAnchorId(anchorId: string): { blockId: string; position: 'before' 
 }
 
 export function resolveBodyBlockTarget(input: {
-  objectRecord: Parameters<typeof readContentBlocks>[0];
+  objectRecord: BodyBlockRecord;
   target: BodyBlockTargetRefV1;
 }): ResolvedBodyBlockTarget {
   const legacyBlocks = readContentBlocks(input.objectRecord) ?? [];
@@ -94,7 +101,7 @@ export function resolveBodyBlockTarget(input: {
 }
 
 export function resolveBodyBlockPosition(input: {
-  objectRecord: Parameters<typeof readContentBlocks>[0];
+  objectRecord: BodyBlockRecord;
   position: BodyBlockPositionRefV1;
 }): { resolved: ResolvedBodyBlockPositionV1; index: number } {
   const legacyBlocks = readContentBlocks(input.objectRecord) ?? [];

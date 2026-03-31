@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createCanonicalPgliteDb } from './pglite-db';
 import { CanonicalPersistenceRepository } from './repository';
+import { LIBRARY_MAX_BINARY_BYTES } from './validators';
 
 function buildNoteRecord(id: string) {
   return {
@@ -32,6 +33,103 @@ function buildImageRecord(id: string) {
     },
     primaryContentKind: 'media' as const,
     canonicalText: 'asset',
+  };
+}
+
+function buildLibraryCollection(id: string) {
+  return {
+    id,
+    workspaceId: 'ws-1',
+    name: `Collection ${id}`,
+    description: 'Library collection',
+    sortOrder: 1,
+  };
+}
+
+function buildTemplateItem(id: string) {
+  return {
+    id,
+    workspaceId: 'ws-1',
+    type: 'template' as const,
+    title: `Template ${id}`,
+    summary: 'Reusable scene fragment',
+    tags: ['flow'],
+    collectionIds: [],
+    isFavorite: false,
+    createdBy: {
+      kind: 'user' as const,
+      id: 'tester',
+    },
+    visibility: 'curated' as const,
+    payload: {
+      sourceCanvasId: 'canvas-1',
+      sourceSelection: {
+        nodeIds: ['node-1'],
+        bindingIds: [],
+      },
+      previewText: 'Launch template',
+      previewImageAssetId: null,
+      snapshot: {
+        objects: [{ id: 'node-1', kind: 'sticky' }],
+      },
+    },
+  };
+}
+
+function buildAssetItem(id: string, visibility: 'imported' | 'curated' = 'imported') {
+  return {
+    id,
+    workspaceId: 'ws-1',
+    type: 'asset' as const,
+    title: `Asset ${id}`,
+    summary: 'Reference image asset',
+    tags: [],
+    collectionIds: [],
+    isFavorite: false,
+    createdBy: {
+      kind: 'system' as const,
+      id: 'importer',
+    },
+    visibility,
+    payload: {
+      mimeType: 'image/png',
+      byteSize: 4,
+      binaryData: Uint8Array.from([1, 2, 3, 4]),
+      originalFilename: 'asset.png',
+      sha256: 'hash-asset',
+      importSource: 'clipboard' as const,
+      previewText: 'Imported asset',
+      imageMetadata: {
+        width: 32,
+        height: 24,
+      },
+    },
+  };
+}
+
+function buildReferenceItem(id: string, target = 'https://example.com') {
+  return {
+    id,
+    workspaceId: 'ws-1',
+    type: 'reference' as const,
+    title: `Reference ${id}`,
+    summary: null,
+    tags: ['research'],
+    collectionIds: [],
+    isFavorite: false,
+    createdBy: {
+      kind: 'user' as const,
+      id: 'tester',
+    },
+    visibility: 'curated' as const,
+    payload: {
+      targetKind: 'url' as const,
+      target,
+      displayHint: 'Reference link',
+      metadata: {
+        label: 'Example',
+      },
+    },
   };
 }
 
@@ -443,6 +541,113 @@ describe('CanonicalPersistenceRepository', () => {
         redoRevisionNo: null,
       }),
     });
+
+    await handle.close();
+  });
+
+  it('creates and searches workspace-scoped library items', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const repository = new CanonicalPersistenceRepository(handle.db);
+
+    const collection = await repository.createLibraryCollection(buildLibraryCollection('collection-1'));
+    expect(collection.ok).toBe(true);
+
+    const created = await repository.createLibraryItem({
+      ...buildTemplateItem('template-1'),
+      collectionIds: ['collection-1'],
+    });
+    expect(created.ok).toBe(true);
+
+    const duplicateWorkspace = await repository.createLibraryItem({
+      ...buildTemplateItem('template-1'),
+      workspaceId: 'ws-2',
+    });
+    expect(duplicateWorkspace.ok).toBe(true);
+
+    const listed = await repository.listLibraryItems('ws-1');
+    expect(listed.ok).toBe(true);
+    if (listed.ok) {
+      expect(listed.value).toHaveLength(1);
+      expect(listed.value[0]?.collectionIds).toEqual(['collection-1']);
+    }
+
+    const searched = await repository.searchLibraryItems('ws-1', 'Launch');
+    expect(searched.ok).toBe(true);
+    if (searched.ok) {
+      expect(searched.value).toHaveLength(1);
+      expect(searched.value[0]?.id).toBe('template-1');
+    }
+
+    await handle.close();
+  });
+
+  it('promotes imported assets to curated when metadata curation is explicit', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const repository = new CanonicalPersistenceRepository(handle.db);
+
+    await repository.createLibraryCollection(buildLibraryCollection('collection-curated'));
+    const created = await repository.createLibraryItem(buildAssetItem('asset-imported'));
+    expect(created.ok).toBe(true);
+
+    const imported = await repository.listLibraryItems('ws-1', { visibility: 'imported' });
+    expect(imported.ok).toBe(true);
+    if (imported.ok) {
+      expect(imported.value.map((item) => item.id)).toEqual(['asset-imported']);
+    }
+
+    const updated = await repository.updateLibraryItemMetadata({
+      workspaceId: 'ws-1',
+      itemId: 'asset-imported',
+      tags: ['brand'],
+      collectionIds: ['collection-curated'],
+      changeSummary: 'Curated imported asset',
+    });
+    expect(updated.ok).toBe(true);
+    if (updated.ok) {
+      expect(updated.value.visibility).toBe('curated');
+      expect(updated.value.tags).toEqual(['brand']);
+      expect(updated.value.collectionIds).toEqual(['collection-curated']);
+    }
+
+    const curated = await repository.listLibraryItems('ws-1', { visibility: 'curated' });
+    expect(curated.ok).toBe(true);
+    if (curated.ok) {
+      expect(curated.value.map((item) => item.id)).toContain('asset-imported');
+    }
+
+    const versions = await repository.listLibraryItemVersions('ws-1', 'asset-imported');
+    expect(versions.ok).toBe(true);
+    if (versions.ok) {
+      expect(versions.value).toHaveLength(2);
+      expect(versions.value[0]?.changeSummary).toBe('Curated imported asset');
+      expect(versions.value[1]?.changeSummary).toBe('Created library item');
+    }
+
+    await handle.close();
+  });
+
+  it('rejects oversize assets and missing reference targets', async () => {
+    const handle = await createCanonicalPgliteDb(process.cwd(), { dataDir: null });
+    const repository = new CanonicalPersistenceRepository(handle.db);
+
+    const oversize = await repository.createLibraryItem({
+      ...buildAssetItem('asset-oversize'),
+      payload: {
+        ...buildAssetItem('asset-oversize').payload,
+        byteSize: LIBRARY_MAX_BINARY_BYTES + 1,
+        binaryData: new Uint8Array(LIBRARY_MAX_BINARY_BYTES + 1),
+      },
+    });
+    expect(oversize.ok).toBe(false);
+    if (!oversize.ok) {
+      expect(oversize.code).toBe('LIBRARY_BINARY_TOO_LARGE');
+    }
+
+    const missingReference = await repository.createLibraryItem(buildReferenceItem('reference-missing', ''));
+    expect(missingReference.ok).toBe(false);
+    if (!missingReference.ok) {
+      expect(missingReference.code).toBe('LIBRARY_REFERENCE_TARGET_MISSING');
+    }
 
     await handle.close();
   });
