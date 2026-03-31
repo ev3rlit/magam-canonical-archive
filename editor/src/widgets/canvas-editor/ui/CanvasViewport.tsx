@@ -3,12 +3,7 @@
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
 import {
-  OUTLINE_PRESET_TOKENS,
-  resolveReadableTextColor,
-} from '@/core/editor/model/editor-appearance';
-import {
   getEffectiveBounds,
-  getObjectTransformFrame,
   getSelectionBounds,
   intersectsBounds,
   marqueeToBounds,
@@ -17,8 +12,8 @@ import {
 } from '@/core/editor/model/editor-geometry';
 import { getEffectiveTool, getPrimarySelectionObject, useEditorStore } from '@/core/editor/model/editor-store';
 import type { EditorCanvasObject, EditorHistorySnapshot, EditorMarqueeState } from '@/core/editor/model/editor-types';
+import { CanvasObject } from '@/widgets/canvas-editor/ui/CanvasObject';
 import { CanvasContextMenu } from '@/widgets/canvas-editor/ui/CanvasContextMenu';
-import { CanvasObjectBody } from '@/widgets/canvas-editor/ui/CanvasObjectBody';
 import { CanvasObjectFloatingMenu } from '@/widgets/canvas-editor/ui/CanvasObjectFloatingMenu';
 
 type InteractionState =
@@ -41,29 +36,6 @@ type InteractionState =
       originWorldY: number;
       seedIds: string[];
     };
-
-function fillClass(object: EditorCanvasObject) {
-  return {
-    'canvas-object--frame': object.kind === 'frame',
-    'canvas-object--group': object.kind === 'group',
-    'canvas-object--image': object.kind === 'image',
-    'canvas-object--shape': object.kind === 'shape',
-    'canvas-object--sticky': object.kind === 'sticky',
-    'canvas-object--text': object.kind === 'text',
-  };
-}
-
-function CanvasObjectContent({ object }: { object: EditorCanvasObject }) {
-  if (object.kind === 'group') {
-    return (
-      <div className="canvas-object__group-label">
-        <strong>{object.name}</strong>
-      </div>
-    );
-  }
-
-  return null;
-}
 
 export function CanvasViewport() {
   const effectiveTool = useEditorStore((state) => getEffectiveTool(state));
@@ -282,19 +254,15 @@ export function CanvasViewport() {
           .filter((object) => object.visible)
           .sort((left, right) => left.zIndex - right.zIndex)
           .map((object) => {
-            const frame = getObjectTransformFrame(object, objects);
             const isSelected = selection.ids.includes(object.id);
 
             return (
-              <div
-                className={clsx('canvas-object', fillClass(object), {
-                  'canvas-object--selected': isSelected,
-                  'canvas-object--locked': object.locked,
-                })}
-                data-fill={object.fillPreset}
-                data-kind={object.kind}
-                data-shape-variant={object.shapeVariant ?? 'rectangle'}
+              <CanvasObject
+                object={object}
+                objects={objects}
+                isSelected={isSelected}
                 key={object.id}
+                panCursor={panCursor}
                 onContextMenu={(event) => {
                   if (!stageRef.current) {
                     return;
@@ -369,27 +337,7 @@ export function CanvasViewport() {
                     historyBefore: dragState.captureHistorySnapshot(),
                   };
                 }}
-                style={{
-                  cursor: panCursor ?? (object.locked ? 'not-allowed' : 'pointer'),
-                  height: frame.height,
-                  left: frame.x,
-                  ['--object-bg' as string]: object.fillColor,
-                  ['--object-border-color' as string]: object.outlineColor,
-                  ['--object-border-style' as string]: OUTLINE_PRESET_TOKENS[object.outlinePreset].style,
-                  ['--object-border-width' as string]: OUTLINE_PRESET_TOKENS[object.outlinePreset].width,
-                  ['--object-text' as string]: resolveReadableTextColor(object.fillColor, object.fillPreset),
-                  top: frame.y,
-                  transform: `rotate(${frame.rotation}deg)`,
-                  transformOrigin: 'center',
-                  width: frame.width,
-                  zIndex: object.zIndex,
-                }}
-              >
-                <CanvasObjectContent object={object} />
-                {object.kind !== 'group' ? (
-                  <CanvasObjectBody isSelected={isSelected} object={object} />
-                ) : null}
-              </div>
+              />
             );
           })}
       </div>
