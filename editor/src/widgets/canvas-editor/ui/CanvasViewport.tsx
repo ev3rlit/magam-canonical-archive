@@ -47,8 +47,6 @@ export function CanvasViewport() {
   const panViewport = useEditorStore((state) => state.panViewport);
   const setContextMenu = useEditorStore((state) => state.setContextMenu);
   const commitActiveBodyEditor = useEditorStore((state) => state.commitActiveBodyEditor);
-  const selectOnly = useEditorStore((state) => state.selectOnly);
-  const toggleSelection = useEditorStore((state) => state.toggleSelection);
   const clearSelection = useEditorStore((state) => state.clearSelection);
   const setMarquee = useEditorStore((state) => state.setMarquee);
   const moveSelection = useEditorStore((state) => state.moveSelection);
@@ -59,6 +57,30 @@ export function CanvasViewport() {
   const interactionRef = useRef<InteractionState | null>(null);
   const [isPanGestureActive, setIsPanGestureActive] = useState(false);
   const panCursor = isPanGestureActive ? 'grabbing' : effectiveTool === 'pan' ? 'grab' : undefined;
+
+  const startPanInteraction = (clientX: number, clientY: number) => {
+    interactionRef.current = {
+      type: 'pan',
+      lastClientX: clientX,
+      lastClientY: clientY,
+    };
+    setIsPanGestureActive(true);
+  };
+
+  const startDragInteraction = (
+    originWorldX: number,
+    originWorldY: number,
+    historyBefore: EditorHistorySnapshot,
+  ) => {
+    interactionRef.current = {
+      type: 'drag',
+      originWorldX,
+      originWorldY,
+      appliedDeltaX: 0,
+      appliedDeltaY: 0,
+      historyBefore,
+    };
+  };
 
   useEffect(() => {
     const node = stageRef.current;
@@ -194,12 +216,7 @@ export function CanvasViewport() {
         const state = useEditorStore.getState();
         if (effectiveTool === 'pan') {
           commitActiveBodyEditor();
-          interactionRef.current = {
-            type: 'pan',
-            lastClientX: event.clientX,
-            lastClientY: event.clientY,
-          };
-          setIsPanGestureActive(true);
+          startPanInteraction(event.clientX, event.clientY);
           setContextMenu(null);
           return;
         }
@@ -261,82 +278,12 @@ export function CanvasViewport() {
                 object={object}
                 objects={objects}
                 isSelected={isSelected}
+                effectiveTool={effectiveTool}
                 key={object.id}
                 panCursor={panCursor}
-                onContextMenu={(event) => {
-                  if (!stageRef.current) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  event.stopPropagation();
-                  commitActiveBodyEditor();
-
-                  if (!selection.ids.includes(object.id)) {
-                    selectOnly(object.id);
-                  } else {
-                    selectMany(selection.ids, object.id);
-                  }
-
-                  const stageRect = stageRef.current.getBoundingClientRect();
-                  setContextMenu({
-                    objectId: object.id,
-                    x: event.clientX - stageRect.left,
-                    y: event.clientY - stageRect.top,
-                  });
-                }}
-                onPointerDown={(event) => {
-                  if (!stageRef.current || event.button !== 0) {
-                    return;
-                  }
-
-                  event.stopPropagation();
-                  event.preventDefault();
-                  commitActiveBodyEditor();
-                  setContextMenu(null);
-
-                  if (effectiveTool === 'pan') {
-                    interactionRef.current = {
-                      type: 'pan',
-                      lastClientX: event.clientX,
-                      lastClientY: event.clientY,
-                    };
-                    setIsPanGestureActive(true);
-                    return;
-                  }
-
-                  if (event.shiftKey) {
-                    toggleSelection(object.id);
-                    return;
-                  }
-
-                  if (!selection.ids.includes(object.id)) {
-                    selectOnly(object.id);
-                  } else {
-                    selectMany(selection.ids, object.id);
-                  }
-
-                  if (object.locked) {
-                    return;
-                  }
-
-                  const dragState = useEditorStore.getState();
-                  const stageRect = stageRef.current.getBoundingClientRect();
-                  const point = worldPointFromClient({
-                    clientX: event.clientX,
-                    clientY: event.clientY,
-                    stageRect,
-                    viewport: dragState.viewport,
-                  });
-                  interactionRef.current = {
-                    type: 'drag',
-                    originWorldX: point.x,
-                    originWorldY: point.y,
-                    appliedDeltaX: 0,
-                    appliedDeltaY: 0,
-                    historyBefore: dragState.captureHistorySnapshot(),
-                  };
-                }}
+                stageRef={stageRef}
+                startDragInteraction={startDragInteraction}
+                startPanInteraction={startPanInteraction}
               />
             );
           })}

@@ -1,12 +1,14 @@
 'use client';
 
 import clsx from 'clsx';
+import type { RefObject } from 'react';
 import {
   OUTLINE_PRESET_TOKENS,
   resolveReadableTextColor,
 } from '@/core/editor/model/editor-appearance';
-import { getObjectTransformFrame } from '@/core/editor/model/editor-geometry';
-import type { EditorCanvasObject } from '@/core/editor/model/editor-types';
+import { getObjectTransformFrame, worldPointFromClient } from '@/core/editor/model/editor-geometry';
+import { useEditorStore } from '@/core/editor/model/editor-store';
+import type { EditorCanvasObject, EditorHistorySnapshot, EditorTool } from '@/core/editor/model/editor-types';
 import { CanvasObjectBody } from '@/widgets/canvas-editor/ui/CanvasObjectBody';
 
 function fillClass(object: EditorCanvasObject) {
@@ -36,17 +38,27 @@ export function CanvasObject({
   object,
   objects,
   isSelected,
+  effectiveTool,
   panCursor,
-  onContextMenu,
-  onPointerDown,
+  stageRef,
+  startPanInteraction,
+  startDragInteraction,
 }: {
   object: EditorCanvasObject;
   objects: EditorCanvasObject[];
   isSelected: boolean;
+  effectiveTool: EditorTool;
   panCursor?: string;
-  onContextMenu: React.MouseEventHandler<HTMLDivElement>;
-  onPointerDown: React.PointerEventHandler<HTMLDivElement>;
+  stageRef: RefObject<HTMLDivElement | null>;
+  startPanInteraction: (clientX: number, clientY: number) => void;
+  startDragInteraction: (originWorldX: number, originWorldY: number, historyBefore: EditorHistorySnapshot) => void;
 }) {
+  const selectionIds = useEditorStore((state) => state.selection.ids);
+  const commitActiveBodyEditor = useEditorStore((state) => state.commitActiveBodyEditor);
+  const selectOnly = useEditorStore((state) => state.selectOnly);
+  const selectMany = useEditorStore((state) => state.selectMany);
+  const setContextMenu = useEditorStore((state) => state.setContextMenu);
+  const toggleSelection = useEditorStore((state) => state.toggleSelection);
   const frame = getObjectTransformFrame(object, objects);
 
   return (
@@ -58,8 +70,68 @@ export function CanvasObject({
       data-fill={object.fillPreset}
       data-kind={object.kind}
       data-shape-variant={object.shapeVariant ?? 'rectangle'}
-      onContextMenu={onContextMenu}
-      onPointerDown={onPointerDown}
+      onContextMenu={(event) => {
+        if (!stageRef.current) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        commitActiveBodyEditor();
+
+        if (!selectionIds.includes(object.id)) {
+          selectOnly(object.id);
+        } else {
+          selectMany(selectionIds, object.id);
+        }
+
+        const stageRect = stageRef.current.getBoundingClientRect();
+        setContextMenu({
+          objectId: object.id,
+          x: event.clientX - stageRect.left,
+          y: event.clientY - stageRect.top,
+        });
+      }}
+      onPointerDown={(event) => {
+        if (!stageRef.current || event.button !== 0) {
+          return;
+        }
+
+        event.stopPropagation();
+        event.preventDefault();
+        commitActiveBodyEditor();
+        setContextMenu(null);
+
+        if (effectiveTool === 'pan') {
+          startPanInteraction(event.clientX, event.clientY);
+          return;
+        }
+
+        if (event.shiftKey) {
+          toggleSelection(object.id);
+          return;
+        }
+
+        if (!selectionIds.includes(object.id)) {
+          selectOnly(object.id);
+        } else {
+          selectMany(selectionIds, object.id);
+        }
+
+        if (object.locked) {
+          return;
+        }
+
+        const state = useEditorStore.getState();
+        const stageRect = stageRef.current.getBoundingClientRect();
+        const point = worldPointFromClient({
+          clientX: event.clientX,
+          clientY: event.clientY,
+          stageRect,
+          viewport: state.viewport,
+        });
+        startDragInteraction(point.x, point.y, state.captureHistorySnapshot());
+      }}
       style={{
         cursor: panCursor ?? (object.locked ? 'not-allowed' : 'pointer'),
         height: frame.height,
