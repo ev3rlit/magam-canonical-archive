@@ -113,6 +113,48 @@ describe('CanvasViewport document bodies', () => {
     expect(useEditorStore.getState().overlays.isBodyEditorOpen).toBe(true);
   });
 
+  it('drags a selected object when the pointer starts on its body area', () => {
+    renderInProvider(<CanvasViewport />, root);
+
+    let stickyId = '';
+    let initialX = 0;
+    let initialY = 0;
+    act(() => {
+      useEditorStore.getState().createObjectAtViewportCenter('sticky');
+      stickyId = useEditorStore.getState().selection.primaryId!;
+      const sticky = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)!;
+      initialX = sticky.x;
+      initialY = sticky.y;
+    });
+
+    const body = container.querySelector('.canvas-object[data-kind="sticky"] .canvas-object__content-stack') as HTMLDivElement;
+    expect(body).toBeTruthy();
+
+    act(() => {
+      body.dispatchEvent(new MouseEvent('pointerdown', {
+        bubbles: true,
+        button: 0,
+        clientX: 120,
+        clientY: 120,
+      }));
+      window.dispatchEvent(new MouseEvent('pointermove', {
+        bubbles: true,
+        clientX: 156,
+        clientY: 144,
+      }));
+      window.dispatchEvent(new MouseEvent('pointerup', {
+        bubbles: true,
+        clientX: 156,
+        clientY: 144,
+      }));
+    });
+
+    const sticky = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)!;
+    expect(sticky.x).not.toBe(initialX);
+    expect(sticky.y).not.toBe(initialY);
+    expect(useEditorStore.getState().overlays.isBodyEditorOpen).toBe(false);
+  });
+
   it('commits document body edits when focus leaves the inline editor', () => {
     renderInProvider(
       <>

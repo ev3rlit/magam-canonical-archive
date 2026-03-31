@@ -401,6 +401,12 @@ export function CanvasObjectBody({
   const isBodyEditorOpen = useEditorStore((state) => state.overlays.isBodyEditorOpen);
   const openBodyEditor = useEditorStore((state) => state.openBodyEditor);
   const pointerStartedWhileSelectedRef = useRef(false);
+  const pointerDragStateRef = useRef<{
+    pointerId: number;
+    clientX: number;
+    clientY: number;
+    moved: boolean;
+  } | null>(null);
 
   const isEditing = isBodyEditorOpen && activeBodyEditorObjectId === object.id;
 
@@ -416,6 +422,7 @@ export function CanvasObjectBody({
       onClick={(event) => {
         const shouldEnterEdit = pointerStartedWhileSelectedRef.current;
         pointerStartedWhileSelectedRef.current = false;
+        pointerDragStateRef.current = null;
 
         if (!shouldEnterEdit || !isSelected || isEditing) {
           return;
@@ -426,9 +433,42 @@ export function CanvasObjectBody({
       onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
         pointerStartedWhileSelectedRef.current = isSelected;
         if (!isSelected) {
+          pointerDragStateRef.current = null;
           return;
         }
-        event.stopPropagation();
+        pointerDragStateRef.current = {
+          pointerId: event.pointerId,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          moved: false,
+        };
+        if (isEditing) {
+          event.stopPropagation();
+        }
+      }}
+      onPointerMove={(event: PointerEvent<HTMLDivElement>) => {
+        const dragState = pointerDragStateRef.current;
+        if (!dragState || dragState.pointerId !== event.pointerId || dragState.moved) {
+          return;
+        }
+
+        if (Math.abs(event.clientX - dragState.clientX) >= 3 || Math.abs(event.clientY - dragState.clientY) >= 3) {
+          dragState.moved = true;
+          pointerStartedWhileSelectedRef.current = false;
+        }
+      }}
+      onPointerUp={(event: PointerEvent<HTMLDivElement>) => {
+        const dragState = pointerDragStateRef.current;
+        if (dragState?.pointerId === event.pointerId) {
+          pointerDragStateRef.current = null;
+        }
+      }}
+      onPointerCancel={(event: PointerEvent<HTMLDivElement>) => {
+        const dragState = pointerDragStateRef.current;
+        if (dragState?.pointerId === event.pointerId) {
+          pointerDragStateRef.current = null;
+          pointerStartedWhileSelectedRef.current = false;
+        }
       }}
     >
       {isEditing ? <BodyEditor body={bodyForRender} objectId={object.id} /> : <BodyPreview body={bodyForRender} />}
