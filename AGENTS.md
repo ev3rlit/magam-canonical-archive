@@ -5,6 +5,7 @@ This file defines how agents should work in this repository. It focuses on proje
 ## Primary References
 
 - For product direction, architecture, runtime modes, editor-shell structure, killer features, and the current target tech stack, read `TECHSPEC.md` first and treat it as the primary product/technical reference.
+- For TypeScript design philosophy, interface shape, type usage, and abstraction rules, read `RULE.md` first and treat it as the primary programming reference.
 - For design, layout, and visual language decisions, read `DESIGN.md` first and treat it as the primary design reference.
 
 ## Product Identity
@@ -120,6 +121,15 @@ No task is done until the outcome is verified.
 - Keep diffs task-focused and split unrelated cleanup into separate work.
 - Update local guidance when shared expectations change, and keep guidance files consistent with this document.
 - Make exceptions explicit, narrow, and documented instead of relying on informal precedent.
+
+## Absolute Programming Rules
+
+- Follow `RULE.md` as the default TypeScript programming guide for this repository.
+- Keep interfaces small and capability-based; prefer names that expose the role directly, such as `CanvasStore`, `ObjectLoader`, `PatchWriter`, `LayoutEngine`, `Reader`, `Writer`, `Clock`, or `Parser`.
+- Prefer explicit inputs, outputs, side effects, and failure paths over hidden behavior, ambient state, or magic defaults.
+- Prefer concrete data flow, small functions, and focused modules over broad abstractions, wrapper stacks, or speculative extension points.
+- Use TypeScript to clarify runtime behavior; avoid type gymnastics, unnecessary generics, and assertion-driven design.
+- Validate unstable input at boundaries and surface failures explicitly; do not hide errors behind silent fallbacks or success-shaped defaults.
 
 ## Design Guidance
 
