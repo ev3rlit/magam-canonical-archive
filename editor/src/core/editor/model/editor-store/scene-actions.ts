@@ -18,6 +18,7 @@ export function createSceneActions(
   | 'updateObjectPatch'
   | 'copySelection'
   | 'pasteClipboard'
+  | 'pasteClipboardSnapshot'
   | 'bringSelectionToFront'
   | 'bringSelectionForward'
   | 'sendSelectionBackward'

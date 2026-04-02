@@ -1,4 +1,3 @@
-import { estimateCanvasObjectHeight } from './editor-content-blocks';
 import type {
   EditorBounds,
   EditorCanvasObject,
@@ -154,7 +153,7 @@ export function getObjectTransformFrame(
     x: object.x,
     y: object.y,
     width: object.width,
-    height: object.kind === 'group' ? object.height : estimateCanvasObjectHeight(object),
+    height: object.height,
     rotation: normalizeRotationDegrees(object.rotation),
   };
 }

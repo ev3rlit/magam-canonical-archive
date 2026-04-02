@@ -11,10 +11,13 @@ export type ShortcutCommandId =
   | 'selection.delete'
   | 'selection.duplicate'
   | 'selection.group'
-  | 'selection.ungroup';
+  | 'selection.ungroup'
+  | 'viewport.zoom.in'
+  | 'viewport.zoom.out';
 
 export interface ShortcutKeyboardEventLike {
   key: string;
+  code?: string;
   metaKey: boolean;
   ctrlKey: boolean;
   altKey: boolean;
@@ -26,6 +29,12 @@ export interface NormalizedShortcutInput {
   chord: string;
   phase: ShortcutPhase;
   repeat: boolean;
+}
+
+export interface ShortcutBinding {
+  phase: ShortcutPhase;
+  commandId: ShortcutCommandId;
+  chords: string[];
 }
 
 export interface ShortcutCommandDefinition {

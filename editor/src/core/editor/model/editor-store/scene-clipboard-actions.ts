@@ -8,12 +8,57 @@ import {
   normalizeSelection,
   withClearedContext,
 } from './selection-commands';
+import type { EditorClipboardState } from '../editor-state';
 import type { EditorStore, EditorStoreEnv } from './store-types';
+
+function pasteClipboardSnapshotIntoScene(
+  state: EditorStore,
+  clipboard: EditorClipboardState,
+  deps: ObjectCommandDeps,
+) {
+  if (clipboard.rootIds.length === 0) {
+    return state;
+  }
+
+  const offsetMultiplier = clipboard.pasteCount + 1;
+  const offset = {
+    x: 24 * offsetMultiplier,
+    y: 24 * offsetMultiplier,
+  };
+  const clones: EditorStore['scene']['objects'] = [];
+  const rootCloneIds: string[] = [];
+
+  clipboard.rootIds.forEach((rootId) => {
+    const root = clipboard.objects.find((candidate) => candidate.id === rootId);
+    const previousLength = clones.length;
+    const targetParentId = root?.parentId && state.scene.objects.some((object) => object.id === root.parentId)
+      ? root.parentId
+      : null;
+    cloneBranch(rootId, clipboard.objects, offset, targetParentId, clones, deps);
+    const rootClone = clones[previousLength];
+    if (rootClone) {
+      rootCloneIds.push(rootClone.id);
+    }
+  });
+
+  if (clones.length === 0) {
+    return state;
+  }
+
+  const selection = normalizeSelection(rootCloneIds, rootCloneIds[0] ?? null);
+  return {
+    scene: {
+      ...state.scene,
+      objects: [...state.scene.objects, ...clones],
+    },
+    ...withClearedContext(selection),
+  };
+}
 
 export function createSceneClipboardActions(
   env: EditorStoreEnv,
   deps: ObjectCommandDeps,
-): Pick<EditorStore, 'copySelection' | 'pasteClipboard' | 'duplicateSelection'> {
+): Pick<EditorStore, 'copySelection' | 'pasteClipboard' | 'pasteClipboardSnapshot' | 'duplicateSelection'> {
   return {
     copySelection: () => {
       env.setState((state) => {
@@ -32,48 +77,22 @@ export function createSceneClipboardActions(
     },
     pasteClipboard: () => {
       env.commitCanvasMutation('Paste selection', (state) => {
-        if (state.clipboard.rootIds.length === 0) {
+        const nextState = pasteClipboardSnapshotIntoScene(state, state.clipboard, deps);
+        if (nextState === state) {
           return state;
         }
 
-        const offsetMultiplier = state.clipboard.pasteCount + 1;
-        const offset = {
-          x: 24 * offsetMultiplier,
-          y: 24 * offsetMultiplier,
-        };
-        const clones: EditorStore['scene']['objects'] = [];
-        const rootCloneIds: string[] = [];
-
-        state.clipboard.rootIds.forEach((rootId) => {
-          const root = state.clipboard.objects.find((candidate) => candidate.id === rootId);
-          const previousLength = clones.length;
-          const targetParentId = root?.parentId && state.scene.objects.some((object) => object.id === root.parentId)
-            ? root.parentId
-            : null;
-          cloneBranch(rootId, state.clipboard.objects, offset, targetParentId, clones, deps);
-          const rootClone = clones[previousLength];
-          if (rootClone) {
-            rootCloneIds.push(rootClone.id);
-          }
-        });
-
-        if (clones.length === 0) {
-          return state;
-        }
-
-        const selection = normalizeSelection(rootCloneIds, rootCloneIds[0] ?? null);
         return {
-          scene: {
-            ...state.scene,
-            objects: [...state.scene.objects, ...clones],
-          },
+          ...nextState,
           clipboard: {
             ...state.clipboard,
-            pasteCount: offsetMultiplier,
+            pasteCount: state.clipboard.pasteCount + 1,
           },
-          ...withClearedContext(selection),
         };
       });
+    },
+    pasteClipboardSnapshot: (snapshot) => {
+      env.commitCanvasMutation('Paste selection', (state) => pasteClipboardSnapshotIntoScene(state, snapshot, deps));
     },
     duplicateSelection: () => {
       env.commitCanvasMutation('Duplicate selection', (state) => {

@@ -27,6 +27,18 @@ describe('editor shortcut keymap', () => {
       phase: 'down',
       repeat: false,
     })).toBe('selection.paste');
+
+    expect(resolveShortcutCommandId({
+      chord: 'Mod+=',
+      phase: 'down',
+      repeat: false,
+    })).toBe('viewport.zoom.in');
+
+    expect(resolveShortcutCommandId({
+      chord: 'Mod+NumpadSubtract',
+      phase: 'down',
+      repeat: false,
+    })).toBe('viewport.zoom.out');
   });
 
   it('normalizes keyboard events for space press and release', () => {
@@ -52,6 +64,34 @@ describe('editor shortcut keymap', () => {
       repeat: false,
     }, 'down')).toEqual({
       chord: 'Mod+Shift+Z',
+      phase: 'down',
+      repeat: false,
+    });
+
+    expect(normalizeKeyEvent({
+      key: '+',
+      code: 'Equal',
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: true,
+      repeat: false,
+    }, 'down')).toEqual({
+      chord: 'Mod++',
+      phase: 'down',
+      repeat: false,
+    });
+
+    expect(normalizeKeyEvent({
+      key: 'Add',
+      code: 'NumpadAdd',
+      metaKey: false,
+      ctrlKey: true,
+      altKey: false,
+      shiftKey: false,
+      repeat: false,
+    }, 'down')).toEqual({
+      chord: 'Mod+NumpadAdd',
       phase: 'down',
       repeat: false,
     });

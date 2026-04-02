@@ -43,6 +43,7 @@ const shortcutCommands: Record<ShortcutCommandId, ShortcutCommandDefinition> = {
     },
   },
   'selection.copy': {
+    preventDefault: false,
     execute: () => {
       const state = useEditorStore.getState();
       if (state.selection.ids.length === 0) {
@@ -89,6 +90,18 @@ const shortcutCommands: Record<ShortcutCommandId, ShortcutCommandDefinition> = {
         return;
       }
       state.ungroupSelection();
+    },
+  },
+  'viewport.zoom.in': {
+    execute: () => {
+      const state = useEditorStore.getState();
+      state.setZoom(state.viewport.zoom + 0.1);
+    },
+  },
+  'viewport.zoom.out': {
+    execute: () => {
+      const state = useEditorStore.getState();
+      state.setZoom(state.viewport.zoom - 0.1);
     },
   },
 };

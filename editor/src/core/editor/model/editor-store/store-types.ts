@@ -1,5 +1,5 @@
 import type { StoreApi } from 'zustand';
-import type { EditorState } from '../editor-state';
+import type { EditorClipboardState, EditorState } from '../editor-state';
 import type {
   EditorCanvasObject,
   EditorCanvasObjectKind,
@@ -87,6 +87,7 @@ export interface EditorStore extends EditorState, BodyEditorActions, OverlayActi
   updateSelectionPatch: (patch: Partial<Pick<EditorCanvasObject, 'locked' | 'visible'>>) => void;
   copySelection: () => void;
   pasteClipboard: () => void;
+  pasteClipboardSnapshot: (snapshot: EditorClipboardState) => void;
   bringSelectionToFront: () => void;
   bringSelectionForward: () => void;
   sendSelectionBackward: () => void;

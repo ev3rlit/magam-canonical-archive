@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppProvider } from '../../../app/providers/AppProvider';
 import { createBodyDocument, createBodyParagraphNode } from '../../../core/editor/model/editor-body';
+import { getSelectionTransformFrame } from '../../../core/editor/model/editor-geometry';
 import { useEditorStore } from '../../../core/editor/model/editor-store';
 import { CanvasSelectionLayer } from './CanvasSelectionLayer';
 import { CanvasViewport } from './CanvasViewport';
@@ -396,5 +397,37 @@ describe('CanvasViewport document bodies', () => {
 
     expect(container.querySelectorAll('[data-testid="graph-canvas-resize-handle"]')).toHaveLength(0);
     expect(container.querySelector('[data-testid="graph-canvas-rotate-handle"]')).toBeNull();
+  });
+
+  it('keeps the selection frame locked to object height while editing a taller draft body', () => {
+    renderInProvider(
+      <>
+        <CanvasViewport />
+        <CanvasSelectionLayer />
+      </>,
+      root,
+    );
+
+    let stickyId = '';
+    let baseHeight = 0;
+    act(() => {
+      useEditorStore.getState().createObjectAtViewportCenter('sticky');
+      stickyId = useEditorStore.getState().selection.primaryId!;
+      baseHeight = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)!.height;
+      useEditorStore.getState().openBodyEditor(stickyId);
+      useEditorStore.getState().updateBodyEditorDraft(stickyId, createBodyDocument([
+        {
+          type: 'heading',
+          attrs: { level: 1 },
+          content: [{ type: 'text', text: 'Launch plan launch plan launch plan launch plan' }],
+        },
+        createBodyParagraphNode('A longer draft body that should overflow content layout without changing the object frame.'),
+        createBodyParagraphNode('Another paragraph to force extra content height.'),
+      ]));
+    });
+
+    const frame = getSelectionTransformFrame(useEditorStore.getState().selection, useEditorStore.getState().scene.objects);
+
+    expect(frame?.height).toBe(baseHeight);
   });
 });

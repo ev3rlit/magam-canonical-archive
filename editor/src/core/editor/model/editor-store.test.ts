@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createBodyDocument, createBodyImageNode, createBodyParagraphNode } from './editor-body';
-import { getSelectionTransformFrame } from './editor-geometry';
+import { getObjectTransformFrame, getSelectionTransformFrame } from './editor-geometry';
 import { getEffectiveTool, useEditorStore } from './editor-store';
 
 describe('editor store history', () => {
@@ -223,6 +223,28 @@ describe('editor store history', () => {
 
     useEditorStore.getState().redo();
     expect(useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)?.body.content).toHaveLength(1);
+  });
+
+  it('keeps object frames pinned to stored height even when body content grows', () => {
+    useEditorStore.getState().createObjectAtViewportCenter('sticky');
+    const stickyId = useEditorStore.getState().selection.primaryId!;
+    const initial = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)!;
+
+    useEditorStore.getState().updateObjectBody(stickyId, createBodyDocument([
+      {
+        type: 'heading',
+        attrs: { level: 1 },
+        content: [{ type: 'text', text: 'Launch plan launch plan launch plan launch plan launch plan' }],
+      },
+      createBodyParagraphNode('A much longer paragraph that would previously push the transform frame taller than the stored object height.'),
+      createBodyParagraphNode('Second paragraph to keep the content taller than the card frame.'),
+    ]));
+
+    const next = useEditorStore.getState().scene.objects.find((object) => object.id === stickyId)!;
+    const frame = getObjectTransformFrame(next, useEditorStore.getState().scene.objects);
+
+    expect(next.height).toBe(initial.height);
+    expect(frame.height).toBe(initial.height);
   });
 
   it('opens and closes the body editor for selected objects', () => {
