@@ -1,5 +1,8 @@
 # Magam (마감)
 
+> Archive notice: this repository preserves the canonical object / DB-first canvas-first Magam line that was split out on April 2, 2026 for archival and retrospective purposes.
+> The active `magam` repository may continue on a different product direction.
+
 > **"The future of knowledge work is not 'drawing' but 'describing'."**
 
 ![Magam Example](./assets/readme.png)
